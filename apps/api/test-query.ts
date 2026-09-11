@@ -1,0 +1,1 @@
+import { PrismaClient } from '@prisma/client'; const p = new PrismaClient(); p.user.findMany({where:{email:{in:['c1@test.com','head@test.com']}},select:{email:true,status:true,mustChangePassword:true}}).then(r=>{console.log(JSON.stringify(r,null,2)); return p.$disconnect();});

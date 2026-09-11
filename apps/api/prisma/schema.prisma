@@ -1,0 +1,1547 @@
+// =============================================================================
+// EL SCORE OS — Prisma Schema
+// Phase 0 + Phase 1: Platform foundation + Identity/Organization + Tutor Domain
+//
+// Migration groups:
+//   M-001  Platform foundation  (Sequence, AuditEvent, Notification)
+//   M-002  Identity core        (Department, Role, Permission, User, UserRole,
+//                                RefreshToken, RolePermission)
+//   M-003  Employees            (Employee)
+//   M-004  Phase 1 identity hardening
+//            • Permission.isDelegatable
+//            • Role.isSystem / isProtected / isCustom / createdByUserId
+//            • User.mustChangePassword
+//            • UserPermission (HR duty delegation)
+//   M-005  Reference data       (Subject, Grade, Curriculum)
+//   M-006  Tutor recruitment    (TutorRecruitment, TutorRecruitmentStage,
+//                                TutorInterview)
+//   M-007  Tutor profile        (TutorProfile, TutorSubject, TutorGrade,
+//                                TutorCurriculum, TutorAvailabilitySlot)
+//   M-008  Tutor rate           (TutorRate)
+//   M-009  Tutor feedback       (TutorFeedback)
+//
+// Conventions:
+//   - Internal PKs: UUID (@default(uuid()))
+//   - Business IDs: separate unique column (e.g. EMP-0001) via IdGeneratorService
+//   - All tables: snake_case via @@map()
+//   - Enums: only when vocabulary is fully decided and stable
+//   - No business logic in schema (no triggers, computed fields, or hooks)
+//   - Indexes: reflect actual query access patterns only
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// M-001 — PLATFORM FOUNDATION
+// =============================================================================
+
+/// Tracks the next number for each human-readable business ID series.
+/// Use IdGeneratorService (not raw SQL) to read/increment in a transaction.
+
+enum StudentAttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  EXCUSED
+}
+
+enum TutorClassRecordStatus {
+  DRAFT
+  SUBMITTED
+  VERIFIED
+  CORRECTION_REQUESTED
+}
+
+enum SessionCancellationReason {
+  NOT_CANCELLED
+  ACADEMY_CANCELLED
+  TUTOR_CANCELLED
+  STUDENT_CANCELLED
+  TUTOR_NO_SHOW
+}
+
+model Sequence {
+  entityType String @id @map("entity_type")
+  nextNumber Int    @default(1) @map("next_number")
+  prefix     String
+  padding    Int    @default(4)
+
+  @@map("sequences")
+}
+
+/// Immutable append-only audit log. Records every important business state change.
+/// actor is nullable to support system-initiated actions (background jobs, seeds).
+///
+/// APPEND-ONLY CONSTRAINT (enforced at application layer):
+///   - AuditEvent records MUST only be created through AuditService.
+///   - No update or delete operations are permitted on this table at the application layer.
+///   - Domain services and controllers must never call prisma.auditEvent.update/delete directly.
+///   - Purging by partition drop (future, retention policy) is the only sanctioned removal path.
+///
+/// RETENTION STRATEGY (implement when data volume justifies it):
+///   - Partition by month using PostgreSQL declarative partitioning.
+///   - Archive partitions older than 24 months to a cold schema or external store.
+model AuditEvent {
+  id            String   @id @default(uuid())
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id")
+  action        String
+  actorUserId   String?  @map("actor_user_id")
+  timestamp     DateTime @default(now())
+  oldValue      Json?    @map("old_value")
+  newValue      Json?    @map("new_value")
+  reason        String?
+  correlationId String?  @map("correlation_id")
+  metadata      Json?
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@index([timestamp])
+  @@map("audit_events")
+}
+
+/// In-app notification record. One record = one notification for one recipient.
+/// Delivery (email, push, WhatsApp) is deferred to a later phase.
+model Notification {
+  id              String    @id @default(uuid())
+  recipientUserId String    @map("recipient_user_id")
+  type            String // e.g. OVERDUE_FOLLOWUP, MENTOR_ASSIGNMENT_PENDING
+  entityType      String?   @map("entity_type")
+  entityId        String?   @map("entity_id")
+  action          String? // deep-link hint for the UI
+  message         String
+  readAt          DateTime? @map("read_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  recipient User @relation("UserNotifications", fields: [recipientUserId], references: [id])
+
+  @@index([recipientUserId, readAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// =============================================================================
+// M-002 — IDENTITY CORE
+// =============================================================================
+
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Department {
+  id        String           @id @default(uuid())
+  code      String           @unique // ADMIN, MARKETING, SALES, ACADEMICS, FINANCE, HR
+  name      String
+  status    DepartmentStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  employees Employee[]
+
+  @@map("departments")
+}
+
+/// Application role (e.g. CEO, HR_MANAGER, TUTOR).
+/// A user may hold multiple roles via UserRole.
+///
+/// isSystem:    Seeded by the technical team; cannot be deleted via API.
+/// isProtected: Cannot be assigned by HR Manager; CEO only.
+///              Currently: CEO and CO_FOUNDER only.
+/// isCustom:    Created by HR Manager or CEO at runtime (not seeded).
+/// createdByUserId: Null for system roles; set to the creator for custom roles.
+model Role {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  description     String?
+  isSystem        Boolean  @default(false) @map("is_system")
+  isProtected     Boolean  @default(false) @map("is_protected")
+  isCustom        Boolean  @default(false) @map("is_custom")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  permissions RolePermission[]
+  userRoles   UserRole[]
+  createdBy   User?            @relation("CustomRoleCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([isSystem])
+  @@index([isCustom])
+  @@map("roles")
+}
+
+/// Granular permission. Format: resource.action (e.g. user.read, tutor.rate.manage).
+///
+/// isDelegatable: When true, HR Manager may grant this permission directly to an HR
+///                staff member via UserPermission (HR duty delegation mechanism).
+///                When false, this permission can ONLY be obtained through role assignment.
+///                Security-sensitive and system-level permissions are isDelegatable = false.
+model Permission {
+  id            String  @id @default(uuid())
+  code          String  @unique // e.g. "user.read"
+  resource      String // e.g. "user"
+  action        String // e.g. "read"
+  description   String?
+  isDelegatable Boolean @default(false) @map("is_delegatable")
+
+  rolePermissions RolePermission[]
+  userPermissions UserPermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+/// Join table: which permissions belong to which role.
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_SETUP // account created but password not yet set by the user
+}
+
+/// Authentication identity. One User corresponds to one Employee.
+/// email is the login identifier.
+///
+/// mustChangePassword: Set to true when HR creates the account.
+///                     Auth layer enforces a password-change flow before any other action.
+///                     Set to false after the user successfully sets their own password.
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  username           String?    @unique
+  passwordHash       String     @map("password_hash") // Argon2id hash — never expose in DTOs or audit blobs
+  status             UserStatus @default(PENDING_SETUP)
+  mustChangePassword Boolean    @default(false) @map("must_change_password")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  lastLoginAt        DateTime?  @map("last_login_at")
+
+  // Relations
+  employee         Employee?      @relation("UserEmployee")
+  userRoles        UserRole[]     @relation("UserRoles")
+  grantedUserRoles UserRole[]     @relation("GrantedUserRoles")
+  refreshTokens    RefreshToken[]
+  auditEvents      AuditEvent[]   @relation("AuditActor")
+  notifications    Notification[] @relation("UserNotifications")
+
+  // Phase 1 additions
+  createdCustomRoles       Role[]                  @relation("CustomRoleCreator")
+  receivedPermissions      UserPermission[]        @relation("PermissionRecipient")
+  delegatedPermissions     UserPermission[]        @relation("PermissionDelegator")
+  createdRecruitments      TutorRecruitment[]      @relation("RecruitmentCreator")
+  advancedStages           TutorRecruitmentStage[] @relation("StageAdvancedBy")
+  conductedInterviews      TutorInterview[]        @relation("InterviewConductor")
+  addedTutorSubjects       TutorSubject[]          @relation("TutorSubjectAddedBy")
+  addedTutorGrades         TutorGrade[]            @relation("TutorGradeAddedBy")
+  addedTutorCurricula      TutorCurriculum[]       @relation("TutorCurriculumAddedBy")
+  createdAvailabilitySlots TutorAvailabilitySlot[] @relation("SlotCreatedBy")
+  setTutorRates            TutorRate[]             @relation("RateSetBy")
+  submittedFeedback        TutorFeedback[]         @relation("FeedbackGivenBy")
+
+  // Phase 2D Demo additions
+  assignedDemos     Demo[]                  @relation("AssignedDemos")
+  bookedDemos       Demo[]                  @relation("BookedDemos")
+  rescheduledDemos  DemoRescheduleHistory[] @relation("RescheduledDemos")
+  demoFeedbackGiven DemoFeedback[]          @relation("DemoFeedbackGiven")
+
+  // Phase 2E Finance additions
+  createdInvoices    Invoice[]            @relation("InvoiceCreator")
+  issuedInvoices     Invoice[]            @relation("InvoiceIssuer")
+  recordedPayments   Payment[]            @relation("PaymentRecorder")
+  requestedRefunds   Refund[]             @relation("RefundRequester")
+  approvedRefunds    Refund[]             @relation("RefundApprover")
+  executedRefunds    Refund[]             @relation("RefundExecutor")
+  targetCreditLedger TargetCreditLedger[] @relation("SalesTargetCredit")
+
+  // Phase 2A CRM additions
+  assignedLeads       Lead[]                  @relation("AssignedLeads")
+  createdLeads        Lead[]                  @relation("CreatedLeads")
+  archivedLeads       Lead[]                  @relation("ArchivedLeads")
+  leadStatusChanges   LeadStatusHistory[]     @relation("LeadStatusChanges")
+  oldLeadAssignments  LeadAssignmentHistory[] @relation("OldLeadAssignments")
+  newLeadAssignments  LeadAssignmentHistory[] @relation("NewLeadAssignments")
+  leadAssignmentsMade LeadAssignmentHistory[] @relation("LeadAssignmentsMade")
+  createdSalesNotes   SalesNote[]             @relation("CreatedSalesNotes")
+
+  // Phase 2B Follow-up additions
+  createdFollowUps          FollowUp[]                  @relation("CreatedFollowUps")
+  completedFollowUps        FollowUp[]                  @relation("CompletedFollowUps")
+  rescheduledFollowUps      FollowUpRescheduleHistory[] @relation("RescheduledFollowUps")
+  RoundRobinState           RoundRobinState[]
+  RoundRobinCounsellorState RoundRobinCounsellorState[]
+  tutorClassRecords         TutorClassRecord[]          @relation("TutorClassRecords")
+
+  @@map("users")
+}
+
+/// Many-to-many: a user may hold multiple roles.
+/// grantedByUserId tracks who assigned the role (SetNull if grantor deleted).
+///
+/// CONSTRAINT enforced at service layer (UserRoleService):
+///   - CO_FOUNDER role cannot be assigned to a user who holds any other role.
+///   - No other role can be assigned to a user who holds CO_FOUNDER.
+///   - isProtected roles (CEO, CO_FOUNDER) can only be assigned by a CEO.
+model UserRole {
+  userId          String   @map("user_id")
+  roleId          String   @map("role_id")
+  grantedByUserId String?  @map("granted_by_user_id")
+  grantedAt       DateTime @default(now()) @map("granted_at")
+
+  user      User  @relation("UserRoles", fields: [userId], references: [id], onDelete: Cascade)
+  role      Role  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  grantedBy User? @relation("GrantedUserRoles", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+/// Hashed refresh token stored server-side for session management.
+/// Access tokens are stateless JWTs. Refresh tokens are long-lived and revocable.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") // SHA-256 of raw token
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at") // null = active
+  createdAt DateTime  @default(now()) @map("created_at")
+  userAgent String?   @map("user_agent")
+  ipAddress String?   @map("ip_address")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// M-003 — EMPLOYEES
+// =============================================================================
+
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+  ON_LEAVE
+}
+
+/// HR-owned employee record. Links 1:1 to a User account.
+/// business_id format: EMP-0001 (generated by IdGeneratorService).
+/// Financial salary details belong to the Finance module (future phase).
+model Employee {
+  id               String           @id @default(uuid())
+  businessId       String           @unique @map("business_id") // EMP-####
+  userId           String           @unique @map("user_id")
+  departmentId     String           @map("department_id")
+  employmentStatus EmploymentStatus @default(ACTIVE) @map("employment_status")
+  firstName        String           @map("first_name")
+  lastName         String           @map("last_name")
+  phone            String?
+  joinedAt         DateTime?        @map("joined_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  user         User              @relation("UserEmployee", fields: [userId], references: [id])
+  department   Department        @relation(fields: [departmentId], references: [id])
+  tutorProfile TutorProfile?     @relation("EmployeeTutorProfile")
+  recruitment  TutorRecruitment? @relation("RecruitmentHiredEmployee")
+
+  @@index([departmentId])
+  @@index([employmentStatus])
+  @@map("employees")
+}
+
+// =============================================================================
+// M-004 — PHASE 1 IDENTITY HARDENING
+// =============================================================================
+
+/// Direct permission grant from HR Manager to a specific HR staff member.
+///
+/// PURPOSE: HR duty delegation. HR Assistant has no fixed permissions; HR Manager
+///          selects individual duties to delegate.
+///
+/// CONSTRAINTS (all enforced at service layer in UserPermissionService):
+///   1. permission.isDelegatable must be true — else rejection.
+///   2. The delegator must personally hold the permission being delegated.
+///   3. The recipient must currently hold HR_ASSISTANT or HR_EXECUTIVE role.
+///   4. Delegator must hold role.manage or be HR Manager / CEO.
+///
+/// INTERACTION WITH ROLES:
+///   UserPermission is ADDITIVE to role-based permissions. RbacService.getPermissionsForUser()
+///   combines both sources. A user can simultaneously receive permissions from roles AND
+///   from direct delegation. The effective set is the union of both.
+///
+/// HISTORY: revokedAt-based soft revocation. Records are never hard-deleted.
+model UserPermission {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id") // recipient
+  permissionId      String    @map("permission_id")
+  delegatedByUserId String    @map("delegated_by_user_id")
+  grantedAt         DateTime  @default(now()) @map("granted_at")
+  revokedAt         DateTime? @map("revoked_at") // null = active grant
+
+  user        User       @relation("PermissionRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  permission  Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+  delegatedBy User       @relation("PermissionDelegator", fields: [delegatedByUserId], references: [id], onDelete: Restrict)
+
+  // One active grant per user per permission. Revoked grants remain as history.
+  // Uniqueness on (userId, permissionId) — re-delegation after revocation creates a new row.
+  @@index([userId, revokedAt])
+  @@index([delegatedByUserId])
+  @@map("user_permissions")
+}
+
+// =============================================================================
+// M-005 — REFERENCE DATA
+// =============================================================================
+
+/// Master list of subjects (e.g. Arabic, English, Mathematics).
+/// Managed by administrators holding reference.manage permission.
+/// NOT developer-only seeded data — administrators can add/deactivate entries via the UI.
+model Subject {
+  id        String   @id @default(uuid())
+  code      String   @unique // e.g. ARABIC, ENGLISH, MATH
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutorSubjects TutorSubject[]
+  requirements  Requirement[]
+  demos         Demo[]
+
+  @@map("subjects")
+}
+
+/// Master list of grade/class levels (e.g. KG, Grade 1, O Level, A Level).
+/// sortOrder controls display ordering in dropdowns and search results.
+model Grade {
+  id        String   @id @default(uuid())
+  code      String   @unique // e.g. KG, GRADE_1, GRADE_6, O_LEVEL, A_LEVEL
+  name      String // e.g. "Grade 1", "O Level"
+  sortOrder Int      @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutorGrades  TutorGrade[]
+  requirements Requirement[]
+  demos        Demo[]
+
+  @@map("grades")
+}
+
+/// Master list of curricula (e.g. CBSE, IGCSE, Cambridge A Level, IB, Ministry).
+model Curriculum {
+  id        String   @id @default(uuid())
+  code      String   @unique // e.g. CBSE, IGCSE, CAMBRIDGE, IB, MINISTRY
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutorCurricula TutorCurriculum[]
+  requirements   Requirement[]
+  demos          Demo[]
+
+  @@map("curricula")
+}
+
+// =============================================================================
+// M-006 — TUTOR RECRUITMENT
+// =============================================================================
+
+/// Pipeline stages for a Tutor recruitment application.
+enum TutorRecruitmentStageCode {
+  LEAD
+  DETAILS_SHARED
+  CV_SHARED
+  CALLED
+  INTERVIEW
+  RECRUITED
+}
+
+/// Reason a recruitment application was closed without hire.
+enum TutorRejectionReason {
+  REJECTED // rejected by the academy
+  NOT_INTERESTED // candidate declined the offer
+  NO_RESPONSE // candidate stopped responding
+}
+
+/// Master record for one Tutor recruitment application.
+/// A candidate may have multiple records (e.g. different applications, or rehire).
+/// After successful hire, employeeId is set to the created Employee.
+///
+/// Capability fields (subjectsText, gradesText, curriculumText) are plain text
+/// at the enquiry stage — the information is informal and exploratory at this point.
+/// After hire, the TutorProfile uses proper junction tables (TutorSubject, TutorGrade,
+/// TutorCurriculum) referencing the master lists.
+///
+/// HISTORY: Records are never hard-deleted. isRejected + rejectionReason record closure.
+model TutorRecruitment {
+  id         String @id @default(uuid())
+  businessId String @unique @map("business_id") // REC-####
+
+  // Candidate identity (not yet a User at this stage)
+  firstName String  @map("first_name")
+  lastName  String  @map("last_name")
+  phone     String
+  email     String? // optional at enquiry stage
+
+  // Candidate-stated information (plain text — informal at enquiry stage)
+  yearsOfExperience  Int?     @map("years_of_experience")
+  expectedHourlyRate Decimal? @map("expected_hourly_rate") @db.Decimal(10, 2)
+  subjectsText       String?  @map("subjects_text") // e.g. "Arabic, English"
+  gradesText         String?  @map("grades_text") // e.g. "Grade 4–8"
+  curriculumText     String?  @map("curriculum_text") // e.g. "CBSE, IGCSE"
+  availabilityText   String?  @map("availability_text") // e.g. "Weekday afternoons"
+  remarks            String?
+
+  // Denormalized current stage (mirrors latest TutorRecruitmentStage.stage for filtering)
+  currentStage TutorRecruitmentStageCode @default(LEAD) @map("current_stage")
+
+  // Rejection state
+  isRejected      Boolean               @default(false) @map("is_rejected")
+  rejectionReason TutorRejectionReason? @map("rejection_reason")
+  rejectedAt      DateTime?             @map("rejected_at")
+
+  // Set when successfully hired
+  employeeId String?   @unique @map("employee_id")
+  hiredAt    DateTime? @map("hired_at")
+
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  employee  Employee? @relation("RecruitmentHiredEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy User      @relation("RecruitmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  stages       TutorRecruitmentStage[]
+  interviews   TutorInterview[]
+  tutorProfile TutorProfile?           @relation("RecruitmentTutorProfile")
+
+  @@index([currentStage])
+  @@index([isRejected])
+  @@index([createdByUserId])
+  @@map("tutor_recruitment")
+}
+
+/// One row per stage transition. APPEND-ONLY — never updated after creation.
+/// Preserves the complete stage progression history for every recruitment application.
+model TutorRecruitmentStage {
+  id              String                    @id @default(uuid())
+  recruitmentId   String                    @map("recruitment_id")
+  stage           TutorRecruitmentStageCode
+  enteredAt       DateTime                  @default(now()) @map("entered_at")
+  enteredByUserId String                    @map("entered_by_user_id")
+  notes           String?
+
+  recruitment TutorRecruitment @relation(fields: [recruitmentId], references: [id], onDelete: Restrict)
+  enteredBy   User             @relation("StageAdvancedBy", fields: [enteredByUserId], references: [id], onDelete: Restrict)
+
+  @@index([recruitmentId])
+  @@map("tutor_recruitment_stages")
+}
+
+/// Interview record. Multiple interviews are supported per recruitment application.
+/// One row = one formal interview event.
+/// conductedAt null means the interview has not yet taken place.
+model TutorInterview {
+  id            String @id @default(uuid())
+  recruitmentId String @map("recruitment_id") // NOT unique — multiple per recruitment
+
+  conductedByUserId String?   @map("conducted_by_user_id")
+  scheduledAt       DateTime? @map("scheduled_at") // planned interview date/time
+  conductedAt       DateTime? @map("conducted_at") // actual interview date/time; null = not yet held
+  wasConducted      Boolean   @default(false) @map("was_conducted")
+
+  offeredHourlyRate Decimal? @map("offered_hourly_rate") @db.Decimal(10, 2)
+  candidateAccepted Boolean? @map("candidate_accepted") // null = pending response
+
+  interviewNotes String? @map("interview_notes")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  recruitment TutorRecruitment @relation(fields: [recruitmentId], references: [id], onDelete: Restrict)
+  conductedBy User?            @relation("InterviewConductor", fields: [conductedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([recruitmentId])
+  @@map("tutor_interviews")
+}
+
+// =============================================================================
+// M-007 — TUTOR PROFILE
+// =============================================================================
+
+/// Operational status of a Tutor from the academic/scheduling perspective.
+/// This is SEPARATE from Employee.employmentStatus (HR perspective).
+///
+/// ACTIVE  = currently has active student assignments.
+/// INACTIVE = no active student assignments (does not imply HR status).
+///
+/// Managed by the Academics module (future phase). Phase 1 stores the field
+/// but does not expose write endpoints for it (set on TutorProfile creation only).
+enum TutorOperationalStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Tutor-specific profile. Created when a Tutor is hired (TutorRecruitment → RECRUITED).
+/// Linked 1:1 to Employee. Only employees with the TUTOR role will have a TutorProfile.
+///
+/// OWNERSHIP:
+///   HR Manager / HR Executive: all HR-owned fields, all capability junction records.
+///   Tutor (self-service via tutor.self.update):
+///     - bio
+///     - profilePhotoUrl  (assumption — confirm if needed)
+///     - TutorSubject (own records)
+///     - TutorGrade (own records)
+///     - TutorAvailabilitySlot (own records)
+///   Tutor CANNOT modify:
+///     - teachingExperience (HR-managed in Phase 1)
+///     - TutorCurriculum (HR-managed in Phase 1)
+///     - TutorRate (HR Manager only)
+model TutorProfile {
+  id                  String  @id @default(uuid())
+  employeeId          String  @unique @map("employee_id")
+  sourceRecruitmentId String? @unique @map("source_recruitment_id")
+
+  // HR-managed fields
+  teachingExperience Int? @map("teaching_experience_years")
+
+  // Tutor self-service fields
+  bio             String?
+  profilePhotoUrl String? @map("profile_photo_url")
+
+  // Operational status — managed by Academics in future phase; INACTIVE on creation
+  tutorOperationalStatus TutorOperationalStatus @default(INACTIVE) @map("tutor_operational_status")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  employee    Employee          @relation("EmployeeTutorProfile", fields: [employeeId], references: [id], onDelete: Restrict)
+  recruitment TutorRecruitment? @relation("RecruitmentTutorProfile", fields: [sourceRecruitmentId], references: [id], onDelete: SetNull)
+
+  subjects     TutorSubject[]
+  grades       TutorGrade[]
+  curricula    TutorCurriculum[]
+  availability TutorAvailabilitySlot[]
+  rates        TutorRate[]
+  feedback     TutorFeedback[]
+
+  @@map("tutor_profiles")
+}
+
+/// Subjects a Tutor can teach. Soft-removal preserves history.
+///
+/// Authorization:
+///   Write: HR Manager, HR Executive, Tutor (own profile only — self-service confirmed).
+///   Read:  HR staff, Mentor, Demo Coordinator.
+model TutorSubject {
+  id             String    @id @default(uuid())
+  tutorProfileId String    @map("tutor_profile_id")
+  subjectId      String    @map("subject_id")
+  addedByUserId  String    @map("added_by_user_id")
+  addedAt        DateTime  @default(now()) @map("added_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  removedAt      DateTime? @map("removed_at") // null = currently active
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  addedBy      User         @relation("TutorSubjectAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([tutorProfileId, subjectId])
+  @@index([tutorProfileId, isActive])
+  @@map("tutor_subjects")
+}
+
+/// Grades/class levels a Tutor can teach. Same pattern as TutorSubject.
+///
+/// Authorization:
+///   Write: HR Manager, HR Executive, Tutor (own profile — self-service confirmed).
+///   Read:  HR staff, Mentor, Demo Coordinator.
+model TutorGrade {
+  id             String    @id @default(uuid())
+  tutorProfileId String    @map("tutor_profile_id")
+  gradeId        String    @map("grade_id")
+  addedByUserId  String    @map("added_by_user_id")
+  addedAt        DateTime  @default(now()) @map("added_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  removedAt      DateTime? @map("removed_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  grade        Grade        @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  addedBy      User         @relation("TutorGradeAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([tutorProfileId, gradeId])
+  @@index([tutorProfileId, isActive])
+  @@map("tutor_grades")
+}
+
+/// Curricula a Tutor is qualified to teach. HR-managed in Phase 1.
+///
+/// Authorization:
+///   Write: HR Manager, HR Executive ONLY. Tutor CANNOT modify their own curriculum.
+///   Read:  HR staff, Mentor, Demo Coordinator.
+model TutorCurriculum {
+  id             String    @id @default(uuid())
+  tutorProfileId String    @map("tutor_profile_id")
+  curriculumId   String    @map("curriculum_id")
+  addedByUserId  String    @map("added_by_user_id")
+  addedAt        DateTime  @default(now()) @map("added_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  removedAt      DateTime? @map("removed_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  curriculum   Curriculum   @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+  addedBy      User         @relation("TutorCurriculumAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([tutorProfileId, curriculumId])
+  @@index([tutorProfileId, isActive])
+  @@map("tutor_curricula")
+}
+
+/// Recurring weekly availability slot. One row = one time window on one day of the week.
+///
+/// Example: "Monday 09:00–10:00" and "Monday 17:00–20:00" = two separate rows.
+///
+/// TIME STORAGE: startTime and endTime store time-of-day only (no date, no timezone).
+/// All values are interpreted in the system operational timezone, configured via the
+/// SYSTEM_TIMEZONE environment variable (e.g. Asia/Dubai). No per-Tutor timezone
+/// is stored in Phase 1.
+///
+/// dayOfWeek: 0 = Sunday … 6 = Saturday (ISO-compatible via JS Date convention).
+///
+/// Soft-removal: deactivate the slot (isActive = false, deactivatedAt = now()).
+///               Never hard-delete — deactivated slots remain for audit reference.
+///
+/// Authorization:
+///   Write: HR Manager, HR Executive, Tutor (own profile — self-service confirmed).
+///   Read:  HR staff, Mentor, Demo Coordinator.
+model TutorAvailabilitySlot {
+  id              String    @id @default(uuid())
+  tutorProfileId  String    @map("tutor_profile_id")
+  dayOfWeek       Int       @map("day_of_week") // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  startTime       DateTime  @map("start_time") @db.Time // e.g. 09:00:00
+  endTime         DateTime  @map("end_time") @db.Time // e.g. 10:30:00
+  isActive        Boolean   @default(true) @map("is_active")
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  deactivatedAt   DateTime? @map("deactivated_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation("SlotCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  // Index supports: "find all active slots for Tutor on day X"
+  // and cross-tutor search: "find Tutors available on day X between T1 and T2"
+  @@index([tutorProfileId, dayOfWeek, isActive])
+  @@index([dayOfWeek, isActive])
+  @@map("tutor_availability_slots")
+}
+
+// =============================================================================
+// M-008 — TUTOR RATE
+// =============================================================================
+
+/// HR-controlled hourly rate for a Tutor.
+///
+/// PHASE 1 SCOPE: One general/default rate per Tutor at any point in time.
+///   Multi-context rates (subject-specific, student-specific) are deferred to
+///   a future phase. The model is extensible to support them without breaking
+///   existing rate history.
+///
+/// HISTORY:
+///   Rates are never hard-deleted. When HR Manager changes a rate, the existing
+///   active row is soft-closed (effectiveTo = now(), isActive = false) and a new
+///   row is created (effectiveFrom = now(), isActive = true) — atomically in a
+///   single transaction. This preserves the full rate history.
+///
+///   At most ONE row should have isActive = true for a given tutorProfileId.
+///   This invariant is enforced at the service layer (TutorRateService), not
+///   by a DB constraint, to keep the schema simple.
+///
+/// AUTHORIZATION:
+///   Write (set/change):  HR Manager and CEO only.
+///   Read:                HR Manager, CEO, Co-Founder only.
+///   All others (HR Executive, HR Assistant, Mentor, Demo Coordinator, Tutor):
+///                        NO ACCESS — not even read access.
+model TutorRate {
+  id             String @id @default(uuid())
+  tutorProfileId String @map("tutor_profile_id")
+
+  hourlyRate Decimal @map("hourly_rate") @db.Decimal(10, 2)
+  currency   String  @default("AED") // system-configured currency; AED default
+
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to") // null = currently active
+  isActive      Boolean   @default(true) @map("is_active")
+
+  notes String? // HR Manager records reason for rate change
+
+  createdByUserId String   @map("created_by_user_id") // must be HR Manager or CEO
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation("RateSetBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  // Index for "get current active rate for Tutor"
+  @@index([tutorProfileId, isActive])
+  // Index for historical range queries
+  @@index([tutorProfileId, effectiveFrom])
+  @@map("tutor_rates")
+}
+
+// =============================================================================
+// M-009 — TUTOR FEEDBACK
+// =============================================================================
+
+/// Feedback type distinguishes the context in which feedback is given.
+enum TutorFeedbackType {
+  MENTOR_DAILY // Mentor: optional daily remark
+  MENTOR_WEEKLY // Mentor: mandatory weekly rating (1–5) + optional remarks
+  DEMO_POST // Demo Coordinator: post-demo rating + remarks
+}
+
+/// Internal academy feedback on a Tutor. Produced by Mentor and Demo Coordinator.
+///
+/// APPEND-ONLY: No user may edit or delete a submitted feedback record.
+/// Ratings do NOT trigger automatic actions.
+///
+/// TIMESTAMPS:
+///   feedbackPeriodDate: The date or period being evaluated. For MENTOR_WEEKLY this is
+///                       the start of the week being rated (may differ from createdAt
+///                       if submitted late — both values are stored independently).
+///   createdAt:          The actual submission timestamp (auto-set on insert).
+///
+/// AUTHORIZATION (fully resolved — no pending questions):
+///   CREATE:
+///     MENTOR_DAILY, MENTOR_WEEKLY: Mentor only.
+///     DEMO_POST:                   Demo Coordinator only.
+///     CEO is technically permitted but uses normal staff channels.
+///   READ:
+///     CEO, Co-Founder, HR Manager, HR Executive: full access.
+///     Mentor, Demo Coordinator: can read (for context when deciding future demos).
+///     HR Assistant: NO ACCESS. tutor.feedback.read isDelegatable = false.
+///     Tutor: NO ACCESS — feedback is internal academy information.
+///            No Tutor-facing feedback endpoint, DTO, or response field exists.
+///            Backend enforces this; UI hiding alone is not sufficient.
+model TutorFeedback {
+  id             String @id @default(uuid())
+  tutorProfileId String @map("tutor_profile_id")
+
+  feedbackType  TutorFeedbackType @map("feedback_type")
+  givenByUserId String            @map("given_by_user_id")
+
+  rating  Int? // 1–5; mandatory for MENTOR_WEEKLY; optional otherwise
+  remarks String?
+
+  // The period being evaluated (may differ from createdAt for late submissions)
+  feedbackPeriodDate DateTime @map("feedback_period_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  givenBy      User         @relation("FeedbackGivenBy", fields: [givenByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorProfileId, feedbackType, feedbackPeriodDate])
+  @@index([givenByUserId])
+  @@map("tutor_feedback")
+}
+
+// =============================================================================
+// M-010 - CRM FOUNDATION (SLICE 2A)
+// =============================================================================
+
+enum RoundRobinDailyState {
+  ACTIVE
+  INACTIVE_FROM_NOW
+  INACTIVE_FULL_DAY
+}
+
+enum LeadAssignmentType {
+  AUTOMATIC_ROUND_ROBIN
+  MANUAL_SALES_HEAD
+  COUNSELLOR_SELF_CREATED
+  REFERRAL
+  REASSIGNMENT
+  REOPENED
+}
+
+enum LeadSource {
+  META_FACEBOOK
+  INSTAGRAM
+  GOOGLE
+  WEBSITE
+  REFERRAL
+  DIRECT
+  OTHER
+}
+
+enum LeadCreationChannel {
+  INTEGRATION
+  SALES_HEAD
+  SALES_COUNSELLOR
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  DEMO_BOOKED
+  DEMO_COMPLETED
+  NEGOTIATION
+  NURTURE
+  ENROLLED
+  PAID
+  NOT_INTERESTED
+  NO_RESPONSE
+  LOST
+  JUNK
+}
+
+enum EnrollmentState {
+  PENDING
+  ENROLLED
+  NOT_ENROLLING
+}
+
+model Lead {
+  id               String              @id @default(uuid())
+  businessId       String              @unique @map("business_id")
+  firstName        String?             @map("first_name")
+  lastName         String?             @map("last_name")
+  primaryPhone     String              @map("primary_phone")
+  altPhone1        String?             @map("alt_phone_1")
+  altPhone2        String?             @map("alt_phone_2")
+  whatsappNumber   String?             @map("whatsapp_number")
+  source           LeadSource
+  creationChannel  LeadCreationChannel @map("creation_channel")
+  status           LeadStatus          @default(NEW)
+  requiresFollowUp Boolean             @default(false) @map("requires_follow_up")
+  assignedToUserId String?             @map("assigned_to_user_id")
+  createdByUserId  String              @map("created_by_user_id")
+  isArchived       Boolean             @default(false) @map("is_archived")
+  archivedAt       DateTime?           @map("archived_at")
+  archivedByUserId String?             @map("archived_by_user_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  assignedToUser User? @relation("AssignedLeads", fields: [assignedToUserId], references: [id])
+  createdByUser  User  @relation("CreatedLeads", fields: [createdByUserId], references: [id])
+  archivedByUser User? @relation("ArchivedLeads", fields: [archivedByUserId], references: [id])
+
+  students              Student[]
+  statusHistory         LeadStatusHistory[]
+  assignmentHistory     LeadAssignmentHistory[]
+  salesNotes            SalesNote[]
+  followUps             FollowUp[]
+  targetCreditLedger    TargetCreditLedger[]
+  invoices              Invoice[]
+  marketingAttribution  MarketingAttribution?
+  marketingInteractions MarketingInteraction[]
+
+  @@index([assignedToUserId])
+  @@index([primaryPhone])
+  @@index([status])
+  @@index([isArchived])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model Student {
+  id              String          @id @default(uuid())
+  businessId      String          @unique @map("business_id")
+  leadId          String          @map("lead_id")
+  firstName       String          @map("first_name")
+  lastName        String?         @map("last_name")
+  dateOfBirth     DateTime?       @map("date_of_birth")
+  gender          String?
+  schoolName      String?         @map("school_name")
+  currentGrade    String?         @map("current_grade")
+  cityLocation    String?         @map("city_location")
+  notes           String?         @db.Text
+  enrollmentState EnrollmentState @default(PENDING) @map("enrollment_state")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  lead               Lead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  requirements       Requirement[]
+  demos              Demo[]
+  invoices           Invoice[]
+  targetCreditLedger TargetCreditLedger[]
+  StudentAttendance  StudentAttendance[]
+
+  @@index([leadId])
+  @@map("students")
+}
+
+model Requirement {
+  id           String   @id @default(uuid())
+  businessId   String   @unique @map("business_id")
+  studentId    String   @map("student_id")
+  subjectId    String   @map("subject_id")
+  curriculumId String   @map("curriculum_id")
+  gradeId      String   @map("grade_id")
+  syllabus     String?
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+  grade      Grade      @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  demos      Demo[]
+
+  @@index([studentId])
+  @@map("requirements")
+}
+
+model LeadStatusHistory {
+  id              String      @id @default(uuid())
+  leadId          String      @map("lead_id")
+  oldStatus       LeadStatus? @map("old_status")
+  newStatus       LeadStatus  @map("new_status")
+  reason          String
+  note            String?     @db.Text
+  changedByUserId String      @map("changed_by_user_id")
+  changedAt       DateTime    @default(now()) @map("changed_at")
+
+  lead          Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  changedByUser User @relation("LeadStatusChanges", fields: [changedByUserId], references: [id])
+
+  @@index([leadId, changedAt])
+  @@map("lead_status_history")
+}
+
+model LeadAssignmentHistory {
+  id               String             @id @default(uuid())
+  leadId           String             @map("lead_id")
+  oldOwnerUserId   String?            @map("old_owner_user_id")
+  newOwnerUserId   String?            @map("new_owner_user_id")
+  reason           String?
+  assignmentType   LeadAssignmentType @default(MANUAL_SALES_HEAD) @map("assignment_type")
+  assignedByUserId String             @map("assigned_by_user_id")
+  assignedAt       DateTime           @default(now()) @map("assigned_at")
+
+  lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  oldOwner       User? @relation("OldLeadAssignments", fields: [oldOwnerUserId], references: [id])
+  newOwner       User? @relation("NewLeadAssignments", fields: [newOwnerUserId], references: [id])
+  assignedByUser User  @relation("LeadAssignmentsMade", fields: [assignedByUserId], references: [id])
+
+  @@index([leadId, assignedAt])
+  @@map("lead_assignment_history")
+}
+
+model SalesNote {
+  id              String   @id @default(uuid())
+  leadId          String   @map("lead_id")
+  content         String   @db.Text
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  lead          Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdByUser User @relation("CreatedSalesNotes", fields: [createdByUserId], references: [id])
+
+  @@index([leadId])
+  @@map("sales_notes")
+}
+
+// =============================================================================
+// M-007 — CRM FOLLOW-UPS (Slice 2B)
+// =============================================================================
+
+enum ContactClassification {
+  QUALIFIED
+  NON_QUALIFIED
+  NO_RESPONSE
+  JUNK
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  OVERDUE
+  COMPLETED
+}
+
+/// A single contact attempt/action against a Lead by a Sales Counsellor.
+/// Each actual contact = new FollowUp record. Do NOT reuse a record across contacts.
+/// Business ID format: FUP-NNNN (generated by IdGeneratorService in transaction).
+model FollowUp {
+  id                String                 @id @default(uuid())
+  businessId        String                 @unique @map("business_id")
+  leadId            String                 @map("lead_id")
+  createdByUserId   String                 @map("created_by_user_id")
+  scheduledAt       DateTime               @map("scheduled_at")
+  classification    ContactClassification? @map("classification")
+  status            FollowUpStatus         @default(SCHEDULED) @map("status")
+  completedAt       DateTime?              @map("completed_at")
+  completedByUserId String?                @map("completed_by_user_id")
+  remarks           String?                @db.Text
+  reminderJobId     String?                @map("reminder_job_id")
+  overdueJobId      String?                @map("overdue_job_id")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  lead              Lead                        @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  createdByUser     User                        @relation("CreatedFollowUps", fields: [createdByUserId], references: [id])
+  completedByUser   User?                       @relation("CompletedFollowUps", fields: [completedByUserId], references: [id])
+  rescheduleHistory FollowUpRescheduleHistory[]
+
+  @@index([leadId, status])
+  @@index([scheduledAt, status])
+  @@index([createdByUserId, status])
+  @@map("follow_ups")
+}
+
+/// Immutable reschedule log for a FollowUp.
+/// Rescheduling mutates the parent FollowUp.scheduledAt;
+/// this table preserves the full trail of previous schedules.
+model FollowUpRescheduleHistory {
+  id                  String   @id @default(uuid())
+  followUpId          String   @map("follow_up_id")
+  previousScheduledAt DateTime @map("previous_scheduled_at")
+  newScheduledAt      DateTime @map("new_scheduled_at")
+  reason              String?  @db.Text
+  rescheduledByUserId String   @map("rescheduled_by_user_id")
+  rescheduledAt       DateTime @default(now()) @map("rescheduled_at")
+
+  followUp          FollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+  rescheduledByUser User     @relation("RescheduledFollowUps", fields: [rescheduledByUserId], references: [id])
+
+  @@index([followUpId])
+  @@map("follow_up_reschedule_history")
+}
+
+model RoundRobinState {
+  id                 String   @id @default("singleton")
+  isPaused           Boolean  @default(false) @map("is_paused")
+  lastAssignedUserId String?  @map("last_assigned_user_id")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  lastAssignedUser User? @relation(fields: [lastAssignedUserId], references: [id])
+
+  @@map("round_robin_state")
+}
+
+model RoundRobinCounsellorState {
+  userId         String               @id @map("user_id")
+  isEligible     Boolean              @default(true) @map("is_eligible")
+  dailyState     RoundRobinDailyState @default(ACTIVE) @map("daily_state")
+  lastReturnedAt DateTime?            @map("last_returned_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("round_robin_counsellor_state")
+}
+
+// =============================================================================
+// M-008 — DEMO (Slice 2D)
+// =============================================================================
+
+enum DemoStatus {
+  SCHEDULED
+  ASSIGNED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+model Demo {
+  id              String     @id @default(uuid())
+  businessId      String     @unique @map("business_id")
+  studentId       String     @map("student_id")
+  requirementId   String     @map("requirement_id")
+  tutorId         String?    @map("tutor_id")
+  status          DemoStatus @default(SCHEDULED)
+  scheduledAt     DateTime   @map("scheduled_at")
+  durationMinutes Int        @map("duration_minutes")
+
+  // Academic Snapshot
+  subjectId    String @map("subject_id")
+  curriculumId String @map("curriculum_id")
+  gradeId      String @map("grade_id")
+
+  bookedByUserId String    @map("booked_by_user_id")
+  cancelledAt    DateTime? @map("cancelled_at")
+  cancelReason   String?   @map("cancel_reason")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  student      Student     @relation(fields: [studentId], references: [id])
+  requirement  Requirement @relation(fields: [requirementId], references: [id])
+  tutor        User?       @relation("AssignedDemos", fields: [tutorId], references: [id])
+  subject      Subject     @relation(fields: [subjectId], references: [id])
+  curriculum   Curriculum  @relation(fields: [curriculumId], references: [id])
+  grade        Grade       @relation(fields: [gradeId], references: [id])
+  bookedByUser User        @relation("BookedDemos", fields: [bookedByUserId], references: [id])
+
+  feedback          DemoFeedback?
+  rescheduleHistory DemoRescheduleHistory[]
+
+  @@index([studentId])
+  @@index([tutorId, scheduledAt])
+  @@index([status])
+  @@map("demos")
+}
+
+model DemoRescheduleHistory {
+  id                  String   @id @default(uuid())
+  demoId              String   @map("demo_id")
+  previousScheduledAt DateTime @map("previous_scheduled_at")
+  newScheduledAt      DateTime @map("new_scheduled_at")
+  reason              String   @db.Text
+  rescheduledByUserId String   @map("rescheduled_by_user_id")
+  rescheduledAt       DateTime @default(now()) @map("rescheduled_at")
+
+  demo              Demo @relation(fields: [demoId], references: [id], onDelete: Cascade)
+  rescheduledByUser User @relation("RescheduledDemos", fields: [rescheduledByUserId], references: [id])
+
+  @@index([demoId])
+  @@map("demo_reschedule_history")
+}
+
+model DemoFeedback {
+  id                String   @id @default(uuid())
+  demoId            String   @unique @map("demo_id")
+  rating            Int
+  comments          String   @db.Text
+  submittedByUserId String   @map("submitted_by_user_id")
+  submittedAt       DateTime @default(now()) @map("submitted_at")
+
+  demo            Demo @relation(fields: [demoId], references: [id], onDelete: Cascade)
+  submittedByUser User @relation("DemoFeedbackGiven", fields: [submittedByUserId], references: [id])
+
+  @@map("demo_feedback")
+}
+
+// =============================================================================
+// M-009 — FINANCE (Slice 2E)
+// =============================================================================
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERPAID
+  VOIDED
+}
+
+enum InvoiceLineItemType {
+  REGISTRATION_FEE
+  TUITION
+  OTHER
+}
+
+enum InstallmentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+}
+
+enum PaymentMethod {
+  CASH
+}
+
+enum PaymentStatus {
+  SUCCESS
+  REVERSED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  EXECUTED
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  businessId     String        @unique @map("business_id")
+  studentId      String        @map("student_id")
+  leadId         String?       @map("lead_id")
+  status         InvoiceStatus @default(DRAFT)
+  subtotal       Decimal       @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal       @default(0) @db.Decimal(10, 2)
+  total          Decimal       @default(0) @db.Decimal(10, 2)
+  amountPaid     Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
+  outstanding    Decimal       @default(0) @db.Decimal(10, 2)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  issuedAt  DateTime? @map("issued_at")
+  voidedAt  DateTime? @map("voided_at")
+  createdBy String    @map("created_by")
+  issuedBy  String?   @map("issued_by")
+
+  student Student @relation(fields: [studentId], references: [id])
+  lead    Lead?   @relation(fields: [leadId], references: [id])
+  creator User    @relation("InvoiceCreator", fields: [createdBy], references: [id])
+  issuer  User?   @relation("InvoiceIssuer", fields: [issuedBy], references: [id])
+
+  lineItems    InvoiceLineItem[]
+  installments Installment[]
+  payments     Payment[]
+
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String              @id @default(uuid())
+  invoiceId   String              @map("invoice_id")
+  type        InvoiceLineItemType
+  description String
+  quantity    Int                 @default(1)
+  unitAmount  Decimal             @map("unit_amount") @db.Decimal(10, 2)
+  totalAmount Decimal             @map("total_amount") @db.Decimal(10, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_line_items")
+}
+
+model Installment {
+  id         String            @id @default(uuid())
+  invoiceId  String            @map("invoice_id")
+  sequence   Int
+  amount     Decimal           @db.Decimal(10, 2)
+  dueDate    DateTime          @map("due_date")
+  status     InstallmentStatus @default(PENDING)
+  amountPaid Decimal           @default(0) @map("amount_paid") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("installments")
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  businessId     String        @unique @map("business_id")
+  invoiceId      String        @map("invoice_id")
+  idempotencyKey String        @unique @map("idempotency_key")
+  amount         Decimal       @db.Decimal(10, 2)
+  paymentMethod  PaymentMethod @default(CASH) @map("payment_method")
+  receivedAt     DateTime      @map("received_at")
+  recordedBy     String        @map("recorded_by")
+  note           String?       @db.Text
+  status         PaymentStatus @default(SUCCESS)
+  reversalReason String?       @map("reversal_reason") @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  invoice  Invoice @relation(fields: [invoiceId], references: [id])
+  recorder User    @relation("PaymentRecorder", fields: [recordedBy], references: [id])
+
+  receipt Receipt?
+  refunds Refund[]
+
+  @@map("payments")
+}
+
+model Receipt {
+  id          String   @id @default(uuid())
+  businessId  String   @unique @map("business_id")
+  paymentId   String?  @unique @map("payment_id")
+  refundId    String?  @unique @map("refund_id")
+  amount      Decimal  @db.Decimal(10, 2)
+  generatedAt DateTime @default(now()) @map("generated_at")
+  isValid     Boolean  @default(true) @map("is_valid")
+
+  payment Payment? @relation(fields: [paymentId], references: [id])
+  refund  Refund?  @relation(fields: [refundId], references: [id])
+
+  @@map("receipts")
+}
+
+model Refund {
+  id        String       @id @default(uuid())
+  paymentId String       @map("payment_id")
+  amount    Decimal      @db.Decimal(10, 2)
+  reason    String       @db.Text
+  status    RefundStatus @default(REQUESTED)
+
+  requestedBy String  @map("requested_by")
+  approvedBy  String? @map("approved_by")
+  executedBy  String? @map("executed_by")
+
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  approvedAt  DateTime? @map("approved_at")
+  executedAt  DateTime? @map("executed_at")
+
+  payment   Payment @relation(fields: [paymentId], references: [id])
+  requester User    @relation("RefundRequester", fields: [requestedBy], references: [id])
+  approver  User?   @relation("RefundApprover", fields: [approvedBy], references: [id])
+  executor  User?   @relation("RefundExecutor", fields: [executedBy], references: [id])
+
+  receipt Receipt?
+
+  @@map("refunds")
+}
+
+model TargetCreditLedger {
+  id           String  @id @default(uuid())
+  salesOwnerId String  @map("sales_owner_id")
+  leadId       String  @map("lead_id")
+  studentId    String  @map("student_id")
+  invoiceId    String  @map("invoice_id")
+  paymentId    String? @map("payment_id")
+  refundId     String? @map("refund_id")
+
+  amount          Decimal  @db.Decimal(10, 2)
+  transactionType String   @map("transaction_type") // 'PAYMENT', 'REFUND'
+  timestamp       DateTime @default(now())
+
+  salesOwner User    @relation("SalesTargetCredit", fields: [salesOwnerId], references: [id])
+  lead       Lead    @relation(fields: [leadId], references: [id])
+  student    Student @relation(fields: [studentId], references: [id])
+
+  @@unique([paymentId, transactionType], name: "unique_payment_credit")
+  @@unique([refundId, transactionType], name: "unique_refund_credit")
+  @@map("target_credit_ledger")
+}
+
+// =============================================================================
+// M-010 — ATTENDANCE (Slice 2F)
+// =============================================================================
+
+model StudentAttendance {
+  id         String @id @default(uuid())
+  businessId String @unique @map("business_id")
+
+  sessionId String @map("session_id")
+
+  studentId       String  @map("student_id")
+  tutorClassRecId String? @map("tutor_class_record_id")
+
+  status      StudentAttendanceStatus
+  actualStart DateTime?               @map("actual_start")
+  actualEnd   DateTime?               @map("actual_end")
+
+  markedByUserId String   @map("marked_by_user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  isCorrected       Boolean   @default(false) @map("is_corrected")
+  correctionReason  String?   @map("correction_reason")
+  correctedByUserId String?   @map("corrected_by_user_id")
+  correctedAt       DateTime? @map("corrected_at")
+
+  student          Student           @relation(fields: [studentId], references: [id])
+  tutorClassRecord TutorClassRecord? @relation(fields: [tutorClassRecId], references: [id])
+
+  @@unique([sessionId, studentId])
+  @@map("student_attendances")
+}
+
+model TutorClassRecord {
+  id         String @id @default(uuid())
+  businessId String @unique @map("business_id")
+
+  sessionId String @map("session_id")
+  tutorId   String @map("tutor_id")
+
+  status       TutorClassRecordStatus    @default(DRAFT)
+  cancellation SessionCancellationReason @default(NOT_CANCELLED)
+
+  scheduledStart DateTime  @map("scheduled_start")
+  scheduledEnd   DateTime  @map("scheduled_end")
+  actualStart    DateTime? @map("actual_start")
+  actualEnd      DateTime? @map("actual_end")
+  workedMinutes  Int?      @map("worked_minutes")
+
+  appliedRate Decimal? @map("applied_rate") @db.Decimal(10, 2)
+  currency    String?
+  rateGrade   String?  @map("rate_grade")
+  rateSubject String?  @map("rate_subject")
+
+  submittedAt      DateTime? @map("submitted_at")
+  verifiedAt       DateTime? @map("verified_at")
+  verifiedByUserId String?   @map("verified_by_user_id")
+
+  isPayrollReady Boolean @default(false) @map("is_payroll_ready")
+
+  isCorrected      Boolean @default(false) @map("is_corrected")
+  correctionReason String? @map("correction_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutor              User                @relation("TutorClassRecords", fields: [tutorId], references: [id])
+  studentAttendances StudentAttendance[]
+
+  @@unique([sessionId, tutorId])
+  @@map("tutor_class_records")
+}
+
+model MarketingAttribution {
+  id                 String   @id @default(uuid())
+  leadId             String   @unique @map("lead_id")
+  channel            String?
+  campaign           String?
+  externalCampaignId String?  @map("external_campaign_id")
+  externalLeadId     String?  @map("external_lead_id")
+  acquiredAt         DateTime @default(now()) @map("acquired_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_attributions")
+}
+
+model IntegrationCredential {
+  id         String   @id @default(uuid())
+  provider   String   @unique
+  apiKeyHash String   @map("api_key_hash")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("integration_credentials")
+}
+
+model MarketingInteraction {
+  id             String   @id @default(uuid())
+  leadId         String   @map("lead_id")
+  provider       String
+  externalLeadId String   @map("external_lead_id")
+  campaignId     String?  @map("campaign_id")
+  campaignName   String?  @map("campaign_name")
+  adsetId        String?  @map("adset_id")
+  adsetName      String?  @map("adset_name")
+  adId           String?  @map("ad_id")
+  adName         String?  @map("ad_name")
+  isOriginal     Boolean  @default(false) @map("is_original")
+  receivedAt     DateTime @default(now()) @map("received_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalLeadId])
+  @@index([leadId])
+  @@map("marketing_interactions")
+}

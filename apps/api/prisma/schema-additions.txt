@@ -1,0 +1,31 @@
+model IntegrationCredential {
+  id          String   @id @default(uuid())
+  provider    String   @unique
+  apiKeyHash  String   @map("api_key_hash")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("integration_credentials")
+}
+
+model MarketingInteraction {
+  id                 String   @id @default(uuid())
+  leadId             String   @map("lead_id")
+  provider           String
+  externalLeadId     String   @map("external_lead_id")
+  campaignId         String?  @map("campaign_id")
+  campaignName       String?  @map("campaign_name")
+  adsetId            String?  @map("adset_id")
+  adsetName          String?  @map("adset_name")
+  adId               String?  @map("ad_id")
+  adName             String?  @map("ad_name")
+  isOriginal         Boolean  @default(false) @map("is_original")
+  receivedAt         DateTime @default(now()) @map("received_at")
+  
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, externalLeadId])
+  @@index([leadId])
+  @@map("marketing_interactions")
+}

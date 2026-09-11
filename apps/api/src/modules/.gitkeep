@@ -1,0 +1,14 @@
+# EL SCORE OS — Source Modules Directory
+#
+# This directory will contain domain modules as each phase is implemented.
+# Do not create placeholder module files here until the phase begins.
+#
+# Phase 2:  student/, parent/
+# Phase 3:  marketing/, sales/
+# Phase 4:  demo/
+# Phase 5:  admission/, packages/
+# Phase 6:  academic/
+# Phase 7:  classes/, progress/
+# Phase 8:  finance/
+# Phase 9:  hr/, workday/, tasks/, meetings/, calendar/
+# Phase 10: reporting/, search/
