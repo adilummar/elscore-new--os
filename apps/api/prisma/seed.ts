@@ -1284,6 +1284,7 @@ async function main() {
   await seedSequences();
   await seedReferenceData();
   await seedAdminUser();
+  await seedSystemUser();
   console.log('✅ Seed complete.');
 }
 
@@ -1293,3 +1294,33 @@ main()
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
+
+async function seedSystemUser() {
+  console.log('  Seeding SYSTEM user...');
+  const adminDept = await prisma.department.findUniqueOrThrow({ where: { code: 'ADMIN' } });
+  const ceoRole = await prisma.role.findUniqueOrThrow({ where: { code: 'CEO' } });
+  
+  await prisma.user.upsert({
+    where: { email: 'system@elscore.internal' },
+    update: {},
+    create: {
+      id: 'SYSTEM',
+      email: 'system@elscore.internal',
+      passwordHash: 'none',
+      status: 'ACTIVE',
+      userRoles: {
+        create: [{ roleId: ceoRole.id }]
+      },
+      employee: {
+        create: {
+          businessId: 'SYS-0000',
+          departmentId: adminDept.id,
+          employmentStatus: 'ACTIVE',
+          firstName: 'System',
+          lastName: 'Automated'
+        }
+      }
+    }
+  });
+}
+

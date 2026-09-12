@@ -23,6 +23,7 @@ export class IntegrationAuthGuard implements CanActivate {
 
     const token = authHeader.split(' ')[1];
     if (!token) {
+      console.log('IntegrationAuthGuard: Missing token in header:', authHeader);
       throw new UnauthorizedException('Missing token');
     }
 
@@ -36,6 +37,7 @@ export class IntegrationAuthGuard implements CanActivate {
     });
 
     if (!credential) {
+      console.log('IntegrationAuthGuard: No credential found for hash:', tokenHash);
       throw new UnauthorizedException('Invalid or revoked integration token');
     }
 

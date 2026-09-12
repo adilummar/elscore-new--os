@@ -1,9 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import * as crypto from 'crypto';
+
+// Mock BullMQ completely to prevent Redis connection timeouts on local environments
+jest.mock('bullmq', () => {
+  return {
+    Queue: jest.fn().mockImplementation(() => ({
+      add: jest.fn().mockResolvedValue({ id: 'mock-job-id' }),
+      close: jest.fn().mockResolvedValue(true),
+      disconnect: jest.fn().mockResolvedValue(true),
+    })),
+    Worker: jest.fn().mockImplementation(() => ({
+      on: jest.fn(),
+      close: jest.fn().mockResolvedValue(true),
+    })),
+  };
+});
+
+jest.setTimeout(30000);
 
 describe('Marketing Ingestion (e2e)', () => {
   let app: INestApplication;
@@ -11,13 +28,18 @@ describe('Marketing Ingestion (e2e)', () => {
   let testIntegrationToken: string;
 
   beforeAll(async () => {
+    console.log('beforeAll: starting Test.createTestingModule');
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
+    console.log('beforeAll: module compiled');
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    
+    console.log('beforeAll: calling app.init()');
     await app.init();
+    console.log('beforeAll: app initialized');
 
     prisma = app.get<PrismaService>(PrismaService);
     
@@ -25,6 +47,7 @@ describe('Marketing Ingestion (e2e)', () => {
     testIntegrationToken = 'secret-test-token-123';
     const hash = crypto.createHash('sha256').update(testIntegrationToken).digest('hex');
 
+    console.log('beforeAll: calling prisma upsert');
     await prisma.integrationCredential.upsert({
       where: { provider: 'TEST_META' },
       update: { apiKeyHash: hash, isActive: true },
@@ -74,8 +97,11 @@ describe('Marketing Ingestion (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/marketing/ingest')
       .set('Authorization', `Bearer ${testIntegrationToken}`)
-      .send(payload)
-      .expect(201);
+      .send(payload);
+    
+    if (res.status !== 201) console.error('500 Error Body:', res.body);
+    
+    expect(res.status).toBe(201);
 
     expect(res.body.status).toBe('CREATED');
     expect(res.body.isDuplicate).toBe(false);

@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); async function main() { console.log('Connecting...'); await prisma.$connect(); console.log('Connected!'); const res = await prisma.integrationCredential.findMany(); console.log('res:', res); } main().finally(() => prisma.$disconnect());

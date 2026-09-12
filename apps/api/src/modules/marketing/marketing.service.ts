@@ -37,6 +37,21 @@ export class MarketingService {
 
       if (existingInteraction) {
         this.logger.log(`Idempotent drop: Event ${dto.externalLeadId} from ${provider} already processed.`);
+        
+        await tx.auditEvent.create({
+          data: {
+            entityType: 'Lead',
+            entityId: existingInteraction.leadId,
+            action: 'MARKETING_IDEMPOTENT_DROP',
+            actorUserId: 'SYSTEM',
+            newValue: {
+              provider,
+              externalLeadId: dto.externalLeadId,
+              message: 'Duplicate idempotent event received and dropped.',
+            },
+          },
+        });
+
         return { status: 'IGNORED_IDEMPOTENT', isDuplicate: true, leadId: existingInteraction.leadId };
       }
 
@@ -64,6 +79,20 @@ export class MarketingService {
             adId: dto.adId,
             adName: dto.adName,
             isOriginal: false,
+          },
+        });
+
+        await tx.auditEvent.create({
+          data: {
+            entityType: 'Lead',
+            entityId: duplicateLead.id,
+            action: 'MARKETING_DUPLICATE_INGESTED',
+            actorUserId: 'SYSTEM',
+            newValue: {
+              provider,
+              externalLeadId: dto.externalLeadId,
+              message: 'Duplicate event received and recorded.',
+            },
           },
         });
 

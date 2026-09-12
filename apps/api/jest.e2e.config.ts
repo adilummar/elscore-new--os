@@ -17,6 +17,7 @@ const config: Config = {
       tsconfig: './tsconfig.json',
     },
   },
+  maxWorkers: 1,
 };
 
 export default config;
