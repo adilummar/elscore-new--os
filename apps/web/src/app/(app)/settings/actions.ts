@@ -14,6 +14,7 @@ export async function getDepartmentsAction() { return fetchApi<any>('/department
 
 export async function getRolesAction(query: string) { return fetchApi<any>('/roles?' + query); }
 export async function createCustomRoleAction(data: any) { const res = await fetchApi<any>('/roles', { method: 'POST', body: JSON.stringify(data) }); revalidatePath('/settings/roles'); return res; }
+export async function updateRolePermissionAction(roleId: string, action: 'ADD' | 'REMOVE', permissionId: string) { const res = await fetchApi<any>('/roles/' + roleId + '/permissions', { method: 'PATCH', body: JSON.stringify({ action, permissionId }) }); revalidatePath('/settings/roles'); return res; }
 
 export async function getPermissionsAction(query: string) { return fetchApi<any>('/permissions?' + query); }
 export async function delegatePermissionAction(userId: string, permissionId: string) { const res = await fetchApi<any>('/users/' + userId + '/permissions', { method: 'POST', body: JSON.stringify({ permissionId }) }); revalidatePath('/settings/delegations'); return res; }
