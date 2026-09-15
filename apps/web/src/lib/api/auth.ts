@@ -30,9 +30,13 @@ export async function login(credentials: { email: string; password: string }) {
   const data = json.data ?? json;
 
   const cookieStore = cookies();
+  // COOKIE_SECURE=false disables the Secure flag for HTTP staging environments.
+  // In production (HTTPS), COOKIE_SECURE should be 'true' or unset (defaults secure).
+  const secureCookies = process.env.COOKIE_SECURE !== 'false';
+
   cookieStore.set('accessToken', data.accessToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookies,
     sameSite: 'lax',
     path: '/',
     maxAge: 15 * 60, // 15 mins
@@ -40,7 +44,7 @@ export async function login(credentials: { email: string; password: string }) {
 
   cookieStore.set('refreshToken', data.refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookies,
     sameSite: 'lax',
     path: '/',
     maxAge: 7 * 24 * 60 * 60, // 7 days

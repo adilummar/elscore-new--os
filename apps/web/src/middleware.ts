@@ -42,11 +42,12 @@ export async function middleware(request: NextRequest) {
 
       if (res.ok) {
         const data = await res.json();
+        const secureCookies = process.env.COOKIE_SECURE !== 'false';
         const response = NextResponse.redirect(request.url); // Redirect to same URL to reload with new cookies
         
         response.cookies.set('accessToken', data.accessToken, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
+          secure: secureCookies,
           sameSite: 'lax',
           path: '/',
           maxAge: 15 * 60,
@@ -55,7 +56,7 @@ export async function middleware(request: NextRequest) {
         if (data.refreshToken) {
           response.cookies.set('refreshToken', data.refreshToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
+            secure: secureCookies,
             sameSite: 'lax',
             path: '/',
             maxAge: 7 * 24 * 60 * 60,
