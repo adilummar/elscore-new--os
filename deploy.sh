@@ -18,8 +18,8 @@ pnpm install
 
 echo -e "\n🗄️  3. Applying Database Migrations & Generating Prisma Client..."
 cd apps/api
-pnpm dlx prisma generate
-pnpm dlx prisma migrate deploy
+pnpm exec prisma generate
+pnpm exec prisma migrate deploy
 
 echo -e "\n🏗️  4. Building API (NestJS)..."
 pnpm run build
