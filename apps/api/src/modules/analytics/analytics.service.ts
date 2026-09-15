@@ -45,7 +45,7 @@ export class AnalyticsService {
         _sum: { amount: true },
         where: {
           status: 'SUCCESS',
-          ...(dateFilter && { paymentDate: dateFilter })
+          ...(dateFilter && { receivedAt: dateFilter })
         }
       }),
       // Active Employees (Current state)
@@ -221,7 +221,7 @@ export class AnalyticsService {
     const [periodCollections, outstanding] = await Promise.all([
       this.prisma.payment.aggregate({
         _sum: { amount: true },
-        where: { status: 'SUCCESS', ...(dateFilter && { paymentDate: dateFilter }) }
+        where: { status: 'SUCCESS', ...(dateFilter && { receivedAt: dateFilter }) }
       }),
       this.prisma.installment.aggregate({
         _sum: { amount: true },
