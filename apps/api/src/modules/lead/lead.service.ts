@@ -4,7 +4,7 @@ import { LeadStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { encodeCursor, decodeCursor } from '../../common/pagination/paginate.util';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RoundRobinService } from '../round-robin/round-robin.service';
 
 import { CreateLeadDto } from './dto/create-lead.dto';
@@ -202,7 +202,7 @@ export class LeadService {
 
     const oldLead = await this.prisma.lead.findUnique({ where: { id } });
 
-    const newLead = await this.prisma.$transaction(async (tx) => {
+    const newLead = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.lead.update({
         where: { id },
         data: dto,
@@ -225,7 +225,7 @@ export class LeadService {
   async updateStatus(id: string, dto: UpdateLeadStatusDto, userId: string, hasReadAll: boolean) {
     await this.checkOwnership(id, userId, hasReadAll);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const oldLead = await tx.lead.findUniqueOrThrow({ where: { id } });
 
       let newAssignedTo = oldLead.assignedToUserId;
@@ -292,7 +292,7 @@ export class LeadService {
   async reassign(id: string, dto: ReassignLeadDto, userId: string) {
     // Only SALES_HEAD (lead.reassign) can call this, so we don't need checkOwnership (they have read-all).
     // The controller should guard this with 'lead.reassign'.
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const oldLead = await tx.lead.findUniqueOrThrow({ where: { id } });
 
       const updated = await tx.lead.update({
@@ -325,7 +325,7 @@ export class LeadService {
 
   async setArchive(id: string, isArchived: boolean, userId: string) {
     // Only lead.archive / lead.reopen
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Ensure lead exists
       await tx.lead.findUniqueOrThrow({ where: { id } });
 

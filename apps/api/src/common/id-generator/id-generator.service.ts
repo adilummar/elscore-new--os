@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../prisma/prisma.service';
 
 /**
  * IdGeneratorService — generates human-readable business IDs.
@@ -19,7 +19,7 @@ import { PrismaService } from '../prisma/prisma.service';
  *     - The sequence increment and record creation are atomic.
  *
  * CORRECT USAGE:
- *   await prisma.$transaction(async (tx) => {
+ *   await prisma.$transaction(async (tx: PrismaTxClient) => {
  *     const businessId = await idGenerator.nextIdInTx(tx, 'EMP');
  *     await tx.employee.create({ data: { businessId, ...rest } });
  *   });
@@ -49,7 +49,7 @@ export class IdGeneratorService {
    * @returns          The formatted business ID string (e.g. 'EMP-0001').
    *
    * @example
-   *   await prisma.$transaction(async (tx) => {
+   *   await prisma.$transaction(async (tx: PrismaTxClient) => {
    *     const businessId = await idGenerator.nextIdInTx(tx, 'STU');
    *     await tx.student.create({ data: { businessId, ...studentData } });
    *   });

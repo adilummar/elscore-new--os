@@ -2,7 +2,7 @@ import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { RoundRobinDailyState, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 @Injectable()
 export class RoundRobinService {
@@ -44,7 +44,7 @@ export class RoundRobinService {
   }
 
   async setPaused(isPaused: boolean, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const state = await tx.roundRobinState.upsert({
         where: { id: 'singleton' },
         update: { isPaused },
@@ -62,7 +62,7 @@ export class RoundRobinService {
   }
 
   async updateCounsellor(userId: string, data: { isEligible?: boolean; dailyState?: RoundRobinDailyState }, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Check if trying to set INACTIVE_FULL_DAY
       if (data.dailyState === RoundRobinDailyState.INACTIVE_FULL_DAY) {
         const { startOfDay } = require('date-fns');

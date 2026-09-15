@@ -4,7 +4,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { RecordPaymentDto, ReversePaymentDto, RequestRefundDto } from './dto/payment.dto';
 
@@ -18,7 +18,7 @@ export class PaymentService {
   ) {}
 
   async recordPayment(dto: RecordPaymentDto, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // 1. Idempotency Check
       const existing = await tx.payment.findUnique({
         where: { idempotencyKey: dto.idempotencyKey },
@@ -135,8 +135,8 @@ export class PaymentService {
 
       // Max possible credit = Total - RegistrationFee (already accounted for discounts in Total)
       const regFees = invoiceData.lineItems
-        .filter(l => l.type === 'REGISTRATION_FEE')
-        .reduce((sum, l) => sum.add(l.totalAmount), new Decimal(0));
+        .filter((l: { type: string; totalAmount: Decimal }) => l.type === 'REGISTRATION_FEE')
+        .reduce((sum: Decimal, l: { type: string; totalAmount: Decimal }) => sum.add(l.totalAmount), new Decimal(0));
       
       const maxPossibleCredit = invoiceData.total.sub(regFees);
       
@@ -185,7 +185,7 @@ export class PaymentService {
   }
 
   async reversePayment(id: string, dto: ReversePaymentDto, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // lock invoice
       const payment = await tx.payment.findUnique({
         where: { id },
@@ -295,8 +295,8 @@ export class PaymentService {
 
     // Reg fee restriction
     const regFees = payment.invoice.lineItems
-      .filter(l => l.type === 'REGISTRATION_FEE')
-      .reduce((sum, l) => sum.add(l.totalAmount), new Decimal(0));
+      .filter((l: { type: string; totalAmount: Decimal }) => l.type === 'REGISTRATION_FEE')
+      .reduce((sum: Decimal, l: { type: string; totalAmount: Decimal }) => sum.add(l.totalAmount), new Decimal(0));
     
     // Theoretical max refundable on invoice overall is total - regfee
     // Calculate how much the invoice can refund across all payments

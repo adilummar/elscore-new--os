@@ -5,7 +5,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { paginate, PaginateOptions } from '../../common/pagination/paginate.util';
 import { PaginatedResponseDto } from '../../common/pagination/pagination.dto';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { AdvanceRecruitmentStageDto, CreateRecruitmentDto, RejectRecruitmentDto } from './dto/tutor-recruitment.dto';
 
@@ -37,7 +37,7 @@ export class TutorRecruitmentService {
   }
 
   async create(dto: CreateRecruitmentDto, actorUserId: string): Promise<TutorRecruitment> {
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const businessId = await this.idGenerator.nextIdInTx(tx, 'REC');
 
       const recruitment = await tx.tutorRecruitment.create({
@@ -89,7 +89,7 @@ export class TutorRecruitmentService {
     if (rec.currentStage === dto.stage) throw new BadRequestException('Application is already at this stage');
     if (rec.currentStage === TutorRecruitmentStageCode.RECRUITED) throw new BadRequestException('Application is already completed (RECRUITED)');
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.tutorRecruitment.update({
         where: { id },
         data: { currentStage: dto.stage },
@@ -123,7 +123,7 @@ export class TutorRecruitmentService {
     if (rec.isRejected) throw new BadRequestException('Application is already rejected');
     if (rec.currentStage === TutorRecruitmentStageCode.RECRUITED) throw new BadRequestException('Application is already recruited (cannot reject)');
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.tutorRecruitment.update({
         where: { id },
         data: {

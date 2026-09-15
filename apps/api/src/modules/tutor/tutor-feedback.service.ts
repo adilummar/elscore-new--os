@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TutorFeedback } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { CreateTutorFeedbackDto } from './dto/tutor-feedback.dto';
 
@@ -27,7 +27,7 @@ export class TutorFeedbackService {
     const profile = await this.prisma.tutorProfile.findUnique({ where: { id: tutorProfileId } });
     if (!profile) throw new NotFoundException('Tutor profile not found');
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const feedback = await tx.tutorFeedback.create({
         data: {
           tutorProfileId,

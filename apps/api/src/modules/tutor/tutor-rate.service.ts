@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TutorRate } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 @Injectable()
 export class TutorRateService {
@@ -28,7 +28,7 @@ export class TutorRateService {
     const profile = await this.prisma.tutorProfile.findUnique({ where: { id: tutorProfileId } });
     if (!profile) throw new NotFoundException('Tutor profile not found');
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Deactivate current active rate if exists
       const current = await tx.tutorRate.findFirst({
         where: { tutorProfileId, isActive: true },

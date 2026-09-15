@@ -4,7 +4,7 @@ import { FollowUpStatus } from '@prisma/client';
 import { Job } from 'bullmq';
 
 import { AuditService } from '../../../common/audit/audit.service';
-import { PrismaService } from '../../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
 import { BaseJobProcessor } from '../../../common/queue/base-job-processor';
 import { JOBS, QUEUES } from '../../../common/queue/queue.constants';
 
@@ -42,7 +42,7 @@ export class FollowUpOverdueProcessor extends BaseJobProcessor {
     if (fup.status !== FollowUpStatus.SCHEDULED) { this.logger.log('FUP ' + followUpId + ' is ' + fup.status + ' — skip overdue'); return; }
     if (fup.scheduledAt > new Date()) { this.logger.warn('FUP ' + followUpId + ' scheduledAt in future — skip'); return; }
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.followUp.update({ where: { id: followUpId }, data: { status: FollowUpStatus.OVERDUE } });
       await this.audit.recordInTx(tx, { entityType: 'FollowUp', entityId: followUpId, action: 'FOLLOW_UP_OVERDUE', newValue: { businessId: fup.businessId, scheduledAt: fup.scheduledAt.toISOString() } });
     });

@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -32,7 +32,7 @@ export class StudentService {
   async create(dto: CreateStudentDto, userId: string, hasReadAll: boolean) {
     await this.checkLeadOwnership(dto.leadId, userId, hasReadAll);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const businessId = await this.idGen.nextIdInTx(tx, 'STU');
 
       const student = await tx.student.create({
@@ -74,7 +74,7 @@ export class StudentService {
     if (!student) throw new NotFoundException('Student not found');
     await this.checkLeadOwnership(student.leadId, userId, hasReadAll);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.student.update({
         where: { id },
         data: dto,
@@ -98,7 +98,7 @@ export class StudentService {
     if (!student) throw new NotFoundException('Student not found');
     await this.checkLeadOwnership(student.leadId, userId, hasReadAll);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const businessId = await this.idGen.nextIdInTx(tx, 'RQT');
 
       const requirement = await tx.requirement.create({
@@ -126,7 +126,7 @@ export class StudentService {
     if (!req) throw new NotFoundException('Requirement not found');
     await this.checkLeadOwnership(req.student.leadId, userId, hasReadAll);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.requirement.update({
         where: { id },
         data: dto,

@@ -16,7 +16,7 @@ import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { decodeCursor, encodeCursor } from '../../common/pagination/paginate.util';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { JOBS, QUEUES } from '../../common/queue/queue.constants';
 
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
@@ -155,7 +155,7 @@ export class FollowUpService {
     }
 
     const scheduledAt = new Date(dto.scheduledAt);
-    const newFup = await this.prisma.$transaction(async (tx) => {
+    const newFup = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const businessId = await this.idGen.nextIdInTx(tx, 'FUP');
       const fup = await tx.followUp.create({
         data: { businessId, leadId, createdByUserId: actorUserId, scheduledAt, classification: dto.classification, remarks: dto.remarks, status: FollowUpStatus.SCHEDULED },
@@ -172,7 +172,7 @@ export class FollowUpService {
   async complete(leadId: string, fupId: string, dto: CompleteFollowUpDto, actorUserId: string, hasReadAll: boolean) {
     const fup = await this.checkFollowUpAccess(fupId, leadId, actorUserId, hasReadAll, { requiresMutation: true });
     let nextFupForJobs: { id: string; scheduledAt: Date } | null = null;
-    const completedFup = await this.prisma.$transaction(async (tx) => {
+    const completedFup = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.followUp.update({
         where: { id: fupId },
         data: { status: FollowUpStatus.COMPLETED, completedAt: new Date(), completedByUserId: actorUserId, classification: dto.classification ?? fup.classification, remarks: dto.remarks ?? fup.remarks },
@@ -206,7 +206,7 @@ export class FollowUpService {
   async reschedule(leadId: string, fupId: string, dto: RescheduleFollowUpDto, actorUserId: string, hasReadAll: boolean) {
     const fup = await this.checkFollowUpAccess(fupId, leadId, actorUserId, hasReadAll, { requiresMutation: true });
     const newScheduledAt = new Date(dto.newScheduledAt);
-    const rescheduled = await this.prisma.$transaction(async (tx) => {
+    const rescheduled = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.followUpRescheduleHistory.create({ data: { followUpId: fupId, previousScheduledAt: fup.scheduledAt, newScheduledAt, reason: dto.reason, rescheduledByUserId: actorUserId } });
       const updated = await tx.followUp.update({
         where: { id: fupId },
@@ -223,7 +223,7 @@ export class FollowUpService {
 
   async update(leadId: string, fupId: string, dto: UpdateFollowUpDto, actorUserId: string, hasReadAll: boolean) {
     await this.checkFollowUpAccess(fupId, leadId, actorUserId, hasReadAll, { requiresMutation: true });
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.followUp.update({
         where: { id: fupId },
         data: {

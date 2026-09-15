@@ -1,12 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../prisma/prisma.service';
-
-// Concrete transaction client type — compatible with all supported Prisma versions.
-type PrismaTxClient = Omit<
-  PrismaService,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
->;
+import { PrismaService, PrismaTxClient } from '../prisma/prisma.service';
 
 export interface AuditEventInput {
   entityType: string;

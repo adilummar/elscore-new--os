@@ -1,6 +1,19 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
+
+/**
+ * PrismaTxClient — type for Prisma interactive transaction callback argument.
+ * Import and use this to type `tx` in $transaction callbacks to satisfy strict TypeScript.
+ *
+ * @example
+ * await this.prisma.$transaction(async (tx: PrismaTxClient) => { ... });
+ */
+export type PrismaTxClient = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
+
 /**
  * PrismaService wraps PrismaClient with NestJS lifecycle hooks.
  *

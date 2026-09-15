@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TutorProfile } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { UpdateTeachingExperienceDto, UpdateTutorProfileDto } from './dto/tutor-profile.dto';
 
@@ -95,7 +95,7 @@ export class TutorProfileService {
     });
     if (existing) return;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.tutorSubject.create({
         data: { tutorProfileId: id, subjectId, addedByUserId: actorUserId },
       });
@@ -116,7 +116,7 @@ export class TutorProfileService {
     });
     if (!existing) return;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.tutorSubject.delete({ where: { id: existing.id } });
       await this.audit.recordInTx(tx, {
         entityType: 'TutorProfile',
@@ -137,7 +137,7 @@ export class TutorProfileService {
     });
     if (existing) return;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.tutorGrade.create({
         data: { tutorProfileId: id, gradeId, addedByUserId: actorUserId },
       });
@@ -158,7 +158,7 @@ export class TutorProfileService {
     });
     if (!existing) return;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.tutorGrade.delete({ where: { id: existing.id } });
       await this.audit.recordInTx(tx, {
         entityType: 'TutorProfile',
@@ -179,7 +179,7 @@ export class TutorProfileService {
     });
     if (existing) return;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.tutorCurriculum.create({
         data: { tutorProfileId: id, curriculumId, addedByUserId: actorUserId },
       });
@@ -200,7 +200,7 @@ export class TutorProfileService {
     });
     if (!existing) return;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.tutorCurriculum.delete({ where: { id: existing.id } });
       await this.audit.recordInTx(tx, {
         entityType: 'TutorProfile',

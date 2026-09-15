@@ -9,7 +9,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { UserStatusCacheService } from '../../common/auth/services/user-status-cache.service';
 import { paginate, PaginateOptions } from '../../common/pagination/paginate.util';
 import { PaginatedResponseDto } from '../../common/pagination/pagination.dto';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
 
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
@@ -161,7 +161,7 @@ export class EmployeeService {
       include: { permission: true },
     });
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // 1. Employee employment status -> TERMINATED
       const updatedEmp = await tx.employee.update({
         where: { id: employee.id },

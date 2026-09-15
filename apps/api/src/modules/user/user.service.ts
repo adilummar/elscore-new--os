@@ -8,7 +8,7 @@ import { UserStatusCacheService } from '../../common/auth/services/user-status-c
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { paginate, PaginateOptions } from '../../common/pagination/paginate.util';
 import { PaginatedResponseDto } from '../../common/pagination/pagination.dto';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
 
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -94,7 +94,7 @@ export class UserService {
 
     // Zero roles exclusivity check (CO_FOUNDER has no roles yet, so it's fine)
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // 1. Business ID generation
       const businessId = await this.idGenerator.nextIdInTx(tx, 'EMP');
 
@@ -210,7 +210,7 @@ export class UserService {
       include: { permission: true },
     });
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // 1. User status -> SUSPENDED
       await tx.user.update({
         where: { id: userId },

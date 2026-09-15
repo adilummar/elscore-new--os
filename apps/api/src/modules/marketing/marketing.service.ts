@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LeadSource } from '@prisma/client';
 
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { LeadService } from '../lead/lead.service';
 
 import { IngestMarketingEventDto } from './dto/ingest-marketing-event.dto';
@@ -22,7 +22,7 @@ export class MarketingService {
   async ingestEvent(provider: string, dto: IngestMarketingEventDto): Promise<{ status: string; isDuplicate: boolean; leadId: string }> {
     const normalizedIncomingPhone = this.normalizePhone(dto.primaryPhone);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // 1. Obtain an advisory lock based on the normalized phone number to serialize concurrent webhooks for the same phone.
       // This guarantees no race condition can create two leads for the exact same phone concurrently.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${normalizedIncomingPhone}))`;

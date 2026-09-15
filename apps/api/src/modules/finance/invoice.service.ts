@@ -4,7 +4,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { CreateInvoiceDto, CreateInvoiceLineItemDto, CreateInstallmentDto } from './dto/invoice.dto';
 
@@ -18,7 +18,7 @@ export class InvoiceService {
   ) {}
 
   async createDraft(dto: CreateInvoiceDto, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Create invoice ID
       const businessId = await this.idGenerator.nextIdInTx(tx, 'INV');
 
@@ -91,7 +91,7 @@ export class InvoiceService {
   }
 
   async issueInvoice(id: string, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const invoice = await tx.invoice.findUnique({ where: { id } });
       if (!invoice) throw new NotFoundException('Invoice not found');
       if (invoice.status !== InvoiceStatus.DRAFT) {
@@ -124,14 +124,14 @@ export class InvoiceService {
   }
 
   async voidInvoice(id: string, actorUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const invoice = await tx.invoice.findUnique({
         where: { id },
         include: { payments: true }
       });
       if (!invoice) throw new NotFoundException('Invoice not found');
       
-      if (invoice.payments.some(p => p.status === 'SUCCESS')) {
+      if (invoice.payments.some((p: { status: string }) => p.status === 'SUCCESS')) {
         throw new BadRequestException('Cannot void invoice with successful payments. Reverse payments or issue refunds first.');
       }
 

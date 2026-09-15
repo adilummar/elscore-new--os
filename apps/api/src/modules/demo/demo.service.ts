@@ -6,7 +6,7 @@ import { Queue } from 'bullmq';
 import { AuditService } from '../../common/audit/audit.service';
 import { ValidatedUser } from '../../common/auth/auth.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { QUEUES } from '../../common/queue/queue.constants';
 import { RbacService } from '../../common/rbac/rbac.service';
 
@@ -80,7 +80,7 @@ export class DemoService {
       throw new BadRequestException('Cannot book demo in the past');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Validate Student & Requirement
       const requirement = await tx.requirement.findUnique({
         where: { id: dto.requirementId },
@@ -252,7 +252,7 @@ export class DemoService {
     const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
     const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id }, select: { id: true, status: true, tutorId: true, scheduledAt: true, bookedByUserId: true, studentId: true } });
       if (!demo) throw new NotFoundException('Demo not found');
 
@@ -317,7 +317,7 @@ export class DemoService {
   }
 
   async assignTutor(id: string, dto: AssignTutorDto, user: ValidatedUser) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id } });
       if (!demo) throw new NotFoundException('Demo not found');
 
@@ -364,7 +364,7 @@ export class DemoService {
     const isTutor = await this.rbac.hasPermissions(user.id, ['demo.complete']);
     const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id } });
       if (!demo) throw new NotFoundException('Demo not found');
 
@@ -426,7 +426,7 @@ export class DemoService {
     const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
     const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id } });
       if (!demo) throw new NotFoundException('Demo not found');
 
@@ -479,7 +479,7 @@ export class DemoService {
   async markNoShow(id: string, dto: NoShowDemoDto, user: ValidatedUser) {
     const isTutor = await this.rbac.hasPermissions(user.id, ['demo.mark_exceptions']); 
     
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id } });
       if (!demo) throw new NotFoundException('Demo not found');
 

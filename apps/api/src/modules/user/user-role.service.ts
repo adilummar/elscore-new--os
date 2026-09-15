@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AuditService } from '../../common/audit/audit.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
 
 @Injectable()
@@ -49,7 +49,7 @@ export class UserRoleService {
     if (exists) return;
 
     // 4. Assign role
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await tx.userRole.create({
         data: {
           userId,
