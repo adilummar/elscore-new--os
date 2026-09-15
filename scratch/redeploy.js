@@ -43,6 +43,10 @@ async function run() {
   console.log('=== Pulling latest code (with TypeScript fixes) ===');
   await sshExec(conn, `cd ${PROJECT_DIR} && git pull origin main`, 'GIT');
 
+  // Generate Prisma Client (must happen BEFORE build, otherwise UserStatus etc won't be exported)
+  console.log('\n=== Generating Prisma Client ===');
+  await sshExec(conn, `cd ${PROJECT_DIR} && pnpm --filter api exec prisma generate 2>&1 | tail -5`, 'PRISMA-GEN');
+
   // Build API
   console.log('\n=== Building API (NestJS) ===');
   const apiBuild = await sshExec(conn, `cd ${PROJECT_DIR} && pnpm --filter api run build 2>&1 | tail -20`, 'API-BUILD');

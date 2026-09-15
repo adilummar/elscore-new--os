@@ -86,7 +86,7 @@ export class UserService {
       where: { id: actorUserId },
       include: { userRoles: { include: { role: true } } },
     });
-    const actorIsCeo = actor?.userRoles.some((ur) => ur.role.code === 'CEO');
+    const actorIsCeo = actor?.userRoles.some((ur: { role: { code: string } }) => ur.role.code === 'CEO');
 
     if (role.isProtected && !actorIsCeo) {
       throw new BadRequestException('Only the CEO can assign protected roles');

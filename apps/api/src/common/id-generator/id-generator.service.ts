@@ -55,7 +55,7 @@ export class IdGeneratorService {
    *   });
    */
   async nextIdInTx(
-    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    tx: PrismaTxClient,
     entityType: string,
   ): Promise<string> {
     const sequence = await tx.sequence.update({
