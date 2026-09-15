@@ -1,8 +1,11 @@
 /** @type {import('next').NextConfig} */
 
+// Enable standalone output on Linux/production (Hostinger), disable on Windows to avoid EPERM symlink errors.
+const isWindows = process.platform === 'win32';
+
 const nextConfig = {
   reactStrictMode: true,
-  // output: 'standalone', // Disabled for local Windows builds to avoid EPERM symlink errors
+  output: isWindows ? undefined : 'standalone',
 
   env: {
     API_URL: process.env.API_URL,

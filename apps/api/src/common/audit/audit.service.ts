@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 
+// Concrete transaction client type — compatible with all supported Prisma versions.
+type PrismaTxClient = Omit<
+  PrismaService,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
+
 export interface AuditEventInput {
   entityType: string;
   entityId: string;
@@ -63,7 +69,7 @@ export class AuditService {
    * Use this when you need audit records to be atomic with the business operation.
    */
   async recordInTx(
-    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    tx: PrismaTxClient,
     input: AuditEventInput,
   ): Promise<void> {
     await tx.auditEvent.create({
