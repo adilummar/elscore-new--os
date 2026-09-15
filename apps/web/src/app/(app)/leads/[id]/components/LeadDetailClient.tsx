@@ -124,7 +124,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
               <div className="max-h-[400px] overflow-y-auto pr-2">
                 <Timeline>
                   {(() => {
-                    const events = [];
+                    const events: any[] = [];
                     lead.statusHistory?.forEach((sh: any) => {
                       events.push({
                         type: 'STATUS',
