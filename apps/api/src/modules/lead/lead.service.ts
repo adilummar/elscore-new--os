@@ -148,6 +148,9 @@ export class LeadService {
     if (query.status) where.status = query.status;
     if (query.source) where.source = query.source;
     if (query.isReferral) where.source = 'REFERRAL';
+    if (query.hasMarketingAttribution) {
+      where.marketingAttribution = { isNot: null };
+    }
 
     if (query.search) {
       where.OR = [
@@ -189,6 +192,7 @@ export class LeadService {
         assignmentHistory: { orderBy: { assignedAt: 'desc' } },
         salesNotes: { orderBy: { createdAt: 'desc' }, include: { createdByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } } } },
         marketingAttribution: true,
+        marketingInteractions: { where: { isOriginal: true }, take: 1 },
       },
     });
   }

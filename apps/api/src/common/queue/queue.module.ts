@@ -42,13 +42,15 @@ import { QUEUES } from './queue.constants';
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        connection: {
+        connection: new (require('ioredis').Redis)({
           host: config.get<string>('redis.host') ?? 'localhost',
           port: config.get<number>('redis.port') ?? 6379,
           password: config.get<string>('redis.password'),
           enableReadyCheck: false,
-          maxRetriesPerRequest: null, // Required for BullMQ
-        },
+          maxRetriesPerRequest: null,
+          silent: true,
+          retryStrategy: () => 10000, // Retry every 10s if Redis is down
+        }).on('error', () => {}), // Suppress ECONNREFUSED console spam
         defaultJobOptions: {
           attempts: 3,
           backoff: {

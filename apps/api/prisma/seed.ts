@@ -563,6 +563,20 @@ const PERMISSIONS: Array<{
     description: 'Read the audit log',
     isDelegatable: false,
   },
+  {
+    code: 'report.view',
+    resource: 'report',
+    action: 'view',
+    description: 'View standard operational reports',
+    isDelegatable: false,
+  },
+  {
+    code: 'analytics.ceo.read',
+    resource: 'analytics',
+    action: 'read',
+    description: 'View CEO Command Center executive analytics',
+    isDelegatable: false,
+  },
 
   // 🚀 CRM Phase 2A 🚀
   {

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Query } from '@nestjs/common';
 
 import { ValidatedUser } from '../../common/auth/auth.service';
 import { CurrentUser } from '../../common/auth/decorators/current-user.decorator';
@@ -31,12 +31,20 @@ export class DemoController {
     return this.demoService.bookDemo(dto, user);
   }
 
+  @Get('summary')
+  @RequirePermissions('demo.read')
+  async getSummary(@CurrentUser() user: ValidatedUser) {
+    return this.demoService.getSummary(user);
+  }
+
   @Get()
-  @RequirePermissions('demo.read') // Adjust reading based on ownership inside service or keep generic for now
-  async getDemos(@CurrentUser() user: ValidatedUser) {
-    // A production version would use pagination and filtering. 
-    // Here we just fetch based on user's authorized scope.
-    return this.demoService.getDemos(user);
+  @RequirePermissions('demo.read')
+  async getDemos(
+    @Query('view') view: string,
+    @Query('status') status: string,
+    @CurrentUser() user: ValidatedUser
+  ) {
+    return this.demoService.getDemos(user, { view, status });
   }
 
   @Get(':id')

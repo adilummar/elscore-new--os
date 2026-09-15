@@ -29,6 +29,11 @@ export class LeadQueryDto {
   @Type(() => Boolean)
   isReferral?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  hasMarketingAttribution?: boolean;
+
   @Type(() => Number)
   @IsOptional()
   @Min(1)

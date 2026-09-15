@@ -67,7 +67,14 @@ export class AuthService {
     const dummyHash =
       '$argon2id$v=19$m=65536,t=3,p=4$smznMLgcKerVajiGV89MsA$J2DPNjivEImduv8925TsGRscrHl5OS93kIAidw52eHc';
     const hash = user?.passwordHash ?? dummyHash;
-    const isValid = await argon2.verify(hash, password, this.argon2Options);
+    let isValid = false;
+    try {
+      isValid = await argon2.verify(hash, password, this.argon2Options);
+    } catch (e) {
+      // If hash is malformed (e.g. from E2E test seeding), verify throws. 
+      // Treat as invalid.
+      isValid = false;
+    }
 
     if (!user || !isValid) {
       return null;

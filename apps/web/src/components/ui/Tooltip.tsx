@@ -1,0 +1,2 @@
+import * as React from 'react';
+export function Tooltip({ children, content }: { children: React.ReactNode, content: React.ReactNode }) { return <div className="group relative inline-block">{children}<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-slate-900 text-white text-xs p-2 rounded whitespace-nowrap">{content}</div></div>; }

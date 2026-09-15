@@ -110,6 +110,13 @@ export class FollowUpAggregateController {
     return perms.has('followup.read-all');
   }
 
+  @Get('summary')
+  @RequirePermissions('followup.read')
+  async getSummary(@CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    return this.followUpService.getSummary(user.id, readAll);
+  }
+
   @Get()
   @RequirePermissions('followup.read')
   async findAll(@Query() query: FollowUpQueryDto, @CurrentUser() user: RequestUser) {

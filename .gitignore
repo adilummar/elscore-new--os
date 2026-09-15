@@ -43,3 +43,21 @@ apps/api/prisma/dev.db
 
 # Misc
 *.tsbuildinfo
+
+# Scratch and Experimental Scripts
+/*.js
+/apps/api/*.js
+/apps/web/*.js
+!/apps/web/postcss.config.js
+!/apps/web/next.config.mjs
+!/apps/api/.eslintrc.js
+
+# Database Backups
+*.dump
+
+# Production Env Files
+.env.production
+
+# Reports
+FINAL_REPORT.md
+final_implementation_report.md

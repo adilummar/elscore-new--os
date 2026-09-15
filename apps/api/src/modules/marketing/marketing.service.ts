@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { IngestMarketingEventDto } from './dto/ingest-marketing-event.dto';
-import { LeadService } from '../lead/lead.service';
 import { LeadSource } from '@prisma/client';
+
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { LeadService } from '../lead/lead.service';
+
+import { IngestMarketingEventDto } from './dto/ingest-marketing-event.dto';
 
 @Injectable()
 export class MarketingService {
@@ -141,5 +143,59 @@ export class MarketingService {
       this.logger.log(`New lead created via ingestion. Lead ID: ${newLead.id}, Phone: ${normalizedIncomingPhone}`);
       return { status: 'CREATED', isDuplicate: false, leadId: newLead.id };
     });
+  }
+
+  async getSummary(userId: string, hasReadAll: boolean) {
+    const leadWhere: any = {
+      marketingAttribution: { isNot: null },
+    };
+
+    if (!hasReadAll) {
+      leadWhere.assignedToUserId = userId;
+    }
+
+    const leads = await this.prisma.lead.findMany({
+      where: leadWhere,
+      select: { status: true },
+    });
+
+    const totalLeads = leads.length;
+    const newLeads = leads.filter((l) => l.status === 'NEW').length;
+    const convertedLeads = leads.filter((l) => l.status === 'ENROLLED').length;
+    const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0;
+
+    return {
+      totalLeads,
+      newLeads,
+      convertedLeads,
+      conversionRate,
+    };
+  }
+
+  async getActivity(userId: string, hasReadAll: boolean, cursor?: string, limit = 20) {
+    const take = Math.min(limit + 1, 101);
+    
+    const where: any = {};
+    if (!hasReadAll) {
+      where.lead = { assignedToUserId: userId };
+    }
+
+    const items = await this.prisma.marketingInteraction.findMany({
+      where,
+      take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      orderBy: { receivedAt: 'desc' },
+      include: {
+        lead: {
+          select: { id: true, firstName: true, lastName: true, status: true, assignedToUserId: true }
+        }
+      }
+    });
+
+    const hasNextPage = items.length > limit;
+    const data = hasNextPage ? items.slice(0, limit) : items;
+    const nextCursor = hasNextPage && data.length > 0 ? data[data.length - 1].id : null;
+
+    return { data, pagination: { nextCursor, hasNextPage, limit } };
   }
 }

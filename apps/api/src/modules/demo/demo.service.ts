@@ -132,7 +132,7 @@ export class DemoService {
     });
   }
 
-  async getDemos(user: ValidatedUser) {
+  async getDemos(user: ValidatedUser, query?: { view?: string, status?: string }) {
     const isTutor = await this.rbac.hasPermissions(user.id, ['demo.read_assigned']);
     const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
     const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
@@ -147,6 +147,24 @@ export class DemoService {
       where.bookedByUserId = user.id;
     }
 
+    if (query?.status) {
+      where.status = query.status;
+    }
+
+    if (query?.view) {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfToday = new Date(startOfToday.getTime() + 86400000);
+      
+      if (query.view === 'today') {
+        where.scheduledAt = { gte: startOfToday, lt: endOfToday };
+      } else if (query.view === 'upcoming') {
+        where.scheduledAt = { gte: endOfToday };
+      } else if (query.view === 'completed') {
+        where.status = DemoStatus.COMPLETED;
+      }
+    }
+
     const demos = await this.prisma.demo.findMany({
       where,
       include: {
@@ -159,6 +177,51 @@ export class DemoService {
     });
 
     return demos;
+  }
+
+  async getSummary(user: ValidatedUser) {
+    const isTutor = await this.rbac.hasPermissions(user.id, ['demo.read_assigned']);
+    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
+    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+
+    const where: any = {};
+    if (isCoordinator || isHead) {
+      // see all
+    } else if (isTutor) {
+      where.tutorId = user.id;
+    } else {
+      where.bookedByUserId = user.id;
+    }
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday.getTime() + 86400000);
+
+    const [todayCount, upcomingCount, completedTodayCount, cancelledTodayCount, noShowTodayCount] = await Promise.all([
+      this.prisma.demo.count({
+        where: { ...where, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+      }),
+      this.prisma.demo.count({
+        where: { ...where, scheduledAt: { gte: endOfToday } }
+      }),
+      this.prisma.demo.count({
+        where: { ...where, status: DemoStatus.COMPLETED, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+      }),
+      this.prisma.demo.count({
+        where: { ...where, status: DemoStatus.CANCELLED, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+      }),
+      this.prisma.demo.count({
+        where: { ...where, status: DemoStatus.NO_SHOW, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+      })
+    ]);
+
+    return {
+      today: todayCount,
+      upcoming: upcomingCount,
+      completedToday: completedTodayCount,
+      cancelledToday: cancelledTodayCount,
+      noShowToday: noShowTodayCount
+    };
   }
 
   async getDemoById(id: string, user: ValidatedUser) {

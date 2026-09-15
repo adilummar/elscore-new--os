@@ -35,6 +35,8 @@ import { RbacGuard } from './common/rbac/rbac.guard';
 import { RbacModule } from './common/rbac/rbac.module';
 import { ReadOnlyGuard } from './common/rbac/read-only.guard';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { DepartmentModule } from './modules/department/department.module';
 import { EmployeeModule } from './modules/employee/employee.module';
@@ -88,6 +90,8 @@ import { UserModule } from './modules/user/user.module';
 
     // 🚀 Business domain modules 🚀
     DepartmentModule,
+    DashboardModule,
+    AnalyticsModule,
     EmployeeModule,
     PermissionModule,
     ReferenceModule,

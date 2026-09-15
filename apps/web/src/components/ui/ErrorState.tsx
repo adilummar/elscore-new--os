@@ -1,0 +1,2 @@
+import * as React from 'react';
+export function ErrorState({ title = "Error", description }: { title?: string, description: string }) { return <div className="flex flex-col items-center justify-center py-12 text-center text-red-600"><h3 className="text-lg font-medium">{title}</h3><p className="mt-2 text-sm">{description}</p></div>; }

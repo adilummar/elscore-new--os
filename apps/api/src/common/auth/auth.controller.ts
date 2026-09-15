@@ -11,6 +11,9 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request as ExpressRequest } from 'express';
 
+import { PrismaService } from '../prisma/prisma.service';
+import { RbacService } from '../rbac/rbac.service';
+
 import { AuthService, ValidatedUser } from './auth.service';
 import { CurrentUser, RequestUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -18,10 +21,15 @@ import { SkipMustChangePassword } from './decorators/skip-must-change-password.d
 import { LogoutDto, RefreshTokenDto } from './dto/refresh-token.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 
+
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly rbacService: RbacService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * POST /auth/login
@@ -78,14 +86,25 @@ export class AuthController {
 
   /**
    * GET /auth/me
-   * Returns the currently authenticated user's identity.
-   * Useful for clients to validate their token is still active.
+   * Returns the currently authenticated user's identity, roles, and permissions.
+   * Useful for clients to validate their token is still active and hydrate RBAC.
    */
   @Get('me')
   @ApiBearerAuth()
   @SkipMustChangePassword()
-  @ApiOperation({ summary: 'Get current authenticated user identity' })
-  me(@CurrentUser() user: RequestUser) {
-    return { id: user.id, email: user.email };
+  @ApiOperation({ summary: 'Get current authenticated user identity and permissions' })
+  async me(@CurrentUser() user: RequestUser) {
+    const permissionsSet = await this.rbacService.getPermissionsForUser(user.id);
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId: user.id },
+      include: { role: true },
+    });
+    
+    return {
+      id: user.id,
+      email: user.email,
+      roles: userRoles.map((ur) => ur.role.code),
+      permissions: Array.from(permissionsSet),
+    };
   }
 }

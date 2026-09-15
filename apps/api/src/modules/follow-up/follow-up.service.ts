@@ -171,8 +171,6 @@ export class FollowUpService {
 
   async complete(leadId: string, fupId: string, dto: CompleteFollowUpDto, actorUserId: string, hasReadAll: boolean) {
     const fup = await this.checkFollowUpAccess(fupId, leadId, actorUserId, hasReadAll, { requiresMutation: true });
-    if (dto.newLeadStatus && !dto.leadStatusReason) throw new BadRequestException('leadStatusReason is required when changing Lead status');
-
     let nextFupForJobs: { id: string; scheduledAt: Date } | null = null;
     const completedFup = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.followUp.update({
@@ -186,15 +184,6 @@ export class FollowUpService {
       });
       if (!otherActive && !hasNextInDto) await tx.lead.update({ where: { id: leadId }, data: { requiresFollowUp: false } });
       await this.audit.recordInTx(tx, { entityType: 'FollowUp', entityId: fupId, action: 'FOLLOW_UP_COMPLETED', actorUserId, newValue: { status: 'COMPLETED' } });
-
-      if (dto.newLeadStatus) {
-        const currentLead = await tx.lead.findUnique({ where: { id: leadId }, select: { status: true } });
-        if (currentLead && currentLead.status !== dto.newLeadStatus) {
-          await tx.leadStatusHistory.create({ data: { leadId, oldStatus: currentLead.status, newStatus: dto.newLeadStatus, reason: dto.leadStatusReason!, changedByUserId: actorUserId } });
-          await tx.lead.update({ where: { id: leadId }, data: { status: dto.newLeadStatus } });
-          await this.audit.recordInTx(tx, { entityType: 'Lead', entityId: leadId, action: 'LEAD_STATUS_CHANGED', actorUserId, newValue: { newStatus: dto.newLeadStatus } });
-        }
-      }
 
       if (dto.nextFollowUpAt) {
         const nextScheduledAt = new Date(dto.nextFollowUpAt);
@@ -308,5 +297,27 @@ export class FollowUpService {
     const data = hasNextPage ? items.slice(0, limit) : items;
     const nextCursor = hasNextPage && data.length > 0 ? encodeCursor(data[data.length - 1].id) : null;
     return { data, pagination: { nextCursor, hasNextPage, limit } };
+  }
+
+  async getSummary(userId: string, hasReadAll: boolean) {
+    const { start: todayStart, end: todayEnd } = this.getTodayBounds();
+    const ownerFilter = hasReadAll ? {} : { lead: { assignedToUserId: userId } };
+
+    const [today, upcoming, overdue, completedToday] = await Promise.all([
+      this.prisma.followUp.count({
+        where: { ...ownerFilter, scheduledAt: { gte: todayStart, lte: todayEnd }, status: { in: [FollowUpStatus.SCHEDULED, FollowUpStatus.OVERDUE] } },
+      }),
+      this.prisma.followUp.count({
+        where: { ...ownerFilter, scheduledAt: { gt: new Date() }, status: FollowUpStatus.SCHEDULED },
+      }),
+      this.prisma.followUp.count({
+        where: { ...ownerFilter, status: FollowUpStatus.OVERDUE },
+      }),
+      this.prisma.followUp.count({
+        where: { ...ownerFilter, status: FollowUpStatus.COMPLETED, completedAt: { gte: todayStart, lte: todayEnd } },
+      }),
+    ]);
+
+    return { today, upcoming, overdue, completedToday };
   }
 }

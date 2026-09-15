@@ -11,6 +11,14 @@
 
 import 'reflect-metadata';
 
+process.on('uncaughtException', (err: any) => {
+  if (err.message && err.message.includes('ECONNREFUSED') && err.stack?.includes('ioredis')) {
+    return; // Suppress ioredis connection refused spam
+  }
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';

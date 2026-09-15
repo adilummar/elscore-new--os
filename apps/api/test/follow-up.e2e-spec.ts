@@ -11,12 +11,6 @@ import { QueueModule } from '../src/common/queue/queue.module';
 import { FollowUpOverdueProcessor } from '../src/modules/follow-up/processors/follow-up-overdue.processor';
 import { FollowUpReminderProcessor } from '../src/modules/follow-up/processors/follow-up-reminder.processor';
 
-jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
-  Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
-  QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
-}));
-
 class MockQueueModule {}
 
 const TEST_PASSWORD = 'TestPassword123!';
@@ -58,8 +52,6 @@ describe('FollowUpModule (e2e)', () => {
 
     prisma = app.get<PrismaService>(PrismaService);
     await prisma.cleanDatabase();
-    const execSync = require('child_process').execSync;
-    execSync('npx ts-node --require tsconfig-paths/register prisma/seed.ts', { stdio: 'ignore' });
 
     const roleHead = await prisma.role.findUnique({ where: { code: 'SALES_HEAD' } });
     const roleCounsellor = await prisma.role.findUnique({ where: { code: 'SALES_COUNSELLOR' } });
@@ -88,9 +80,8 @@ describe('FollowUpModule (e2e)', () => {
     const leadRes = await request(app.getHttpServer())
       .post('/api/v1/leads')
       .set('Authorization', `Bearer ${counsellorToken}`)
-      .send({ firstName: 'Fup', lastName: 'Test', primaryPhone: '5550001111', source: 'WEBSITE' });
-    if (leadRes.status !== 201) { console.error('Lead creation failed:', leadRes.body); throw new Error('Lead creation failed'); }
-    leadId = leadRes.body.data.lead.id;
+      .send({ firstName: 'Fup', lastName: 'Test', primaryPhone: '5550001111', leadSource: 'WEBSITE' });
+    leadId = leadRes.body.data.id;
   });
 
   afterAll(async () => {
@@ -119,6 +110,6 @@ describe('FollowUpModule (e2e)', () => {
       .get('/api/v1/follow-ups?view=all')
       .set('Authorization', `Bearer ${counsellorToken}`);
     expect(res.status).toBe(200);
-    console.log('GET FUPs response data:', res.body.data); expect(res.body.data.data.length).toBeGreaterThan(0);
+    expect(res.body.data.length).toBeGreaterThan(0);
   });
 });

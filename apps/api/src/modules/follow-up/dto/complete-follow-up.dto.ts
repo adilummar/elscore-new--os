@@ -1,4 +1,4 @@
-﻿import { ContactClassification, LeadStatus } from '@prisma/client';
+import { ContactClassification, LeadStatus } from '@prisma/client';
 import { IsEnum, IsISO8601, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CompleteFollowUpDto {
@@ -10,19 +10,6 @@ export class CompleteFollowUpDto {
   @IsOptional()
   @MaxLength(2000)
   remarks?: string;
-
-  /**
-   * Optional: change Lead status in the same atomic action.
-   * If provided, leadStatusReason is required (enforced at service layer).
-   */
-  @IsEnum(LeadStatus)
-  @IsOptional()
-  newLeadStatus?: LeadStatus;
-
-  @IsString()
-  @IsOptional()
-  @MaxLength(500)
-  leadStatusReason?: string;
 
   /**
    * Optional: create the next Follow-up in the same atomic action.

@@ -1,9 +1,12 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import * as crypto from 'crypto';
+
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
-import * as crypto from 'crypto';
+
 
 // Mock BullMQ completely to prevent Redis connection timeouts on local environments
 jest.mock('bullmq', () => {

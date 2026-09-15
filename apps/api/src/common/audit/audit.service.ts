@@ -80,4 +80,42 @@ export class AuditService {
       },
     });
   }
+
+  /**
+   * Retrieves paginated audit logs with optional filtering.
+   */
+  async findAll(options: {
+    limit: number;
+    cursor?: string;
+    actorUserId?: string;
+    action?: string;
+    entityType?: string;
+    entityId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const { limit, cursor, actorUserId, action, entityType, entityId, startDate, endDate } = options;
+    const where: any = {};
+
+    if (actorUserId) where.actorUserId = actorUserId;
+    if (action) where.action = action;
+    if (entityType) where.entityType = entityType;
+    if (entityId) where.entityId = entityId;
+
+    if (startDate || endDate) {
+      where.timestamp = {};
+      if (startDate) where.timestamp.gte = new Date(startDate);
+      if (endDate) where.timestamp.lte = new Date(endDate);
+    }
+
+    const { paginate } = await import('../pagination/paginate.util');
+
+    return paginate(this.prisma.auditEvent, {
+      limit,
+      cursor,
+      where,
+      orderBy: { timestamp: 'desc', id: 'desc' }, // Custom ordering for audit logs
+      include: { actor: { select: { email: true } } },
+    });
+  }
 }
