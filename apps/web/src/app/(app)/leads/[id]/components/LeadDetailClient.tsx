@@ -116,28 +116,60 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
 
         {/* RIGHT COLUMN: Operations */}
         <div className="space-y-6">
-          <FollowUpPreview leadId={leadId} />
+          <FollowUpPreview leadId={leadId} onAction={loadLead} />
 
           <Card>
             <CardHeader><CardTitle>History</CardTitle></CardHeader>
             <CardContent>
               <div className="max-h-[400px] overflow-y-auto pr-2">
                 <Timeline>
-                  {lead.statusHistory?.map((sh: any) => (
-                    <div key={sh.id} className="mb-4 relative">
-                      <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-blue-500" />
-                      <p className="text-sm font-medium">Status changed to {sh.newStatus}</p>
-                      <p className="text-xs text-slate-500">{new Date(sh.changedAt).toLocaleString()}</p>
-                      {sh.reason && <p className="text-xs text-slate-600 mt-1 italic">&quot;{sh.reason}&quot;</p>}
-                    </div>
-                  ))}
-                  {lead.assignmentHistory?.map((ah: any) => (
-                    <div key={ah.id} className="mb-4 relative">
-                      <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-purple-500" />
-                      <p className="text-sm font-medium">Assigned to {ah.newOwnerUserId || 'Unassigned'}</p>
-                      <p className="text-xs text-slate-500">{new Date(ah.assignedAt).toLocaleString()}</p>
-                    </div>
-                  ))}
+                  {(() => {
+                    const events = [];
+                    lead.statusHistory?.forEach((sh: any) => {
+                      events.push({
+                        type: 'STATUS',
+                        date: new Date(sh.changedAt),
+                        title: `Status changed to ${sh.newStatus}`,
+                        description: sh.reason ? `"${sh.reason}"` : null,
+                        color: 'bg-blue-500'
+                      });
+                    });
+                    lead.assignmentHistory?.forEach((ah: any) => {
+                      events.push({
+                        type: 'ASSIGNMENT',
+                        date: new Date(ah.assignedAt),
+                        title: `Assigned to ${ah.newOwnerUserId || 'Unassigned'}`,
+                        color: 'bg-purple-500'
+                      });
+                    });
+                    lead.followUps?.forEach((fu: any) => {
+                      events.push({
+                        type: 'FOLLOW_UP_SCHEDULED',
+                        date: new Date(fu.createdAt),
+                        title: `Follow-up Scheduled`,
+                        description: `Scheduled for ${new Date(fu.scheduledAt).toLocaleString()}${fu.remarks ? ` - "${fu.remarks}"` : ''}`,
+                        color: 'bg-orange-400'
+                      });
+                      if (fu.status === 'COMPLETED') {
+                        events.push({
+                          type: 'FOLLOW_UP_COMPLETED',
+                          date: new Date(fu.completedAt || fu.updatedAt),
+                          title: `Follow-up Completed (${fu.classification || 'No classification'})`,
+                          description: fu.completedRemarks ? `"${fu.completedRemarks}"` : null,
+                          color: 'bg-green-500'
+                        });
+                      }
+                    });
+
+                    return events.sort((a, b) => b.date.getTime() - a.date.getTime()).map((ev, i) => (
+                      <div key={i} className="mb-4 relative">
+                        <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ${ev.color}`} />
+                        <p className="text-sm font-medium">{ev.title}</p>
+                        <p className="text-xs text-slate-500">{ev.date.toLocaleString()}</p>
+                        {ev.description && <p className="text-xs text-slate-600 mt-1 italic">{ev.description}</p>}
+                      </div>
+                    ));
+                  })()}
                 </Timeline>
               </div>
             </CardContent>

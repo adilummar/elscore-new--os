@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 
-export function FollowUpPreview({ leadId }: { leadId: string }) {
+export function FollowUpPreview({ leadId, onAction }: { leadId: string, onAction?: () => void }) {
   const [followUps, setFollowUps] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const { hasPermission } = usePermissions();
@@ -24,6 +24,11 @@ export function FollowUpPreview({ leadId }: { leadId: string }) {
   const [scheduledAt, setScheduledAt] = React.useState('');
   const [remarks, setRemarks] = React.useState('');
   const [classification, setClassification] = React.useState('QUALIFIED');
+
+  // Next follow up states
+  const [scheduleNext, setScheduleNext] = React.useState(false);
+  const [nextScheduledAt, setNextScheduledAt] = React.useState('');
+  const [nextRemarks, setNextRemarks] = React.useState('');
 
   const loadFollowUps = React.useCallback(async () => {
     setLoading(true);
@@ -50,6 +55,7 @@ export function FollowUpPreview({ leadId }: { leadId: string }) {
       await createFollowUpAction(leadId, new Date(scheduledAt).toISOString(), remarks);
       setIsCreateOpen(false);
       loadFollowUps();
+      if (onAction) onAction();
     } catch (e: any) { alert(e.message); }
     finally { setActionLoading(false); }
   };
@@ -59,8 +65,20 @@ export function FollowUpPreview({ leadId }: { leadId: string }) {
     setActionLoading(true);
     try {
       await completeFollowUpAction(leadId, activeFup.id, classification, remarks);
+      if (scheduleNext && nextScheduledAt) {
+        await createFollowUpAction(leadId, new Date(nextScheduledAt).toISOString(), nextRemarks);
+      }
       setIsCompleteOpen(false);
+      
+      // Reset forms
+      setScheduleNext(false);
+      setNextScheduledAt('');
+      setNextRemarks('');
+      setRemarks('');
+      setClassification('QUALIFIED');
+
       loadFollowUps();
+      if (onAction) onAction();
     } catch (e: any) { alert(e.message); }
     finally { setActionLoading(false); }
   };
@@ -72,6 +90,7 @@ export function FollowUpPreview({ leadId }: { leadId: string }) {
       await rescheduleFollowUpAction(leadId, activeFup.id, new Date(scheduledAt).toISOString(), remarks);
       setIsRescheduleOpen(false);
       loadFollowUps();
+      if (onAction) onAction();
     } catch (e: any) { alert(e.message); }
     finally { setActionLoading(false); }
   };
@@ -126,7 +145,33 @@ export function FollowUpPreview({ leadId }: { leadId: string }) {
             </Select>
           </div>
           <div><label className="text-sm">Remarks</label><Input value={remarks} onChange={e => setRemarks(e.target.value)} /></div>
-          <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setIsCompleteOpen(false)}>Cancel</Button><Button type="submit" disabled={actionLoading}>Complete</Button></div>
+          
+          <div className="pt-4 border-t border-slate-100">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={scheduleNext} 
+                onChange={(e) => setScheduleNext(e.target.checked)} 
+                className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span className="text-sm font-medium">Schedule Next Follow-up</span>
+            </label>
+          </div>
+
+          {scheduleNext && (
+            <div className="space-y-4 bg-slate-50 p-4 rounded-md border border-slate-100">
+              <div>
+                <label className="text-sm">Next Date & Time *</label>
+                <Input type="datetime-local" required={scheduleNext} value={nextScheduledAt} onChange={e => setNextScheduledAt(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-sm">Next Remarks</label>
+                <Input value={nextRemarks} onChange={e => setNextRemarks(e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setIsCompleteOpen(false)}>Cancel</Button><Button type="submit" disabled={actionLoading}>Complete</Button></div>
         </form>
       </Modal>
 

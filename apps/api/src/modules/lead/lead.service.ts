@@ -191,6 +191,7 @@ export class LeadService {
         statusHistory: { orderBy: { changedAt: 'desc' } },
         assignmentHistory: { orderBy: { assignedAt: 'desc' } },
         salesNotes: { orderBy: { createdAt: 'desc' }, include: { createdByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } } } },
+        followUps: { orderBy: { createdAt: 'desc' }, include: { createdByUser: { select: { id: true, employee: { select: { firstName: true, lastName: true } } } }, completedByUser: { select: { id: true, employee: { select: { firstName: true, lastName: true } } } } } },
         marketingAttribution: true,
         marketingInteractions: { where: { isOriginal: true }, take: 1 },
       },
