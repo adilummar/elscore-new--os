@@ -454,7 +454,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         <p className="text-gray-500 text-lg font-mono">{successData.businessId}</p>
         
         {warning && (
-          <Alert variant="warning" className="text-left mt-4 inline-block max-w-md mx-auto">
+          <Alert variant="info" className="text-left mt-4 inline-block max-w-md mx-auto">
             <AlertCircle className="w-4 h-4 mr-2 inline" />
             Duplicate was detected, but Lead was created successfully.
           </Alert>

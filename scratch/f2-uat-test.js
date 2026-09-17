@@ -44,6 +44,22 @@ function getItems(res) {
 async function run() {
   console.log("=== F2 UAT SCRIPT ===");
   try {
+    const ceoLogin = await request('POST', '/auth/login', { email: 'admin@elscore.internal', password: 'ChangeMe123!' });
+    const ceoToken = getItems(ceoLogin).accessToken;
+    
+    // Attempt to create test users just in case
+    const depsRes = await request('GET', '/departments?limit=1', null, ceoToken);
+    const depId = getItems(depsRes)?.[0]?.id;
+    const rolesRes = await request('GET', '/roles?limit=100', null, ceoToken);
+    const rolesItems = getItems(rolesRes);
+    const scaRoleId = rolesItems.find(r => r.code === 'SALES_COUNSELLOR')?.id;
+    const shRoleId = rolesItems.find(r => r.code === 'SALES_HEAD')?.id;
+
+    if (depId && scaRoleId && shRoleId) {
+      await request('POST', '/users', { email: 'uat_sca@elscore.test', password: 'Test@1234!', firstName: 'Test', lastName: 'Counsellor', departmentId: depId, roleId: scaRoleId }, ceoToken);
+      await request('POST', '/users', { email: 'uat_sh@elscore.test', password: 'Test@1234!', firstName: 'Test', lastName: 'Head', departmentId: depId, roleId: shRoleId }, ceoToken);
+    }
+
     // 1. Get tokens
     const c1Login = await request('POST', '/auth/login', { email: 'uat_sca@elscore.test', password: 'Test@1234!' });
     const c1Token = getItems(c1Login).accessToken;
