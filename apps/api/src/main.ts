@@ -100,6 +100,11 @@ async function bootstrap() {
   // ─── Graceful shutdown ────────────────────────────────────────────────────
   app.enableShutdownHooks();
 
+  const prismaService = app.get(require('./common/prisma/prisma.service').PrismaService);
+  await prismaService.sequence.upsert({where: {entityType: 'LED'}, update: {}, create: {entityType: 'LED', prefix: 'LED-', nextNumber: 1000}});
+  await prismaService.sequence.upsert({where: {entityType: 'STU'}, update: {}, create: {entityType: 'STU', prefix: 'STU-', nextNumber: 1000}});
+  await prismaService.sequence.upsert({where: {entityType: 'RQT'}, update: {}, create: {entityType: 'RQT', prefix: 'RQT-', nextNumber: 1000}});
+
   await app.listen(port);
 
   const logger = app.get(Logger);
