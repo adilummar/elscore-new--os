@@ -74,7 +74,7 @@ export class LeadService {
       }
 
       const businessId = await this.idGen.nextIdInTx(tx, 'LED');
-      const { channel, campaign, externalCampaignId, externalLeadId, ...leadData } = dto;
+      const { channel, campaign, externalCampaignId, externalLeadId, students, ...leadData } = dto;
 
       const newLead = await tx.lead.create({
         data: {
@@ -85,6 +85,50 @@ export class LeadService {
           creationChannel: hasReadAll ? 'SALES_HEAD' : 'SALES_COUNSELLOR',
         },
       });
+
+      if (students && students.length > 0) {
+        for (const stuDto of students) {
+          const stuBusinessId = await this.idGen.nextIdInTx(tx, 'STU');
+          const { requirements, ...stuData } = stuDto;
+
+          const newStudent = await tx.student.create({
+            data: {
+              businessId: stuBusinessId,
+              leadId: newLead.id,
+              ...stuData,
+            },
+          });
+
+          await this.audit.recordInTx(tx, {
+            entityType: 'Student',
+            entityId: newStudent.id,
+            action: 'CREATE',
+            actorUserId: actorUserId,
+            newValue: newStudent,
+          });
+
+          if (requirements && requirements.length > 0) {
+            for (const reqDto of requirements) {
+              const reqBusinessId = await this.idGen.nextIdInTx(tx, 'RQT');
+              const newReq = await tx.requirement.create({
+                data: {
+                  businessId: reqBusinessId,
+                  studentId: newStudent.id,
+                  ...reqDto,
+                },
+              });
+
+              await this.audit.recordInTx(tx, {
+                entityType: 'Requirement',
+                entityId: newReq.id,
+                action: 'CREATE',
+                actorUserId: actorUserId,
+                newValue: newReq,
+              });
+            }
+          }
+        }
+      }
 
       if (channel || campaign || externalCampaignId || externalLeadId) {
         await tx.marketingAttribution.create({

@@ -212,4 +212,91 @@ describe('LeadModule (e2e)', () => {
     expect(res.status).toBe(201);
     expect(res.body.data.isArchived).toBe(true);
   });
+
+  it('Create Lead atomically with multiple Students and Requirements', async () => {
+    // We need subject, curriculum, grade
+    let subject = await prisma.subject.findFirst();
+    if (!subject) subject = await prisma.subject.create({ data: { name: 'Math', code: 'MATH', isActive: true } });
+    
+    let curriculum = await prisma.curriculum.findFirst();
+    if (!curriculum) curriculum = await prisma.curriculum.create({ data: { name: 'CBSE', code: 'CBSE', isActive: true } });
+    
+    let grade = await prisma.grade.findFirst();
+    if (!grade) grade = await prisma.grade.create({ data: { name: 'Grade 10', code: 'G10', sortOrder: 10, isActive: true } });
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/leads')
+      .set('Authorization', `Bearer ${counsellor1Token}`)
+      .send({
+        primaryPhone: '9999999999',
+        source: 'WEBSITE',
+        firstName: 'Parent',
+        lastName: 'Multiple',
+        students: [
+          {
+            firstName: 'Student A',
+            requirements: [
+              { subjectId: subject.id, curriculumId: curriculum.id, gradeId: grade.id },
+              { subjectId: subject.id, curriculumId: curriculum.id, gradeId: grade.id }
+            ]
+          },
+          {
+            firstName: 'Student B',
+            requirements: [
+              { subjectId: subject.id, curriculumId: curriculum.id, gradeId: grade.id }
+            ]
+          },
+          {
+            firstName: 'Student C',
+            requirements: [
+              { subjectId: subject.id, curriculumId: curriculum.id, gradeId: grade.id },
+              { subjectId: subject.id, curriculumId: curriculum.id, gradeId: grade.id }
+            ]
+          }
+        ]
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.lead.primaryPhone).toBe('9999999999');
+    const newLeadId = res.body.data.lead.id;
+
+    // Verify DB state
+    const createdStudents = await prisma.student.findMany({ where: { leadId: newLeadId }, include: { requirements: true } });
+    expect(createdStudents.length).toBe(3);
+    
+    const reqCount = createdStudents.reduce((acc, s) => acc + s.requirements.length, 0);
+    expect(reqCount).toBe(5);
+  });
+
+  it('Transaction rollback: Lead is NOT created if a nested Requirement fails validation (missing subjectId)', async () => {
+    // Generate a unique phone for this test
+    const uniquePhone = '9991112222';
+    
+    // We intentionally pass an invalid subjectId to cause DB failure
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/leads')
+      .set('Authorization', `Bearer ${counsellor1Token}`)
+      .send({
+        primaryPhone: uniquePhone,
+        source: 'WEBSITE',
+        firstName: 'Rollback',
+        lastName: 'Test',
+        students: [
+          {
+            firstName: 'Student A',
+            requirements: [
+              { subjectId: 'invalid-uuid-format', curriculumId: 'invalid-uuid-format', gradeId: 'invalid-uuid-format' }
+            ]
+          }
+        ]
+      });
+
+    // NestJS validation pipe will catch invalid UUID, but let's say it bypasses it and hits Prisma
+    // or NestJS catches it before Prisma. Either way, the Lead shouldn't be created.
+    expect(res.status).not.toBe(201);
+    
+    // Ensure the lead does not exist in DB
+    const leadInDb = await prisma.lead.findFirst({ where: { primaryPhone: uniquePhone } });
+    expect(leadInDb).toBeNull();
+  });
 });

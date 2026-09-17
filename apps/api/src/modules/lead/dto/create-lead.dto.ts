@@ -1,5 +1,71 @@
 import { LeadSource } from '@prisma/client';
-import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsDate, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, ValidateNested } from 'class-validator';
+
+export class NestedRequirementDto {
+  @IsUUID()
+  @IsNotEmpty()
+  subjectId!: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  curriculumId!: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  gradeId!: string;
+
+  @IsString()
+  @IsOptional()
+  syllabus?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class NestedStudentDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  firstName!: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  lastName?: string;
+
+  @Type(() => Date)
+  @IsDate()
+  @IsOptional()
+  dateOfBirth?: Date;
+
+  @IsString()
+  @IsOptional()
+  gender?: string;
+
+  @IsString()
+  @IsOptional()
+  schoolName?: string;
+
+  @IsString()
+  @IsOptional()
+  currentGrade?: string;
+
+  @IsString()
+  @IsOptional()
+  cityLocation?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NestedRequirementDto)
+  requirements?: NestedRequirementDto[];
+}
 
 export class CreateLeadDto {
   @IsString()
@@ -56,4 +122,10 @@ export class CreateLeadDto {
   @IsOptional()
   @MaxLength(100)
   externalLeadId?: string;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NestedStudentDto)
+  students?: NestedStudentDto[];
 }
