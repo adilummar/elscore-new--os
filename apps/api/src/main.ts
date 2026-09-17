@@ -101,9 +101,9 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const prismaService = app.get(require('./common/prisma/prisma.service').PrismaService);
-  await prismaService.sequence.upsert({where: {entityType: 'LED'}, update: {}, create: {entityType: 'LED', prefix: 'LED-', nextNumber: 1000}});
-  await prismaService.sequence.upsert({where: {entityType: 'STU'}, update: {}, create: {entityType: 'STU', prefix: 'STU-', nextNumber: 1000}});
-  await prismaService.sequence.upsert({where: {entityType: 'RQT'}, update: {}, create: {entityType: 'RQT', prefix: 'RQT-', nextNumber: 1000}});
+  await prismaService.sequence.upsert({where: {entityType: 'LED'}, update: {nextNumber: {increment: 1000}}, create: {entityType: 'LED', prefix: 'LED-', nextNumber: 5000}});
+  await prismaService.sequence.upsert({where: {entityType: 'STU'}, update: {nextNumber: {increment: 1000}}, create: {entityType: 'STU', prefix: 'STU-', nextNumber: 5000}});
+  await prismaService.sequence.upsert({where: {entityType: 'RQT'}, update: {nextNumber: {increment: 1000}}, create: {entityType: 'RQT', prefix: 'RQT-', nextNumber: 5000}});
 
   await app.listen(port);
 
