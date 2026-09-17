@@ -304,7 +304,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
           {students.map((student, sIdx) => (
             <div key={student.id} className="p-4 border rounded-lg bg-gray-50 relative">
               <div className="absolute top-4 right-4">
-                <Button variant="ghost" size="icon" onClick={() => removeStudent(student.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50">
+                <Button variant="ghost" size="sm" onClick={() => removeStudent(student.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2">
                   <Trash className="w-4 h-4" />
                 </Button>
               </div>
@@ -341,7 +341,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
               <div className="mt-6 pt-4 border-t border-gray-200">
                 <h4 className="font-semibold text-sm mb-3 flex items-center justify-between">
                   Requirements
-                  <Button type="button" size="sm" variant="outline" onClick={() => addRequirement(student.id)} className="h-7 text-xs">
+                  <Button type="button" size="sm" variant="outline" onClick={() => addRequirement(student.id)} className="h-7 text-xs px-2">
                     <Plus className="w-3 h-3 mr-1" /> Add Requirement
                   </Button>
                 </h4>
@@ -352,7 +352,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
                   <div className="space-y-3">
                     {student.requirements.map((req, rIdx) => (
                       <div key={req.id} className="p-3 bg-white border rounded shadow-sm relative pr-10">
-                        <Button type="button" variant="ghost" size="icon" onClick={() => removeRequirement(student.id, req.id)} className="absolute top-2 right-2 h-6 w-6 text-gray-400 hover:text-red-500">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeRequirement(student.id, req.id)} className="absolute top-2 right-2 h-6 px-2 text-gray-400 hover:text-red-500">
                           <Trash className="w-3 h-3" />
                         </Button>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
