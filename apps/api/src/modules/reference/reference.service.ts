@@ -19,7 +19,7 @@ export class ReferenceService {
   }
 
   async findAllGrades(options: Pick<PaginateOptions, 'limit' | 'cursor'>): Promise<PaginatedResponseDto<Grade>> {
-    return paginate(this.prisma.grade, { ...options, orderBy: { sortOrder: 'asc', id: 'asc' } }); // Use stable sort with ID fallback
+    return paginate(this.prisma.grade, { ...options, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] });
   }
 
   async findAllCurricula(options: Pick<PaginateOptions, 'limit' | 'cursor'>): Promise<PaginatedResponseDto<Curriculum>> {
