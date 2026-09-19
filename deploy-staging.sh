@@ -22,6 +22,9 @@ echo "📦 Installing dependencies..."
 pnpm install --frozen-lockfile
 
 # 3. Build the application
+echo "🔨 Generating Prisma Client..."
+pnpm run db:generate
+
 echo "🔨 Building the application..."
 pnpm run build
 
