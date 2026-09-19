@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { usePermissions } from '@/components/providers/AuthProvider';
-import { Users, Briefcase, Shield, Key, ShieldOff, Database, History } from 'lucide-react';
+import { Users, Briefcase, Shield, Key, ShieldOff, Database, History, Clock } from 'lucide-react';
 
 const SETTINGS_SECTIONS = [
   {
@@ -13,6 +13,7 @@ const SETTINGS_SECTIONS = [
       { name: 'Users', href: '/settings/users', icon: Users, permission: 'user.read' },
       { name: 'Employees', href: '/settings/employees', icon: Briefcase, permission: 'employee.read' },
       { name: 'Departments', href: '/settings/departments', icon: Database, permission: null }, // Usually public info, maybe requires read
+      { name: 'Attendance', href: '/settings/attendance', icon: Clock, permission: 'role.manage' }, // Assuming admin level
     ]
   },
   {

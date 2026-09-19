@@ -18,6 +18,7 @@ export function SettingsNavigation() {
     { name: 'Permissions', href: '/settings/permissions' },
     { name: 'Delegations', href: '/settings/delegations' },
     { name: 'Reference Data', href: '/settings/reference-data' },
+    { name: 'Attendance', href: '/settings/attendance' },
     { name: 'Audit', href: '/settings/audit' }
   ];
 
