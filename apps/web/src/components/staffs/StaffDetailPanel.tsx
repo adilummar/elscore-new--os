@@ -84,7 +84,7 @@ export function StaffDetailPanel({ staff, onClose }: Props) {
 
         {/* Today's Status */}
         <div className="p-6 border-b border-border">
-          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-4">Today's Status</h3>
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-4">Today&apos;s Status</h3>
           {todaySession ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">

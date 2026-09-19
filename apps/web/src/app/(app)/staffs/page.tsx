@@ -83,7 +83,7 @@ export default function StaffsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-text-muted">
         <Users className="w-12 h-12 mb-3 opacity-30" />
-        <p className="font-medium">You don't have access to Staffs</p>
+        <p className="font-medium">You don&apos;t have access to Staffs</p>
       </div>
     );
   }
