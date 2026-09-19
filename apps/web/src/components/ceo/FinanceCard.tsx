@@ -21,11 +21,11 @@ export function FinanceCard({ data }: { data: any }) {
         <div className="space-y-4">
           <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100 mb-4">
             <span className="text-sm text-emerald-800 font-medium block">Period Collections</span>
-            <span className="text-2xl font-bold text-emerald-900 block mt-1">${(data.periodCollections || 0).toLocaleString()}</span>
+            <span className="text-2xl font-bold text-emerald-900 block mt-1">AED {(data.periodCollections || 0).toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-slate-100">
             <span className="text-slate-500">Outstanding Balance</span>
-            <span className="font-semibold text-amber-600">${(data.outstanding || 0).toLocaleString()}</span>
+            <span className="font-semibold text-amber-600">AED {(data.outstanding || 0).toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-slate-100">
             <span className="text-slate-500 text-sm">Target Credit Logic applies actual money received minus registration fees.</span>

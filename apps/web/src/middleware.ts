@@ -81,7 +81,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // If authenticated and trying to access login page
-  if (accessToken && isAuthPage) {
+  if (accessToken && request.nextUrl.pathname.startsWith('/login')) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 

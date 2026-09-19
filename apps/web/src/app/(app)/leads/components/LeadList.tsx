@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from 'react';
-import { getLeadsAction } from '../actions';
+import { getLeadsAction, getEmployeesAction } from '../actions';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { usePermissions } from '@/components/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Calendar, User, ChevronRight } from 'lucide-react';
 import { CreateLeadDialog } from './CreateLeadDialog';
 
 export function LeadList() {
@@ -21,28 +21,56 @@ export function LeadList() {
   const [search, setSearch] = React.useState('');
   const [status, setStatus] = React.useState('');
   const [source, setSource] = React.useState('');
+  const [classification, setClassification] = React.useState('');
+  const [ownerId, setOwnerId] = React.useState('');
+  const [followUpState, setFollowUpState] = React.useState('');
   
+  const [employees, setEmployees] = React.useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   
   const { hasPermission } = usePermissions();
   const router = useRouter();
 
-  const loadLeads = React.useCallback(async () => {
-    setLoading(true);
+  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    async function loadEmployees() {
+      try {
+        const res = await getEmployeesAction();
+        const activeEmployees = (res.data || []).filter((emp: any) => emp.employmentStatus === 'ACTIVE');
+        setEmployees(activeEmployees);
+      } catch (err) {
+        console.error("Failed to load employees", err);
+      }
+    }
+    loadEmployees();
+  }, []);
+
+  const loadLeads = React.useCallback(async (cursor?: string) => {
+    if (!cursor) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.append('search', search);
       if (status) params.append('status', status);
       if (source) params.append('source', source);
+      if (classification) params.append('classification', classification);
+      if (ownerId) params.append('ownerId', ownerId);
+      if (followUpState) params.append('followUpState', followUpState);
+      if (cursor) params.append('cursor', cursor);
       
       const res = await getLeadsAction(params.toString());
-      setLeads(res.data || []);
+      if (cursor) {
+        setLeads(prev => [...prev, ...(res.data || [])]);
+      } else {
+        setLeads(res.data || []);
+      }
+      setNextCursor(res.pagination?.nextCursor || null);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [search, status, source]);
+  }, [search, status, source, classification, ownerId, followUpState]);
 
   React.useEffect(() => {
     loadLeads();
@@ -62,31 +90,109 @@ export function LeadList() {
         )}
       </div>
 
-      <Card className="p-4 flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input 
-            placeholder="Search by name or phone..." 
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <Card className="p-4 flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input 
+              placeholder="Search by name or phone..." 
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Select className="w-full md:w-40" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">All Statuses</option>
+            <option value="NEW">New</option>
+            <option value="CONTACTED">Contacted</option>
+            <option value="INTERESTED">Interested</option>
+            <option value="DEMO_BOOKED">Demo Booked</option>
+            <option value="DEMO_COMPLETED">Demo Completed</option>
+            <option value="NEGOTIATION">Negotiation</option>
+            <option value="NURTURE">Nurture</option>
+            <option value="ENROLLED">Enrolled</option>
+            <option value="NOT_INTERESTED">Not Interested</option>
+            <option value="NO_RESPONSE">No Response</option>
+            <option value="LOST">Lost</option>
+            <option value="JUNK">Junk</option>
+            <option value="PAID">Paid</option>
+          </Select>
+          <Select className="w-full md:w-40" value={source} onChange={(e) => setSource(e.target.value)}>
+            <option value="">All Sources</option>
+            <option value="META_FACEBOOK">Facebook</option>
+            <option value="INSTAGRAM">Instagram</option>
+            <option value="GOOGLE">Google</option>
+            <option value="WEBSITE">Website</option>
+            <option value="REFERRAL">Referral</option>
+            <option value="DIRECT">Direct</option>
+            <option value="OTHER">Other</option>
+          </Select>
         </div>
-        <Select className="w-full sm:w-48" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All Statuses</option>
-          <option value="NEW">New</option>
-          <option value="CONTACTED">Contacted</option>
-          <option value="INTERESTED">Interested</option>
-        </Select>
-        <Select className="w-full sm:w-48" value={source} onChange={(e) => setSource(e.target.value)}>
-          <option value="">All Sources</option>
-          <option value="META_FACEBOOK">Facebook</option>
-          <option value="GOOGLE">Google</option>
-          <option value="REFERRAL">Referral</option>
-        </Select>
+        <div className="flex flex-col md:flex-row gap-4">
+          <Select className="w-full md:w-48" value={classification} onChange={(e) => setClassification(e.target.value)}>
+            <option value="">All Classifications</option>
+            <option value="QUALIFIED">Qualified</option>
+            <option value="NON_QUALIFIED">Non-Qualified</option>
+            <option value="NO_RESPONSE">No Response</option>
+            <option value="JUNK">Junk</option>
+          </Select>
+          <Select className="w-full md:w-48" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+            <option value="">All Owners</option>
+            {employees.map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>
+            ))}
+          </Select>
+          <Select className="w-full md:w-48" value={followUpState} onChange={(e) => setFollowUpState(e.target.value)}>
+            <option value="">All Follow-Ups</option>
+            <option value="SCHEDULED">Scheduled</option>
+            <option value="OVERDUE">Overdue</option>
+            <option value="NONE">None</option>
+          </Select>
+        </div>
       </Card>
 
-      <Card>
+      <div className="md:hidden space-y-4">
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : error ? (
+          <div className="text-center py-8 text-red-500">{error}</div>
+        ) : leads.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">No leads match your search.</div>
+        ) : (
+          leads.map((lead) => (
+            <Card key={lead.id} className="p-4 flex flex-col gap-3" onClick={() => router.push(`/leads/${lead.id}`)}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</h3>
+                  <p className="text-sm text-slate-500">{lead.primaryPhone}</p>
+                </div>
+                <Badge>{lead.status}</Badge>
+              </div>
+              
+              <div className="flex flex-col gap-2 mt-2">
+                <div className="flex items-center text-sm text-slate-600 gap-2">
+                  <User className="w-4 h-4" />
+                  <span>{lead.assignedToUser ? `${lead.assignedToUser.firstName} ${lead.assignedToUser.lastName}` : 'Unassigned'}</span>
+                </div>
+                {lead.nextFollowUpAt && (
+                  <div className="flex items-center text-sm text-slate-600 gap-2">
+                    <Calendar className="w-4 h-4" />
+                    <span>Next Follow-up: {new Date(lead.nextFollowUpAt).toLocaleDateString()}</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex justify-end mt-2 pt-2 border-t">
+                <Button variant="ghost" size="sm" className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
+                  View Detail <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+
+      <Card className="hidden md:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -95,16 +201,18 @@ export function LeadList() {
                 <TableHead>Phone</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Source</TableHead>
+                <TableHead>Owner</TableHead>
+                <TableHead>Next Follow-Up</TableHead>
                 <TableHead>Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
               ) : error ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-red-500">{error}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-red-500">{error}</TableCell></TableRow>
               ) : leads.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-500">No leads match your search.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-500">No leads match your search.</TableCell></TableRow>
               ) : (
                 leads.map((lead) => (
                   <TableRow 
@@ -118,6 +226,16 @@ export function LeadList() {
                     <TableCell>{lead.primaryPhone}</TableCell>
                     <TableCell><Badge>{lead.status}</Badge></TableCell>
                     <TableCell><span className="text-sm text-slate-500">{lead.source}</span></TableCell>
+                    <TableCell>
+                      <span className="text-sm text-slate-700">
+                        {lead.assignedToUser ? `${lead.assignedToUser.firstName} ${lead.assignedToUser.lastName}` : '-'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-slate-700">
+                        {lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).toLocaleDateString() : '-'}
+                      </span>
+                    </TableCell>
                     <TableCell><span className="text-sm text-slate-500">{new Date(lead.createdAt).toLocaleDateString()}</span></TableCell>
                   </TableRow>
                 ))
@@ -127,7 +245,16 @@ export function LeadList() {
         </div>
       </Card>
 
+      {nextCursor && (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" onClick={() => loadLeads(nextCursor)} disabled={loading}>
+            {loading ? 'Loading...' : 'Load More'}
+          </Button>
+        </div>
+      )}
+
       <CreateLeadDialog isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={loadLeads} />
     </div>
   );
 }
+

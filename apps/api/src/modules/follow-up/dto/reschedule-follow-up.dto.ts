@@ -1,4 +1,4 @@
-﻿import { IsISO8601, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsISO8601, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class RescheduleFollowUpDto {
   /** New scheduled datetime. ISO 8601 with timezone offset. */
@@ -7,7 +7,7 @@ export class RescheduleFollowUpDto {
   newScheduledAt!: string;
 
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   @MaxLength(500)
-  reason?: string;
+  reason!: string;
 }

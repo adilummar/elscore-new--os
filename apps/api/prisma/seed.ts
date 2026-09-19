@@ -223,7 +223,17 @@ const PERMISSIONS: Array<{
   { code: 'attendance.tutor.verify', resource: 'attendance.tutor', action: 'verify', description: 'Verify tutor attendance for payroll', isDelegatable: false },
 
 
-  // ---------------------------------------------------------------------------
+  
+    // ---------------------------------------------------------------------------
+    // Employee Attendance & Work-Time (Slice 2G)
+    // ---------------------------------------------------------------------------
+    { code: 'attendance.action.own', resource: 'attendance.employee', action: 'action.own', description: 'Perform check-in, check-out, break start/end', isDelegatable: false },
+    { code: 'attendance.read.own', resource: 'attendance.employee', action: 'read.own', description: 'Read own attendance history', isDelegatable: false },
+    { code: 'attendance.read.team', resource: 'attendance.employee', action: 'read.team', description: 'Read team attendance history', isDelegatable: false },
+    { code: 'attendance.correct', resource: 'attendance.employee', action: 'correct', description: 'Correct historical attendance records', isDelegatable: false },
+    { code: 'attendance.settings.manage', resource: 'attendance.employee', action: 'settings.manage', description: 'Manage global working schedule', isDelegatable: false },
+
+    // ---------------------------------------------------------------------------
   // Finance (Slice 2E)
   // ---------------------------------------------------------------------------
   { code: 'finance.invoice.create', resource: 'invoice', action: 'create', isDelegatable: true },
@@ -832,9 +842,16 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 
   CO_FOUNDER: CO_FOUNDER_PERMISSIONS,
 
-  OPERATIONS_MANAGER: ['employee.read', 'employee.read-all', 'audit.view', 'report.view'],
+  OPERATIONS_MANAGER: [
+    'attendance.action.own',
+    'attendance.read.own','employee.read', 'employee.read-all', 'audit.view', 'report.view'],
 
   HR_MANAGER: [
+    'attendance.action.own',
+    'attendance.read.own',
+    'attendance.read.team',
+    'attendance.correct',
+    'attendance.settings.manage',
     'user.read',
     'user.create',
     'user.update',
@@ -896,6 +913,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     ],
 
   DEMO_COORDINATOR: [
+    'attendance.action.own',
+    'attendance.read.own',
     'demo.manage_all',
     'demo.assign_tutor',
     'demo.read',
@@ -923,12 +942,22 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 
   // The following roles will receive domain-specific permissions in later phases.
   // Seeded with minimal read access for now.
-  ACADEMIC_HEAD: ['employee.read', 'department.read', 'tutor.profile.read', 'tutor.feedback.read'],
-  MARKETING_HEAD: ['employee.read', 'department.read'],
-  PERFORMANCE_MARKETER: ['department.read'],
-  DESIGNER: ['department.read'],
+  ACADEMIC_HEAD: [
+    'attendance.action.own',
+    'attendance.read.own','employee.read', 'department.read', 'tutor.profile.read', 'tutor.feedback.read'],
+  MARKETING_HEAD: [
+    'attendance.action.own',
+    'attendance.read.own','employee.read', 'department.read'],
+  PERFORMANCE_MARKETER: [
+    'attendance.action.own',
+    'attendance.read.own','department.read'],
+  DESIGNER: [
+    'attendance.action.own',
+    'attendance.read.own','department.read'],
   SALES_HEAD: [
-
+    'attendance.action.own',
+    'attendance.read.own',
+    'attendance.read.team',
     'demo.book',
     'demo.read_own',
     'demo.manage_team','roundrobin.read', 'roundrobin.manage', 
@@ -966,6 +995,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'sales-routing.manage',
   ],
   SALES_COUNSELLOR: [
+    'attendance.action.own',
+    'attendance.read.own',
 
     'demo.book',
     'demo.read_own',
@@ -995,7 +1026,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.read',
     'demo.update',
   ],
-  FINANCE_HEAD: ['employee.read', 'department.read'],
+  FINANCE_HEAD: [
+    'attendance.action.own',
+    'attendance.read.own','employee.read', 'department.read'],
   FINANCE_MANAGER: [
     'finance.invoice.create',
     'finance.invoice.read',
@@ -1012,6 +1045,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'finance.report.read'
   ],
   FINANCE_EXECUTIVE: [
+    'attendance.action.own',
+    'attendance.read.own',
     'finance.invoice.create',
     'finance.invoice.read',
     'finance.invoice.issue',

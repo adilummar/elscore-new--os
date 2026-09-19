@@ -9,13 +9,6 @@ export function TopHeader({ user }: { user: any }) {
     <header className="h-16 bg-surface border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">
       <div className="flex-1 max-w-md flex items-center">
         <BackButton />
-        <div className="relative w-full">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-          <Input 
-            placeholder="Search leads, parents..." 
-            className="pl-9 bg-slate-50 border-slate-200 h-9"
-          />
-        </div>
       </div>
       <div className="flex items-center gap-4">
         <button className="text-slate-400 hover:text-slate-600 transition-colors">

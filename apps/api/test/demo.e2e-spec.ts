@@ -153,7 +153,7 @@ describe('DemoModule (e2e)', () => {
     await prisma.demo.deleteMany();
     await prisma.requirement.deleteMany({ where: { businessId: 'REQ-9999' } });
     await prisma.student.deleteMany({ where: { businessId: 'STU-9999' } });
-    await prisma.lead.deleteMany({ where: { primaryPhone: '1234567890' } });
+    await prisma.lead.deleteMany({ where: { businessId: 'LED-DEMO99' } });
 
     await prisma.sequence.upsert({
       where: { entityType: 'DMO' },
@@ -161,11 +161,10 @@ describe('DemoModule (e2e)', () => {
       create: { entityType: 'DMO', prefix: 'DMO', nextNumber: 1, padding: 4 },
     });
 
-    const businessId = await prisma.$transaction(async (tx) => idGen.nextIdInTx(tx as any, 'LED'));
     const lead = await prisma.lead.create({
       data: {
-        businessId,
-        primaryPhone: '1234567890',
+        businessId: 'LED-DEMO99',
+        primaryPhone: '9999999999',
         firstName: 'Demo',
         lastName: 'Parent',
         status: 'INTERESTED',

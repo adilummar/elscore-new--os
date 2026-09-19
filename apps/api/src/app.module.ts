@@ -44,6 +44,7 @@ import { FinanceModule } from './modules/finance/finance.module';
 import { FollowUpModule } from './modules/follow-up/follow-up.module';
 import { LeadModule } from './modules/lead/lead.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
+import { SalesTargetModule } from './modules/sales-target/sales-target.module';
 import { PermissionModule } from './modules/permission/permission.module';
 import { ReferenceModule } from './modules/reference/reference.module';
 import { RoleModule } from './modules/role/role.module';
@@ -106,6 +107,7 @@ import { UserModule } from './modules/user/user.module';
     FinanceModule,
     AttendanceModule,
     MarketingModule,
+    SalesTargetModule,
     // Phase 2+: add module imports here as each phase is implemented.
     // Do not add placeholder imports for unbuilt modules.
   ],

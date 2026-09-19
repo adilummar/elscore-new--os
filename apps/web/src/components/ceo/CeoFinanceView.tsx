@@ -1,6 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CreditCard, DollarSign } from 'lucide-react';
+import { ArrowLeft, CreditCard, Banknote } from 'lucide-react';
 import { fetchApi } from '@/lib/api/client';
 import { resolvePeriodToQueryString } from './utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -39,12 +39,12 @@ export async function CeoFinanceView({ searchParams }: { searchParams: { from?: 
               <div>
                 <p className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-2">Period Collections</p>
                 <h2 className="text-5xl font-black text-emerald-700">
-                  ${(data.periodCollections || 0).toLocaleString()}
+                  AED {(data.periodCollections || 0).toLocaleString()}
                 </h2>
                 <p className="text-sm text-emerald-600 mt-2 font-medium">Successfully processed payments</p>
               </div>
               <div className="p-4 bg-emerald-50 rounded-full">
-                <DollarSign className="w-10 h-10 text-emerald-500" />
+                <Banknote className="w-10 h-10 text-emerald-500" />
               </div>
             </CardContent>
           </Card>
@@ -54,7 +54,7 @@ export async function CeoFinanceView({ searchParams }: { searchParams: { from?: 
               <div>
                 <p className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-2">Outstanding Balance</p>
                 <h2 className="text-5xl font-black text-amber-600">
-                  ${(data.outstanding || 0).toLocaleString()}
+                  AED {(data.outstanding || 0).toLocaleString()}
                 </h2>
                 <p className="text-sm text-amber-700 mt-2 font-medium">Pending future installments</p>
               </div>

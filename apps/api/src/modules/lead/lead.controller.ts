@@ -83,10 +83,7 @@ export class LeadController {
   @Post(':id/reopen')
   @RequirePermissions('lead.reopen')
   async reopen(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    // Reopen resets archive flag, potentially sets status, but Spec says:
-    // "Reopen is different from Unarchive... returns Lead to an active sales workflow."
-    // For now, we will unarchive it. In future, might transition status to CONTACTED.
-    return this.leadService.setArchive(id, false, user.id);
+    return this.leadService.reopen(id, user.id);
   }
 
   @Post(':id/notes')
@@ -117,5 +114,12 @@ export class LeadController {
   ) {
     const readAll = await this.hasReadAll(user.id);
     return this.leadService.deleteNote(leadId, noteId, user.id, readAll);
+  }
+
+  @Get(':id/timeline')
+  @RequirePermissions('lead.read')
+  async getTimeline(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    const hasReadAll = await this.hasReadAll(user.id);
+    return this.leadService.getTimeline(id, user.id, hasReadAll);
   }
 }

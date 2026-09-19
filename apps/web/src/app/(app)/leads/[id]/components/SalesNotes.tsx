@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { createNoteAction } from '../../actions';
+import { createNoteAction, deleteNoteAction } from '../../actions';
 import { usePermissions } from '@/components/providers/AuthProvider';
 
 export function SalesNotes({ leadId, initialNotes }: { leadId: string, initialNotes: any[] }) {
@@ -29,6 +29,16 @@ export function SalesNotes({ leadId, initialNotes }: { leadId: string, initialNo
     }
   };
 
+  const handleDelete = async (noteId: string) => {
+    if (!window.confirm("Are you sure you want to delete this note?")) return;
+    try {
+      await deleteNoteAction(leadId, noteId);
+      setNotes(notes.filter(n => n.id !== noteId));
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
   return (
     <Card>
       <CardHeader><CardTitle>Sales Notes</CardTitle></CardHeader>
@@ -45,7 +55,7 @@ export function SalesNotes({ leadId, initialNotes }: { leadId: string, initialNo
               <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.content}</p>
               <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
                 <span>{new Date(note.createdAt).toLocaleString()}</span>
-                {hasPermission('salesnote.delete') && <button className="text-red-400 hover:text-red-600">Delete</button>}
+                {hasPermission('salesnote.delete') && <button onClick={() => handleDelete(note.id)} className="text-red-400 hover:text-red-600">Delete</button>}
               </div>
             </div>
           ))}

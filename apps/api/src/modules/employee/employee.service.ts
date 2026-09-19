@@ -24,10 +24,22 @@ export class EmployeeService {
     private readonly rbacService: RbacService,
   ) {}
 
-  async findAll(options: Pick<PaginateOptions, 'limit' | 'cursor'>): Promise<PaginatedResponseDto<Employee>> {
+  async findAll(options: Pick<PaginateOptions, 'limit' | 'cursor'>): Promise<PaginatedResponseDto<any>> {
     return paginate(this.prisma.employee, {
       ...options,
       orderBy: { id: 'asc' },
+      include: {
+        user: {
+          select: {
+            status: true,
+            userRoles: {
+              include: {
+                role: true
+              }
+            }
+          }
+        }
+      }
     });
   }
 

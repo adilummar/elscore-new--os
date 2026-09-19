@@ -144,7 +144,12 @@ export class DemoService {
     } else if (isTutor) {
       where.tutorId = user.id;
     } else {
-      where.bookedByUserId = user.id;
+      // Standard Sales access is tied to Lead ownership, not who booked it
+      where.student = {
+        lead: {
+          assignedToUserId: user.id
+        }
+      };
     }
 
     if (query?.status) {
@@ -190,7 +195,12 @@ export class DemoService {
     } else if (isTutor) {
       where.tutorId = user.id;
     } else {
-      where.bookedByUserId = user.id;
+      // Standard Sales access is tied to Lead ownership, not who booked it
+      where.student = {
+        lead: {
+          assignedToUserId: user.id
+        }
+      };
     }
 
     const now = new Date();
@@ -228,7 +238,12 @@ export class DemoService {
     const demo = await this.prisma.demo.findUnique({
       where: { id },
       include: {
-        student: { select: { id: true, firstName: true, lastName: true, currentGrade: true, cityLocation: true } },
+        student: { 
+          select: { 
+            id: true, firstName: true, lastName: true, currentGrade: true, cityLocation: true,
+            lead: { select: { assignedToUserId: true } }
+          } 
+        },
         subject: true,
         curriculum: true,
         grade: true,
@@ -241,9 +256,22 @@ export class DemoService {
     if (!demo) throw new NotFoundException('Demo not found');
 
     const isTutor = await this.rbac.hasPermissions(user.id, ['demo.read_assigned']);
+    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
+    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+
     if (isTutor && demo.tutorId !== user.id) {
       throw new ForbiddenException('You can only view your assigned demos');
     }
+
+    if (!isCoordinator && !isHead && !isTutor) {
+      if (demo.student.lead.assignedToUserId !== user.id) {
+        throw new ForbiddenException('You can only view demos for your assigned leads');
+      }
+    }
+
+    // Don't send lead info to the frontend to maintain strict boundary
+    const { lead, ...studentWithoutLead } = demo.student as any;
+    demo.student = studentWithoutLead;
 
     return demo;
   }
@@ -251,6 +279,13 @@ export class DemoService {
   async rescheduleDemo(id: string, dto: RescheduleDemoDto, user: ValidatedUser) {
     const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
     const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+
+    const start = new Date(dto.scheduledAt);
+    const end = new Date(start.getTime() + dto.durationMinutes * 60000);
+
+    if (start < new Date() && !isHead) {
+      throw new BadRequestException('Cannot book demo in the past');
+    }
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id }, select: { id: true, status: true, tutorId: true, scheduledAt: true, bookedByUserId: true, studentId: true } });
@@ -268,9 +303,6 @@ export class DemoService {
       if (demo.status === DemoStatus.SCHEDULED && demo.bookedByUserId !== user.id && !isCoordinator && !isHead) {
         throw new ForbiddenException('Cannot reschedule another users demo');
       }
-
-      const start = new Date(dto.scheduledAt);
-      const end = new Date(start.getTime() + dto.durationMinutes * 60000);
 
       await this.checkOverlap(tx, demo.studentId, demo.tutorId, start, end, demo.id);
 

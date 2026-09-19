@@ -1,4 +1,5 @@
 import * as React from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { fetchApi } from '@/lib/api/client';
 import { Users, PhoneCall, Calendar, Trophy, TrendingUp } from 'lucide-react';
@@ -144,13 +145,13 @@ export default async function OperationalDashboard() {
               ) : recentLeads?.data?.length > 0 ? (
                 <div className="space-y-4">
                   {recentLeads.data.map((lead: any) => (
-                    <div key={lead.id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                    <Link href={`/leads/${lead.id}`} key={lead.id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0 hover:bg-slate-50 cursor-pointer p-2 rounded transition-colors -mx-2">
                       <div>
-                        <p className="text-sm font-medium text-slate-900">{lead.primaryPhone}</p>
-                        <p className="text-xs text-slate-500">{lead.status}</p>
+                        <p className="text-sm font-medium text-brand-700 hover:underline">{lead.firstName ? `${lead.firstName} ${lead.lastName || ''}` : 'Unknown Name'} <span className="text-xs text-slate-500 font-normal">({lead.primaryPhone})</span></p>
+                        <p className="text-xs text-slate-500">{lead.status.replace(/_/g, ' ')}</p>
                       </div>
                       <Badge>{lead.source}</Badge>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               ) : (
@@ -171,10 +172,21 @@ export default async function OperationalDashboard() {
                   {upcomingFollowUps.data.map((fup: any) => (
                     <div key={fup.id} className="flex flex-col border-b border-slate-100 pb-3 last:border-0 last:pb-0">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-slate-900">{fup.lead?.primaryPhone || 'Unknown'}</p>
-                        <p className="text-xs font-bold text-amber-600">{new Date(fup.scheduledAt).toLocaleDateString()}</p>
+                        <div className="flex flex-col">
+                          <Link href={`/leads/${fup.leadId}`} className="text-sm font-bold text-brand-700 hover:underline">
+                            {fup.lead?.firstName ? `${fup.lead.firstName} ${fup.lead.lastName || ''}` : 'Unknown Name'} 
+                            <span className="text-slate-500 text-xs ml-1 font-normal">({fup.lead?.primaryPhone})</span>
+                          </Link>
+                          {fup.lead?.assignedToUser && (
+                            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Assigned to: {fup.lead.assignedToUser.firstName} {fup.lead.assignedToUser.lastName}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-bold text-amber-600">{new Date(fup.scheduledAt).toLocaleDateString()}</p>
+                          <p className="text-[10px] font-medium text-slate-500">{new Date(fup.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                        </div>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1 truncate">{fup.remarks || fup.purpose}</p>
+                      <p className="text-xs text-slate-600 mt-1.5 italic truncate bg-slate-50 p-1.5 rounded">{fup.remarks || 'No remarks provided'}</p>
                     </div>
                   ))}
                 </div>

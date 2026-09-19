@@ -454,11 +454,18 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         <p className="text-gray-500 text-lg font-mono">{successData.businessId}</p>
         
         {warning && (
-          <Alert variant="info" className="text-left mt-4 inline-block max-w-md mx-auto">
-            <AlertCircle className="w-4 h-4 mr-2 inline" />
-            Duplicate was detected, but Lead was created successfully.
-          </Alert>
-        )}
+            <Alert variant="info" className="text-left mt-4 inline-block max-w-md mx-auto">
+              <AlertCircle className="w-4 h-4 mr-2 inline" />
+              Duplicate was detected, but Lead was created successfully.
+              {warning.existingLead && (
+                <div className="mt-2 text-sm font-medium">
+                  <a href={`/leads/${warning.existingLead.id}`} className="text-brand-600 hover:underline">
+                    View Existing Lead ({warning.existingLead.firstName} {warning.existingLead.lastName}) &rarr;
+                  </a>
+                </div>
+              )}
+            </Alert>
+          )}
 
         <div className="bg-gray-50 rounded-lg p-4 inline-block text-left mt-6 min-w-[250px]">
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Users, UserPlus, Trophy, DollarSign, Activity, TrendingUp } from 'lucide-react';
+import { Users, UserPlus, Trophy, Banknote, Activity, TrendingUp } from 'lucide-react';
 
 export function ExecutiveKpiStrip({ data, periodLabel }: { data: any, periodLabel: string }) {
   if (!data) return null;
@@ -9,7 +9,7 @@ export function ExecutiveKpiStrip({ data, periodLabel }: { data: any, periodLabe
     { label: 'Active Leads', value: data.activeLeads, icon: Users, isCurrentState: true },
     { label: 'New Leads', value: data.newLeads, icon: UserPlus, isCurrentState: false },
     { label: 'Enrolled', value: data.enrolled, icon: Trophy, isCurrentState: false },
-    { label: 'Collections', value: `$${(data.actualCollections || 0).toLocaleString()}`, icon: DollarSign, isCurrentState: false },
+    { label: 'Collections', value: `AED ${(data.actualCollections || 0).toLocaleString()}`, icon: Banknote, isCurrentState: false },
     { label: 'Conversion', value: data.conversionRate, icon: TrendingUp, isCurrentState: false },
     { label: 'Active Employees', value: data.activeEmployees, icon: Activity, isCurrentState: true },
   ];
@@ -44,7 +44,7 @@ export function ExecutiveKpiStrip({ data, periodLabel }: { data: any, periodLabe
 
         if (kpi.label === 'Active Leads') {
           return (
-            <a key={idx} href="/dashboard/ceo/pipeline" className="block h-full cursor-pointer">
+            <a key={idx} href="/leads" className="block h-full cursor-pointer">
               {cardContent}
             </a>
           );

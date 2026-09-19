@@ -1,11 +1,15 @@
 import * as React from 'react';
 import { getSession } from '@/lib/api/auth';
-import { redirect } from 'next/navigation';
 import { CeoSalesView } from '@/components/ceo/CeoSalesView';
+import { SalesHeadWorkspace } from './components/SalesHeadWorkspace';
+import { SalesCounsellorWorkspace } from './components/SalesCounsellorWorkspace';
 
 export default async function SalesOverviewPage({ searchParams }: { searchParams: { from?: string; to?: string; period?: string } }) {
   const user = await getSession();
-  const isCeo = user?.permissions?.includes('analytics.ceo.read');
+  const permissions = user?.permissions || [];
+  
+  const isCeo = permissions.includes('analytics.ceo.read');
+  const isSalesHead = permissions.includes('lead.read-all');
 
   if (isCeo) {
     return (
@@ -15,11 +19,14 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
     );
   }
 
-  // If not CEO, but they have access to sales team view, redirect them
-  if (user?.permissions?.includes('sales.manage') || user?.permissions?.includes('sales.read-all')) {
-    redirect('/sales/team');
-  }
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Sales Workspace</h1>
+        <p className="text-slate-500 text-sm mt-1">Manage your operations, follow-ups, and performance.</p>
+      </div>
 
-  // Fallback
-  redirect('/dashboard');
+      {isSalesHead ? <SalesHeadWorkspace /> : <SalesCounsellorWorkspace />}
+    </div>
+  );
 }

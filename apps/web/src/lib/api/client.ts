@@ -30,7 +30,10 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     try {
       const errorData = await response.json();
       errorMsg = errorData.message || errorMsg;
-    } catch (e) {}
+      console.error('[API ERROR]', response.status, endpoint, errorData);
+    } catch (e) {
+      console.error('[API ERROR]', response.status, endpoint, 'No JSON');
+    }
     
     if (response.status === 401) {
       // In Server Actions, throwing a specific error might be caught to trigger redirect

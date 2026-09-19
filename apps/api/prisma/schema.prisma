@@ -246,18 +246,24 @@ model User {
   notifications    Notification[] @relation("UserNotifications")
 
   // Phase 1 additions
-  createdCustomRoles       Role[]                  @relation("CustomRoleCreator")
-  receivedPermissions      UserPermission[]        @relation("PermissionRecipient")
-  delegatedPermissions     UserPermission[]        @relation("PermissionDelegator")
-  createdRecruitments      TutorRecruitment[]      @relation("RecruitmentCreator")
-  advancedStages           TutorRecruitmentStage[] @relation("StageAdvancedBy")
-  conductedInterviews      TutorInterview[]        @relation("InterviewConductor")
-  addedTutorSubjects       TutorSubject[]          @relation("TutorSubjectAddedBy")
-  addedTutorGrades         TutorGrade[]            @relation("TutorGradeAddedBy")
-  addedTutorCurricula      TutorCurriculum[]       @relation("TutorCurriculumAddedBy")
-  createdAvailabilitySlots TutorAvailabilitySlot[] @relation("SlotCreatedBy")
-  setTutorRates            TutorRate[]             @relation("RateSetBy")
-  submittedFeedback        TutorFeedback[]         @relation("FeedbackGivenBy")
+  createdCustomRoles       Role[]                         @relation("CustomRoleCreator")
+  receivedPermissions      UserPermission[]               @relation("PermissionRecipient")
+  delegatedPermissions     UserPermission[]               @relation("PermissionDelegator")
+  createdRecruitments      TutorRecruitment[]             @relation("RecruitmentCreator")
+  advancedStages           TutorRecruitmentStage[]        @relation("StageAdvancedBy")
+  conductedInterviews      TutorInterview[]               @relation("InterviewConductor")
+  attendanceCorrections    EmployeeAttendanceCorrection[]
+  addedTutorSubjects       TutorSubject[]                 @relation("TutorSubjectAddedBy")
+  addedTutorGrades         TutorGrade[]                   @relation("TutorGradeAddedBy")
+  addedTutorCurricula      TutorCurriculum[]              @relation("TutorCurriculumAddedBy")
+  createdAvailabilitySlots TutorAvailabilitySlot[]        @relation("SlotCreatedBy")
+  setTutorRates            TutorRate[]                    @relation("RateSetBy")
+
+  // Sales CRM
+  salesTargets              SalesTarget[]        @relation("UserSalesTarget")
+  setSalesTargets           SalesTarget[]        @relation("UserSetSalesTarget")
+  salesTargetHistoryChanges SalesTargetHistory[] @relation("SalesTargetHistoryChangedBy")
+  submittedFeedback         TutorFeedback[]      @relation("FeedbackGivenBy")
 
   // Phase 2D Demo additions
   assignedDemos     Demo[]                  @relation("AssignedDemos")
@@ -361,10 +367,11 @@ model Employee {
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  user         User              @relation("UserEmployee", fields: [userId], references: [id])
-  department   Department        @relation(fields: [departmentId], references: [id])
-  tutorProfile TutorProfile?     @relation("EmployeeTutorProfile")
-  recruitment  TutorRecruitment? @relation("RecruitmentHiredEmployee")
+  user               User                        @relation("UserEmployee", fields: [userId], references: [id])
+  department         Department                  @relation(fields: [departmentId], references: [id])
+  tutorProfile       TutorProfile?               @relation("EmployeeTutorProfile")
+  recruitment        TutorRecruitment?           @relation("RecruitmentHiredEmployee")
+  attendanceSessions EmployeeAttendanceSession[]
 
   @@index([departmentId])
   @@index([employmentStatus])
@@ -928,25 +935,26 @@ enum EnrollmentState {
 }
 
 model Lead {
-  id               String              @id @default(uuid())
-  businessId       String              @unique @map("business_id")
-  firstName        String?             @map("first_name")
-  lastName         String?             @map("last_name")
-  primaryPhone     String              @map("primary_phone")
-  altPhone1        String?             @map("alt_phone_1")
-  altPhone2        String?             @map("alt_phone_2")
-  whatsappNumber   String?             @map("whatsapp_number")
-  source           LeadSource
-  creationChannel  LeadCreationChannel @map("creation_channel")
-  status           LeadStatus          @default(NEW)
-  requiresFollowUp Boolean             @default(false) @map("requires_follow_up")
-  assignedToUserId String?             @map("assigned_to_user_id")
-  createdByUserId  String              @map("created_by_user_id")
-  isArchived       Boolean             @default(false) @map("is_archived")
-  archivedAt       DateTime?           @map("archived_at")
-  archivedByUserId String?             @map("archived_by_user_id")
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
+  id                    String                 @id @default(uuid())
+  businessId            String                 @unique @map("business_id")
+  firstName             String?                @map("first_name")
+  lastName              String?                @map("last_name")
+  primaryPhone          String                 @map("primary_phone")
+  altPhone1             String?                @map("alt_phone_1")
+  altPhone2             String?                @map("alt_phone_2")
+  whatsappNumber        String?                @map("whatsapp_number")
+  source                LeadSource
+  creationChannel       LeadCreationChannel    @map("creation_channel")
+  status                LeadStatus             @default(NEW)
+  currentClassification ContactClassification? @map("current_classification")
+  requiresFollowUp      Boolean                @default(false) @map("requires_follow_up")
+  assignedToUserId      String?                @map("assigned_to_user_id")
+  createdByUserId       String                 @map("created_by_user_id")
+  isArchived            Boolean                @default(false) @map("is_archived")
+  archivedAt            DateTime?              @map("archived_at")
+  archivedByUserId      String?                @map("archived_by_user_id")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
 
   assignedToUser User? @relation("AssignedLeads", fields: [assignedToUserId], references: [id])
   createdByUser  User  @relation("CreatedLeads", fields: [createdByUserId], references: [id])
@@ -965,6 +973,7 @@ model Lead {
   @@index([assignedToUserId])
   @@index([primaryPhone])
   @@index([status])
+  @@index([currentClassification])
   @@index([isArchived])
   @@index([createdAt])
   @@map("leads")
@@ -1544,4 +1553,151 @@ model MarketingInteraction {
   @@unique([provider, externalLeadId])
   @@index([leadId])
   @@map("marketing_interactions")
+}
+
+enum SalesTargetType {
+  CONVERSION_PERCENTAGE
+  REVENUE_AED
+}
+
+/// Current active target per counsellor per calendar month (one row).
+/// Mid-month changes do NOT overwrite — they create a SalesTargetHistory record.
+model SalesTarget {
+  id          String          @id @default(uuid())
+  userId      String          @map("user_id")
+  periodMonth Int             @map("period_month")
+  periodYear  Int             @map("period_year")
+  targetType  SalesTargetType @map("target_type")
+  targetValue Decimal         @map("target_value") @db.Decimal(10, 2)
+  setByUserId String          @map("set_by_user_id")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  user    User                 @relation("UserSalesTarget", fields: [userId], references: [id])
+  setBy   User                 @relation("UserSetSalesTarget", fields: [setByUserId], references: [id])
+  history SalesTargetHistory[]
+
+  @@unique([userId, periodYear, periodMonth])
+  @@map("sales_targets")
+}
+
+/// Immutable audit trail: every time a SalesTarget is changed, the PREVIOUS
+/// configuration is snapshotted here before the update is applied.
+model SalesTargetHistory {
+  id              String          @id @default(uuid())
+  salesTargetId   String          @map("sales_target_id")
+  userId          String          @map("user_id") // counsellor affected
+  periodMonth     Int             @map("period_month")
+  periodYear      Int             @map("period_year")
+  previousType    SalesTargetType @map("previous_type")
+  previousValue   Decimal         @map("previous_value") @db.Decimal(10, 2)
+  newType         SalesTargetType @map("new_type")
+  newValue        Decimal         @map("new_value") @db.Decimal(10, 2)
+  changedByUserId String          @map("changed_by_user_id")
+  changedAt       DateTime        @default(now()) @map("changed_at")
+
+  salesTarget SalesTarget @relation(fields: [salesTargetId], references: [id], onDelete: Cascade)
+  changedBy   User        @relation("SalesTargetHistoryChangedBy", fields: [changedByUserId], references: [id])
+
+  @@index([salesTargetId, changedAt])
+  @@index([userId, periodYear, periodMonth])
+  @@map("sales_target_history")
+}
+
+// ============================================================================
+// ATTENDANCE & WORK-TIME (Slice 2G)
+// ============================================================================
+
+model GlobalWorkingSchedule {
+  id            String   @id @default(uuid())
+  startTime     String // e.g., "09:00"
+  endTime       String // e.g., "18:00"
+  timezone      String   @default("Asia/Kolkata")
+  effectiveFrom DateTime @default(now()) @map("effective_from")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  updatedBy     String?  @map("updated_by")
+
+  @@index([effectiveFrom(sort: Desc)])
+  @@map("global_working_schedules")
+}
+
+enum AttendanceSessionStatus {
+  ACTIVE
+  ON_BREAK
+  COMPLETED
+  AUTO_CHECKED_OUT
+}
+
+model EmployeeAttendanceSession {
+  id               String                  @id @default(uuid())
+  employeeId       String                  @map("employee_id")
+  calendarDate     String                  @map("calendar_date") // "YYYY-MM-DD" in Asia/Kolkata
+  scheduleSnapshot Json                    @map("schedule_snapshot") // { startTime, endTime, timezone, scheduleId }
+  status           AttendanceSessionStatus
+  isLate           Boolean                 @default(false) @map("is_late")
+  lateMinutes      Int                     @default(0) @map("late_minutes")
+
+  grossDurationMinutes Int @default(0) @map("gross_duration_minutes")
+  breakDurationMinutes Int @default(0) @map("break_duration_minutes")
+  netDurationMinutes   Int @default(0) @map("net_duration_minutes")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  employee    Employee                       @relation(fields: [employeeId], references: [id])
+  events      EmployeeAttendanceEvent[]
+  corrections EmployeeAttendanceCorrection[]
+
+  @@index([employeeId, calendarDate])
+  @@index([status])
+  @@map("employee_attendance_sessions")
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  BREAK_START
+  BREAK_END
+  CHECK_OUT
+  AUTO_CHECK_OUT
+  AUTO_BREAK_END
+}
+
+model EmployeeAttendanceEvent {
+  id        String              @id @default(uuid())
+  sessionId String              @map("session_id")
+  eventType AttendanceEventType @map("event_type")
+  timestamp DateTime // Authoritative server timestamp (exact time action occurred or effective end-of-day)
+
+  isInvalidated Boolean @default(false) @map("is_invalidated")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session EmployeeAttendanceSession @relation(fields: [sessionId], references: [id])
+
+  // Relations to corrections
+  correctionsAsOriginal EmployeeAttendanceCorrection[] @relation("OriginalEvent")
+  correctionsAsNew      EmployeeAttendanceCorrection[] @relation("NewEvent")
+
+  @@index([sessionId])
+  @@index([timestamp])
+  @@map("employee_attendance_events")
+}
+
+model EmployeeAttendanceCorrection {
+  id                String   @id @default(uuid())
+  sessionId         String   @map("session_id")
+  originalEventId   String   @map("original_event_id")
+  newEventId        String   @map("new_event_id")
+  reason            String
+  correctedByUserId String   @map("corrected_by_user_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  session         EmployeeAttendanceSession @relation(fields: [sessionId], references: [id])
+  originalEvent   EmployeeAttendanceEvent   @relation("OriginalEvent", fields: [originalEventId], references: [id])
+  newEvent        EmployeeAttendanceEvent   @relation("NewEvent", fields: [newEventId], references: [id])
+  correctedByUser User                      @relation(fields: [correctedByUserId], references: [id])
+
+  @@index([sessionId])
+  @@map("employee_attendance_corrections")
 }

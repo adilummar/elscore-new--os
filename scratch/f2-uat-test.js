@@ -68,15 +68,16 @@ async function run() {
     const shLogin = await request('POST', '/auth/login', { email: 'uat_sh@elscore.test', password: 'Test@1234!' });
     const shToken = getItems(shLogin).accessToken;
     console.log("Sales Head Login Status:", shLogin.status);
-
-    // Get Subjects, Curriculums, Grades
-    const sRes = await request('GET', '/reference/subjects', null, c1Token);
-    const cRes = await request('GET', '/reference/curricula', null, c1Token);
-    const gRes = await request('GET', '/reference/grades', null, c1Token);
     
-    const sId = getItems(sRes)[0].id;
-    const cId = getItems(cRes)[0].id;
-    const gId = getItems(gRes)[0].id;
+    const sRes = await request('GET', '/reference/subjects?limit=1', null, ceoToken);
+    const cRes = await request('GET', '/reference/curricula?limit=1', null, ceoToken);
+    const gRes = await request('GET', '/reference/grades?limit=1', null, ceoToken);
+
+    const sId = getItems(sRes)?.[0]?.id;
+    const cId = getItems(cRes)?.[0]?.id;
+    const gId = getItems(gRes)?.[0]?.id;
+    
+    if (!sId) throw new Error("No Subject ID found in staging");
 
     // SCENARIO: Multi-Student Creation (Direct Counsellor - Self Assigned)
     console.log("\\n-- SCENARIO: Multi-Student Atomic Creation --");

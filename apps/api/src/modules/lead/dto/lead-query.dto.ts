@@ -34,6 +34,14 @@ export class LeadQueryDto {
   @Type(() => Boolean)
   hasMarketingAttribution?: boolean;
 
+  @IsOptional()
+  @IsString()
+  classification?: string; // Qualified, Non-Qualified, No Response, Junk
+
+  @IsOptional()
+  @IsString()
+  followUpState?: string; // SCHEDULED, OVERDUE, NONE
+
   @Type(() => Number)
   @IsOptional()
   @Min(1)

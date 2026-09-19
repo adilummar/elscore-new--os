@@ -68,7 +68,7 @@ export default function LoginPage() {
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 text-center">Quick Login (Testing)</p>
             <div className="flex flex-wrap gap-2 justify-center">
               {[
-                { label: 'Admin/CEO', email: 'admin@elscore.internal', pass: 'ChangeMe123!' },
+                { label: 'Admin/CEO', email: 'admin@elscore.internal', pass: 'Admin@123!' },
                 { label: 'UAT Sales A', email: 'uat_sca@elscore.test', pass: 'Test@1234!' },
                 { label: 'UAT Sales B', email: 'uat_scb@elscore.test', pass: 'Test@1234!' },
                 { label: 'UAT Sales Head', email: 'uat_sh@elscore.test', pass: 'Test@1234!' },
@@ -81,8 +81,21 @@ export default function LoginPage() {
                   onClick={() => {
                     const form = document.querySelector('form');
                     if (form) {
-                      (form.elements.namedItem('email') as HTMLInputElement).value = acc.email;
-                      (form.elements.namedItem('password') as HTMLInputElement).value = acc.pass;
+                      const emailInput = form.elements.namedItem('email') as HTMLInputElement;
+                      const passInput = form.elements.namedItem('password') as HTMLInputElement;
+                      
+                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                      
+                      if (nativeInputValueSetter) {
+                        nativeInputValueSetter.call(emailInput, acc.email);
+                        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        
+                        nativeInputValueSetter.call(passInput, acc.pass);
+                        passInput.dispatchEvent(new Event('input', { bubbles: true }));
+                      } else {
+                        emailInput.value = acc.email;
+                        passInput.value = acc.pass;
+                      }
                     }
                   }}
                 >

@@ -34,7 +34,17 @@ export class RoundRobinService {
   async getConfig() {
     const state = await this.prisma.roundRobinState.findUnique({ where: { id: 'singleton' } });
     const counsellors = await this.prisma.roundRobinCounsellorState.findMany({
-      include: { user: { select: { id: true, email: true, status: true } } },
+      include: { 
+        user: { 
+          select: { 
+            id: true, 
+            email: true, 
+            status: true,
+            employee: { select: { firstName: true, lastName: true, department: { select: { name: true } } } },
+            userRoles: { include: { role: true } }
+          } 
+        } 
+      },
     });
     return {
       isPaused: state?.isPaused ?? false,

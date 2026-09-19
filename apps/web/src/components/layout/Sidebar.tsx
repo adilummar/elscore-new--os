@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  Clock,
 } from "lucide-react";
 import { logout } from "@/lib/api/auth";
 import { usePermissions } from "@/components/providers/AuthProvider";
@@ -27,11 +28,12 @@ export function Sidebar({ user }: { user: any }) {
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Attendance", href: "/attendance", icon: Clock },
+    { name: "Sales", href: "/sales", icon: Users },
     { name: "Leads", href: "/leads", icon: Users },
     { name: "Follow-ups", href: "/follow-ups", icon: UserPlus },
     { name: "Demos", href: "/demos", icon: FileText },
     { name: "Marketing", href: "/marketing", icon: BarChart3 },
-    { name: "Sales", href: "/sales", icon: Users },
     { name: "Reports", href: "/reports", icon: BarChart3 },
     ...(hasPermission("employee.read") || hasPermission("analytics.ceo.read") ? [{ name: "HR / Employees", href: "/employees", icon: Users }] : []),
   ];

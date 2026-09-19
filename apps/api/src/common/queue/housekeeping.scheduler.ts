@@ -74,7 +74,23 @@ export class HousekeepingScheduler implements OnApplicationBootstrap {
         },
       );
 
-      this.logger.log('Housekeeping schedules registered: [daily-token-cleanup @ 02:00 UTC, round-robin-daily-reset @ 18:30 UTC]');
+      // Attendance auto-checkout at 18:35 UTC (00:05 IST)
+      await this.housekeepingQueue.upsertJobScheduler(
+        'attendance-auto-checkout',
+        { pattern: '35 18 * * *' },
+        {
+          name: JOBS.ATTENDANCE_AUTO_CHECKOUT,
+          data: {
+            idempotencyKey: 'attendance-auto-checkout',
+          },
+          opts: {
+            attempts: 3,
+            backoff: { type: 'fixed', delay: 60_000 },
+          },
+        },
+      );
+
+      this.logger.log('Housekeeping schedules registered: [daily-token-cleanup @ 02:00 UTC, round-robin-daily-reset @ 18:30 UTC, attendance-auto-checkout @ 18:35 UTC]');
     } catch (err) {
       // Scheduling failure should not crash the application.
       // Log prominently; the job will be re-scheduled on next startup.

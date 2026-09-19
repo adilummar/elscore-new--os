@@ -12,15 +12,23 @@ export function LeadStatusChangeDialog({ leadId, currentStatus, isOpen, onClose,
   const [reason, setReason] = React.useState('');
   const [loading, setLoading] = React.useState(false);
 
+  const [error, setError] = React.useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!reason.trim()) {
+      setError('A reason is required for status changes.');
+      return;
+    }
+    
     setLoading(true);
+    setError(null);
     try {
       await updateLeadStatusAction(leadId, status, reason);
       onSuccess();
       onClose();
     } catch (e: any) {
-      alert(e.message);
+      setError(e.message || 'Failed to update status');
     } finally {
       setLoading(false);
     }
@@ -30,6 +38,7 @@ export function LeadStatusChangeDialog({ leadId, currentStatus, isOpen, onClose,
     <Modal isOpen={isOpen} onClose={onClose}>
       <h2 className="text-lg font-bold mb-4">Change Status</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <div className="p-3 bg-red-50 text-red-600 rounded-md text-sm">{error}</div>}
         <div>
           <label className="text-sm font-medium">New Status</label>
           <Select value={status} onChange={e => setStatus(e.target.value)}>

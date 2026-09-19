@@ -170,7 +170,7 @@ export class FollowUpService {
   }
 
   async complete(leadId: string, fupId: string, dto: CompleteFollowUpDto, actorUserId: string, hasReadAll: boolean) {
-    const fup = await this.checkFollowUpAccess(fupId, leadId, actorUserId, hasReadAll, { requiresMutation: true });
+      const fup = await this.checkFollowUpAccess(fupId, leadId, actorUserId, hasReadAll, { requiresMutation: true });
     let nextFupForJobs: { id: string; scheduledAt: Date } | null = null;
     const completedFup = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.followUp.update({
@@ -182,8 +182,12 @@ export class FollowUpService {
         where: { leadId, id: { not: fupId }, status: { in: [FollowUpStatus.SCHEDULED, FollowUpStatus.OVERDUE] } },
         select: { id: true },
       });
-      if (!otherActive && !hasNextInDto) await tx.lead.update({ where: { id: leadId }, data: { requiresFollowUp: false } });
-      await this.audit.recordInTx(tx, { entityType: 'FollowUp', entityId: fupId, action: 'FOLLOW_UP_COMPLETED', actorUserId, newValue: { status: 'COMPLETED' } });
+      if (!otherActive && !hasNextInDto) {
+        await tx.lead.update({ where: { id: leadId }, data: { requiresFollowUp: false, currentClassification: dto.classification ?? fup.classification } });
+      } else {
+        await tx.lead.update({ where: { id: leadId }, data: { currentClassification: dto.classification ?? fup.classification } });
+      }
+      await this.audit.recordInTx(tx, { entityType: 'FollowUp', entityId: fupId, action: 'FOLLOW_UP_COMPLETED', actorUserId, newValue: { status: 'COMPLETED', classification: dto.classification ?? fup.classification } });
 
       if (dto.nextFollowUpAt) {
         const nextScheduledAt = new Date(dto.nextFollowUpAt);

@@ -58,6 +58,10 @@ export const JOBS = {
   // ── NOTIFICATIONS queue ───────────────────────────────────────────────────
   /** Consolidated Sales Head notification when a Sales employee checks out with incomplete FUPs. */
   FOLLOWUP_CHECKOUT_NOTIFY: 'followup-checkout-notify',
+
+  // ── ATTENDANCE queue (uses HOUSEKEEPING) ──────────────────────────────────
+  /** Daily job to automatically check out open sessions at the end of the calendar day. */
+  ATTENDANCE_AUTO_CHECKOUT: 'attendance-auto-checkout',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

@@ -196,6 +196,26 @@ export class LeadService {
       where.marketingAttribution = { isNot: null };
     }
 
+    if (query.classification) {
+      where.currentClassification = query.classification as any;
+    }
+
+    if (query.followUpState) {
+      if (query.followUpState === 'NONE') {
+        where.followUps = {
+          none: {
+            status: { in: ['SCHEDULED', 'OVERDUE'] }
+          }
+        };
+      } else {
+        where.followUps = {
+          some: {
+            status: query.followUpState as any
+          }
+        };
+      }
+    }
+
     if (query.search) {
       where.OR = [
         { firstName: { contains: query.search, mode: 'insensitive' } },
@@ -231,7 +251,31 @@ export class LeadService {
     return this.prisma.lead.findUnique({
       where: { id },
       include: {
-        students: { include: { requirements: { include: { subject: true, grade: true, curriculum: true } } } },
+        students: { 
+          include: { 
+            requirements: { include: { subject: true, grade: true, curriculum: true } },
+            demos: {
+              include: {
+                subject: true,
+                grade: true,
+                curriculum: true,
+                tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                feedback: true,
+                rescheduleHistory: { orderBy: { rescheduledAt: 'desc' } },
+              },
+              orderBy: { scheduledAt: 'desc' },
+            }
+          } 
+        },
+        invoices: {
+          include: {
+            student: { select: { id: true, firstName: true, lastName: true } },
+            lineItems: true,
+            installments: { orderBy: { sequence: 'asc' } },
+            payments: { where: { status: 'SUCCESS' }, include: { receipt: true }, orderBy: { receivedAt: 'desc' } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
         statusHistory: { orderBy: { changedAt: 'desc' } },
         assignmentHistory: { orderBy: { assignedAt: 'desc' } },
         salesNotes: { orderBy: { createdAt: 'desc' }, include: { createdByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } } } },
@@ -394,6 +438,80 @@ export class LeadService {
     });
   }
 
+  async reopen(id: string, userId: string) {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const oldLead = await tx.lead.findUniqueOrThrow({ where: { id } });
+      
+      if (oldLead.status !== 'LOST' && oldLead.status !== 'NOT_INTERESTED' && !oldLead.isArchived) {
+        throw new ForbiddenException('Lead is not in a reopenable state');
+      }
+
+      let newOwnerId = oldLead.assignedToUserId;
+      let assignmentType = null;
+      let reason = 'Reopened lead';
+
+      if (newOwnerId) {
+        const owner = await tx.user.findUnique({
+          where: { id: newOwnerId }
+        });
+        const ownerState = await tx.roundRobinCounsellorState.findUnique({
+          where: { userId: newOwnerId }
+        });
+        
+        if (!owner || owner.status !== 'ACTIVE' || (ownerState && ownerState.dailyState !== 'ACTIVE')) {
+          newOwnerId = null;
+          assignmentType = 'REOPENED';
+          reason = 'Reopened lead, previous owner inactive/ineligible';
+        }
+      }
+
+      const updated = await tx.lead.update({
+        where: { id },
+        data: {
+          status: 'NEW',
+          isArchived: false,
+          archivedAt: null,
+          archivedByUserId: null,
+          assignedToUserId: newOwnerId
+        },
+      });
+
+      if (assignmentType) {
+        await tx.leadAssignmentHistory.create({
+          data: {
+            leadId: id,
+            oldOwnerUserId: oldLead.assignedToUserId,
+            newOwnerUserId: newOwnerId,
+            reason,
+            assignmentType: 'REOPENED',
+            assignedByUserId: userId,
+          },
+        });
+      }
+
+      await tx.leadStatusHistory.create({
+        data: {
+          leadId: id,
+          oldStatus: oldLead.status,
+          newStatus: 'NEW',
+          reason: 'Lead reopened',
+          changedByUserId: userId,
+        },
+      });
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'Lead',
+        entityId: id,
+        action: 'REOPEN',
+        actorUserId: userId,
+        oldValue: oldLead,
+        newValue: updated,
+      });
+
+      return updated;
+    });
+  }
+
   // --- Sales Notes ---
   async createNote(leadId: string, dto: CreateSalesNoteDto, userId: string, hasReadAll: boolean) {
     await this.checkOwnership(leadId, userId, hasReadAll);
@@ -433,5 +551,43 @@ export class LeadService {
     }
 
     await this.prisma.salesNote.delete({ where: { id: noteId } });
+  }
+
+  async getTimeline(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
+    const lead = await this.prisma.lead.findUnique({
+      where: { id },
+      include: {
+        students: { include: { demos: true } },
+        invoices: true,
+        followUps: true
+      }
+    });
+    if (!lead) return [];
+
+    const entityIds = [id]; // Lead
+    lead.students.forEach(s => {
+      entityIds.push(s.id); // Student
+      s.demos.forEach(d => entityIds.push(d.id)); // Demo
+    });
+    lead.invoices.forEach(inv => entityIds.push(inv.id)); // Invoice
+    lead.followUps.forEach(f => entityIds.push(f.id)); // FollowUp
+
+    const events = await this.prisma.auditEvent.findMany({
+      where: {
+        entityId: { in: entityIds }
+      },
+      orderBy: { timestamp: 'desc' },
+      include: { actor: { include: { employee: true } } }
+    });
+
+    return events.map(ev => ({
+      id: ev.id,
+      type: ev.action,
+      occurredAt: ev.timestamp,
+      actor: ev.actor?.employee ? `${ev.actor.employee.firstName} ${ev.actor.employee.lastName}` : ev.actor?.username || 'System',
+      metadata: ev.newValue,
+      entityType: ev.entityType
+    }));
   }
 }

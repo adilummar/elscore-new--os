@@ -32,13 +32,11 @@ export class DemoController {
   }
 
   @Get('summary')
-  @RequirePermissions('demo.read')
   async getSummary(@CurrentUser() user: ValidatedUser) {
     return this.demoService.getSummary(user);
   }
 
   @Get()
-  @RequirePermissions('demo.read')
   async getDemos(
     @Query('view') view: string,
     @Query('status') status: string,
@@ -48,7 +46,6 @@ export class DemoController {
   }
 
   @Get(':id')
-  @RequirePermissions('demo.read')
   async getDemoById(
     @Param('id') id: string,
     @CurrentUser() user: ValidatedUser,
