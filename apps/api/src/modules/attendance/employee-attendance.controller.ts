@@ -9,9 +9,9 @@ export class EmployeeAttendanceController {
 
   @Post('action')
   @RequirePermissions('attendance.action.own')
-  async handleAction(@CurrentUser() user: RequestUser, @Body('action') action: string) {
+  async handleAction(@CurrentUser() user: RequestUser, @Body('action') action: string, @Body('note') note?: string) {
     try {
-      if (action === 'CHECK_IN') return await this.attendanceService.checkIn(user.id);
+      if (action === 'CHECK_IN') return await this.attendanceService.checkIn(user.id, undefined, note);
       if (action === 'BREAK_START') return await this.attendanceService.startBreak(user.id);
       if (action === 'BREAK_END') return await this.attendanceService.endBreak(user.id);
       if (action === 'CHECK_OUT') return await this.attendanceService.checkOut(user.id);
@@ -38,6 +38,27 @@ export class EmployeeAttendanceController {
   @RequirePermissions('attendance.read.team')
   async getTeamAttendance(@Query('date') date: string) {
     return this.attendanceService.getTeamAttendance(date);
+  }
+
+  /**
+   * GET /attendance/staffs
+   * CEO / managers: all employees.
+   * Department heads: scoped to their own department via ?departmentId=
+   */
+  @Get('staffs')
+  @RequirePermissions('attendance.read.team')
+  async getAllStaffs(@Query('departmentId') departmentId?: string) {
+    return this.attendanceService.getAllStaffsWithAttendance(departmentId);
+  }
+
+  /**
+   * GET /attendance/staffs/:employeeId
+   * Full staff detail — today's session + last 14 days history.
+   */
+  @Get('staffs/:employeeId')
+  @RequirePermissions('attendance.read.team')
+  async getStaffDetail(@Param('employeeId') employeeId: string) {
+    return this.attendanceService.getStaffDetail(employeeId);
   }
 
   @Patch('event/:eventId/correct')

@@ -18,7 +18,7 @@ export class EmployeeAttendanceService {
     return formatInTimeZone(date, TIMEZONE, 'yyyy-MM-dd');
   }
 
-  async checkIn(userId: string, requestedDate?: Date) {
+  async checkIn(userId: string, requestedDate?: Date, note?: string) {
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
       if (!employee) throw new NotFoundException('Employee not found');
@@ -68,6 +68,7 @@ export class EmployeeAttendanceService {
           status: 'ACTIVE',
           isLate,
           lateMinutes,
+          note: note || null,
           events: {
             create: {
               eventType: 'CHECK_IN',
@@ -369,5 +370,127 @@ export class EmployeeAttendanceService {
           events: { where: { isInvalidated: false }, orderBy: { timestamp: 'asc' } }
         }
      });
+  }
+
+  /**
+   * Returns ALL active employees with their today's attendance session (null if absent).
+   * If departmentId is provided, scopes to that department only (for team leads/dept heads).
+   */
+  async getAllStaffsWithAttendance(departmentId?: string) {
+    const today = this.getTodayStr();
+
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        employmentStatus: 'ACTIVE',
+        ...(departmentId ? { departmentId } : {}),
+      },
+      include: {
+        department: { select: { id: true, name: true, code: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            userRoles: {
+              include: { role: { select: { id: true, name: true, code: true } } },
+            },
+          },
+        },
+        attendanceSessions: {
+          where: { calendarDate: today },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            events: {
+              where: { isInvalidated: false },
+              orderBy: { timestamp: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: [{ department: { name: 'asc' } }, { firstName: 'asc' }],
+    });
+
+    return employees.map((emp) => {
+      const todaySession = emp.attendanceSessions[0] || null;
+      const checkInEvent = todaySession?.events.find((e) => e.eventType === 'CHECK_IN');
+      const checkOutEvent = todaySession?.events.find(
+        (e) => e.eventType === 'CHECK_OUT' || e.eventType === 'AUTO_CHECK_OUT',
+      );
+
+      return {
+        id: emp.id,
+        businessId: emp.businessId,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        email: emp.user.email,
+        userStatus: emp.user.status,
+        userId: emp.user.id,
+        department: emp.department,
+        roles: emp.user.userRoles.map((ur) => ur.role),
+        todaySession: todaySession
+          ? {
+              id: todaySession.id,
+              status: todaySession.status,
+              note: todaySession.note,
+              isLate: todaySession.isLate,
+              lateMinutes: todaySession.lateMinutes,
+              netDurationMinutes: todaySession.netDurationMinutes,
+              breakDurationMinutes: todaySession.breakDurationMinutes,
+              checkInTime: checkInEvent?.timestamp ?? null,
+              checkOutTime: checkOutEvent?.timestamp ?? null,
+            }
+          : null,
+      };
+    });
+  }
+
+  /**
+   * Returns detailed attendance for a single employee — today + last 14 days history.
+   */
+  async getStaffDetail(employeeId: string) {
+    const today = this.getTodayStr();
+
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: {
+        department: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            userRoles: { include: { role: true } },
+          },
+        },
+        attendanceSessions: {
+          orderBy: { calendarDate: 'desc' },
+          take: 14,
+          include: {
+            events: {
+              where: { isInvalidated: false },
+              orderBy: { timestamp: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    if (!employee) throw new NotFoundException('Employee not found');
+
+    const todaySession = employee.attendanceSessions.find((s) => s.calendarDate === today) || null;
+
+    return {
+      id: employee.id,
+      businessId: employee.businessId,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      email: employee.user.email,
+      userId: employee.user.id,
+      department: employee.department,
+      roles: employee.user.userRoles.map((ur) => ur.role),
+      todaySession,
+      recentSessions: employee.attendanceSessions,
+    };
   }
 }

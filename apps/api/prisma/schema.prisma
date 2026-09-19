@@ -1637,6 +1637,7 @@ model EmployeeAttendanceSession {
   status           AttendanceSessionStatus
   isLate           Boolean                 @default(false) @map("is_late")
   lateMinutes      Int                     @default(0) @map("late_minutes")
+  note             String?                 // What the staff is working on today
 
   grossDurationMinutes Int @default(0) @map("gross_duration_minutes")
   breakDurationMinutes Int @default(0) @map("break_duration_minutes")

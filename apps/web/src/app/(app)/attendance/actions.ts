@@ -11,11 +11,11 @@ export async function getAttendanceHistoryAction() {
   return fetchApi<any>('/attendance/history');
 }
 
-export async function performAttendanceAction(actionStr: string) {
+export async function performAttendanceAction(actionStr: string, note?: string) {
   try {
     const res = await fetchApi<any>('/attendance/action', {
       method: 'POST',
-      body: JSON.stringify({ action: actionStr }),
+      body: JSON.stringify({ action: actionStr, ...(note ? { note } : {}) }),
     });
     revalidatePath('/attendance');
     return { success: true, data: res };

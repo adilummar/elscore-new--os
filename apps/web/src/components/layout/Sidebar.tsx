@@ -29,6 +29,7 @@ export function Sidebar({ user }: { user: any }) {
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Attendance", href: "/attendance", icon: Clock },
+    ...(hasPermission("attendance.read.team") || hasPermission("employee.read") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
     { name: "Sales", href: "/sales", icon: Users },
     { name: "Leads", href: "/leads", icon: Users },
     { name: "Follow-ups", href: "/follow-ups", icon: UserPlus },

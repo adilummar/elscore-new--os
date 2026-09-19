@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 export default function MyAttendancePage() {
   const [status, setStatus] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [note, setNote] = useState('');
   const [toast, setToast] = useState<{message: string, type: 'success' | 'warning'} | null>(null);
 
   const showToast = (message: string, type: 'success' | 'warning') => {
@@ -24,7 +25,8 @@ export default function MyAttendancePage() {
         setStatus({
           state: data.status === 'ACTIVE' ? 'Working' : data.status === 'ON_BREAK' ? 'On Break' : 'Day Complete',
           workedTime: `${Math.floor((data.netDurationMinutes || 0) / 60)}h ${(data.netDurationMinutes || 0) % 60}m`,
-          breakTime: `${Math.floor((data.breakDurationMinutes || 0) / 60)}h ${(data.breakDurationMinutes || 0) % 60}m`
+          breakTime: `${Math.floor((data.breakDurationMinutes || 0) / 60)}h ${(data.breakDurationMinutes || 0) % 60}m`,
+          note: data.note,
         });
       } else {
         setStatus(null);
@@ -47,6 +49,7 @@ export default function MyAttendancePage() {
             checkIn: checkInEvent ? new Date(checkInEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
             checkOut: checkOutEvent ? new Date(checkOutEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
             workedTime: `${Math.floor((s.netDurationMinutes || 0) / 60)}h ${(s.netDurationMinutes || 0) % 60}m`,
+            note: s.note,
           };
         }));
       }
@@ -62,12 +65,13 @@ export default function MyAttendancePage() {
 
   const handleAction = async (action: string) => {
     try {
-      const res = await performAttendanceAction(action);
+      const res = await performAttendanceAction(action, action === 'CHECK_IN' ? note : undefined);
       if (!res.success) {
         showToast(res.error, 'warning');
         return;
       }
       showToast('Action successful', 'success');
+      if (action === 'CHECK_IN') setNote('');
       fetchStatus();
       fetchHistory();
     } catch (e) {
@@ -91,7 +95,27 @@ export default function MyAttendancePage() {
             </div>
             <div className="flex flex-wrap gap-3 mt-2">
               {(!status?.state || status?.state === 'Not Checked In') && (
-                <Button onClick={() => handleAction('CHECK_IN')}>Check In</Button>
+                <div className="w-full space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">What are you working on today? <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <textarea
+                      value={note}
+                      onChange={e => setNote(e.target.value)}
+                      placeholder="e.g. Following up on leads from yesterday, Sales calls…"
+                      rows={2}
+                      className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                  <Button onClick={() => handleAction('CHECK_IN')}>Check In</Button>
+                </div>
+              )}
+
+              {/* Show current task note when already working */}
+              {status?.state === 'Working' && status?.note && (
+                <div className="w-full p-2.5 rounded-md bg-blue-50 border border-blue-100 text-sm text-blue-800 mb-1">
+                  <span className="font-semibold text-blue-600 text-xs block mb-0.5">Working on</span>
+                  {status.note}
+                </div>
               )}
 
               {status?.state === 'Working' && (
