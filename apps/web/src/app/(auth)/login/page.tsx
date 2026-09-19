@@ -20,15 +20,19 @@ export default function LoginPage() {
     const password = formData.get('password') as string;
 
     try {
-      const data = await login({ email, password });
+      const result = await login({ email, password });
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
       // Hard navigation so the browser sends the newly set HttpOnly cookies
-      if (data.requiresPasswordChange) {
+      if (result.requiresPasswordChange) {
         window.location.href = '/setup-password';
       } else {
         window.location.href = '/dashboard';
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(err.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

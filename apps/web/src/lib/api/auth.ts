@@ -2,7 +2,7 @@
 import { fetchApi } from './client';
 import { cookies } from 'next/headers';
 
-export async function login(credentials: { email: string; password: string }) {
+export async function login(credentials: { email: string; password: string }): Promise<{ requiresPasswordChange?: boolean; error?: string }> {
   const apiBase = process.env.API_URL || 'http://localhost:3001/api/v1';
   console.log('Attempting login to API:', `${apiBase}/auth/login`);
   
@@ -15,17 +15,23 @@ export async function login(credentials: { email: string; password: string }) {
     });
   } catch (fetchErr: any) {
     console.error('Fetch to NestJS completely failed:', fetchErr);
-    throw new Error('Could not connect to API server: ' + fetchErr.message);
+    return { error: 'Could not connect to server. Please try again.' };
   }
 
   if (!res.ok) {
     const errJson = await res.json().catch(() => ({}));
     console.error('API returned non-ok status:', res.status, errJson);
-    const errData = errJson.message || errJson.data?.message || 'Login failed';
-    throw new Error(errData);
+    const errData = errJson.message || errJson.data?.message || 'Invalid credentials. Please try again.';
+    return { error: errData };
   }
 
-  const json = await res.json();
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    return { error: 'Unexpected server response. Please try again.' };
+  }
+
   // NestJS TransformInterceptor wraps all responses: { data: {...}, timestamp: "..." }
   const data = json.data ?? json;
 
