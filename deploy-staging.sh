@@ -28,6 +28,11 @@ pnpm run db:generate
 echo "🔨 Building the application..."
 pnpm run build
 
+echo "📁 Copying static assets for standalone build..."
+# Next.js standalone mode doesn't copy public and static folders by default
+cp -r apps/web/public apps/web/.next/standalone/apps/web/public 2>/dev/null || true
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static 2>/dev/null || true
+
 # 4. Run database migrations safely
 echo "🗄️ Running database migrations..."
 # Using migrate deploy which is safe for production/staging (does not reset data)
