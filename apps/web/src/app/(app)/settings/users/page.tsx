@@ -28,9 +28,17 @@ export default function UsersPage() {
 
   React.useEffect(() => { loadData(); }, []);
 
+  const EMPTY_FORM = { email: '', password: '', firstName: '', lastName: '', departmentId: '', roleId: '' };
+
+  const handleOpenModal = () => {
+    setFormData(EMPTY_FORM);
+    setIsOpen(true);
+  };
+
   const handleCreate = async () => {
     try {
       await createUserAction(formData);
+      setFormData(EMPTY_FORM);
       setIsOpen(false);
       loadData();
     } catch (e: any) {
@@ -51,7 +59,7 @@ export default function UsersPage() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Users</h1>
-        {hasPermission('user.create') && <Button onClick={() => setIsOpen(true)}>Create User</Button>}
+        {hasPermission('user.create') && <Button onClick={handleOpenModal}>Create User</Button>}
       </div>
       <Card>
         <Table>
