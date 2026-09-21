@@ -140,6 +140,17 @@ export class UserService {
         });
       }
 
+      // 4.6. RoundRobinCounsellorState creation if role is SALES_COUNSELLOR
+      if (role.code === 'SALES_COUNSELLOR') {
+        await tx.roundRobinCounsellorState.create({
+          data: {
+            userId: user.id,
+            isEligible: true,
+            dailyState: 'ACTIVE',
+          },
+        });
+      }
+
       // 5. Audits
       await this.audit.recordInTx(tx, {
         entityType: 'User',
