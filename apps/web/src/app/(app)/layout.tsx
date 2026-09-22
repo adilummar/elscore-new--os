@@ -63,7 +63,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Sidebar user={effectiveUser} />
           <div className="flex-1 flex flex-col min-w-0">
             <TopHeader user={realUser} />
-            <main className="flex-1 overflow-auto p-8">
+            <main className="flex-1 overflow-auto p-8 custom-scrollbar-dark">
               {children}
             </main>
           </div>

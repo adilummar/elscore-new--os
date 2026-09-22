@@ -48,7 +48,7 @@ export function Sidebar({ user }: { user: any }) {
       <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-primary-hover">
         <span className="font-bold text-xl tracking-tight">EL SCORE OS</span>
       </div>
-      <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
+      <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3 custom-scrollbar">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
