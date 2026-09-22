@@ -59,7 +59,7 @@ export class StudentController {
     return this.studentService.updateRequirement(id, dto, user.id, readAll);
   }
 
-  @Post('bundle')
+  @Post('students/bundle')
   @RequirePermissions('student.create')
   async saveBundle(@Body() dto: any, @CurrentUser() user: RequestUser) {
     const readAll = await this.hasReadAll(user.id);
