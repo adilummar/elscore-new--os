@@ -618,14 +618,14 @@ const PERMISSIONS: Array<{
   {
     code: 'target.read.own',
     resource: 'target',
-    action: 'read',
+    action: 'read.own',
     description: 'Read own sales targets and progress',
     isDelegatable: false,
   },
   {
     code: 'target.read.team',
     resource: 'target',
-    action: 'read',
+    action: 'read.team',
     description: 'Read team sales targets and progress',
     isDelegatable: false,
   },
