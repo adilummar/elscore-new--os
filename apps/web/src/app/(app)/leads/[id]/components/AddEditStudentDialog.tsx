@@ -80,10 +80,6 @@ export function AddEditStudentDialog({
       setError('Target Grade is required');
       return;
     }
-    if (subjectIds.length === 0 || subjectIds.some(id => !id)) {
-      setError('At least one valid subject is required');
-      return;
-    }
     
     setLoading(true);
     setError(null);
@@ -159,7 +155,7 @@ export function AddEditStudentDialog({
 
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <label className="text-sm font-medium">Subjects *</label>
+            <label className="text-sm font-medium">Subjects</label>
             <Button type="button" variant="ghost" size="sm" onClick={addSubject} className="text-brand-600">
               <Plus className="w-4 h-4 mr-1" /> Add Subject
             </Button>

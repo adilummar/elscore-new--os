@@ -41,11 +41,18 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-slate-900">Students & Requirements</h2>
-        {hasPermission('student.create') && (
-          <Button onClick={openAddStudent}>Add Student</Button>
-        )}
+        <div className="flex gap-2">
+          {hasPermission('student.update') && lead.students?.length > 0 && (
+            <Button onClick={() => openEditStudent(lead.students[0])}>Edit Student Details</Button>
+          )}
+          {hasPermission('student.create') && (
+            <Button variant={lead.students?.length > 0 ? 'outline' : 'default'} onClick={openAddStudent}>
+              {lead.students?.length > 0 ? '+ Add Another Student' : 'Add Student'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {lead.students?.length > 0 ? (
