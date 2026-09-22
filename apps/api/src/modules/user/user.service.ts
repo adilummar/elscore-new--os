@@ -140,8 +140,8 @@ export class UserService {
         });
       }
 
-      // 4.6. RoundRobinCounsellorState creation if role is SALES_COUNSELLOR
-      if (role.code === 'SALES_COUNSELLOR') {
+      // 4.6. RoundRobinCounsellorState creation if role is SALES_COUNSELLOR or SALES_HEAD
+      if (role.code === 'SALES_COUNSELLOR' || role.code === 'SALES_HEAD') {
         await tx.roundRobinCounsellorState.create({
           data: {
             userId: user.id,
