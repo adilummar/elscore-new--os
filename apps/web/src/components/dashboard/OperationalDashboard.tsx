@@ -10,6 +10,8 @@ export default async function OperationalDashboard() {
   let recentLeads = { data: [] };
   let kpiData: any = null;
   let pipelineData: any = null;
+  let sourcesData: any = null;
+  let teamData: any = null;
   let upcomingFollowUps = { data: [] };
   let error = null;
   let errorDetails = '';
@@ -19,7 +21,9 @@ export default async function OperationalDashboard() {
       fetchApi<any>('/leads?limit=5'),
       fetchApi<any>('/dashboard/kpi'),
       fetchApi<any>('/dashboard/pipeline'),
-      fetchApi<any>('/follow-ups?view=upcoming&limit=5')
+      fetchApi<any>('/follow-ups?view=upcoming&limit=5'),
+      fetchApi<any>('/dashboard/sources'),
+      fetchApi<any>('/dashboard/team')
     ]);
     
     if (results[0].status === 'fulfilled') recentLeads = results[0].value;
@@ -34,6 +38,12 @@ export default async function OperationalDashboard() {
     if (results[3].status === 'fulfilled') upcomingFollowUps = results[3].value;
     else errorDetails += `Followups error: ${results[3].reason?.message || 'Unknown'}. `;
     
+    if (results[4].status === 'fulfilled') sourcesData = results[4].value.data || results[4].value;
+    else errorDetails += `Sources error: ${results[4].reason?.message || 'Unknown'}. `;
+
+    if (results[5].status === 'fulfilled') teamData = results[5].value.data || results[5].value;
+    else errorDetails += `Team error: ${results[5].reason?.message || 'Unknown'}. `;
+
     if (errorDetails) {
       error = errorDetails;
     }
@@ -113,10 +123,20 @@ export default async function OperationalDashboard() {
                 <CardTitle>Leads by Source</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-md bg-slate-50/50">
-                  <p className="text-slate-500 font-medium">Data Unavailable</p>
-                  <p className="text-sm text-slate-400">Missing API: GET /dashboard/sources</p>
-                </div>
+                {sourcesData?.sources?.length > 0 ? (
+                  <div className="space-y-4 pt-2 max-h-48 overflow-y-auto pr-2">
+                    {sourcesData.sources.map((s: any) => (
+                      <div key={s.source} className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-700">{s.source}</span>
+                        <span className="text-sm font-bold text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-full">{s.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-md bg-slate-50/50">
+                    <p className="text-slate-500 font-medium">No source data</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -124,10 +144,26 @@ export default async function OperationalDashboard() {
                 <CardTitle>Team Performance</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-md bg-slate-50/50">
-                  <p className="text-slate-500 font-medium">Data Unavailable</p>
-                  <p className="text-sm text-slate-400">Missing API: GET /dashboard/team</p>
-                </div>
+                {teamData?.team?.length > 0 ? (
+                  <div className="space-y-4 pt-2 max-h-48 overflow-y-auto pr-2">
+                    {teamData.team.map((t: any) => (
+                      <div key={t.name} className="flex flex-col">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-slate-800">{t.name}</span>
+                          <span className="text-xs font-semibold text-emerald-600">{t.enrolled} Enrolled</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                          <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (t.enrolled / (Math.max(t.assigned, 1))) * 100)}%` }}></div>
+                        </div>
+                        <span className="text-[10px] text-slate-400 mt-0.5">{t.assigned} Leads Assigned</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-md bg-slate-50/50">
+                    <p className="text-slate-500 font-medium">No team data</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

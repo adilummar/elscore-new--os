@@ -18,6 +18,62 @@ export class EmployeeAttendanceService {
     return formatInTimeZone(date, TIMEZONE, 'yyyy-MM-dd');
   }
 
+  async getDailyTaskSummary(userId: string) {
+    const today = new Date();
+    const start = startOfDay(toZonedTime(today, TIMEZONE));
+    const end = endOfDay(toZonedTime(today, TIMEZONE));
+
+    const [pendingFollowUps, completedFollowUps, pendingDemos, completedDemos] = await Promise.all([
+      // Pending Follow-ups (scheduled for today or earlier, status SCHEDULED)
+      this.prisma.followUp.findMany({
+        where: {
+          lead: { assignedToUserId: userId },
+          status: 'SCHEDULED',
+          scheduledAt: { lte: end }
+        },
+        include: { lead: { select: { id: true, firstName: true, lastName: true } } },
+        orderBy: { scheduledAt: 'asc' }
+      }),
+      // Completed Follow-ups (completed today)
+      this.prisma.followUp.findMany({
+        where: {
+          completedByUserId: userId,
+          status: 'COMPLETED',
+          completedAt: { gte: start, lte: end }
+        },
+        include: { lead: { select: { id: true, firstName: true, lastName: true } } },
+        orderBy: { completedAt: 'desc' }
+      }),
+      // Pending Demos (scheduled for today, status SCHEDULED)
+      this.prisma.demo.findMany({
+        where: {
+          tutorId: userId,
+          status: 'SCHEDULED',
+          scheduledAt: { gte: start, lte: end }
+        },
+        include: { student: { include: { lead: { select: { id: true, firstName: true, lastName: true } } } } },
+        orderBy: { scheduledAt: 'asc' }
+      }),
+      // Completed Demos (completed today)
+      this.prisma.demo.findMany({
+        where: {
+          tutorId: userId,
+          status: { in: ['COMPLETED', 'NO_SHOW'] },
+          scheduledAt: { gte: start, lte: end }
+        },
+        include: { student: { include: { lead: { select: { id: true, firstName: true, lastName: true } } } } },
+        orderBy: { scheduledAt: 'desc' }
+      })
+    ]);
+
+    return {
+      pendingFollowUps,
+      completedFollowUps,
+      pendingDemos,
+      completedDemos,
+    };
+  }
+
   async checkIn(userId: string, requestedDate?: Date, note?: string) {
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
@@ -376,8 +432,31 @@ export class EmployeeAttendanceService {
    * Returns ALL active employees with their today's attendance session (null if absent).
    * If departmentId is provided, scopes to that department only (for team leads/dept heads).
    */
-  async getAllStaffsWithAttendance(departmentId?: string) {
+  async getAllStaffsWithAttendance(userId: string, requestedDepartmentId?: string) {
     const today = this.getTodayStr();
+
+    const requestor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        userRoles: { include: { role: true } },
+        employee: true
+      }
+    });
+
+    const isGlobalViewer = requestor?.userRoles.some(ur => 
+      ['CEO', 'HR_MANAGER', 'HR_EXECUTIVE', 'ADMIN'].includes(ur.role.code)
+    );
+
+    let departmentId = requestedDepartmentId;
+
+    if (!isGlobalViewer) {
+      // Non-global viewers can only see their own department's staff
+      departmentId = requestor?.employee?.departmentId;
+      if (!departmentId) {
+        // If they have no department and aren't a global viewer, they see no one
+        return [];
+      }
+    }
 
     const employees = await this.prisma.employee.findMany({
       where: {

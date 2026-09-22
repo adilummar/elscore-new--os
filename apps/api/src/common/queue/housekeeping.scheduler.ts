@@ -90,7 +90,23 @@ export class HousekeepingScheduler implements OnApplicationBootstrap {
         },
       );
 
-      this.logger.log('Housekeeping schedules registered: [daily-token-cleanup @ 02:00 UTC, round-robin-daily-reset @ 18:30 UTC, attendance-auto-checkout @ 18:35 UTC]');
+      // Round robin history cleanup at 02:30 UTC
+      await this.housekeepingQueue.upsertJobScheduler(
+        'round-robin-history-cleanup',
+        { pattern: '30 2 * * *' },
+        {
+          name: JOBS.ROUND_ROBIN_HISTORY_CLEANUP,
+          data: {
+            idempotencyKey: 'round-robin-history-cleanup',
+          },
+          opts: {
+            attempts: 3,
+            backoff: { type: 'fixed', delay: 60_000 },
+          },
+        },
+      );
+
+      this.logger.log('Housekeeping schedules registered: [daily-token-cleanup @ 02:00 UTC, round-robin-daily-reset @ 18:30 UTC, attendance-auto-checkout @ 18:35 UTC, round-robin-history-cleanup @ 02:30 UTC]');
     } catch (err) {
       // Scheduling failure should not crash the application.
       // Log prominently; the job will be re-scheduled on next startup.

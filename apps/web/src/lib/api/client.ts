@@ -7,9 +7,10 @@ if (!BASE_URL) {
   throw new Error('API_URL environment variable is required in production');
 }
 
-export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export async function fetchApi<T>(endpoint: string, options: RequestInit & { skipGodView?: boolean } = {}): Promise<T> {
   const cookieStore = cookies();
   const token = cookieStore.get('accessToken')?.value;
+  const godViewUserId = cookieStore.get('godViewUserId')?.value;
 
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -18,6 +19,11 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
   
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  // Propagate God View target to the backend for audit logging
+  if (godViewUserId && !options.skipGodView) {
+    headers.set('X-God-View-Target', godViewUserId);
   }
 
   const response = await fetch(`${BASE_URL}${endpoint}`, {

@@ -17,7 +17,7 @@
  *   [future] domain modules (Phase 2+)
  */
 
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -31,6 +31,7 @@ import { IdGeneratorModule } from './common/id-generator/id-generator.module';
 import { AppLoggerModule } from './common/logger/logger.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { QueueModule } from './common/queue/queue.module';
+import { GodViewGuard } from './common/rbac/god-view.guard';
 import { RbacGuard } from './common/rbac/rbac.guard';
 import { RbacModule } from './common/rbac/rbac.module';
 import { ReadOnlyGuard } from './common/rbac/read-only.guard';
@@ -52,6 +53,8 @@ import { RoundRobinModule } from './modules/round-robin/round-robin.module';
 import { StudentModule } from './modules/student/student.module';
 import { TutorModule } from './modules/tutor/tutor.module';
 import { UserModule } from './modules/user/user.module';
+
+import { AuditMiddleware } from './common/audit/audit.middleware';
 
 @Module({
   imports: [
@@ -122,6 +125,10 @@ import { UserModule } from './modules/user/user.module';
     },
     {
       provide: APP_GUARD,
+      useClass: GodViewGuard,
+    },
+    {
+      provide: APP_GUARD,
       useClass: RbacGuard,
     },
     {
@@ -130,4 +137,9 @@ import { UserModule } from './modules/user/user.module';
     },
   ]
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuditMiddleware).forRoutes('*');
+  }
+}
+

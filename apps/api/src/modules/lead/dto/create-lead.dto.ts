@@ -128,4 +128,9 @@ export class CreateLeadDto {
   @ValidateNested({ each: true })
   @Type(() => NestedStudentDto)
   students?: NestedStudentDto[];
+
+  @Type(() => Date)
+  @IsDate()
+  @IsOptional()
+  receivedAt?: Date;
 }

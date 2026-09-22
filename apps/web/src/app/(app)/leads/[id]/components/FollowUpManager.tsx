@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Alert } from '@/components/ui/Alert';
+import { AddEditRequirementDialog } from './AddEditRequirementDialog';
 
 export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () => void }) {
   const [followUps, setFollowUps] = React.useState<any[]>([]);
@@ -19,6 +20,8 @@ export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () =
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [isCompleteOpen, setIsCompleteOpen] = React.useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = React.useState(false);
+  const [isAddSubjectOpen, setIsAddSubjectOpen] = React.useState(false);
+  const [activeStudentForSubject, setActiveStudentForSubject] = React.useState<any>(null);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -277,8 +280,40 @@ export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () =
             <Button type="button" variant="outline" onClick={() => setIsCompleteOpen(false)} disabled={actionLoading}>Cancel</Button>
             <Button type="submit" disabled={actionLoading}>Complete Action</Button>
           </div>
+          
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 p-3 rounded-md">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Client asked for more subjects?</p>
+              <p className="text-xs text-slate-500">You can add a new subject requirement directly.</p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => {
+              // If there's only one student, pre-select it. Otherwise open a quick picker or just select first.
+              if (lead.students?.length === 1) {
+                setActiveStudentForSubject(lead.students[0]);
+                setIsAddSubjectOpen(true);
+              } else if (lead.students?.length > 1) {
+                // For simplicity, just use the first student for now, or prompt to use Students tab
+                setActiveStudentForSubject(lead.students[0]);
+                setIsAddSubjectOpen(true);
+              }
+            }} disabled={!lead.students?.length}>
+              + Add Subject
+            </Button>
+          </div>
         </form>
       </Modal>
+
+      {isAddSubjectOpen && activeStudentForSubject && (
+        <AddEditRequirementDialog
+          student={activeStudentForSubject}
+          isOpen={isAddSubjectOpen}
+          onClose={() => setIsAddSubjectOpen(false)}
+          onSuccess={() => {
+            if (onUpdate) onUpdate();
+            setIsAddSubjectOpen(false);
+          }}
+        />
+      )}
 
       <Modal isOpen={isRescheduleOpen} onClose={() => setIsRescheduleOpen(false)}>
         <h2 className="text-lg font-bold mb-4">Reschedule Follow-up</h2>

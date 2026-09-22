@@ -48,6 +48,8 @@ export const JOBS = {
   FOLLOWUP_OVERDUE_SCAN: 'followup-overdue-scan',
   /** Daily reset of round-robin counsellor states to ACTIVE. */
   ROUND_ROBIN_DAILY_RESET: 'round-robin-daily-reset',
+  /** Daily cleanup of distribution history older than 30 days. */
+  ROUND_ROBIN_HISTORY_CLEANUP: 'round-robin-history-cleanup',
 
   // ── DEADLINE_MONITOR queue ────────────────────────────────────────────────
   /** 10-minute reminder for a specific follow-up. jobId = followup-reminder-{fupId}. */

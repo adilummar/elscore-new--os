@@ -28,6 +28,12 @@ export class EmployeeAttendanceController {
     return this.attendanceService.getMyStatus(user.id);
   }
 
+  @Get('daily-summary')
+  @RequirePermissions('attendance.read.own')
+  async getDailySummary(@CurrentUser() user: RequestUser) {
+    return this.attendanceService.getDailyTaskSummary(user.id);
+  }
+
   @Get('history')
   @RequirePermissions('attendance.read.own')
   async getHistory(@CurrentUser() user: RequestUser) {
@@ -47,8 +53,8 @@ export class EmployeeAttendanceController {
    */
   @Get('staffs')
   @RequirePermissions('attendance.read.team')
-  async getAllStaffs(@Query('departmentId') departmentId?: string) {
-    return this.attendanceService.getAllStaffsWithAttendance(departmentId);
+  async getAllStaffs(@CurrentUser() user: RequestUser, @Query('departmentId') departmentId?: string) {
+    return this.attendanceService.getAllStaffsWithAttendance(user.id, departmentId);
   }
 
   /**

@@ -21,6 +21,10 @@ export class RoundRobinResetProcessor extends BaseJobProcessor {
       this.logger.log(`Starting daily round-robin reset (Job ${job.id})`);
       await this.roundRobinService.performDailyReset();
       this.logger.log(`Completed daily round-robin reset (Job ${job.id})`);
+    } else if (job.name === JOBS.ROUND_ROBIN_HISTORY_CLEANUP) {
+      this.logger.log(`Starting round-robin history cleanup (Job ${job.id})`);
+      await this.roundRobinService.performHistoryCleanup();
+      this.logger.log(`Completed round-robin history cleanup (Job ${job.id})`);
     } else {
       this.logger.warn(`Unknown job name in housekeeping queue for round-robin: ${job.name}`);
     }

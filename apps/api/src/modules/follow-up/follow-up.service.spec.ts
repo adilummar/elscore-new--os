@@ -78,7 +78,7 @@ describe('FollowUpService', () => {
       mockPrisma.followUp.findFirst.mockResolvedValueOnce(null); // other active check
       mockPrisma.followUp.update.mockResolvedValue({ id: 'fup1', status: 'COMPLETED' });
 
-      await service.complete('lead1', 'fup1', {}, 'user1', false);
+      await service.complete('lead1', 'fup1', { remarks: 'Completed notes' }, 'user1', false);
 
       expect(mockPrisma.followUp.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
       expect(mockPrisma.lead.update).toHaveBeenCalledWith(expect.objectContaining({ data: { requiresFollowUp: false } }));

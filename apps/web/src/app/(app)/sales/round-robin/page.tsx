@@ -1,5 +1,6 @@
 "use client";
 import * as React from 'react';
+import Link from 'next/link';
 import { getRoundRobinStateAction, updateRoundRobinStateAction } from '../actions';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -51,14 +52,19 @@ export default function RoundRobinPage() {
           <h1 className="text-2xl font-bold">Round Robin Configuration</h1>
           <p className="text-sm text-slate-500 mt-1">Manage lead distribution queue and pause state.</p>
         </div>
-        {hasPermission('roundrobin.manage') && (
-          <Button variant={state.isPaused ? 'primary' : 'danger'} onClick={async () => {
-            await updateRoundRobinStateAction(!state.isPaused);
-            load();
-          }}>
-            {state.isPaused ? 'Resume Round Robin' : 'Pause Round Robin'}
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          <Link href="/sales/round-robin/history">
+            <Button variant="outline">View Distribution History</Button>
+          </Link>
+          {hasPermission('roundrobin.manage') && (
+            <Button variant={state.isPaused ? 'primary' : 'danger'} onClick={async () => {
+              await updateRoundRobinStateAction(!state.isPaused);
+              load();
+            }}>
+              {state.isPaused ? 'Resume Round Robin' : 'Pause Round Robin'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

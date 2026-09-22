@@ -97,6 +97,12 @@ export function FollowUpList({ view, onChange }: FollowUpListProps) {
                 <span>Phone: {fup.lead?.primaryPhone}</span>
                 <span>•</span>
                 <span>Lead Status: <Badge variant="default" className="text-[10px]">{fup.lead?.status}</Badge></span>
+                {fup.lead?.assignedToUser && (
+                  <>
+                    <span>•</span>
+                    <span>Assignee: <span className="font-medium text-slate-700">{fup.lead.assignedToUser.employee?.firstName ? `${fup.lead.assignedToUser.employee.firstName} ${fup.lead.assignedToUser.employee.lastName}` : fup.lead.assignedToUser.email}</span></span>
+                  </>
+                )}
                 {fup.classification && (
                   <>
                     <span>•</span>

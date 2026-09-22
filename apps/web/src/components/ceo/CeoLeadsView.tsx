@@ -36,11 +36,16 @@ export async function CeoLeadsView({ searchParams }: { searchParams: { from?: st
   }
 
   const pipelineMap = new Map();
+  let pipelineTotal = 0;
   if (pipelineData) {
-    pipelineData.forEach((s: any) => pipelineMap.set(s.status, s.count));
+    pipelineData.forEach((s: any) => {
+      pipelineMap.set(s.status, s.count);
+      pipelineTotal += s.count;
+    });
   }
 
-  const totalLeads = overviewData?.totalLeads || 1;
+  const totalLeads = pipelineTotal > 0 ? pipelineTotal : 1;
+  const displayTotalLeads = overviewData?.activeLeads ?? '--';
 
   return (
     <div className="space-y-6 mb-8 border-b border-slate-200 pb-8">
@@ -98,7 +103,7 @@ export async function CeoLeadsView({ searchParams }: { searchParams: { from?: st
             </CardHeader>
             <CardContent className="p-6 grid grid-cols-2 gap-4">
               <div className="bg-brand-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-brand-700">{overviewData?.totalLeads ?? '--'}</div>
+                <div className="text-2xl font-bold text-brand-700">{displayTotalLeads}</div>
                 <div className="text-xs font-medium text-brand-600 mt-1 uppercase tracking-wide">Active Leads</div>
               </div>
               <div className="bg-emerald-50 rounded-lg p-4 text-center">

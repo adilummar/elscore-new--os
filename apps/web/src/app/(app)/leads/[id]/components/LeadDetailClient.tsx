@@ -18,8 +18,9 @@ import { FinanceTab } from './FinanceTab';
 import { DemosTab } from './DemosTab';
 import { StudentWorkspace } from './StudentWorkspace';
 import { EditLeadDialog } from './EditLeadDialog';
+import { LeadDistributionHistory } from './LeadDistributionHistory';
 
-type TabId = 'students' | 'followups' | 'demos' | 'marketing' | 'finance' | 'notes' | 'history';
+type TabId = 'students' | 'followups' | 'demos' | 'marketing' | 'finance' | 'notes' | 'history' | 'assignments';
 
 export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [lead, setLead] = React.useState<any>(null);
@@ -54,13 +55,14 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   if (error) return <div className="p-8 text-center text-red-500 bg-red-50 rounded-md">{error}</div>;
   if (!lead) return <div className="p-8 text-center text-slate-500">Lead not found.</div>;
 
-  const tabs: { id: TabId; label: string; icon: any }[] = [
+  const tabs: { id: TabId | 'assignments'; label: string; icon: any }[] = [
     { id: 'students', label: 'Students', icon: Users },
     { id: 'followups', label: 'Follow-ups', icon: Clock },
     { id: 'demos', label: 'Demos', icon: Calendar },
     { id: 'marketing', label: 'Marketing', icon: Activity },
     { id: 'finance', label: 'Finance', icon: DollarSign },
     { id: 'notes', label: 'Sales Notes', icon: FileText },
+    { id: 'assignments', label: 'Distribution History', icon: User },
     { id: 'history', label: 'Timeline', icon: CheckCircle },
   ];
 
@@ -82,7 +84,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
             {lead.whatsappNumber && <span className="flex items-center gap-1"><Phone className="w-4 h-4" /> WA: {lead.whatsappNumber}</span>}
             <span className="flex items-center gap-1"><User className="w-4 h-4" /> Source: {lead.source}</span>
             <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> Created: {new Date(lead.createdAt).toLocaleDateString()}</span>
-            <span className="flex items-center gap-1"><User className="w-4 h-4" /> Owner: {lead.assignedToUser?.firstName ? `${lead.assignedToUser.firstName} ${lead.assignedToUser.lastName}` : lead.assignedToUserId || 'Unassigned'}</span>
+            <span className="flex items-center gap-1"><User className="w-4 h-4" /> Owner: {lead.assignedToUser?.employee?.firstName ? `${lead.assignedToUser.employee.firstName} ${lead.assignedToUser.employee.lastName}` : lead.assignedToUser?.email || lead.assignedToUserId || 'Unassigned'}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -155,6 +157,9 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
           )}
           {activeTab === 'notes' && (
             <SalesNotes leadId={leadId} initialNotes={lead.salesNotes} />
+          )}
+          {activeTab === 'assignments' && (
+            <LeadDistributionHistory leadId={leadId} />
           )}
           {activeTab === 'history' && (
             <UnifiedTimeline leadId={leadId} />

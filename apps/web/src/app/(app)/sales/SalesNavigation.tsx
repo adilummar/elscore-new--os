@@ -17,6 +17,7 @@ export function SalesNavigation({ isSalesHead, canManageRR }: { isSalesHead: boo
     links.push({ name: 'Round Robin', href: '/sales/round-robin' });
   }
 
+  links.push({ name: 'Distribution History', href: '/sales/round-robin/history' });
   links.push({ name: 'Targets', href: '/sales/targets' });
 
   return (

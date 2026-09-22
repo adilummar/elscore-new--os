@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
+import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Alert } from '@/components/ui/Alert';
 import { createLeadAction } from '../actions';
 import { getSubjectsAction, getGradesAction, getCurriculaAction } from '@/app/(app)/settings/actions';
@@ -27,10 +28,12 @@ interface StudentForm {
   dateOfBirth: string;
   gender: string;
   schoolName: string;
-  currentGrade: string;
+  currentGrade: string; // Free text school grade
   cityLocation: string;
   notes: string;
-  requirements: RequirementForm[];
+  curriculumId: string;
+  gradeId: string;
+  subjectIds: string[];
 }
 
 export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boolean; onClose: () => void; onSuccess: () => void }) {
@@ -101,56 +104,49 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
       currentGrade: '',
       cityLocation: '',
       notes: '',
-      requirements: []
+      curriculumId: '',
+      gradeId: '',
+      subjectIds: []
     }]);
   };
 
   const removeStudent = (id: string) => {
-    if (window.confirm("Are you sure you want to remove this student and all their requirements?")) {
+    if (window.confirm("Are you sure you want to remove this student?")) {
       setStudents(students.filter(s => s.id !== id));
     }
   };
 
-  const updateStudent = (id: string, field: string, value: string) => {
+  const updateStudent = (id: string, field: keyof StudentForm, value: any) => {
     setStudents(students.map(s => s.id === id ? { ...s, [field]: value } : s));
   };
 
-  // Requirement Actions
-  const addRequirement = (studentId: string) => {
+  // Subject Actions
+  const addSubject = (studentId: string) => {
     setStudents(students.map(s => {
       if (s.id === studentId) {
-        return {
-          ...s,
-          requirements: [...s.requirements, {
-            id: crypto.randomUUID(),
-            subjectId: '',
-            curriculumId: '',
-            gradeId: '',
-            syllabus: '',
-            notes: ''
-          }]
-        };
+        return { ...s, subjectIds: [...s.subjectIds, ''] };
       }
       return s;
     }));
   };
 
-  const removeRequirement = (studentId: string, reqId: string) => {
+  const removeSubject = (studentId: string, index: number) => {
     setStudents(students.map(s => {
       if (s.id === studentId) {
-        return { ...s, requirements: s.requirements.filter(r => r.id !== reqId) };
+        const newSubjects = [...s.subjectIds];
+        newSubjects.splice(index, 1);
+        return { ...s, subjectIds: newSubjects };
       }
       return s;
     }));
   };
 
-  const updateRequirement = (studentId: string, reqId: string, field: string, value: string) => {
+  const updateSubject = (studentId: string, index: number, value: string) => {
     setStudents(students.map(s => {
       if (s.id === studentId) {
-        return {
-          ...s,
-          requirements: s.requirements.map(r => r.id === reqId ? { ...r, [field]: value } : r)
-        };
+        const newSubjects = [...s.subjectIds];
+        newSubjects[index] = value;
+        return { ...s, subjectIds: newSubjects };
       }
       return s;
     }));
@@ -159,7 +155,10 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
   // Validation
   const validateStep1 = () => {
     const errs: Record<string, string> = {};
-    if (!parent.primaryPhone) errs['parent.primaryPhone'] = 'Primary phone is required';
+    const phoneStripped = parent.primaryPhone.replace(/^\+\d{1,4}$/, '');
+    if (!parent.primaryPhone || !phoneStripped) {
+      errs['parent.primaryPhone'] = 'Primary phone is required';
+    }
     if (!parent.source) errs['parent.source'] = 'Source is required';
     
     setValidationErrors(errs);
@@ -171,10 +170,15 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
     students.forEach((student, sIdx) => {
       if (!student.firstName) errs[`student.${student.id}.firstName`] = 'First name is required';
       
-      student.requirements.forEach((req, rIdx) => {
-        if (!req.subjectId) errs[`req.${req.id}.subjectId`] = 'Subject is required';
-        if (!req.curriculumId) errs[`req.${req.id}.curriculumId`] = 'Curriculum is required';
-        if (!req.gradeId) errs[`req.${req.id}.gradeId`] = 'Grade is required';
+      // Ensure if they select subjects, they MUST provide curriculum and grade.
+      // If no subjects, they are optional, but we can enforce it if they intend to add requirements.
+      if (student.subjectIds.length > 0) {
+        if (!student.curriculumId) errs[`student.${student.id}.curriculumId`] = 'Curriculum is required for subjects';
+        if (!student.gradeId) errs[`student.${student.id}.gradeId`] = 'Grade is required for subjects';
+      }
+
+      student.subjectIds.forEach((sub, rIdx) => {
+        if (!sub) errs[`student.${student.id}.subject.${rIdx}`] = 'Subject is required';
       });
     });
     setValidationErrors(errs);
@@ -208,12 +212,10 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         currentGrade: s.currentGrade || undefined,
         cityLocation: s.cityLocation || undefined,
         notes: s.notes || undefined,
-        requirements: s.requirements.map(r => ({
-          subjectId: r.subjectId,
-          curriculumId: r.curriculumId,
-          gradeId: r.gradeId,
-          syllabus: r.syllabus || undefined,
-          notes: r.notes || undefined
+        requirements: s.subjectIds.map(subjectId => ({
+          subjectId,
+          curriculumId: s.curriculumId,
+          gradeId: s.gradeId
         }))
       }))
     };
@@ -229,8 +231,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         setWarning(res.warnings[0]);
       }
       
-      // Store success data to show in Step 4
-      setSuccessData(res.lead || res.data?.lead || res.data); // depending on backend envelope
+      setSuccessData(res.lead || res.data?.lead || res.data);
       setStep(4);
       onSuccess();
     } catch (err: any) {
@@ -256,24 +257,37 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1">
-          <label className="text-sm font-medium">Primary Phone <span className="text-red-500">*</span></label>
-          <Input value={parent.primaryPhone} onChange={e => setParent({...parent, primaryPhone: e.target.value})} placeholder="+971..." />
-          {validationErrors['parent.primaryPhone'] && <p className="text-xs text-red-500">{validationErrors['parent.primaryPhone']}</p>}
+          <PhoneInput
+            label="Primary Phone"
+            required
+            value={parent.primaryPhone}
+            onChange={v => setParent({ ...parent, primaryPhone: v })}
+            error={validationErrors['parent.primaryPhone']}
+          />
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">WhatsApp Number</label>
-          <Input value={parent.whatsappNumber} onChange={e => setParent({...parent, whatsappNumber: e.target.value})} placeholder="Optional" />
+          <PhoneInput
+            label="WhatsApp Number"
+            value={parent.whatsappNumber}
+            onChange={v => setParent({ ...parent, whatsappNumber: v })}
+          />
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1">
-          <label className="text-sm font-medium">Alternative Phone 1</label>
-          <Input value={parent.altPhone1} onChange={e => setParent({...parent, altPhone1: e.target.value})} placeholder="Optional" />
+          <PhoneInput
+            label="Alternative Phone 1"
+            value={parent.altPhone1}
+            onChange={v => setParent({ ...parent, altPhone1: v })}
+          />
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">Alternative Phone 2</label>
-          <Input value={parent.altPhone2} onChange={e => setParent({...parent, altPhone2: e.target.value})} placeholder="Optional" />
+          <PhoneInput
+            label="Alternative Phone 2"
+            value={parent.altPhone2}
+            onChange={v => setParent({ ...parent, altPhone2: v })}
+          />
         </div>
       </div>
 
@@ -324,63 +338,61 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
                   <label className="text-xs font-medium">Last Name</label>
                   <Input value={student.lastName} onChange={e => updateStudent(student.id, 'lastName', e.target.value)} />
                 </div>
+                
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Curriculum <span className="text-red-500">*</span></label>
+                  <Select value={student.curriculumId} onChange={e => updateStudent(student.id, 'curriculumId', e.target.value)}>
+                    <option value="">Select Curriculum...</option>
+                    {curricula.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </Select>
+                  {validationErrors[`student.${student.id}.curriculumId`] && <p className="text-xs text-red-500">{validationErrors[`student.${student.id}.curriculumId`]}</p>}
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Target Grade <span className="text-red-500">*</span></label>
+                  <Select value={student.gradeId} onChange={e => updateStudent(student.id, 'gradeId', e.target.value)}>
+                    <option value="">Select Grade...</option>
+                    {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </Select>
+                  {validationErrors[`student.${student.id}.gradeId`] && <p className="text-xs text-red-500">{validationErrors[`student.${student.id}.gradeId`]}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">School</label>
+                  <Input placeholder="School Name" value={student.schoolName} onChange={e => updateStudent(student.id, 'schoolName', e.target.value)} />
+                </div>
+                
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Date of Birth</label>
                   <Input type="date" value={student.dateOfBirth} onChange={e => updateStudent(student.id, 'dateOfBirth', e.target.value)} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">School / Grade</label>
-                  <div className="flex gap-2">
-                    <Input placeholder="School" value={student.schoolName} onChange={e => updateStudent(student.id, 'schoolName', e.target.value)} />
-                    <Input placeholder="Grade" className="w-24" value={student.currentGrade} onChange={e => updateStudent(student.id, 'currentGrade', e.target.value)} />
-                  </div>
-                </div>
               </div>
 
-              {/* Requirements Section */}
+              {/* Subjects Section */}
               <div className="mt-6 pt-4 border-t border-gray-200">
                 <h4 className="font-semibold text-sm mb-3 flex items-center justify-between">
-                  Requirements
-                  <Button type="button" size="sm" variant="outline" onClick={() => addRequirement(student.id)} className="h-7 text-xs px-2">
-                    <Plus className="w-3 h-3 mr-1" /> Add Requirement
+                  Subjects
+                  <Button type="button" size="sm" variant="outline" onClick={() => addSubject(student.id)} className="h-7 text-xs px-2">
+                    <Plus className="w-3 h-3 mr-1" /> Add Subject
                   </Button>
                 </h4>
                 
-                {student.requirements.length === 0 ? (
-                  <p className="text-xs text-gray-500 italic">No requirements added for this student.</p>
+                {student.subjectIds.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">No subjects added for this student.</p>
                 ) : (
-                  <div className="space-y-3">
-                    {student.requirements.map((req, rIdx) => (
-                      <div key={req.id} className="p-3 bg-white border rounded shadow-sm relative pr-10">
-                        <Button type="button" variant="ghost" size="sm" onClick={() => removeRequirement(student.id, req.id)} className="absolute top-2 right-2 h-6 px-2 text-gray-400 hover:text-red-500">
+                  <div className="flex flex-wrap gap-2">
+                    {student.subjectIds.map((sub, rIdx) => (
+                      <div key={rIdx} className="flex items-center gap-1 bg-white border border-gray-300 rounded px-2 py-1 relative">
+                        <Select className="text-sm h-7 min-w-[120px] border-none shadow-none focus:ring-0 p-0 pr-6" value={sub} onChange={e => updateSubject(student.id, rIdx, e.target.value)}>
+                          <option value="">Select...</option>
+                          {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </Select>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeSubject(student.id, rIdx)} className="h-5 w-5 p-0 text-gray-400 hover:text-red-500">
                           <Trash className="w-3 h-3" />
                         </Button>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                          <div className="space-y-1">
-                            <label className="text-[10px] uppercase font-bold text-gray-500">Subject <span className="text-red-500">*</span></label>
-                            <Select className="text-sm h-8" value={req.subjectId} onChange={e => updateRequirement(student.id, req.id, 'subjectId', e.target.value)}>
-                              <option value="">Select...</option>
-                              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </Select>
-                            {validationErrors[`req.${req.id}.subjectId`] && <p className="text-[10px] text-red-500">{validationErrors[`req.${req.id}.subjectId`]}</p>}
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] uppercase font-bold text-gray-500">Curriculum <span className="text-red-500">*</span></label>
-                            <Select className="text-sm h-8" value={req.curriculumId} onChange={e => updateRequirement(student.id, req.id, 'curriculumId', e.target.value)}>
-                              <option value="">Select...</option>
-                              {curricula.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </Select>
-                            {validationErrors[`req.${req.id}.curriculumId`] && <p className="text-[10px] text-red-500">{validationErrors[`req.${req.id}.curriculumId`]}</p>}
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] uppercase font-bold text-gray-500">Target Grade <span className="text-red-500">*</span></label>
-                            <Select className="text-sm h-8" value={req.gradeId} onChange={e => updateRequirement(student.id, req.id, 'gradeId', e.target.value)}>
-                              <option value="">Select...</option>
-                              {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                            </Select>
-                            {validationErrors[`req.${req.id}.gradeId`] && <p className="text-[10px] text-red-500">{validationErrors[`req.${req.id}.gradeId`]}</p>}
-                          </div>
-                        </div>
+                        {validationErrors[`student.${student.id}.subject.${rIdx}`] && (
+                          <div className="absolute -bottom-4 left-0 text-[10px] text-red-500 whitespace-nowrap">Required</div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -413,29 +425,31 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         {students.length === 0 ? (
           <p className="text-sm italic text-gray-500">No students added.</p>
         ) : (
-          students.map((student, sIdx) => (
+          students.map((student, sIdx) => {
+            const cur = curricula.find(c => c.id === student.curriculumId)?.name || 'Unknown Curriculum';
+            const grd = grades.find(g => g.id === student.gradeId)?.name || 'Unknown Grade';
+            return (
             <div key={student.id} className="border-l-4 border-brand-500 pl-4 py-2">
               <div className="font-bold">{student.firstName} {student.lastName}</div>
-              <div className="text-xs text-gray-500 mb-2">{student.schoolName} {student.currentGrade ? `(Grade ${student.currentGrade})` : ''}</div>
+              <div className="text-xs text-gray-500 mb-2">{student.schoolName} • {cur} • {grd}</div>
               
-              {student.requirements.length > 0 ? (
+              {student.subjectIds.length > 0 ? (
                 <ul className="space-y-1 mt-2">
-                  {student.requirements.map((req, rIdx) => {
-                    const sub = subjects.find(s => s.id === req.subjectId)?.name;
-                    const cur = curricula.find(c => c.id === req.curriculumId)?.name;
-                    const grd = grades.find(g => g.id === req.gradeId)?.name;
+                  {student.subjectIds.map((subId, rIdx) => {
+                    const sub = subjects.find(s => s.id === subId)?.name;
                     return (
-                      <li key={req.id} className="text-sm flex items-center before:content-[''] before:w-1 before:h-1 before:bg-gray-400 before:rounded-full before:mr-2">
-                        {sub} • {cur} • {grd}
+                      <li key={rIdx} className="text-sm flex items-center before:content-[''] before:w-1 before:h-1 before:bg-gray-400 before:rounded-full before:mr-2">
+                        {sub || 'Unknown Subject'}
                       </li>
                     );
                   })}
                 </ul>
               ) : (
-                <div className="text-xs italic text-gray-400 mt-1">No requirements</div>
+                <div className="text-xs italic text-gray-400 mt-1">No subjects</div>
               )}
             </div>
-          ))
+            )
+          })
         )}
       </div>
       
@@ -475,8 +489,8 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
             <span className="text-gray-500">Students</span>
             <span className="font-medium">{students.length}</span>
             
-            <span className="text-gray-500">Requirements</span>
-            <span className="font-medium">{students.reduce((acc, s) => acc + s.requirements.length, 0)}</span>
+            <span className="text-gray-500">Subjects</span>
+            <span className="font-medium">{students.reduce((acc, s) => acc + s.subjectIds.length, 0)}</span>
             
             <span className="text-gray-500">Owner ID</span>
             <span className="font-medium">{successData.assignedToUserId || 'Unassigned'}</span>

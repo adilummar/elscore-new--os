@@ -6,6 +6,7 @@ import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { bookDemoAction } from '../../actions';
+import { AddEditRequirementDialog } from './AddEditRequirementDialog';
 
 export function BookDemoDialog({ lead, isOpen, onClose, onSuccess }: { lead: any, isOpen: boolean, onClose: () => void, onSuccess: () => void }) {
   const [studentId, setStudentId] = React.useState('');
@@ -13,6 +14,7 @@ export function BookDemoDialog({ lead, isOpen, onClose, onSuccess }: { lead: any
   const [scheduledAt, setScheduledAt] = React.useState('');
   const [duration, setDuration] = React.useState(30);
   const [loading, setLoading] = React.useState(false);
+  const [isAddSubjectOpen, setIsAddSubjectOpen] = React.useState(false);
 
   const students = lead.students || [];
   const selectedStudent = students.find((s: any) => s.id === studentId);
@@ -53,11 +55,22 @@ export function BookDemoDialog({ lead, isOpen, onClose, onSuccess }: { lead: any
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium">Requirement *</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-sm font-medium">Subject *</label>
+              {studentId && (
+                <button 
+                  type="button" 
+                  onClick={() => setIsAddSubjectOpen(true)}
+                  className="text-xs text-brand-600 hover:text-brand-800 font-medium"
+                >
+                  + Add New Subject
+                </button>
+              )}
+            </div>
             <Select required value={requirementId} onChange={e => setRequirementId(e.target.value)} disabled={!studentId}>
-              <option value="">Select Requirement...</option>
+              <option value="">Select Subject...</option>
               {requirements.map((r: any) => (
-                <option key={r.id} value={r.id}>{r.subject?.name} - {r.grade?.name}</option>
+                <option key={r.id} value={r.id}>{r.subject?.name}</option>
               ))}
             </Select>
           </div>
@@ -74,6 +87,18 @@ export function BookDemoDialog({ lead, isOpen, onClose, onSuccess }: { lead: any
             <Button type="submit" disabled={loading}>Book Demo</Button>
           </div>
         </form>
+      )}
+
+      {isAddSubjectOpen && selectedStudent && (
+        <AddEditRequirementDialog
+          student={selectedStudent}
+          isOpen={isAddSubjectOpen}
+          onClose={() => setIsAddSubjectOpen(false)}
+          onSuccess={() => {
+            onSuccess(); // Refresh lead
+            setIsAddSubjectOpen(false);
+          }}
+        />
       )}
     </Modal>
   );

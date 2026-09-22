@@ -7,13 +7,13 @@ import { Select } from '@/components/ui/Select';
 import { createRequirementAction, updateRequirementAction, getReferenceDataAction } from '../../actions';
 
 export function AddEditRequirementDialog({
-  studentId,
+  student,
   requirement,
   isOpen,
   onClose,
   onSuccess
 }: {
-  studentId: string;
+  student: any;
   requirement?: any;
   isOpen: boolean;
   onClose: () => void;
@@ -27,28 +27,31 @@ export function AddEditRequirementDialog({
   const [curriculums, setCurriculums] = React.useState<any[]>([]);
   const [grades, setGrades] = React.useState<any[]>([]);
 
+  const defaultCurriculum = student?.requirements?.[0]?.curriculumId || '';
+  const defaultGrade = student?.requirements?.[0]?.gradeId || '';
+
   const [subjectId, setSubjectId] = React.useState(requirement?.subjectId || '');
-  const [curriculumId, setCurriculumId] = React.useState(requirement?.curriculumId || '');
-  const [gradeId, setGradeId] = React.useState(requirement?.gradeId || '');
+  const [curriculumId, setCurriculumId] = React.useState(requirement?.curriculumId || defaultCurriculum);
+  const [gradeId, setGradeId] = React.useState(requirement?.gradeId || defaultGrade);
   const [notes, setNotes] = React.useState(requirement?.notes || '');
 
   React.useEffect(() => {
     if (isOpen) {
       setSubjectId(requirement?.subjectId || '');
-      setCurriculumId(requirement?.curriculumId || '');
-      setGradeId(requirement?.gradeId || '');
+      setCurriculumId(requirement?.curriculumId || defaultCurriculum);
+      setGradeId(requirement?.gradeId || defaultGrade);
       setNotes(requirement?.notes || '');
       setError(null);
       loadReferenceData();
     }
-  }, [isOpen, requirement]);
+  }, [isOpen, requirement, defaultCurriculum, defaultGrade]);
 
   const loadReferenceData = async () => {
     setFetchingRefs(true);
     try {
       const [subRes, curRes, gradRes] = await Promise.all([
         getReferenceDataAction('subjects'),
-        getReferenceDataAction('curriculums'),
+        getReferenceDataAction('curricula'),
         getReferenceDataAction('grades')
       ]);
       setSubjects(subRes.data || []);
@@ -82,13 +85,13 @@ export function AddEditRequirementDialog({
       if (requirement) {
         await updateRequirementAction(requirement.id, payload);
       } else {
-        await createRequirementAction(studentId, payload);
+        await createRequirementAction(student.id, payload);
       }
       
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to save requirement');
+      setError(err.message || 'Failed to save subject');
     } finally {
       setLoading(false);
     }
@@ -96,7 +99,7 @@ export function AddEditRequirementDialog({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-4">{requirement ? 'Edit Requirement' : 'Add Requirement'}</h2>
+      <h2 className="text-lg font-bold mb-4">{requirement ? 'Edit Subject' : 'Add Subject'}</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="p-3 bg-red-50 text-red-600 rounded-md text-sm">{error}</div>}
         
@@ -118,33 +121,37 @@ export function AddEditRequirementDialog({
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Curriculum *</label>
-              <Select 
-                value={curriculumId} 
-                onChange={e => setCurriculumId(e.target.value)}
-                required
-              >
-                <option value="">Select Curriculum</option>
-                {curriculums.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </Select>
-            </div>
+            {(!defaultCurriculum || !defaultGrade || requirement) && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Curriculum *</label>
+                  <Select 
+                    value={curriculumId} 
+                    onChange={e => setCurriculumId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select Curriculum</option>
+                    {curriculums.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </Select>
+                </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Grade *</label>
-              <Select 
-                value={gradeId} 
-                onChange={e => setGradeId(e.target.value)}
-                required
-              >
-                <option value="">Select Grade</option>
-                {grades.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </Select>
-            </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Target Grade *</label>
+                  <Select 
+                    value={gradeId} 
+                    onChange={e => setGradeId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select Grade</option>
+                    {grades.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </Select>
+                </div>
+              </>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Notes</label>
@@ -152,14 +159,14 @@ export function AddEditRequirementDialog({
                 className="w-full min-h-[80px] p-2 border border-slate-200 rounded-md text-sm"
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder="Any specific notes for this requirement..."
+                placeholder="Any specific notes for this subject..."
               />
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
               <Button type="submit" disabled={loading || !subjectId || !curriculumId || !gradeId}>
-                {loading ? 'Saving...' : 'Save Requirement'}
+                {loading ? 'Saving...' : 'Save Subject'}
               </Button>
             </div>
           </>

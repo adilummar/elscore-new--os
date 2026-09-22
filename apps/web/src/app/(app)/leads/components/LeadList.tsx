@@ -19,6 +19,7 @@ export function LeadList() {
   const [error, setError] = React.useState<string | null>(null);
   
   const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [status, setStatus] = React.useState('');
   const [source, setSource] = React.useState('');
   const [classification, setClassification] = React.useState('');
@@ -46,15 +47,20 @@ export function LeadList() {
     loadEmployees();
   }, []);
 
+  React.useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(handler);
+  }, [search]);
+
   const loadLeads = React.useCallback(async (cursor?: string) => {
     if (!cursor) setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (search) params.append('search', search);
+      if (debouncedSearch) params.append('search', debouncedSearch);
       if (status) params.append('status', status);
       if (source) params.append('source', source);
       if (classification) params.append('classification', classification);
-      if (ownerId) params.append('ownerId', ownerId);
+      if (ownerId) params.append('assignedToUserId', ownerId);
       if (followUpState) params.append('followUpState', followUpState);
       if (cursor) params.append('cursor', cursor);
       
@@ -70,7 +76,7 @@ export function LeadList() {
     } finally {
       setLoading(false);
     }
-  }, [search, status, source, classification, ownerId, followUpState]);
+  }, [debouncedSearch, status, source, classification, ownerId, followUpState]);
 
   React.useEffect(() => {
     loadLeads();
@@ -139,7 +145,7 @@ export function LeadList() {
           <Select className="w-full md:w-48" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
             <option value="">All Owners</option>
             {employees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>
+              <option key={emp.id} value={emp.userId}>{emp.firstName} {emp.lastName}</option>
             ))}
           </Select>
           <Select className="w-full md:w-48" value={followUpState} onChange={(e) => setFollowUpState(e.target.value)}>
@@ -172,7 +178,7 @@ export function LeadList() {
               <div className="flex flex-col gap-2 mt-2">
                 <div className="flex items-center text-sm text-slate-600 gap-2">
                   <User className="w-4 h-4" />
-                  <span>{lead.assignedToUser ? `${lead.assignedToUser.firstName} ${lead.assignedToUser.lastName}` : 'Unassigned'}</span>
+                  <span>{lead.assignedToUser?.employee?.firstName ? `${lead.assignedToUser.employee.firstName} ${lead.assignedToUser.employee.lastName}` : lead.assignedToUser?.email ? lead.assignedToUser.email : 'Unassigned'}</span>
                 </div>
                 {lead.nextFollowUpAt && (
                   <div className="flex items-center text-sm text-slate-600 gap-2">
@@ -228,7 +234,7 @@ export function LeadList() {
                     <TableCell><span className="text-sm text-slate-500">{lead.source}</span></TableCell>
                     <TableCell>
                       <span className="text-sm text-slate-700">
-                        {lead.assignedToUser ? `${lead.assignedToUser.firstName} ${lead.assignedToUser.lastName}` : '-'}
+                        {lead.assignedToUser?.employee?.firstName ? `${lead.assignedToUser.employee.firstName} ${lead.assignedToUser.employee.lastName}` : lead.assignedToUser?.email ? lead.assignedToUser.email : '-'}
                       </span>
                     </TableCell>
                     <TableCell>

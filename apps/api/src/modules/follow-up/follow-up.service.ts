@@ -293,7 +293,7 @@ export class FollowUpService {
       take,
       ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
       include: {
-        lead: { select: { businessId: true, firstName: true, lastName: true, primaryPhone: true, whatsappNumber: true, assignedToUserId: true, status: true } },
+        lead: { select: { businessId: true, firstName: true, lastName: true, primaryPhone: true, whatsappNumber: true, assignedToUserId: true, status: true, assignedToUser: { select: { email: true, employee: { select: { firstName: true, lastName: true } } } } } },
         createdByUser: { select: { id: true, email: true } },
       },
     });

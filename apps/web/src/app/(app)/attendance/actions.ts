@@ -11,6 +11,10 @@ export async function getAttendanceHistoryAction() {
   return fetchApi<any>('/attendance/history');
 }
 
+export async function getDailySummaryAction() {
+  return fetchApi<any>('/attendance/daily-summary');
+}
+
 export async function performAttendanceAction(actionStr: string, note?: string) {
   try {
     const res = await fetchApi<any>('/attendance/action', {

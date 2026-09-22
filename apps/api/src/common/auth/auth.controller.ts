@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Request,
   UseGuards,
@@ -13,6 +15,7 @@ import type { Request as ExpressRequest } from 'express';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
+import { AuditService } from '../audit/audit.service';
 
 import { AuthService, ValidatedUser } from './auth.service';
 import { CurrentUser, RequestUser } from './decorators/current-user.decorator';
@@ -29,6 +32,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly rbacService: RbacService,
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -107,4 +111,92 @@ export class AuthController {
       permissions: Array.from(permissionsSet),
     };
   }
+
+  /**
+   * GET /auth/god-view/users
+   * Returns a slim list of all users for the God View picker.
+   * Only accessible to users with analytics.ceo.read or god-view.enter permission.
+   */
+  @Get('god-view/users')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get list of users for God View picker' })
+  async godViewUsers(@CurrentUser() actor: RequestUser) {
+    const actorPerms = await this.rbacService.getPermissionsForUser(actor.id);
+    if (!actorPerms.has('analytics.ceo.read') && !actorPerms.has('god-view.enter')) {
+      throw new ForbiddenException('God View access requires CEO or Admin privileges');
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { status: { in: ['ACTIVE', 'PENDING_SETUP'] } },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        employee: { select: { firstName: true, lastName: true } },
+        userRoles: { include: { role: true } },
+      },
+      orderBy: { email: 'asc' },
+    });
+
+    return users;
+  }
+
+  /**
+   * GET /auth/god-view/:userId
+   * Returns the identity + permissions of any user, for God View impersonation.
+   * Only accessible to users with analytics.ceo.read or god-view.enter permission.
+   * Logs the god-view-enter event to audit.
+   */
+  @Get('god-view/:userId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get target user profile for God View (CEO/Admin only)' })
+  async godViewProfile(
+    @Param('userId') targetUserId: string,
+    @CurrentUser() actor: RequestUser,
+  ) {
+    const actorPerms = await this.rbacService.getPermissionsForUser(actor.id);
+    if (!actorPerms.has('analytics.ceo.read') && !actorPerms.has('god-view.enter')) {
+      throw new ForbiddenException('God View access requires CEO or Admin privileges');
+    }
+
+    const targetUserRoles = await this.prisma.userRole.findMany({
+      where: { userId: targetUserId },
+      include: { role: true },
+    });
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        employee: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    if (!targetUser) throw new ForbiddenException('User not found');
+
+    const targetPerms = await this.rbacService.getPermissionsForUser(targetUserId);
+
+    // Audit: record god view entry
+    await this.audit.record({
+      entityType: 'User',
+      entityId: targetUserId,
+      action: 'GOD_VIEW_ENTERED',
+      actorUserId: actor.id,
+      metadata: { godViewActorId: actor.id, godViewTargetId: targetUserId },
+    });
+
+    return {
+      id: targetUser.id,
+      email: targetUser.email,
+      status: targetUser.status,
+      displayName: targetUser.employee
+        ? `${targetUser.employee.firstName} ${targetUser.employee.lastName}`
+        : targetUser.email,
+      roles: targetUserRoles.map((ur) => ur.role.code),
+      permissions: Array.from(targetPerms),
+    };
+  }
 }
+

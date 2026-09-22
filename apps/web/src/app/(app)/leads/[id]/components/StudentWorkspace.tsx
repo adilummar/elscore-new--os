@@ -68,9 +68,9 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Requirements</h3>
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Subjects</h3>
                   {hasPermission('requirement.create') && (
-                    <Button variant="outline" size="sm" onClick={() => openAddRequirement(student.id)}>Add Requirement</Button>
+                    <Button variant="outline" size="sm" onClick={() => openAddRequirement(student.id)}>Add Subject</Button>
                   )}
                 </div>
                 
@@ -91,7 +91,7 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500 italic">No requirements added yet.</p>
+                  <p className="text-sm text-slate-500 italic">No subjects added yet.</p>
                 )}
               </CardContent>
             </Card>
@@ -105,7 +105,7 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
             </div>
             <h3 className="text-lg font-medium text-slate-900 mb-1">No students found</h3>
             <p className="text-sm text-slate-500 mb-4 text-center max-w-md">
-              Add a student to track their specific requirements, demos, and enrollments.
+              Add a student to track their specific subjects, demos, and enrollments.
             </p>
             {hasPermission('student.create') && (
               <Button onClick={openAddStudent}>Add Student</Button>
@@ -126,7 +126,7 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
 
       {isRequirementDialogOpen && activeStudentIdForReq && (
         <AddEditRequirementDialog 
-          studentId={activeStudentIdForReq} 
+          student={lead.students.find((s: any) => s.id === activeStudentIdForReq)} 
           requirement={editingRequirement} 
           isOpen={isRequirementDialogOpen} 
           onClose={() => setIsRequirementDialogOpen(false)} 

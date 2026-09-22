@@ -297,6 +297,9 @@ model User {
   RoundRobinState           RoundRobinState[]
   RoundRobinCounsellorState RoundRobinCounsellorState[]
   tutorClassRecords         TutorClassRecord[]          @relation("TutorClassRecords")
+  distributionPreviousUser  LeadDistributionEvent[]     @relation("DistributionPreviousOwner")
+  distributionNewUser       LeadDistributionEvent[]     @relation("DistributionNewOwner")
+  distributionAssignedBy    LeadDistributionEvent[]     @relation("DistributionAssignedBy")
 
   @@map("users")
 }
@@ -896,6 +899,15 @@ enum LeadAssignmentType {
   REOPENED
 }
 
+enum LeadDistributionMethod {
+  ROUND_ROBIN
+  SALES_HEAD_MANUAL
+  COUNSELLOR_SELF_ASSIGNED
+  REFERRAL_SELF_ASSIGNED
+  ROUND_ROBIN_PAUSED
+  REOPEN_OWNER_RESTORED
+}
+
 enum LeadSource {
   META_FACEBOOK
   INSTAGRAM
@@ -969,6 +981,7 @@ model Lead {
   invoices              Invoice[]
   marketingAttribution  MarketingAttribution?
   marketingInteractions MarketingInteraction[]
+  distributionEvents    LeadDistributionEvent[]
 
   @@index([assignedToUserId])
   @@index([primaryPhone])
@@ -1079,6 +1092,55 @@ model SalesNote {
   @@map("sales_notes")
 }
 
+model LeadDistributionEvent {
+  id                     String                 @id @default(uuid())
+  leadId                 String                 @map("lead_id")
+  previousOwnerUserId    String?                @map("previous_owner_user_id")
+  newOwnerUserId         String?                @map("new_owner_user_id")
+  assignmentMethod       LeadDistributionMethod @map("assignment_method")
+  source                 String
+  receivedAt             DateTime?              @map("received_at")
+  assignedAt             DateTime               @map("assigned_at")
+  assignmentLatencyMs    Int?                   @map("assignment_latency_ms")
+  eventDate              DateTime               @map("event_date") @db.Date
+  
+  dailyDistributionOrder Int                    @map("daily_distribution_order")
+  isReassignment         Boolean                @default(false) @map("is_reassignment")
+  
+  rrSequence             Int?                   @map("rr_sequence")
+  rrPosition          Int?                   @map("rr_position")
+  eligibleMemberIds   Json?                  @map("eligible_member_ids")
+  selectedMemberId    String?                @map("selected_member_id")
+  rrQueueBefore       Json?                  @map("rr_queue_before")
+  rrQueueAfter        Json?                  @map("rr_queue_after")
+  
+  assignedByUserId    String?                @map("assigned_by_user_id")
+  isManualOverride    Boolean                @default(false) @map("is_manual_override")
+  overrideReason      String?                @map("override_reason")
+  
+  createdAt           DateTime               @default(now()) @map("created_at")
+
+  lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  previousOwner  User? @relation("DistributionPreviousOwner", fields: [previousOwnerUserId], references: [id])
+  newOwner       User? @relation("DistributionNewOwner", fields: [newOwnerUserId], references: [id])
+  assignedByUser User? @relation("DistributionAssignedBy", fields: [assignedByUserId], references: [id])
+
+  @@index([leadId])
+  @@index([eventDate])
+  @@index([assignedByUserId])
+  @@index([newOwnerUserId])
+  @@index([assignmentMethod])
+  @@index([createdAt])
+  @@map("lead_distribution_events")
+}
+
+model LeadDistributionDailySequence {
+  date       DateTime @id @db.Date
+  nextNumber Int      @default(1) @map("next_number")
+
+  @@map("lead_distribution_daily_sequence")
+}
+
 // =============================================================================
 // M-007 — CRM FOLLOW-UPS (Slice 2B)
 // =============================================================================
@@ -1149,6 +1211,7 @@ model RoundRobinState {
   id                 String   @id @default("singleton")
   isPaused           Boolean  @default(false) @map("is_paused")
   lastAssignedUserId String?  @map("last_assigned_user_id")
+  assignmentSequence Int      @default(0) @map("assignment_sequence")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   lastAssignedUser User? @relation(fields: [lastAssignedUserId], references: [id])

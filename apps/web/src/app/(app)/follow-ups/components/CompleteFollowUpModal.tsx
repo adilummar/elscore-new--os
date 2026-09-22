@@ -94,13 +94,14 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Completion Notes (Optional)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Completion Notes</label>
             <textarea
               className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
               rows={3}
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               placeholder="What happened during this interaction?"
+              required
             />
           </div>
 
@@ -140,12 +141,13 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Next Action Notes (Optional)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Next Action Notes</label>
                     <textarea
                       className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                       rows={2}
                       value={nextRemarks}
                       onChange={(e) => setNextRemarks(e.target.value)}
+                      required
                     />
                   </div>
                 </>

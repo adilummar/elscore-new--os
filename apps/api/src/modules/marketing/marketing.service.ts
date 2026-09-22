@@ -116,6 +116,7 @@ export class MarketingService {
           channel: provider,
           externalCampaignId: dto.campaignId,
           source: provider.includes('META') || provider.includes('FACEBOOK') ? LeadSource.META_FACEBOOK : LeadSource.OTHER,
+          receivedAt: new Date(),
         },
         'SYSTEM',
         true,

@@ -1,5 +1,5 @@
-import { ContactClassification, LeadStatus } from '@prisma/client';
-import { IsEnum, IsISO8601, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ContactClassification } from '@prisma/client';
+import { IsEnum, IsISO8601, IsOptional, IsString, MaxLength, ValidateIf, IsNotEmpty } from 'class-validator';
 
 export class CompleteFollowUpDto {
   @IsEnum(ContactClassification)
@@ -7,9 +7,9 @@ export class CompleteFollowUpDto {
   classification?: ContactClassification;
 
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   @MaxLength(2000)
-  remarks?: string;
+  remarks!: string;
 
   /**
    * Optional: create the next Follow-up in the same atomic action.
@@ -19,8 +19,9 @@ export class CompleteFollowUpDto {
   @IsOptional()
   nextFollowUpAt?: string;
 
+  @ValidateIf(o => o.nextFollowUpAt != null)
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   @MaxLength(2000)
   nextFollowUpRemarks?: string;
 }

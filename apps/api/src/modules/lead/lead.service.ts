@@ -65,8 +65,8 @@ export class LeadService {
 
       if (shouldEnterRR) {
         const nextUser = await this.roundRobin.getNextAssignee(tx);
-        if (nextUser) {
-          assignedTo = nextUser;
+        if (nextUser.userId) {
+          assignedTo = nextUser.userId;
           assignmentType = 'AUTOMATIC_ROUND_ROBIN';
         }
       } else if (isReferral) {
@@ -217,13 +217,18 @@ export class LeadService {
     }
 
     if (query.search) {
-      where.OR = [
-        { firstName: { contains: query.search, mode: 'insensitive' } },
-        { lastName: { contains: query.search, mode: 'insensitive' } },
-        { primaryPhone: { contains: query.search } },
-        { students: { some: { firstName: { contains: query.search, mode: 'insensitive' } } } },
-        { students: { some: { lastName: { contains: query.search, mode: 'insensitive' } } } },
-      ];
+      const searchTerms = query.search.trim().split(/\s+/).filter(Boolean);
+      if (searchTerms.length > 0) {
+        where.AND = searchTerms.map(term => ({
+          OR: [
+            { firstName: { contains: term, mode: 'insensitive' } },
+            { lastName: { contains: term, mode: 'insensitive' } },
+            { primaryPhone: { contains: term } },
+            { students: { some: { firstName: { contains: term, mode: 'insensitive' } } } },
+            { students: { some: { lastName: { contains: term, mode: 'insensitive' } } } },
+          ]
+        }));
+      }
     }
 
     const limit = query.limit ?? 20;
@@ -235,6 +240,13 @@ export class LeadService {
       ...(query.cursor ? { cursor: { id: decodeCursor(query.cursor) }, skip: 1 } : {}),
       orderBy: { createdAt: 'asc' }, // Oldest uncontacted first logic foundation
       include: {
+        assignedToUser: {
+          select: {
+            id: true,
+            email: true,
+            employee: { select: { firstName: true, lastName: true } }
+          }
+        },
         students: { select: { id: true, firstName: true, lastName: true, currentGrade: true } },
       }
     });
@@ -251,6 +263,13 @@ export class LeadService {
     return this.prisma.lead.findUnique({
       where: { id },
       include: {
+        assignedToUser: {
+          select: {
+            id: true,
+            email: true,
+            employee: { select: { firstName: true, lastName: true } }
+          }
+        },
         students: { 
           include: { 
             requirements: { include: { subject: true, grade: true, curriculum: true } },

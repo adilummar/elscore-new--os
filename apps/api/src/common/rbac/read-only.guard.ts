@@ -41,9 +41,10 @@ export class ReadOnlyGuard implements CanActivate {
     });
 
     const isCoFounder = userRoles.some((ur) => ur.role.code === 'CO_FOUNDER');
+    const isGodViewReadOnly = (request as any).isGodViewReadOnly === true;
 
-    if (isCoFounder) {
-      throw new ForbiddenException('Co-Founder accounts have read-only access. Mutation operations are forbidden.');
+    if (isCoFounder || isGodViewReadOnly) {
+      throw new ForbiddenException('You have read-only access. Mutation operations are forbidden.');
     }
 
     return true;

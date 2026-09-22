@@ -429,6 +429,13 @@ const PERMISSIONS: Array<{
     description: 'Org-wide employee list',
     isDelegatable: false,
   },
+  {
+    code: 'god-view.enter',
+    resource: 'system',
+    action: 'god-view',
+    description: 'Enter read-only God View as another user',
+    isDelegatable: false,
+  },
 
   // ── Departments ───────────────────────────────────────────────────────────
   {
@@ -452,6 +459,27 @@ const PERMISSIONS: Array<{
     resource: 'role',
     action: 'read',
     description: 'View roles and their permission sets',
+    isDelegatable: false,
+  },
+  {
+    code: 'roundrobin.history.read.own',
+    resource: 'roundrobin.history',
+    action: 'read.own',
+    description: 'Read own distribution history',
+    isDelegatable: false,
+  },
+  {
+    code: 'roundrobin.history.read.team',
+    resource: 'roundrobin.history',
+    action: 'read.team',
+    description: 'Read team distribution history',
+    isDelegatable: false,
+  },
+  {
+    code: 'roundrobin.history.read.all',
+    resource: 'roundrobin.history',
+    action: 'read.all',
+    description: 'Read all distribution history',
     isDelegatable: false,
   },
   {
@@ -960,7 +988,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'attendance.read.team',
     'demo.book',
     'demo.read_own',
-    'demo.manage_team','roundrobin.read', 'roundrobin.manage', 
+    'demo.manage_team','roundrobin.read', 'roundrobin.manage',
+    'roundrobin.history.read.all',
+    'roundrobin.history.read.team',
+    'roundrobin.history.read.own',
+    'god-view.enter',
     'employee.read',
     'department.read',
     'lead.create',

@@ -28,4 +28,16 @@ export class DashboardController {
     const readAll = await this.hasReadAll(user.id);
     return this.dashboardService.getPipeline(user.id, readAll);
   }
+
+  @Get('sources')
+  async getSources(@CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    return this.dashboardService.getSources(user.id, readAll);
+  }
+
+  @Get('team')
+  async getTeam(@CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    return this.dashboardService.getTeam(user.id, readAll);
+  }
 }

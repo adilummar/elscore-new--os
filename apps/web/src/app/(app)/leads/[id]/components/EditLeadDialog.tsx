@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { PhoneInput } from '@/components/ui/PhoneInput';
 import { updateLeadDetailsAction } from '../../actions';
 
 export function EditLeadDialog({
@@ -42,10 +43,10 @@ export function EditLeadDialog({
     }
   }, [isOpen, lead]);
 
-  const validatePhone = (phone: string) => {
-    if (!phone) return true; // Optional fields can be empty
-    // Reject clearly invalid alphabetic input, allow +, -, space, digits
-    return /^[+0-9\s-]{5,20}$/.test(phone);
+  /** Returns true if the phone value is either empty (optional) or has subscriber digits beyond the country code. */
+  const hasSubscriberDigits = (phone: string) => {
+    if (!phone) return true;
+    return !/^\+\d{1,4}$/.test(phone);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,20 +57,8 @@ export function EditLeadDialog({
       return;
     }
 
-    if (!validatePhone(primaryPhone)) {
-      setError('Primary phone contains invalid characters.');
-      return;
-    }
-    if (altPhone1 && !validatePhone(altPhone1)) {
-      setError('Alternative phone 1 contains invalid characters.');
-      return;
-    }
-    if (altPhone2 && !validatePhone(altPhone2)) {
-      setError('Alternative phone 2 contains invalid characters.');
-      return;
-    }
-    if (whatsappNumber && !validatePhone(whatsappNumber)) {
-      setError('WhatsApp number contains invalid characters.');
+    if (!hasSubscriberDigits(primaryPhone)) {
+      setError('Primary phone number is required — please enter the subscriber digits.');
       return;
     }
     
@@ -126,39 +115,35 @@ export function EditLeadDialog({
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Primary Phone *</label>
-            <Input 
-              value={primaryPhone} 
-              onChange={e => setPrimaryPhone(e.target.value)} 
-              placeholder="+971..."
+            <PhoneInput
+              label="Primary Phone *"
               required
+              value={primaryPhone}
+              onChange={v => setPrimaryPhone(v)}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">WhatsApp Number</label>
-            <Input 
-              value={whatsappNumber} 
-              onChange={e => setWhatsappNumber(e.target.value)} 
-              placeholder="+971..."
+            <PhoneInput
+              label="WhatsApp Number"
+              value={whatsappNumber}
+              onChange={v => setWhatsappNumber(v)}
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Alternative Phone 1</label>
-            <Input 
-              value={altPhone1} 
-              onChange={e => setAltPhone1(e.target.value)} 
-              placeholder="Optional"
+            <PhoneInput
+              label="Alternative Phone 1"
+              value={altPhone1}
+              onChange={v => setAltPhone1(v)}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Alternative Phone 2</label>
-            <Input 
-              value={altPhone2} 
-              onChange={e => setAltPhone2(e.target.value)} 
-              placeholder="Optional"
+            <PhoneInput
+              label="Alternative Phone 2"
+              value={altPhone2}
+              onChange={v => setAltPhone2(v)}
             />
           </div>
         </div>

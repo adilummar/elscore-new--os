@@ -143,11 +143,17 @@ export class AnalyticsService {
       const baseWhere = { assignedToUserId: c.id, isArchived: false };
       const periodWhere = { ...baseWhere, ...(dateFilter && { createdAt: dateFilter }) };
 
-      const [assigned, newLeads, contacted, enrolled] = await Promise.all([
+      const [assigned, newLeads, contacted, enrolled, overdueFollowups] = await Promise.all([
         this.prisma.lead.count({ where: baseWhere }),
         this.prisma.lead.count({ where: periodWhere }),
         this.prisma.lead.count({ where: { ...periodWhere, status: { notIn: ['NEW', 'LOST', 'JUNK'] } } }),
-        this.prisma.lead.count({ where: { ...periodWhere, status: { in: ['ENROLLED', 'PAID'] } } })
+        this.prisma.lead.count({ where: { ...periodWhere, status: { in: ['ENROLLED', 'PAID'] } } }),
+        this.prisma.followUp.count({ 
+          where: { 
+            lead: { assignedToUserId: c.id, isArchived: false },
+            status: 'OVERDUE'
+          }
+        })
       ]);
 
       return {
@@ -157,11 +163,37 @@ export class AnalyticsService {
         newLeads,
         contacted,
         enrolled,
+        overdueFollowups,
         conversionRate: newLeads > 0 ? ((enrolled / newLeads) * 100).toFixed(1) + '%' : '0%'
       };
     }));
 
-    return { performance };
+    // Fetch the 5 most recently overdue followups to display
+    const recentOverdueFollowups = await this.prisma.followUp.findMany({
+      where: {
+        status: 'OVERDUE',
+        lead: { isArchived: false, assignedToUserId: { not: null } }
+      },
+      include: {
+        lead: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            assignedToUser: {
+              select: {
+                email: true,
+                employee: { select: { firstName: true, lastName: true } }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { scheduledAt: 'desc' },
+      take: 10
+    });
+
+    return { performance, recentOverdueFollowups };
   }
 
   async getPipeline(query: { from?: string; to?: string }) {

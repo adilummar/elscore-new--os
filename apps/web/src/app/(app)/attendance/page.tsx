@@ -1,17 +1,23 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { getAttendanceStatusAction, getAttendanceHistoryAction, performAttendanceAction } from "./actions";
+import { getAttendanceStatusAction, getAttendanceHistoryAction, performAttendanceAction, getDailySummaryAction } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
+import { Modal } from "@/components/ui/Modal";
 
 export default function MyAttendancePage() {
   const [status, setStatus] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [note, setNote] = useState('');
   const [toast, setToast] = useState<{message: string, type: 'success' | 'warning'} | null>(null);
+
+  const [dailySummary, setDailySummary] = useState<any>(null);
+  const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
+  const [isCheckOutModalOpen, setIsCheckOutModalOpen] = useState(false);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'warning') => {
     setToast({ message, type });
@@ -71,13 +77,41 @@ export default function MyAttendancePage() {
         return;
       }
       showToast('Action successful', 'success');
-      if (action === 'CHECK_IN') setNote('');
+      if (action === 'CHECK_IN') {
+        setNote('');
+        setIsCheckInModalOpen(false);
+      }
+      if (action === 'CHECK_OUT') {
+        setIsCheckOutModalOpen(false);
+      }
       fetchStatus();
       fetchHistory();
     } catch (e) {
       console.error(e);
       showToast('An unexpected error occurred', 'warning');
     }
+  };
+
+  const loadSummary = async () => {
+    setIsLoadingSummary(true);
+    try {
+      const res = await getDailySummaryAction();
+      setDailySummary(res || { pendingFollowUps: [], completedFollowUps: [], pendingDemos: [], completedDemos: [] });
+    } catch (e) {
+      console.error('Failed to load summary', e);
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  };
+
+  const handleOpenCheckIn = () => {
+    loadSummary();
+    setIsCheckInModalOpen(true);
+  };
+
+  const handleOpenCheckOut = () => {
+    loadSummary();
+    setIsCheckOutModalOpen(true);
   };
 
   return (
@@ -106,7 +140,7 @@ export default function MyAttendancePage() {
                       className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
-                  <Button onClick={() => handleAction('CHECK_IN')}>Check In</Button>
+                  <Button onClick={handleOpenCheckIn}>Check In</Button>
                 </div>
               )}
 
@@ -121,14 +155,14 @@ export default function MyAttendancePage() {
               {status?.state === 'Working' && (
                 <>
                   <Button onClick={() => handleAction('BREAK_START')} variant="secondary">Take a Break</Button>
-                  <Button onClick={() => handleAction('CHECK_OUT')} variant="danger">Check Out</Button>
+                  <Button onClick={handleOpenCheckOut} variant="danger">Check Out</Button>
                 </>
               )}
 
               {status?.state === 'On Break' && (
                 <>
                   <Button onClick={() => handleAction('BREAK_END')} variant="secondary">Stop the Break</Button>
-                  <Button onClick={() => handleAction('CHECK_OUT')} variant="danger">Check Out</Button>
+                  <Button onClick={handleOpenCheckOut} variant="danger">Check Out</Button>
                 </>
               )}
 
@@ -185,6 +219,94 @@ export default function MyAttendancePage() {
           {toast.message}
         </div>
       )}
+
+      {/* Check In Modal */}
+      <Modal isOpen={isCheckInModalOpen} onClose={() => setIsCheckInModalOpen(false)} size="lg">
+        <div className="space-y-6">
+          <h2 className="text-xl font-bold">Good Morning! Here is your agenda for today</h2>
+          
+          {isLoadingSummary ? (
+            <div className="py-8 text-center text-slate-500">Loading your tasks...</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+                <h3 className="font-semibold text-amber-800 mb-2">Pending Follow-ups ({dailySummary?.pendingFollowUps?.length || 0})</h3>
+                {dailySummary?.pendingFollowUps?.length > 0 ? (
+                  <ul className="list-disc list-inside text-sm text-amber-700 space-y-1">
+                    {dailySummary.pendingFollowUps.slice(0, 5).map((f: any) => (
+                      <li key={f.id}>{f.lead?.firstName} {f.lead?.lastName}</li>
+                    ))}
+                    {dailySummary.pendingFollowUps.length > 5 && <li>...and {dailySummary.pendingFollowUps.length - 5} more</li>}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-amber-700">No pending follow-ups for today.</p>
+                )}
+              </div>
+
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                <h3 className="font-semibold text-blue-800 mb-2">Scheduled Demos ({dailySummary?.pendingDemos?.length || 0})</h3>
+                {dailySummary?.pendingDemos?.length > 0 ? (
+                  <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
+                    {dailySummary.pendingDemos.slice(0, 5).map((d: any) => (
+                      <li key={d.id}>{d.student?.lead?.firstName} {d.student?.lead?.lastName}</li>
+                    ))}
+                    {dailySummary.pendingDemos.length > 5 && <li>...and {dailySummary.pendingDemos.length - 5} more</li>}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-blue-700">No demos scheduled for today.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setIsCheckInModalOpen(false)}>Cancel</Button>
+            <Button onClick={() => handleAction('CHECK_IN')} disabled={isLoadingSummary}>Acknowledge & Check In</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Check Out Modal */}
+      <Modal isOpen={isCheckOutModalOpen} onClose={() => setIsCheckOutModalOpen(false)} size="lg">
+        <div className="space-y-6">
+          <h2 className="text-xl font-bold">End of Day Summary</h2>
+          
+          {isLoadingSummary ? (
+            <div className="py-8 text-center text-slate-500">Loading your summary...</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+                  <h3 className="font-semibold text-emerald-800 mb-2">Completed Today</h3>
+                  <div className="text-sm text-emerald-700 space-y-1">
+                    <p>✓ {dailySummary?.completedFollowUps?.length || 0} Follow-ups completed</p>
+                    <p>✓ {dailySummary?.completedDemos?.length || 0} Demos conducted</p>
+                  </div>
+                </div>
+
+                <div className="bg-rose-50 rounded-lg p-4 border border-rose-100">
+                  <h3 className="font-semibold text-rose-800 mb-2">Leftovers / Pending</h3>
+                  <div className="text-sm text-rose-700 space-y-1">
+                    <p>⚠ {dailySummary?.pendingFollowUps?.length || 0} Follow-ups pending</p>
+                    <p>⚠ {dailySummary?.pendingDemos?.length || 0} Demos pending</p>
+                  </div>
+                </div>
+              </div>
+
+              {(dailySummary?.pendingFollowUps?.length > 0 || dailySummary?.pendingDemos?.length > 0) && (
+                <div className="p-3 bg-slate-50 text-slate-600 text-sm rounded border border-slate-200">
+                  You still have pending tasks for today. Are you sure you want to check out?
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setIsCheckOutModalOpen(false)}>Cancel</Button>
+            <Button onClick={() => handleAction('CHECK_OUT')} variant="danger" disabled={isLoadingSummary}>Verify & Check Out</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
