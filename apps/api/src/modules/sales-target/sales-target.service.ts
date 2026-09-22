@@ -276,10 +276,109 @@ export class SalesTargetService {
     const targetValue = teamTarget ? Number(teamTarget.targetValue) : 0;
     const unallocated = Math.max(0, targetValue - totalAllocated);
 
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+
+    const teamLedger = await this.prisma.targetCreditLedger.aggregate({
+      _sum: { amount: true },
+      where: {
+        salesOwner: { employee: { departmentId } },
+        timestamp: { gte: start, lt: end },
+      },
+    });
+    
+    const teamActual = Number(teamLedger._sum?.amount || 0);
+    const teamProgress = targetValue > 0 ? (teamActual / targetValue) * 100 : 0;
+
     return {
       teamTarget,
       totalAllocated,
       unallocated,
+      teamActual,
+      teamProgress,
     };
+  }
+
+  /**
+   * Set Team Target and individual allocations in a single batch
+   */
+  async setTeamBundle(dto: any, actorUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Set the overall team target
+      const teamTarget = await tx.teamSalesTarget.upsert({
+        where: {
+          departmentId_periodYear_periodMonth: {
+            departmentId: dto.departmentId,
+            periodYear: dto.periodYear,
+            periodMonth: dto.periodMonth,
+          },
+        },
+        update: {
+          targetType: dto.targetType,
+          targetValue: dto.targetValue,
+          setByUserId: actorUserId,
+        },
+        create: {
+          departmentId: dto.departmentId,
+          periodMonth: dto.periodMonth,
+          periodYear: dto.periodYear,
+          targetType: dto.targetType,
+          targetValue: dto.targetValue,
+          setByUserId: actorUserId,
+        },
+      });
+
+      // 2. Process individual allocations
+      if (dto.allocations && Array.isArray(dto.allocations)) {
+        for (const alloc of dto.allocations) {
+          const existing = await tx.salesTarget.findUnique({
+            where: {
+              userId_periodYear_periodMonth: {
+                userId: alloc.userId,
+                periodYear: dto.periodYear,
+                periodMonth: dto.periodMonth,
+              },
+            },
+          });
+
+          if (existing) {
+            await tx.salesTargetHistory.create({
+              data: {
+                salesTargetId: existing.id,
+                userId: existing.userId,
+                periodMonth: existing.periodMonth,
+                periodYear: existing.periodYear,
+                previousType: existing.targetType,
+                previousValue: existing.targetValue,
+                newType: alloc.targetType,
+                newValue: alloc.targetValue,
+                changedByUserId: actorUserId,
+              },
+            });
+
+            await tx.salesTarget.update({
+              where: { id: existing.id },
+              data: {
+                targetType: alloc.targetType,
+                targetValue: alloc.targetValue,
+                setByUserId: actorUserId,
+              },
+            });
+          } else {
+            await tx.salesTarget.create({
+              data: {
+                userId: alloc.userId,
+                periodMonth: dto.periodMonth,
+                periodYear: dto.periodYear,
+                targetType: alloc.targetType,
+                targetValue: alloc.targetValue,
+                setByUserId: actorUserId,
+              },
+            });
+          }
+        }
+      }
+      return teamTarget;
+    });
   }
 }

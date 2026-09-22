@@ -53,6 +53,15 @@ export async function setTeamTargetAction(departmentId: string, periodMonth: num
   return res;
 }
 
+export async function setTeamBundleAction(departmentId: string, periodMonth: number, periodYear: number, targetType: string, targetValue: number, allocations: any[]) {
+  const res = await fetchApi<any>('/sales-targets/team-bundle', {
+    method: 'POST',
+    body: JSON.stringify({ departmentId, periodMonth, periodYear, targetType, targetValue, allocations }),
+  });
+  revalidatePath('/sales/targets');
+  return res;
+}
+
 export async function getMomReportsAction(month?: string, year?: string) {
   const params = new URLSearchParams();
   if (month) params.append('month', month);

@@ -107,10 +107,19 @@ export class SalesTargetController {
   @Post('team')
   @RequirePermissions('target.manage')
   async setTeamTarget(
-    @Body() dto: any, // using any to bypass DTO import issue for now, will validate in service
+    @Body() dto: any,
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.setTeamTarget(dto, user.id);
+  }
+
+  @Post('team-bundle')
+  @RequirePermissions('target.manage')
+  async setTeamBundle(
+    @Body() dto: any,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.setTeamBundle(dto, user.id);
   }
 
   @Get('team/:departmentId')
