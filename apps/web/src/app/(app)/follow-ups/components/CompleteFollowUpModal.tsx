@@ -21,6 +21,7 @@ interface CompleteFollowUpModalProps {
 
 export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: CompleteFollowUpModalProps) {
   const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const [classification, setClassification] = React.useState('QUALIFIED');
   const [remarks, setRemarks] = React.useState('');
   
@@ -39,6 +40,24 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
+    if (!remarks.trim()) {
+      setError('Completion Notes are mandatory. Please detail the outcome.');
+      return;
+    }
+
+    if (scheduleNext) {
+      if (!nextDate || !nextTime) {
+        setError('Next Date and Time are required.');
+        return;
+      }
+      if (!nextRemarks.trim()) {
+        setError('Next Action Notes are mandatory.');
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -58,7 +77,7 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
       
       onSuccess();
     } catch (err: any) {
-      alert(err.message || 'Failed to complete follow-up');
+      setError(err.message || 'Failed to complete follow-up');
     } finally {
       setIsLoading(false);
     }
@@ -69,6 +88,12 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
       <div className="p-1">
         <h2 className="text-xl font-bold text-slate-900 mb-4">Complete Follow-up</h2>
         
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-md text-sm border border-red-100">
+            {error}
+          </div>
+        )}
+
         <div className="mb-6 p-3 bg-slate-50 rounded-lg text-sm border border-slate-100">
           <p className="font-medium text-slate-700">
             {followUp.lead?.firstName} {followUp.lead?.lastName}
@@ -94,7 +119,7 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Completion Notes</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Completion Notes *</label>
             <textarea
               className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
               rows={3}
@@ -141,7 +166,7 @@ export function CompleteFollowUpModal({ isOpen, onClose, followUp, onSuccess }: 
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Next Action Notes</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Next Action Notes *</label>
                     <textarea
                       className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                       rows={2}

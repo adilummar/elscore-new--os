@@ -69,8 +69,13 @@ export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () =
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setActionLoading(true);
     setError(null);
+    if (!remarks.trim()) {
+      setError("Notes are mandatory for the new follow-up.");
+      return;
+    }
+
+    setActionLoading(true);
     try {
       await createFollowUpAction(leadId, new Date(scheduledAt).toISOString(), remarks);
       setIsCreateOpen(false);
@@ -84,14 +89,25 @@ export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () =
     e.preventDefault();
     setError(null);
 
+    if (!remarks.trim()) {
+      setError("Completion Notes are mandatory. Please provide details about what happened during this interaction.");
+      return;
+    }
+
     if (isFollowUpRequired() && !scheduleNext) {
       setError("An active sales process requires a next follow-up. Please schedule the next one or change the classification/status.");
       return;
     }
 
-    if (scheduleNext && !nextScheduledAt) {
-      setError("Next scheduled date & time is required.");
-      return;
+    if (scheduleNext) {
+      if (!nextScheduledAt) {
+        setError("Next scheduled date & time is required.");
+        return;
+      }
+      if (!nextRemarks.trim()) {
+        setError("Next Action Notes are mandatory. Please provide notes for the next follow-up.");
+        return;
+      }
     }
 
     setActionLoading(true);
@@ -241,8 +257,8 @@ export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () =
           </div>
           
           <div className="space-y-2">
-            <label className="text-sm font-medium">Completion Remarks</label>
-            <textarea className="w-full min-h-[80px] p-2 border border-slate-200 rounded-md text-sm" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="What happened during this contact?" />
+            <label className="text-sm font-medium">Completion Notes *</label>
+            <textarea className="w-full min-h-[80px] p-2 border border-slate-200 rounded-md text-sm" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="What happened during this interaction?" />
           </div>
           
           <div className="pt-4 border-t border-slate-100">
