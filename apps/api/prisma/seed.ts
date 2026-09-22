@@ -615,6 +615,27 @@ const PERMISSIONS: Array<{
     description: 'View CEO Command Center executive analytics',
     isDelegatable: false,
   },
+  {
+    code: 'target.read.own',
+    resource: 'target',
+    action: 'read',
+    description: 'Read own sales targets and progress',
+    isDelegatable: false,
+  },
+  {
+    code: 'target.read.team',
+    resource: 'target',
+    action: 'read',
+    description: 'Read team sales targets and progress',
+    isDelegatable: false,
+  },
+  {
+    code: 'target.manage',
+    resource: 'target',
+    action: 'manage',
+    description: 'Create or update sales targets for team members',
+    isDelegatable: false,
+  },
 
   // 🚀 CRM Phase 2A 🚀
   {
@@ -992,6 +1013,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'roundrobin.history.read.all',
     'roundrobin.history.read.team',
     'roundrobin.history.read.own',
+    'target.read.own',
+    'target.read.team',
+    'target.manage',
     'god-view.enter',
     'employee.read',
     'department.read',
@@ -1034,6 +1058,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.read_own',
     'demo.cancel_own',
     'demo.reschedule_own',
+    'target.read.own',
     'department.read',
     'lead.create',
     'lead.read',
