@@ -51,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthProvider user={realUser} godViewUser={godViewUserId ? effectiveUser : null} allUsers={allUsers}>
-      <div className="flex min-h-screen bg-background flex-col">
+      <div className="flex h-screen bg-background flex-col overflow-hidden">
         {/* God View Banner — sticky at very top, above sidebar */}
         {godViewUserId && (
           <GodViewBanner
