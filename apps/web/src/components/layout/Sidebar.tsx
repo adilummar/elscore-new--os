@@ -44,11 +44,11 @@ export function Sidebar({ user }: { user: any }) {
   }
 
   return (
-    <aside className="w-64 bg-primary text-white flex flex-col min-h-screen">
-      <div className="h-16 flex items-center px-6 border-b border-primary-hover">
+    <aside className="w-64 bg-primary text-white flex flex-col h-full border-r border-primary-hover shadow-lg">
+      <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-primary-hover">
         <span className="font-bold text-xl tracking-tight">EL SCORE OS</span>
       </div>
-      <div className="flex-1 py-4 flex flex-col gap-1 px-3">
+      <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
@@ -68,7 +68,7 @@ export function Sidebar({ user }: { user: any }) {
           );
         })}
       </div>
-      <div className="p-4 border-t border-primary-hover">
+      <div className="p-4 border-t border-primary-hover flex-shrink-0">
         <div className="mb-4 px-3 flex flex-col gap-1 overflow-hidden">
           <p className="text-sm font-medium text-white truncate">{user?.email}</p>
           <p className="text-xs text-primary-soft truncate">
