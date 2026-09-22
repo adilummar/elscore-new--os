@@ -50,8 +50,11 @@ export default function TargetsPage() {
         
         if (canManageTargets) {
           const emps = await getEmployeesAction();
-          setEmployees(emps.data || []);
-          const salesDept = emps.data?.find((e: any) => e.department?.code === 'SALES')?.departmentId;
+          const empsData = emps.data || [];
+          setEmployees(empsData);
+          // Find Sales department ID safely (department relation might not be included)
+          const salesEmp = empsData.find((e: any) => e.user?.userRoles?.some((r: any) => r.role.code.startsWith('SALES')));
+          const salesDept = salesEmp?.departmentId;
           if (salesDept) {
              const tt = await getTeamTargetAction(salesDept, month.toString(), year.toString());
              setTeamTargetData(tt);
@@ -98,7 +101,8 @@ export default function TargetsPage() {
         await setTargetAction(indUserId, month, year, indType, parseFloat(indValue));
       } else {
         if (!teamVal) return alert('Please enter team target amount');
-        const salesDept = employees?.find((e: any) => e.department?.code === 'SALES')?.departmentId;
+        const salesEmp = employees?.find((e: any) => e.user?.userRoles?.some((r: any) => r.role.code.startsWith('SALES')));
+        const salesDept = salesEmp?.departmentId;
         if (!salesDept) return alert('Sales department not found');
         
         const validAllocations = allocations
@@ -343,12 +347,17 @@ export default function TargetsPage() {
                   )}
 
                   <div className="space-y-3">
-                    {allocations.map((alloc, i) => (
+                    {allocations.map((alloc, i) => {
+                      const availableEmployees = activeSalesEmployees.filter(
+                        e => e.userId === alloc.userId || !allocations.some(a => a.userId === e.userId)
+                      );
+                      
+                      return (
                       <div key={i} className="flex gap-2 items-center bg-white border p-2 rounded-md">
                         <div className="flex-1">
                           <Select value={alloc.userId} onChange={e => handleAllocationChange(i, 'userId', e.target.value)} required>
                             <option value="">-- Select --</option>
-                            {activeSalesEmployees.map(e => (
+                            {availableEmployees.map(e => (
                               <option key={e.id} value={e.userId}>{e.firstName} {e.lastName}</option>
                             ))}
                           </Select>
@@ -360,7 +369,7 @@ export default function TargetsPage() {
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
 
