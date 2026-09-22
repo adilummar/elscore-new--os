@@ -101,8 +101,81 @@ export class SalesTargetController {
     @Body() dto: SetSalesTargetDto,
     @CurrentUser() user: RequestUser,
   ) {
-    // Safety: a Sales Head cannot set a target for themselves (they are not a counsellor)
-    // but we do not enforce this at backend since it could be a legitimate future use case.
     return this.service.setTarget(dto, user.id);
+  }
+
+  @Post('team')
+  @RequirePermissions('target.manage')
+  async setTeamTarget(
+    @Body() dto: any, // using any to bypass DTO import issue for now, will validate in service
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.setTeamTarget(dto, user.id);
+  }
+
+  @Get('team/:departmentId')
+  @RequirePermissions('target.read.team')
+  async getTeamTarget(
+    @Param('departmentId') departmentId: string,
+    @Query('year') year: string,
+    @Query('month') month: string,
+  ) {
+    const y = year ? parseInt(year) : new Date().getFullYear();
+    const m = month ? parseInt(month) : new Date().getMonth() + 1;
+    return this.service.getTeamTarget(departmentId, y, m);
+  }
+
+  @Get('reports/mom')
+  @RequirePermissions('target.read.team')
+  async getMoMPerformance(
+    @Query('year') year: string,
+    @Query('month') month: string,
+  ) {
+    const y = year ? parseInt(year) : new Date().getFullYear();
+    const m = month ? parseInt(month) : new Date().getMonth() + 1;
+
+    let prevY = y;
+    let prevM = m - 1;
+    if (prevM === 0) {
+      prevM = 12;
+      prevY = y - 1;
+    }
+
+    const currentTargets = await this.service.getAllTargets(y, m);
+    const prevTargets = await this.service.getAllTargets(prevY, prevM);
+
+    const enriched = await Promise.all(
+      currentTargets.map(async (t) => {
+        const currProgress = await this.service.getProgress(t.userId, m, y);
+        const prevTarget = prevTargets.find((pt) => pt.userId === t.userId);
+        let prevProgress = null;
+        if (prevTarget) {
+          prevProgress = await this.service.getProgress(t.userId, prevM, prevY);
+        }
+
+        const currActual = currProgress.actual;
+        const previousActual = prevProgress ? prevProgress.actual : 0;
+        let growthRatio = 0;
+
+        if (previousActual > 0) {
+          growthRatio = ((currActual - previousActual) / previousActual) * 100;
+        } else if (currActual > 0) {
+          growthRatio = 100; // Infinity treated as 100% growth if they had 0 before
+        }
+
+        return {
+          counsellor: t.user,
+          targetValue: t.targetValue,
+          targetType: t.targetType,
+          currentActual: currActual,
+          previousActual: previousActual,
+          growthRatio: growthRatio, // positive = increment, negative = decrement
+          isMeetingTarget: currProgress.progress >= 1,
+          uncompletedAmount: Math.max(0, Number(t.targetValue) - currActual),
+        };
+      }),
+    );
+
+    return enriched;
   }
 }

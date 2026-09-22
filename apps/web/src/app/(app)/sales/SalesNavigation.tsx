@@ -19,6 +19,10 @@ export function SalesNavigation({ isSalesHead, canManageRR }: { isSalesHead: boo
 
   links.push({ name: 'Distribution History', href: '/sales/round-robin/history' });
   links.push({ name: 'Targets', href: '/sales/targets' });
+  
+  if (isSalesHead || canManageRR) {
+    links.push({ name: 'Reports', href: '/sales/reports' });
+  }
 
   return (
     <div className="border-b border-slate-200 mb-6 overflow-x-auto">

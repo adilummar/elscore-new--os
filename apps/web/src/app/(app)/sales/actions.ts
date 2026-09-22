@@ -36,3 +36,26 @@ export async function setTargetAction(userId: string, periodMonth: number, perio
   revalidatePath('/sales/targets');
   return res;
 }
+
+export async function getTeamTargetAction(departmentId: string, month?: string, year?: string) {
+  const params = new URLSearchParams();
+  if (month) params.append('month', month);
+  if (year) params.append('year', year);
+  return fetchApi<any>(`/sales-targets/team/${departmentId}?${params.toString()}`);
+}
+
+export async function setTeamTargetAction(departmentId: string, periodMonth: number, periodYear: number, targetType: string, targetValue: number) {
+  const res = await fetchApi<any>('/sales-targets/team', {
+    method: 'POST',
+    body: JSON.stringify({ departmentId, periodMonth, periodYear, targetType, targetValue }),
+  });
+  revalidatePath('/sales/targets');
+  return res;
+}
+
+export async function getMomReportsAction(month?: string, year?: string) {
+  const params = new URLSearchParams();
+  if (month) params.append('month', month);
+  if (year) params.append('year', year);
+  return fetchApi<any>(`/sales-targets/reports/mom?${params.toString()}`);
+}

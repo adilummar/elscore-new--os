@@ -147,6 +147,7 @@ model Department {
   updatedAt DateTime         @updatedAt @map("updated_at")
 
   employees Employee[]
+  teamSalesTargets TeamSalesTarget[]
 
   @@map("departments")
 }
@@ -262,6 +263,7 @@ model User {
   // Sales CRM
   salesTargets              SalesTarget[]        @relation("UserSalesTarget")
   setSalesTargets           SalesTarget[]        @relation("UserSetSalesTarget")
+  setTeamSalesTargets       TeamSalesTarget[]    @relation("UserSetTeamSalesTarget")
   salesTargetHistoryChanges SalesTargetHistory[] @relation("SalesTargetHistoryChangedBy")
   submittedFeedback         TutorFeedback[]      @relation("FeedbackGivenBy")
 
@@ -1665,6 +1667,25 @@ model SalesTargetHistory {
   @@index([salesTargetId, changedAt])
   @@index([userId, periodYear, periodMonth])
   @@map("sales_target_history")
+}
+
+/// Team-level target per department per calendar month.
+model TeamSalesTarget {
+  id           String          @id @default(uuid())
+  departmentId String          @map("department_id")
+  periodMonth  Int             @map("period_month")
+  periodYear   Int             @map("period_year")
+  targetType   SalesTargetType @map("target_type")
+  targetValue  Decimal         @map("target_value") @db.Decimal(12, 2)
+  setByUserId  String          @map("set_by_user_id")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  department Department @relation(fields: [departmentId], references: [id])
+  setBy      User       @relation("UserSetTeamSalesTarget", fields: [setByUserId], references: [id])
+
+  @@unique([departmentId, periodYear, periodMonth])
+  @@map("team_sales_targets")
 }
 
 // ============================================================================

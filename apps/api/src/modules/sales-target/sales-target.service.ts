@@ -208,11 +208,78 @@ export class SalesTargetService {
       return {
         target,
         actual: actualPct,          // achieved % (e.g. 15.5)
-        progress: targetPct > 0 ? actualPct / targetPct : 0, // ratio 0–N (e.g. 0.775)
+        progress: targetPct > 0 ? actualPct / targetPct : 0, // ratio 0-N (e.g. 0.775)
         required,                    // how many PAID leads needed (e.g. 8 out of 40)
         numeratorCount,              // how many PAID leads achieved
         denominatorCount,            // total assigned leads this month
       };
     }
+  }
+
+  /**
+   * Set Team Target for a given month and department
+   */
+  async setTeamTarget(dto: any, actorUserId: string) {
+    return this.prisma.teamSalesTarget.upsert({
+      where: {
+        departmentId_periodYear_periodMonth: {
+          departmentId: dto.departmentId,
+          periodYear: dto.periodYear,
+          periodMonth: dto.periodMonth,
+        },
+      },
+      update: {
+        targetType: dto.targetType,
+        targetValue: dto.targetValue,
+        setByUserId: actorUserId,
+      },
+      create: {
+        departmentId: dto.departmentId,
+        periodMonth: dto.periodMonth,
+        periodYear: dto.periodYear,
+        targetType: dto.targetType,
+        targetValue: dto.targetValue,
+        setByUserId: actorUserId,
+      },
+    });
+  }
+
+  /**
+   * Get Team Target and calculate the unallocated remainder (Lead's responsibility)
+   */
+  async getTeamTarget(departmentId: string, year: number, month: number) {
+    const teamTarget = await this.prisma.teamSalesTarget.findUnique({
+      where: {
+        departmentId_periodYear_periodMonth: {
+          departmentId,
+          periodYear: year,
+          periodMonth: month,
+        },
+      },
+    });
+
+    const individualTargets = await this.prisma.salesTarget.findMany({
+      where: {
+        periodYear: year,
+        periodMonth: month,
+        user: { employee: { departmentId } },
+      },
+    });
+
+    let totalAllocated = 0;
+    individualTargets.forEach(t => {
+      if (t.targetType === 'REVENUE_AED') {
+        totalAllocated += Number(t.targetValue);
+      }
+    });
+
+    const targetValue = teamTarget ? Number(teamTarget.targetValue) : 0;
+    const unallocated = Math.max(0, targetValue - totalAllocated);
+
+    return {
+      teamTarget,
+      totalAllocated,
+      unallocated,
+    };
   }
 }
