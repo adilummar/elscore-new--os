@@ -214,7 +214,7 @@ export default async function OperationalDashboard() {
                             <span className="text-slate-500 text-xs ml-1 font-normal">({fup.lead?.primaryPhone})</span>
                           </Link>
                           {fup.lead?.assignedToUser && (
-                            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Assigned to: {fup.lead.assignedToUser.firstName} {fup.lead.assignedToUser.lastName}</p>
+                            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Assigned to: {fup.lead.assignedToUser.employee?.firstName} {fup.lead.assignedToUser.employee?.lastName}</p>
                           )}
                         </div>
                         <div className="text-right">
