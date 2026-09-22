@@ -381,4 +381,20 @@ export class SalesTargetService {
       return teamTarget;
     });
   }
+
+  async deleteTarget(id: string) {
+    return this.prisma.salesTarget.delete({
+      where: { id },
+    });
+  }
+
+  async deleteTeamTarget(departmentId: string, year: number, month: number) {
+    return this.prisma.teamSalesTarget.deleteMany({
+      where: {
+        departmentId,
+        periodYear: year,
+        periodMonth: month,
+      },
+    });
+  }
 }

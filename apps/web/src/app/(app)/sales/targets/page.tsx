@@ -1,6 +1,6 @@
 "use client";
 import * as React from 'react';
-import { getMyTargetProgressAction, getAllTargetsAction, setTargetAction, getTeamTargetAction, setTeamBundleAction } from '../actions';
+import { getMyTargetProgressAction, getAllTargetsAction, setTargetAction, getTeamTargetAction, setTeamBundleAction, deleteTargetAction, deleteTeamTargetAction } from '../actions';
 import { getEmployeesAction } from '@/app/(app)/leads/actions';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { usePermissions } from '@/components/providers/AuthProvider';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit2 } from 'lucide-react';
 
 export default function TargetsPage() {
   const [myProgress, setMyProgress] = React.useState<any>(null);
@@ -90,6 +90,40 @@ export default function TargetsPage() {
     setAllocations(newAlloc);
   };
 
+  const handleEditTeam = () => {
+    setTargetMode('TEAM');
+    setTeamVal(teamTargetData.teamTarget.targetValue);
+    const allocs = allTargets
+      .filter(t => t.targetType === 'REVENUE_AED')
+      .map(t => ({ userId: t.userId, targetValue: t.targetValue.toString() }));
+    setAllocations(allocs);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteTeam = async () => {
+    if (!confirm('Are you sure you want to delete the overall team target? This will NOT delete individual targets.')) return;
+    try {
+       await deleteTeamTargetAction(teamTargetData.teamTarget.departmentId, month, year);
+       load();
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const handleEditIndividual = (target: any) => {
+    setTargetMode('INDIVIDUAL');
+    setIndUserId(target.userId);
+    setIndType(target.targetType);
+    setIndValue(target.targetValue);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteIndividual = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this target?')) return;
+    try {
+      await deleteTargetAction(id);
+      load();
+    } catch (e: any) { alert(e.message); }
+  };
+
   const currentTotalAllocated = allocations.reduce((acc, curr) => acc + (parseFloat(curr.targetValue) || 0), 0);
   const unallocatedPreview = Math.max(0, (parseFloat(teamVal) || 0) - currentTotalAllocated);
 
@@ -160,6 +194,12 @@ export default function TargetsPage() {
               <h2 className="text-xl font-bold text-slate-800">Overall Team Target Completion</h2>
               <p className="text-sm text-slate-500">Tracking the entire team's performance against the overarching goal.</p>
             </div>
+            {canManageTargets && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleEditTeam}><Edit2 className="w-4 h-4 mr-2" /> Edit</Button>
+                <Button variant="outline" size="sm" className="text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={handleDeleteTeam}><Trash2 className="w-4 h-4 mr-2" /> Delete</Button>
+              </div>
+            )}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
@@ -253,6 +293,7 @@ export default function TargetsPage() {
                 <TableHead>Actual</TableHead>
                 <TableHead>Uncompleted Gap</TableHead>
                 <TableHead>Progress</TableHead>
+                {canManageTargets && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -287,11 +328,17 @@ export default function TargetsPage() {
                       <span className="text-xs text-slate-500">{Math.round((t.progressRatio ?? 0) * 100)}%</span>
                     </div>
                   </TableCell>
+                  {canManageTargets && (
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" onClick={() => handleEditIndividual(t)}><Edit2 className="w-4 h-4 text-slate-500 hover:text-slate-700" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteIndividual(t.id)}><Trash2 className="w-4 h-4 text-rose-500 hover:text-rose-600" /></Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               )})}
               {allTargets.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-4 text-slate-500">No targets set for this month.</TableCell>
+                  <TableCell colSpan={canManageTargets ? 7 : 6} className="text-center py-4 text-slate-500">No targets set for this month.</TableCell>
                 </TableRow>
               )}
             </TableBody>

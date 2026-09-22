@@ -62,6 +62,18 @@ export async function setTeamBundleAction(departmentId: string, periodMonth: num
   return res;
 }
 
+export async function deleteTargetAction(id: string) {
+  const res = await fetchApi<any>(`/sales-targets/${id}`, { method: 'DELETE' });
+  revalidatePath('/sales/targets');
+  return res;
+}
+
+export async function deleteTeamTargetAction(departmentId: string, month: number, year: number) {
+  const res = await fetchApi<any>(`/sales-targets/team/${departmentId}/${year}/${month}`, { method: 'DELETE' });
+  revalidatePath('/sales/targets');
+  return res;
+}
+
 export async function getMomReportsAction(month?: string, year?: string) {
   const params = new URLSearchParams();
   if (month) params.append('month', month);

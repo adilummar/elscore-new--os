@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
   ForbiddenException,
+  Delete,
 } from '@nestjs/common';
 import { SalesTargetService } from './sales-target.service';
 import { SetSalesTargetDto } from './dto/set-target.dto';
@@ -126,12 +127,29 @@ export class SalesTargetController {
   @RequirePermissions('target.read.team')
   async getTeamTarget(
     @Param('departmentId') departmentId: string,
-    @Query('year') year: string,
-    @Query('month') month: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
   ) {
-    const y = year ? parseInt(year) : new Date().getFullYear();
-    const m = month ? parseInt(month) : new Date().getMonth() + 1;
+    const d = new Date();
+    const m = month ? parseInt(month) : d.getMonth() + 1;
+    const y = year ? parseInt(year) : d.getFullYear();
     return this.service.getTeamTarget(departmentId, y, m);
+  }
+
+  @Delete('team/:departmentId/:year/:month')
+  @RequirePermissions('target.manage')
+  async deleteTeamTarget(
+    @Param('departmentId') departmentId: string,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.deleteTeamTarget(departmentId, parseInt(year), parseInt(month));
+  }
+
+  @Delete(':id')
+  @RequirePermissions('target.manage')
+  async deleteTarget(@Param('id') id: string) {
+    return this.service.deleteTarget(id);
   }
 
   @Get('reports/mom')
