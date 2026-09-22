@@ -50,15 +50,19 @@ export class NestedStudentDto {
 
   @IsString()
   @IsOptional()
-  currentGrade?: string;
-
-  @IsString()
-  @IsOptional()
   cityLocation?: string;
 
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  curriculumId?: string;
+
+  @IsString()
+  @IsOptional()
+  gradeId?: string;
 
   @IsArray()
   @IsOptional()

@@ -28,7 +28,6 @@ interface StudentForm {
   dateOfBirth: string;
   gender: string;
   schoolName: string;
-  currentGrade: string; // Free text school grade
   cityLocation: string;
   notes: string;
   curriculumId: string;
@@ -101,7 +100,6 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
       dateOfBirth: '',
       gender: '',
       schoolName: '',
-      currentGrade: '',
       cityLocation: '',
       notes: '',
       curriculumId: '',
@@ -209,9 +207,10 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         dateOfBirth: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString() : undefined,
         gender: s.gender || undefined,
         schoolName: s.schoolName || undefined,
-        currentGrade: s.currentGrade || undefined,
         cityLocation: s.cityLocation || undefined,
         notes: s.notes || undefined,
+        curriculumId: s.curriculumId || undefined,
+        gradeId: s.gradeId || undefined,
         requirements: s.subjectIds.map(subjectId => ({
           subjectId,
           curriculumId: s.curriculumId,

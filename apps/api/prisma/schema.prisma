@@ -146,7 +146,7 @@ model Department {
   createdAt DateTime         @default(now()) @map("created_at")
   updatedAt DateTime         @updatedAt @map("updated_at")
 
-  employees Employee[]
+  employees        Employee[]
   teamSalesTargets TeamSalesTarget[]
 
   @@map("departments")
@@ -459,6 +459,7 @@ model Grade {
   tutorGrades  TutorGrade[]
   requirements Requirement[]
   demos        Demo[]
+  Student      Student[]
 
   @@map("grades")
 }
@@ -475,6 +476,7 @@ model Curriculum {
   tutorCurricula TutorCurriculum[]
   requirements   Requirement[]
   demos          Demo[]
+  Student        Student[]
 
   @@map("curricula")
 }
@@ -1006,11 +1008,15 @@ model Student {
   currentGrade    String?         @map("current_grade")
   cityLocation    String?         @map("city_location")
   notes           String?         @db.Text
+  curriculumId    String?         @map("curriculum_id")
+  gradeId         String?         @map("grade_id")
   enrollmentState EnrollmentState @default(PENDING) @map("enrollment_state")
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
   lead               Lead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  curriculum         Curriculum?          @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+  grade              Grade?               @relation(fields: [gradeId], references: [id], onDelete: Restrict)
   requirements       Requirement[]
   demos              Demo[]
   invoices           Invoice[]
@@ -1095,32 +1101,32 @@ model SalesNote {
 }
 
 model LeadDistributionEvent {
-  id                     String                 @id @default(uuid())
-  leadId                 String                 @map("lead_id")
-  previousOwnerUserId    String?                @map("previous_owner_user_id")
-  newOwnerUserId         String?                @map("new_owner_user_id")
-  assignmentMethod       LeadDistributionMethod @map("assignment_method")
-  source                 String
-  receivedAt             DateTime?              @map("received_at")
-  assignedAt             DateTime               @map("assigned_at")
-  assignmentLatencyMs    Int?                   @map("assignment_latency_ms")
-  eventDate              DateTime               @map("event_date") @db.Date
-  
-  dailyDistributionOrder Int                    @map("daily_distribution_order")
-  isReassignment         Boolean                @default(false) @map("is_reassignment")
-  
-  rrSequence             Int?                   @map("rr_sequence")
-  rrPosition          Int?                   @map("rr_position")
-  eligibleMemberIds   Json?                  @map("eligible_member_ids")
-  selectedMemberId    String?                @map("selected_member_id")
-  rrQueueBefore       Json?                  @map("rr_queue_before")
-  rrQueueAfter        Json?                  @map("rr_queue_after")
-  
-  assignedByUserId    String?                @map("assigned_by_user_id")
-  isManualOverride    Boolean                @default(false) @map("is_manual_override")
-  overrideReason      String?                @map("override_reason")
-  
-  createdAt           DateTime               @default(now()) @map("created_at")
+  id                  String                 @id @default(uuid())
+  leadId              String                 @map("lead_id")
+  previousOwnerUserId String?                @map("previous_owner_user_id")
+  newOwnerUserId      String?                @map("new_owner_user_id")
+  assignmentMethod    LeadDistributionMethod @map("assignment_method")
+  source              String
+  receivedAt          DateTime?              @map("received_at")
+  assignedAt          DateTime               @map("assigned_at")
+  assignmentLatencyMs Int?                   @map("assignment_latency_ms")
+  eventDate           DateTime               @map("event_date") @db.Date
+
+  dailyDistributionOrder Int     @map("daily_distribution_order")
+  isReassignment         Boolean @default(false) @map("is_reassignment")
+
+  rrSequence        Int?    @map("rr_sequence")
+  rrPosition        Int?    @map("rr_position")
+  eligibleMemberIds Json?   @map("eligible_member_ids")
+  selectedMemberId  String? @map("selected_member_id")
+  rrQueueBefore     Json?   @map("rr_queue_before")
+  rrQueueAfter      Json?   @map("rr_queue_after")
+
+  assignedByUserId String? @map("assigned_by_user_id")
+  isManualOverride Boolean @default(false) @map("is_manual_override")
+  overrideReason   String? @map("override_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   lead           Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
   previousOwner  User? @relation("DistributionPreviousOwner", fields: [previousOwnerUserId], references: [id])
@@ -1721,7 +1727,7 @@ model EmployeeAttendanceSession {
   status           AttendanceSessionStatus
   isLate           Boolean                 @default(false) @map("is_late")
   lateMinutes      Int                     @default(0) @map("late_minutes")
-  note             String?                 // What the staff is working on today
+  note             String? // What the staff is working on today
 
   grossDurationMinutes Int @default(0) @map("gross_duration_minutes")
   breakDurationMinutes Int @default(0) @map("break_duration_minutes")

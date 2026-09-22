@@ -150,7 +150,7 @@ export class StudentService {
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       let student;
-      const { curriculumId, gradeId, subjectIds, ...studentData } = dto;
+      const { subjectIds, ...studentData } = dto;
 
       if (studentId) {
         student = await tx.student.update({ where: { id: studentId }, data: studentData });
@@ -159,7 +159,9 @@ export class StudentService {
         student = await tx.student.create({ data: { ...studentData, leadId, businessId } });
       }
 
-      if (curriculumId && gradeId && Array.isArray(subjectIds)) {
+      if (Array.isArray(subjectIds)) {
+        const curriculumId = studentData.curriculumId;
+        const gradeId = studentData.gradeId;
         const existingReqs = await tx.requirement.findMany({ where: { studentId: student.id } });
         const existingSubjectIds = existingReqs.map((r: any) => r.subjectId);
 

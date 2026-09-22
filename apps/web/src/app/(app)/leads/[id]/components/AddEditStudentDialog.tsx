@@ -34,7 +34,6 @@ export function AddEditStudentDialog({
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
   const [schoolName, setSchoolName] = React.useState('');
-  const [currentGrade, setCurrentGrade] = React.useState('');
   const [notes, setNotes] = React.useState('');
 
   // Academic Info (Requirements mapped)
@@ -51,12 +50,11 @@ export function AddEditStudentDialog({
       setFirstName(student?.firstName || '');
       setLastName(student?.lastName || '');
       setSchoolName(student?.schoolName || '');
-      setCurrentGrade(student?.currentGrade || '');
       setNotes(student?.notes || '');
       
-      // Try to auto-populate curriculum and grade from existing requirements
-      const defaultCurriculum = student?.requirements?.[0]?.curriculumId || '';
-      const defaultGrade = student?.requirements?.[0]?.gradeId || '';
+      // Try to auto-populate curriculum and grade directly from student, fallback to existing requirements
+      const defaultCurriculum = student?.curriculumId || student?.requirements?.[0]?.curriculumId || '';
+      const defaultGrade = student?.gradeId || student?.requirements?.[0]?.gradeId || '';
       const existingSubjects = student?.requirements?.map((r: any) => r.subjectId) || [];
       
       setCurriculumId(defaultCurriculum);
@@ -89,7 +87,6 @@ export function AddEditStudentDialog({
         firstName,
         lastName,
         schoolName,
-        currentGrade,
         notes,
         curriculumId,
         gradeId,
@@ -176,15 +173,9 @@ export function AddEditStudentDialog({
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">School</label>
-            <Input value={schoolName} onChange={e => setSchoolName(e.target.value)} placeholder="School name" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Current Grade</label>
-            <Input value={currentGrade} onChange={e => setCurrentGrade(e.target.value)} placeholder="e.g. 10, 12, A-Levels" />
-          </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">School</label>
+          <Input value={schoolName} onChange={e => setSchoolName(e.target.value)} placeholder="School name" />
         </div>
 
         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">

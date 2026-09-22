@@ -40,4 +40,12 @@ export class CreateStudentDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  curriculumId?: string;
+
+  @IsString()
+  @IsOptional()
+  gradeId?: string;
 }
