@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Alert } from '@/components/ui/Alert';
-import { AddEditRequirementDialog } from './AddEditRequirementDialog';
+import { AddEditStudentDialog } from './AddEditStudentDialog';
 
 export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () => void }) {
   const [followUps, setFollowUps] = React.useState<any[]>([]);
@@ -283,28 +283,26 @@ export function FollowUpManager({ lead, onUpdate }: { lead: any, onUpdate?: () =
           
           <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 p-3 rounded-md">
             <div>
-              <p className="text-sm font-medium text-slate-700">Client asked for more subjects?</p>
-              <p className="text-xs text-slate-500">You can add a new subject requirement directly.</p>
+              <p className="text-sm font-medium text-slate-700">Need to update Student details?</p>
+              <p className="text-xs text-slate-500">Add or edit a student, their curriculum, and subjects.</p>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => {
-              // If there's only one student, pre-select it. Otherwise open a quick picker or just select first.
-              if (lead.students?.length === 1) {
+              if (lead.students?.length > 0) {
                 setActiveStudentForSubject(lead.students[0]);
-                setIsAddSubjectOpen(true);
-              } else if (lead.students?.length > 1) {
-                // For simplicity, just use the first student for now, or prompt to use Students tab
-                setActiveStudentForSubject(lead.students[0]);
-                setIsAddSubjectOpen(true);
+              } else {
+                setActiveStudentForSubject(null);
               }
-            }} disabled={!lead.students?.length}>
-              + Add Subject
+              setIsAddSubjectOpen(true);
+            }}>
+              {lead.students?.length > 0 ? '+ Manage Student' : '+ Add Student'}
             </Button>
           </div>
         </form>
       </Modal>
 
       {isAddSubjectOpen && activeStudentForSubject && (
-        <AddEditRequirementDialog
+        <AddEditStudentDialog
+          leadId={leadId}
           student={activeStudentForSubject}
           isOpen={isAddSubjectOpen}
           onClose={() => setIsAddSubjectOpen(false)}

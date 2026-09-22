@@ -95,7 +95,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
   // Student Actions
   const addStudent = () => {
     setStudents([...students, {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 11),
       firstName: '',
       lastName: '',
       dateOfBirth: '',

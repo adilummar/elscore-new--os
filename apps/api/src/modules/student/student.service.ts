@@ -144,4 +144,57 @@ export class StudentService {
       return updated;
     });
   }
+
+  async saveBundle(leadId: string, studentId: string | null, dto: any, userId: string, hasReadAll: boolean) {
+    await this.checkLeadOwnership(leadId, userId, hasReadAll);
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      let student;
+      const { curriculumId, gradeId, subjectIds, ...studentData } = dto;
+
+      if (studentId) {
+        student = await tx.student.update({ where: { id: studentId }, data: studentData });
+      } else {
+        const businessId = await this.idGen.nextIdInTx(tx, 'STU');
+        student = await tx.student.create({ data: { ...studentData, leadId, businessId } });
+      }
+
+      if (curriculumId && gradeId && Array.isArray(subjectIds)) {
+        const existingReqs = await tx.requirement.findMany({ where: { studentId: student.id } });
+        const existingSubjectIds = existingReqs.map((r: any) => r.subjectId);
+
+        const subjectsToAdd = subjectIds.filter((id: string) => !existingSubjectIds.includes(id));
+        const subjectsToRemove = existingSubjectIds.filter((id: string) => !subjectIds.includes(id));
+
+        if (subjectsToRemove.length > 0) {
+          await tx.requirement.deleteMany({
+            where: { studentId: student.id, subjectId: { in: subjectsToRemove } }
+          });
+        }
+
+        const subjectsToUpdate = existingSubjectIds.filter((id: string) => subjectIds.includes(id));
+        if (subjectsToUpdate.length > 0) {
+          await tx.requirement.updateMany({
+            where: { studentId: student.id, subjectId: { in: subjectsToUpdate } },
+            data: { curriculumId, gradeId }
+          });
+        }
+
+        for (const subId of subjectsToAdd) {
+          const reqBusinessId = await this.idGen.nextIdInTx(tx, 'RQT');
+          await tx.requirement.create({
+            data: {
+               businessId: reqBusinessId,
+               studentId: student.id,
+               subjectId: subId,
+               curriculumId,
+               gradeId
+            }
+          });
+        }
+      }
+
+      return student;
+    });
+  }
 }

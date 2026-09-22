@@ -165,6 +165,15 @@ export async function updateRequirementAction(id: string, data: any, leadId?: st
   return res;
 }
 
+export async function saveStudentBundleAction(data: any) {
+  const res = await fetchApi<any>('/students/bundle', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (data.leadId) revalidatePath(`/leads/${data.leadId}`);
+  return res;
+}
+
 // Reference / Directory
 export async function getEmployeesAction() {
   return fetchApi<any>('/employees?limit=100');

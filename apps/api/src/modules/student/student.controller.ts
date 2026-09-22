@@ -58,4 +58,12 @@ export class StudentController {
     const readAll = await this.hasReadAll(user.id);
     return this.studentService.updateRequirement(id, dto, user.id, readAll);
   }
+
+  @Post('bundle')
+  @RequirePermissions('student.create')
+  async saveBundle(@Body() dto: any, @CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    const { leadId, studentId, ...data } = dto;
+    return this.studentService.saveBundle(leadId, studentId || null, data, user.id, readAll);
+  }
 }
