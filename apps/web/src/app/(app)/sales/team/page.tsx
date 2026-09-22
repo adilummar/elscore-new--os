@@ -59,8 +59,13 @@ export default function SalesTeamPage() {
             </div>
             {hasPermission('roundrobin.manage') && (
               <div className="flex flex-col gap-2 pt-2 border-t mt-1">
-                <Button variant="outline" size="sm" onClick={() => handleStateChange(c.userId, !c.isEligible, c.dailyState)}>
-                  Toggle Eligible
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className={c.isEligible ? "text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700" : "text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"}
+                  onClick={() => handleStateChange(c.userId, !c.isEligible, c.dailyState)}
+                >
+                  {c.isEligible ? 'Disable RR' : 'Enable RR'}
                 </Button>
                 <Select 
                   value={c.dailyState} 
@@ -98,8 +103,13 @@ export default function SalesTeamPage() {
                 <TableCell><StatusBadge status={c.dailyState} /></TableCell>
                 {hasPermission('roundrobin.manage') && (
                   <TableCell className="space-x-2 flex items-center">
-                    <Button variant="outline" size="sm" onClick={() => handleStateChange(c.userId, !c.isEligible, c.dailyState)}>
-                      Toggle Eligible
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className={c.isEligible ? "text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700" : "text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"}
+                      onClick={() => handleStateChange(c.userId, !c.isEligible, c.dailyState)}
+                    >
+                      {c.isEligible ? 'Disable RR' : 'Enable RR'}
                     </Button>
                     <Select 
                       className="w-48"
