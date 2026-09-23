@@ -8,8 +8,8 @@ import { useAuth } from '@/components/providers/AuthProvider';
 export function TopHeader({ user }: { user: any }) {
   const { isInGodView, godViewUser, openGodViewPicker } = useAuth();
 
-  // Show God View button to CEO or Admin
-  const canEnterGodView = user?.permissions?.includes('analytics.ceo.read') || user?.permissions?.includes('god-view.enter');
+  // Show God View button only to CEO as requested
+  const canEnterGodView = user?.roles?.includes('CEO');
 
   return (
     <header className="h-16 bg-surface border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">

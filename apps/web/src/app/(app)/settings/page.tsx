@@ -11,17 +11,17 @@ const SETTINGS_SECTIONS = [
     title: 'Organization',
     items: [
       { name: 'Users', href: '/settings/users', icon: Users, permission: 'user.read' },
-      { name: 'Employees', href: '/settings/employees', icon: Briefcase, permission: 'employee.read' },
-      { name: 'Departments', href: '/settings/departments', icon: Database, permission: null }, // Usually public info, maybe requires read
-      { name: 'Attendance', href: '/settings/attendance', icon: Clock, permission: 'role.manage' }, // Assuming admin level
+      { name: 'Employees', href: '/settings/employees', icon: Briefcase, permission: 'employee.read-all' },
+      { name: 'Departments', href: '/settings/departments', icon: Database, permission: 'department.read' },
+      { name: 'Attendance', href: '/settings/attendance', icon: Clock, permission: 'attendance.settings.manage' },
     ]
   },
   {
     title: 'Access Control',
     items: [
       { name: 'Roles', href: '/settings/roles', icon: Shield, permission: 'role.read' },
-      { name: 'Permissions', href: '/settings/permissions', icon: Key, permission: 'role.manage' },
-      { name: 'Delegations', href: '/settings/delegations', icon: ShieldOff, permission: 'role.manage' },
+      { name: 'Permissions', href: '/settings/permissions', icon: Key, permission: 'role.read' },
+      { name: 'Delegations', href: '/settings/delegations', icon: ShieldOff, permission: 'role.assign' },
     ]
   },
   {
@@ -33,7 +33,7 @@ const SETTINGS_SECTIONS = [
   {
     title: 'Security',
     items: [
-      { name: 'Audit Logs', href: '/settings/audit', icon: History, permission: 'audit.read' },
+      { name: 'Audit Logs', href: '/settings/audit', icon: History, permission: 'audit.view' },
     ]
   }
 ];

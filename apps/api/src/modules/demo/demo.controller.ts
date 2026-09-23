@@ -13,7 +13,8 @@ import {
   AssignTutorDto, 
   CompleteDemoDto, 
   CancelDemoDto, 
-  NoShowDemoDto 
+  NoShowDemoDto,
+  EditDemoDto
 } from './dto/demo.dto';
 
 
@@ -60,6 +61,15 @@ export class DemoController {
     @CurrentUser() user: ValidatedUser,
   ) {
     return this.demoService.rescheduleDemo(id, dto, user);
+  }
+
+  @Patch(':id')
+  async editDemo(
+    @Param('id') id: string,
+    @Body() dto: EditDemoDto,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.editDemo(id, dto, user);
   }
 
   @Patch(':id/assign')

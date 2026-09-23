@@ -60,3 +60,13 @@ export class NoShowDemoDto {
   @IsNotEmpty()
   reason: string;
 }
+
+export class EditDemoDto {
+  @IsString()
+  @IsOptional()
+  studentId?: string;
+
+  @IsString()
+  @IsOptional()
+  requirementId?: string;
+}

@@ -132,18 +132,20 @@ export default function StaffsPage() {
               className="w-full pl-9 pr-4 py-2 rounded-md border border-border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-text-muted shrink-0" />
-            <select
-              value={deptFilter}
-              onChange={e => setDeptFilter(e.target.value)}
-              className="border border-border rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {departments.map(d => (
-                <option key={d} value={d}>{d === 'all' ? 'All Departments' : d}</option>
-              ))}
-            </select>
-          </div>
+          {canSeeAll && (
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-text-muted shrink-0" />
+              <select
+                value={deptFilter}
+                onChange={e => setDeptFilter(e.target.value)}
+                className="border border-border rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {departments.map(d => (
+                  <option key={d} value={d}>{d === 'all' ? 'All Departments' : d}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Staff grid — grouped by department */}

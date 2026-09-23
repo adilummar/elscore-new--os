@@ -46,6 +46,16 @@ export async function rescheduleDemo(id: string, data: any) {
   return result;
 }
 
+export async function editDemo(id: string, data: any) {
+  const result = await fetchApi<any>(`/demos/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  revalidatePath('/demos');
+  revalidatePath(`/demos/${id}`);
+  return result;
+}
+
 export async function cancelDemo(id: string, data: any) {
   const result = await fetchApi<any>(`/demos/${id}/cancel`, {
     method: 'PATCH',

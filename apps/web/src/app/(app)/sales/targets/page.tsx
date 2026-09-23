@@ -66,6 +66,7 @@ export default function TargetsPage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => { load(); }, [month, year, isTeamView, canManageTargets]);
 
   const handleOpenModal = () => {
@@ -192,7 +193,7 @@ export default function TargetsPage() {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Overall Team Target Completion</h2>
-              <p className="text-sm text-slate-500">Tracking the entire team's performance against the overarching goal.</p>
+              <p className="text-sm text-slate-500">Tracking the entire team&apos;s performance against the overarching goal.</p>
             </div>
             {canManageTargets && (
               <div className="flex gap-2">
@@ -216,7 +217,7 @@ export default function TargetsPage() {
               <div className="text-xl font-semibold text-slate-700">AED {teamTargetData.totalAllocated?.toLocaleString()}</div>
             </div>
             <div className="bg-white p-4 rounded-md shadow-sm border border-amber-200">
-              <div className="text-sm text-amber-600 font-medium">Head's Gap Responsibility</div>
+              <div className="text-sm text-amber-600 font-medium">Head&apos;s Gap Responsibility</div>
               <div className="text-xl font-bold text-amber-700">AED {teamTargetData.unallocated?.toLocaleString()}</div>
             </div>
           </div>
@@ -389,7 +390,7 @@ export default function TargetsPage() {
                   
                   {allocations.length === 0 && (
                     <div className="text-center py-6 border border-dashed rounded-md text-sm text-slate-500">
-                      No individual allocations yet. Click "Add Person" to break down the target.
+                      No individual allocations yet. Click &quot;Add Person&quot; to break down the target.
                     </div>
                   )}
 
@@ -421,7 +422,7 @@ export default function TargetsPage() {
                 </div>
 
                 <div className="bg-brand-50 p-4 rounded-lg border border-brand-100 flex justify-between items-center">
-                  <span className="text-sm font-medium text-brand-800">Lead's Unallocated Gap:</span>
+                  <span className="text-sm font-medium text-brand-800">Lead&apos;s Unallocated Gap:</span>
                   <span className="font-bold text-lg text-brand-700">AED {unallocatedPreview.toLocaleString()}</span>
                 </div>
               </>

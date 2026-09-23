@@ -4,22 +4,24 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/components/providers/AuthProvider';
 
 export function SettingsNavigation() {
   const pathname = usePathname();
+  const { hasPermission } = usePermissions();
   
   if (pathname === '/settings') return null; // Don't show on root hub
 
   const links = [
     { name: 'Overview', href: '/settings' },
-    { name: 'Users', href: '/settings/users' },
-    { name: 'Employees', href: '/settings/employees' },
-    { name: 'Roles', href: '/settings/roles' },
-    { name: 'Permissions', href: '/settings/permissions' },
-    { name: 'Delegations', href: '/settings/delegations' },
-    { name: 'Reference Data', href: '/settings/reference-data' },
-    { name: 'Attendance', href: '/settings/attendance' },
-    { name: 'Audit', href: '/settings/audit' }
+    ...(hasPermission('user.read') ? [{ name: 'Users', href: '/settings/users' }] : []),
+    ...(hasPermission('employee.read-all') ? [{ name: 'Employees', href: '/settings/employees' }] : []),
+    ...(hasPermission('role.read') ? [{ name: 'Roles', href: '/settings/roles' }] : []),
+    ...(hasPermission('role.read') ? [{ name: 'Permissions', href: '/settings/permissions' }] : []),
+    ...(hasPermission('role.assign') ? [{ name: 'Delegations', href: '/settings/delegations' }] : []),
+    ...(hasPermission('reference.manage') ? [{ name: 'Reference Data', href: '/settings/reference-data' }] : []),
+    ...(hasPermission('attendance.settings.manage') ? [{ name: 'Attendance', href: '/settings/attendance' }] : []),
+    ...(hasPermission('audit.view') ? [{ name: 'Audit', href: '/settings/audit' }] : [])
   ];
 
   return (

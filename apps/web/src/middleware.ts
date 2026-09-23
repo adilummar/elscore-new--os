@@ -13,7 +13,7 @@ export async function middleware(request: NextRequest) {
 
   // If no tokens at all and trying to access protected route
   if (!accessToken && !refreshToken && !isAuthPage) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/login', request.url), 303);
   }
 
   // If we have no access token but have a refresh token, we should refresh it
@@ -23,11 +23,11 @@ export async function middleware(request: NextRequest) {
       
       if (!apiUrl) {
         if (process.env.NODE_ENV === 'development') {
-          apiUrl = 'http://127.0.0.1:3001/api/v1';
+          apiUrl = 'http://localhost:3001/api/v1';
         } else {
           console.error('[CONFIG ERROR] API_URL is missing in production/staging environment.');
           // Fail clearly by throwing or deleting cookies and returning to login
-          const response = NextResponse.redirect(new URL('/login', request.url));
+          const response = NextResponse.redirect(new URL('/login', request.url), 303);
           response.cookies.delete('accessToken');
           response.cookies.delete('refreshToken');
           return response;
@@ -43,7 +43,27 @@ export async function middleware(request: NextRequest) {
       if (res.ok) {
         const data = await res.json();
         const secureCookies = process.env.COOKIE_SECURE !== 'false';
-        const response = NextResponse.redirect(request.url); // Redirect to same URL to reload with new cookies
+        
+        // Seamlessly continue the request with new cookies
+        const requestHeaders = new Headers(request.headers);
+        
+        // Reconstruct the Cookie header with the new tokens
+        const currentCookies = request.cookies.getAll()
+          .filter(c => c.name !== 'accessToken' && c.name !== 'refreshToken')
+          .map(c => `${c.name}=${c.value}`);
+          
+        currentCookies.push(`accessToken=${data.accessToken}`);
+        if (data.refreshToken) {
+          currentCookies.push(`refreshToken=${data.refreshToken}`);
+        }
+        
+        requestHeaders.set('Cookie', currentCookies.join('; '));
+
+        const response = NextResponse.next({
+          request: {
+            headers: requestHeaders,
+          },
+        });
         
         response.cookies.set('accessToken', data.accessToken, {
           httpOnly: true,
@@ -66,14 +86,14 @@ export async function middleware(request: NextRequest) {
         return response;
       } else {
         // Failed to refresh, redirect to login
-        const response = NextResponse.redirect(new URL('/login', request.url));
+        const response = NextResponse.redirect(new URL('/login', request.url), 303);
         response.cookies.delete('accessToken');
         response.cookies.delete('refreshToken');
         return response;
       }
     } catch (error) {
       // Failed to refresh, redirect to login
-      const response = NextResponse.redirect(new URL('/login', request.url));
+      const response = NextResponse.redirect(new URL('/login', request.url), 303);
       response.cookies.delete('accessToken');
       response.cookies.delete('refreshToken');
       return response;
@@ -82,12 +102,12 @@ export async function middleware(request: NextRequest) {
 
   // If authenticated and trying to access login page
   if (accessToken && request.nextUrl.pathname.startsWith('/login')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    return NextResponse.redirect(new URL('/dashboard', request.url), 303);
   }
 
   // Root redirect
   if (request.nextUrl.pathname === '/') {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    return NextResponse.redirect(new URL('/dashboard', request.url), 303);
   }
 
   return NextResponse.next();

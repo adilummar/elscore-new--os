@@ -36,8 +36,9 @@ export function UnifiedTimeline({ leadId }: { leadId: string }) {
     async function loadTimeline() {
       try {
         const res = await getLeadTimelineAction(leadId);
-        if (res.data) {
-          const mapped = res.data.map((ev: any) => ({
+        const dataArray = Array.isArray(res) ? res : res?.data;
+        if (dataArray) {
+          const mapped = dataArray.map((ev: any) => ({
             id: ev.id,
             title: formatTitle(ev.type),
             description: `Actor: ${ev.actor}`,

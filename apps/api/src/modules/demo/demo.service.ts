@@ -11,7 +11,10 @@ import { QUEUES } from '../../common/queue/queue.constants';
 import { RbacService } from '../../common/rbac/rbac.service';
 
 
-import { CreateDemoDto, RescheduleDemoDto, AssignTutorDto, CompleteDemoDto, CancelDemoDto, NoShowDemoDto } from './dto/demo.dto';
+import { CreateDemoDto, RescheduleDemoDto, AssignTutorDto, CompleteDemoDto,  CancelDemoDto, 
+  NoShowDemoDto,
+  EditDemoDto
+} from './dto/demo.dto';
 
 @Injectable()
 export class DemoService {
@@ -343,6 +346,54 @@ export class DemoService {
           message: 'Your assigned Demo has been rescheduled',
         });
       }
+
+      return updated;
+    });
+  }
+
+  async editDemo(id: string, dto: EditDemoDto, user: ValidatedUser) {
+    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
+    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const demo = await tx.demo.findUnique({ where: { id }, select: { id: true, status: true, bookedByUserId: true, studentId: true } });
+      if (!demo) throw new NotFoundException('Demo not found');
+
+      const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
+      if (terminalStates.includes(demo.status)) {
+        throw new BadRequestException('Cannot edit a terminal demo');
+      }
+
+      if (demo.status === DemoStatus.ASSIGNED && !isCoordinator && !isHead) {
+        throw new ForbiddenException('Only Coordinator or Sales Head can edit an assigned demo');
+      }
+
+      if (!isCoordinator && !isHead && demo.bookedByUserId !== user.id) {
+        throw new ForbiddenException('You can only edit your own booked demos');
+      }
+
+      const updateData: any = {};
+      if (dto.studentId) updateData.studentId = dto.studentId;
+      if (dto.requirementId) updateData.requirementId = dto.requirementId;
+
+      if (Object.keys(updateData).length === 0) {
+        return demo; // Nothing to update
+      }
+
+      const updated = await tx.demo.update({
+        where: { id },
+        data: updateData
+      });
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'demo',
+        entityId: id,
+        action: 'DEMO_EDITED',
+        actorUserId: user.id,
+        oldValue: {},
+        newValue: updateData,
+        reason: 'Details updated manually'
+      });
 
       return updated;
     });

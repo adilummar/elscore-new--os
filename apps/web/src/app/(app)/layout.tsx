@@ -34,8 +34,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
 
-  const isCeo = realUser?.permissions?.includes('analytics.ceo.read');
-  const canEnterGodView = isCeo || realUser?.permissions?.includes('god-view.enter');
+  const isCeo = realUser?.roles?.includes('CEO');
+  const canEnterGodView = isCeo;
 
   // Pre-load all users for the God View picker (CEO/Admin only)
   if (canEnterGodView) {

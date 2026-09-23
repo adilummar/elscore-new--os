@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
 import * as React from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { bookDemo, searchLeads } from '../actions';
+import { Calendar, Clock, User, ArrowRight, Video, Search } from 'lucide-react';
 
 interface BookDemoModalProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
   
   const [date, setDate] = React.useState('');
   const [startTime, setStartTime] = React.useState('');
-  const [duration, setDuration] = React.useState('60');
+  const [endTime, setEndTime] = React.useState('');
 
   React.useEffect(() => {
     if (initialLead) {
@@ -54,6 +55,24 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
     return () => clearTimeout(timer);
   }, [leadSearch, selectedLead, initialLead]);
 
+  let duration = 0;
+  if (date && startTime && endTime) {
+    const start = new Date(`${date}T${startTime}`);
+    const end = new Date(`${date}T${endTime}`);
+    duration = (end.getTime() - start.getTime()) / 60000;
+  }
+
+  const handleStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newStart = e.target.value;
+    setStartTime(newStart);
+    if (newStart && !endTime) {
+      const [hours, minutes] = newStart.split(':').map(Number);
+      let endHours = hours + 1;
+      if (endHours >= 24) endHours = 23;
+      setEndTime(`${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudent || !selectedRequirement) {
@@ -61,9 +80,8 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
       return;
     }
     
-    const durNum = parseInt(duration, 10);
-    if (durNum < 30 || durNum > 120) {
-      alert('Duration must be between 30 and 120 minutes.');
+    if (duration < 15) {
+      alert('Duration must be at least 15 minutes.');
       return;
     }
 
@@ -75,7 +93,7 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
         studentId: selectedStudent,
         requirementId: selectedRequirement,
         scheduledAt: dateObj.toISOString(),
-        durationMinutes: durNum,
+        durationMinutes: duration,
       });
       
       onSuccess();
@@ -100,12 +118,24 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-4">Book Demo</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100 mt-2">
+        <div className="h-10 w-10 bg-brand-50 text-brand-600 rounded-xl flex items-center justify-center">
+          <Video className="w-5 h-5" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Book Demo</h2>
+          <p className="text-sm text-slate-500">Schedule a trial session for the student</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
         
         {!initialLead && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Search Lead</label>
+          <div className="space-y-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-2">
+              <Search className="w-4 h-4 text-slate-400" />
+              Search Lead
+            </h3>
             {!selectedLead ? (
               <div className="relative">
                 <Input 
@@ -130,14 +160,14 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-md">
+              <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md">
                 <div>
                   <div className="text-sm font-medium text-slate-900">{selectedLead.firstName} {selectedLead.lastName}</div>
                 </div>
                 <button 
                   type="button" 
                   onClick={() => { setSelectedLead(null); setSelectedStudent(''); setSelectedRequirement(''); }}
-                  className="text-xs text-red-600 hover:text-red-700 font-medium"
+                  className="text-xs text-red-600 hover:text-red-700 font-medium bg-red-50 px-2 py-1 rounded"
                 >
                   Change
                 </button>
@@ -147,101 +177,133 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
         )}
 
         {selectedLead && (
-          <>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Student</label>
-              <select 
-                value={selectedStudent}
-                onChange={(e) => {
-                  setSelectedStudent(e.target.value);
-                  setSelectedRequirement('');
-                }}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-shadow"
-                required
-              >
-                <option value="">Select a student...</option>
-                {getStudentOptions().map((s: any) => (
-                  <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
-                ))}
-              </select>
-            </div>
-
-            {selectedStudent && (
+          <div className="space-y-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-2">
+              <User className="w-4 h-4 text-slate-400" />
+              Student Details
+            </h3>
+            
+            <div className="grid gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Requirement</label>
+                <label className="text-sm font-medium text-slate-700 mb-1.5 block">Student *</label>
                 <select 
-                  value={selectedRequirement}
-                  onChange={(e) => setSelectedRequirement(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-shadow"
+                  value={selectedStudent}
+                  onChange={(e) => {
+                    setSelectedStudent(e.target.value);
+                    setSelectedRequirement('');
+                  }}
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-slate-300 bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   required
                 >
-                  <option value="">Select a requirement...</option>
-                  {getRequirementOptions().map((r: any) => (
-                    <option key={r.id} value={r.id}>
-                      {r.subject?.name} - {r.grade?.name} ({r.curriculum?.name})
-                    </option>
+                  <option value="">Select a student...</option>
+                  {getStudentOptions().map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
                   ))}
                 </select>
               </div>
-            )}
 
-            {getStudentOptions().length === 0 && (
-              <div className="p-3 bg-amber-50 text-amber-800 rounded-lg text-sm border border-amber-200">
-                This Lead does not have an enrolled Student and Requirement yet. Please add them from the Lead Detail page first.
-              </div>
-            )}
-          </>
+              {selectedStudent && (
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1.5 block">Requirement *</label>
+                  <select 
+                    value={selectedRequirement}
+                    onChange={(e) => setSelectedRequirement(e.target.value)}
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-slate-300 bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
+                    required
+                  >
+                    <option value="">Select a requirement...</option>
+                    {getRequirementOptions().map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        {r.subject?.name} - {r.grade?.name} ({r.curriculum?.name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {getStudentOptions().length === 0 && (
+                <div className="p-3 bg-amber-50 text-amber-800 rounded-lg text-sm border border-amber-200">
+                  This Lead does not have an enrolled Student and Requirement yet. Please add them from the Lead Detail page first.
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-2">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            Schedule Time
+          </h3>
+          
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
+            <label className="text-sm font-medium text-slate-700 mb-1.5 block">Date *</label>
             <Input 
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               required
               disabled={!selectedRequirement}
+              className="w-full"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Start Time</label>
-            <Input 
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              required
-              disabled={!selectedRequirement}
-            />
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-1.5 block">From *</label>
+              <div className="relative">
+                <Input 
+                  type="time"
+                  value={startTime}
+                  onChange={handleStartTimeChange}
+                  required
+                  disabled={!selectedRequirement}
+                  className="w-full pl-9"
+                />
+                <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-1.5 block">To *</label>
+              <div className="relative">
+                <Input 
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  required
+                  disabled={!selectedRequirement}
+                  className="w-full pl-9"
+                />
+                <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </div>
           </div>
+          
+          {duration > 0 && (
+            <div className={`text-sm mt-2 flex items-center gap-2 ${duration < 15 ? 'text-red-500' : 'text-slate-500'}`}>
+              <ArrowRight className="w-4 h-4" />
+              Duration: <span className="font-semibold">{duration} minutes</span>
+            </div>
+          )}
+          {duration < 0 && (
+            <div className="text-sm mt-2 text-red-500 flex items-center gap-2">
+              <ArrowRight className="w-4 h-4" />
+              End time must be after start time
+            </div>
+          )}
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Duration (minutes)</label>
-          <select 
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-shadow"
-            disabled={!selectedRequirement}
-          >
-            <option value="30">30 minutes</option>
-            <option value="45">45 minutes</option>
-            <option value="60">60 minutes</option>
-            <option value="90">90 minutes</option>
-            <option value="120">120 minutes</option>
-          </select>
-        </div>
-
-        <div className="pt-4 flex justify-end gap-3">
-          <Button type="button" variant="outline" onClick={onClose}>
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+          <Button type="button" variant="outline" onClick={onClose} className="w-24">
             Cancel
           </Button>
           <Button 
             type="submit" 
             isLoading={isLoading} 
-            disabled={!selectedRequirement || !date || !startTime}
+            disabled={!selectedRequirement || !date || !startTime || !endTime || duration <= 0}
+            className="w-32"
           >
-            Book Demo
+            {isLoading ? 'Booking...' : 'Book Demo'}
           </Button>
         </div>
       </form>

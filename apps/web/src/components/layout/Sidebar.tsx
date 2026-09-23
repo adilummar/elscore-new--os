@@ -26,20 +26,22 @@ export function Sidebar({ user }: { user: any }) {
     router.push("/login");
   };
 
+  const hasMarketingRole = user?.roles?.some((r: string) => ['MARKETING_HEAD', 'PERFORMANCE_MARKETER', 'CEO', 'CO_FOUNDER'].includes(r));
+
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Attendance", href: "/attendance", icon: Clock },
-    ...(hasPermission("attendance.read.team") || hasPermission("employee.read") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
-    { name: "Sales", href: "/sales", icon: Users },
-    { name: "Leads", href: "/leads", icon: Users },
-    { name: "Follow-ups", href: "/follow-ups", icon: UserPlus },
-    { name: "Demos", href: "/demos", icon: FileText },
-    { name: "Marketing", href: "/marketing", icon: BarChart3 },
-    { name: "Reports", href: "/reports", icon: BarChart3 },
-    ...(hasPermission("employee.read") || hasPermission("analytics.ceo.read") ? [{ name: "HR / Employees", href: "/employees", icon: Users }] : []),
+    ...(hasPermission("attendance.read.team") || hasPermission("employee.read-all") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
+    ...(hasPermission("target.read.own") || hasPermission("target.read.team") || hasPermission("lead.read") ? [{ name: "Sales", href: "/sales", icon: Users }] : []),
+    ...(hasPermission("lead.read") || hasPermission("lead.read-all") ? [{ name: "Leads", href: "/leads", icon: Users }] : []),
+    ...(hasPermission("followup.read") || hasPermission("followup.read-all") ? [{ name: "Follow-ups", href: "/follow-ups", icon: UserPlus }] : []),
+    ...(hasPermission("demo.read") || hasPermission("demo.read_own") || hasPermission("demo.read_assigned") || hasPermission("demo.manage_all") ? [{ name: "Demos", href: "/demos", icon: FileText }] : []),
+    ...(hasMarketingRole || hasPermission("analytics.ceo.read") ? [{ name: "Marketing", href: "/marketing", icon: BarChart3 }] : []),
+    ...(hasPermission("report.view") || hasPermission("analytics.ceo.read") || hasPermission("target.read.team") ? [{ name: "Reports", href: "/reports", icon: BarChart3 }] : []),
+    ...(hasPermission("employee.read-all") || hasPermission("analytics.ceo.read") ? [{ name: "HR / Employees", href: "/employees", icon: Users }] : []),
   ];
 
-  if (hasPermission("role.manage") || hasPermission("settings.read") || hasPermission("employee.read")) {
+  if (hasPermission("role.manage") || hasPermission("settings.read") || hasPermission("audit.view") || hasPermission("user.read") || hasPermission("employee.read-all") || hasPermission("reference.manage")) {
     navItems.push({ name: "Settings", href: "/settings", icon: Settings });
   }
 

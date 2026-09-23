@@ -48,7 +48,7 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
             <Button onClick={() => openEditStudent(lead.students[0])}>Edit Student Details</Button>
           )}
           {hasPermission('student.create') && (
-            <Button variant={lead.students?.length > 0 ? 'outline' : 'default'} onClick={openAddStudent}>
+            <Button variant={lead.students?.length > 0 ? 'outline' : 'primary'} onClick={openAddStudent}>
               {lead.students?.length > 0 ? '+ Add Another Student' : 'Add Student'}
             </Button>
           )}

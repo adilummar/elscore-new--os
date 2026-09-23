@@ -16,6 +16,7 @@ import { AssignTutorModal } from '../../components/AssignTutorModal';
 import { CompleteDemoModal } from '../../components/CompleteDemoModal';
 import { CancelDemoModal } from '../../components/CancelDemoModal';
 import { NoShowDemoModal } from '../../components/NoShowDemoModal';
+import { EditDemoModal } from '../../components/EditDemoModal';
 
 function formatDate(dateStr: string) {
   return new Intl.DateTimeFormat('en-IN', { 
@@ -35,7 +36,7 @@ export function DemoDetailClient({ id }: { id: string }) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   
-  const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'assign' | 'complete' | 'cancel' | 'noshow'>('none');
+  const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'edit' | 'assign' | 'complete' | 'cancel' | 'noshow'>('none');
 
   const loadDemo = React.useCallback(async () => {
     setIsLoading(true);
@@ -109,7 +110,10 @@ export function DemoDetailClient({ id }: { id: string }) {
         {!isTerminal && (
           <div className="flex flex-wrap gap-2">
             {(hasPermission('demo.reschedule') || true) && (
-              <Button variant="outline" onClick={() => setModalState('reschedule')}>Reschedule</Button>
+              <>
+                <Button variant="outline" onClick={() => setModalState('reschedule')}>Reschedule</Button>
+                <Button variant="outline" onClick={() => setModalState('edit')}>Edit</Button>
+              </>
             )}
             {hasPermission('demo.assign_tutor') && (
               <Button variant="outline" onClick={() => setModalState('assign')}>Assign Tutor</Button>
@@ -225,6 +229,7 @@ export function DemoDetailClient({ id }: { id: string }) {
       </div>
 
       <RescheduleDemoModal isOpen={modalState === 'reschedule'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
+      <EditDemoModal isOpen={modalState === 'edit'} onClose={() => setModalState('none')} demo={demo} lead={demo?.student?.lead} onSuccess={handleActionSuccess} />
       <AssignTutorModal isOpen={modalState === 'assign'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
       <CompleteDemoModal isOpen={modalState === 'complete'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
       <CancelDemoModal isOpen={modalState === 'cancel'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />

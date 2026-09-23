@@ -26,6 +26,7 @@ export default function ReportsPage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => { load(); }, [month, year, canReadTeam]);
 
   const getUserDisplayName = (u: any) => {

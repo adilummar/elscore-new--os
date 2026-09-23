@@ -13,6 +13,7 @@ import { CompleteDemoModal } from './CompleteDemoModal';
 import { AssignTutorModal } from './AssignTutorModal';
 import { CancelDemoModal } from './CancelDemoModal';
 import { NoShowDemoModal } from './NoShowDemoModal';
+import { EditDemoModal } from './EditDemoModal';
 
 function formatDate(dateStr: string) {
   return new Intl.DateTimeFormat('en-IN', { 
@@ -34,7 +35,7 @@ export function DemoList({ view }: { view: 'today' | 'upcoming' | 'completed' | 
 
   // Modals state
   const [activeDemo, setActiveDemo] = React.useState<any>(null);
-  const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'complete' | 'assign' | 'cancel' | 'noshow'>('none');
+  const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'edit' | 'complete' | 'assign' | 'cancel' | 'noshow'>('none');
 
   const loadDemos = React.useCallback(async () => {
     setIsLoading(true);
@@ -105,8 +106,8 @@ export function DemoList({ view }: { view: 'today' | 'upcoming' | 'completed' | 
               const actions = [];
               if (!isTerminal) {
                 if (hasPermission('demo.reschedule') || true) {
-                   // We allow reschedule if they can book generally. Adjust per strict permissions if defined.
                    actions.push({ label: 'Reschedule', onClick: () => { setActiveDemo(demo); setModalState('reschedule'); } });
+                   actions.push({ label: 'Edit', onClick: () => { setActiveDemo(demo); setModalState('edit'); } });
                 }
                 if (hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || true) {
                    actions.push({ label: 'Cancel Demo', onClick: () => { setActiveDemo(demo); setModalState('cancel'); } });
@@ -174,6 +175,13 @@ export function DemoList({ view }: { view: 'today' | 'upcoming' | 'completed' | 
             onClose={() => setModalState('none')} 
             demo={activeDemo} 
             onSuccess={handleActionSuccess} 
+          />
+          <EditDemoModal
+            isOpen={modalState === 'edit'}
+            onClose={() => setModalState('none')}
+            demo={activeDemo}
+            lead={activeDemo.student?.lead}
+            onSuccess={handleActionSuccess}
           />
           <CompleteDemoModal 
             isOpen={modalState === 'complete'} 
