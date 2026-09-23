@@ -74,7 +74,7 @@ export function FollowUpDashboardClient() {
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'overdue' && summary && summary.overdue > 0 && (
-                <span className="ml-2 inline-flex items-center justify-center bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                <span className="ml-2 inline-flex items-center justify-center bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[20px]">
                   {summary.overdue}
                 </span>
               )}

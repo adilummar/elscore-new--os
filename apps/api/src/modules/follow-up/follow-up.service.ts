@@ -320,7 +320,13 @@ export class FollowUpService {
         where: { ...ownerFilter, scheduledAt: { gt: new Date() }, status: FollowUpStatus.SCHEDULED },
       }),
       this.prisma.followUp.count({
-        where: { ...ownerFilter, status: FollowUpStatus.OVERDUE },
+        where: {
+          ...ownerFilter,
+          OR: [
+            { status: FollowUpStatus.OVERDUE },
+            { status: FollowUpStatus.SCHEDULED, scheduledAt: { lt: new Date() } }
+          ]
+        },
       }),
       this.prisma.followUp.count({
         where: { ...ownerFilter, status: FollowUpStatus.COMPLETED, completedAt: { gte: todayStart, lte: todayEnd } },
