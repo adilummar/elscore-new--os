@@ -65,8 +65,6 @@ export function LeadList() {
       if (cursor) params.append('cursor', cursor);
       
       const res = await getLeadsAction(params.toString());
-      console.log('LeadList res:', res);
-      if (!res) throw new Error(`API returned null or undefined. res=${res}`);
       if (cursor) {
         setLeads(prev => [...prev, ...(res?.data || [])]);
       } else {
@@ -74,8 +72,7 @@ export function LeadList() {
       }
       setNextCursor(res?.pagination?.nextCursor || null);
     } catch (e: any) {
-      console.error("LEADLIST ERROR:", e);
-      setError(e.stack || e.message);
+      setError(e.message);
     } finally {
       setLoading(false);
     }
