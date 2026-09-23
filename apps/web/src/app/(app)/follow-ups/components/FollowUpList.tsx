@@ -75,14 +75,16 @@ export function FollowUpList({ view, onChange }: FollowUpListProps) {
   return (
     <div>
       <div className="divide-y divide-slate-100">
-        {data.map((fup) => (
-          <div key={fup.id} className="p-4 sm:p-6 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center gap-4">
+        {data.map((fup) => {
+          const isOverdue = fup.status === 'OVERDUE' || (fup.status === 'SCHEDULED' && new Date(fup.scheduledAt) < new Date());
+          return (
+          <div key={fup.id} className={`p-4 sm:p-6 transition-colors flex flex-col sm:flex-row sm:items-center gap-4 ${isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50'}`}>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <Link href={`/leads/${fup.leadId}`} className="text-sm font-semibold text-brand-700 hover:underline truncate">
                   {fup.lead?.firstName} {fup.lead?.lastName}
                 </Link>
-                {fup.status === 'OVERDUE' && (
+                {isOverdue && (
                   <Badge variant="danger" className="text-[10px] px-1.5 py-0">OVERDUE</Badge>
                 )}
                 {fup.status === 'COMPLETED' && (
@@ -124,7 +126,8 @@ export function FollowUpList({ view, onChange }: FollowUpListProps) {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {nextCursor && (

@@ -207,6 +207,22 @@ export class LeadService {
             status: { in: ['SCHEDULED', 'OVERDUE'] }
           }
         };
+      } else if (query.followUpState === 'OVERDUE') {
+        where.followUps = {
+          some: {
+            OR: [
+              { status: 'OVERDUE' },
+              { status: 'SCHEDULED', scheduledAt: { lt: new Date() } }
+            ]
+          }
+        };
+      } else if (query.followUpState === 'SCHEDULED') {
+        where.followUps = {
+          some: {
+            status: 'SCHEDULED',
+            scheduledAt: { gte: new Date() }
+          }
+        };
       } else {
         where.followUps = {
           some: {

@@ -165,8 +165,10 @@ export function LeadList() {
         ) : leads.length === 0 ? (
           <div className="text-center py-8 text-slate-500">No leads match your search.</div>
         ) : (
-          leads.map((lead) => (
-            <Card key={lead.id} className="p-4 flex flex-col gap-3" onClick={() => router.push(`/leads/${lead.id}`)}>
+          leads.map((lead) => {
+            const isOverdue = lead.nextFollowUpAt && new Date(lead.nextFollowUpAt) < new Date();
+            return (
+            <Card key={lead.id} className={`p-4 flex flex-col gap-3 cursor-pointer ${isOverdue ? 'bg-red-50 border-red-100 hover:bg-red-100' : 'hover:bg-slate-50'}`} onClick={() => router.push(`/leads/${lead.id}`)}>
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-slate-900">{lead.firstName} {lead.lastName}</h3>
@@ -206,7 +208,8 @@ export function LeadList() {
                 </Button>
               </div>
             </Card>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -232,10 +235,12 @@ export function LeadList() {
               ) : leads.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-500">No leads match your search.</TableCell></TableRow>
               ) : (
-                leads.map((lead) => (
+                leads.map((lead) => {
+                  const isOverdue = lead.nextFollowUpAt && new Date(lead.nextFollowUpAt) < new Date();
+                  return (
                   <TableRow 
                     key={lead.id} 
-                    className="cursor-pointer hover:bg-slate-50"
+                    className={`cursor-pointer ${isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50'}`}
                     onClick={() => router.push(`/leads/${lead.id}`)}
                   >
                     <TableCell className="font-medium">
@@ -270,7 +275,8 @@ export function LeadList() {
                     </TableCell>
                     <TableCell><span className="text-sm text-slate-500">{new Date(lead.createdAt).toLocaleDateString()}</span></TableCell>
                   </TableRow>
-                ))
+                );
+              })
               )}
             </TableBody>
           </Table>

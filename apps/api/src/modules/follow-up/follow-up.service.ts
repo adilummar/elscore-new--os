@@ -282,7 +282,12 @@ export class FollowUpService {
         viewFilter = { scheduledAt: { gt: new Date() }, status: FollowUpStatus.SCHEDULED };
         break;
       case 'overdue':
-        viewFilter = { status: FollowUpStatus.OVERDUE };
+        viewFilter = { 
+          OR: [
+            { status: FollowUpStatus.OVERDUE },
+            { status: FollowUpStatus.SCHEDULED, scheduledAt: { lt: new Date() } }
+          ]
+        };
         break;
       default:
         if (query.status) viewFilter = { status: query.status };
