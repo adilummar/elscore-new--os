@@ -184,5 +184,5 @@ export async function getReferenceDataAction(endpoint: string) {
 }
 
 export async function getLeadAssignmentHistoryAction(leadId: string) {
-  return fetchApi<any>(/leads/\/assignments);
+  return fetchApi<any>(`/leads/${leadId}/assignments`);
 }
