@@ -4,7 +4,9 @@ import { fetchApi } from '@/lib/api/client';
 import { revalidatePath } from 'next/cache';
 
 export async function getLeadsAction(query: string) {
-  return fetchApi<any>(`/leads?${query}`);
+  const result = await fetchApi<any>(`/leads?${query}`);
+  console.log("getLeadsAction result:", typeof result, result === undefined ? "UNDEFINED" : result === null ? "NULL" : "OBJECT");
+  return result;
 }
 
 export async function createLeadAction(data: any) {

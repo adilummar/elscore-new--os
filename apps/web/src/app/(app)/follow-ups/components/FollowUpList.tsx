@@ -39,11 +39,11 @@ export function FollowUpList({ view, onChange }: FollowUpListProps) {
       
       const res = await getFollowUps({ view, cursor, limit: 20 });
       if (cursor) {
-        setData(prev => [...prev, ...res.data]);
+        setData(prev => [...prev, ...(res?.data || [])]);
       } else {
-        setData(res.data);
+        setData(res?.data || []);
       }
-      setNextCursor(res.pagination.nextCursor);
+      setNextCursor(res?.pagination?.nextCursor || null);
     } catch (e: any) {
       setError(e.message || 'Failed to load follow-ups');
     } finally {

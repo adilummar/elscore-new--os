@@ -65,14 +65,17 @@ export function LeadList() {
       if (cursor) params.append('cursor', cursor);
       
       const res = await getLeadsAction(params.toString());
+      console.log('LeadList res:', res);
+      if (!res) throw new Error(`API returned null or undefined. res=${res}`);
       if (cursor) {
-        setLeads(prev => [...prev, ...(res.data || [])]);
+        setLeads(prev => [...prev, ...(res?.data || [])]);
       } else {
-        setLeads(res.data || []);
+        setLeads(res?.data || []);
       }
-      setNextCursor(res.pagination?.nextCursor || null);
+      setNextCursor(res?.pagination?.nextCursor || null);
     } catch (e: any) {
-      setError(e.message);
+      console.error("LEADLIST ERROR:", e);
+      setError(e.stack || e.message);
     } finally {
       setLoading(false);
     }
