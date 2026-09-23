@@ -5,7 +5,7 @@ import { getLeadAction, archiveLeadAction, reopenLeadAction } from '../../action
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { usePermissions } from '@/components/providers/AuthProvider';
+import { usePermissions, useAuth } from '@/components/providers/AuthProvider';
 import { User, Phone, Clock, FileText, CheckCircle, Calendar, Users, DollarSign, Activity, AlertCircle, MessageSquare } from 'lucide-react';
 import { LeadStatusChangeDialog } from './LeadStatusChangeDialog';
 import { ReassignDialog } from './ReassignDialog';
@@ -33,6 +33,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   const [isEditOpen, setIsEditOpen] = React.useState(false);
 
   const { hasPermission } = usePermissions();
+  const { effectiveUser } = useAuth();
 
   const loadLead = React.useCallback(async () => {
     setLoading(true);
@@ -54,7 +55,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
   if (error) return <div className="p-8 text-center text-red-500 bg-red-50 rounded-md">{error}</div>;
   if (!lead) return <div className="p-8 text-center text-slate-500">Lead not found.</div>;
 
-  const tabs: { id: TabId | 'assignments'; label: string; icon: any }[] = [
+  let tabs: { id: TabId | 'assignments'; label: string; icon: any }[] = [
     { id: 'students', label: 'Students', icon: Users },
     { id: 'followups', label: 'Follow-ups', icon: Clock },
     { id: 'demos', label: 'Demos', icon: Calendar },
@@ -63,6 +64,10 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
     { id: 'assignments', label: 'Assignment History', icon: User },
     { id: 'history', label: 'Timeline', icon: CheckCircle },
   ];
+
+  if (effectiveUser?.roles?.includes('SALES_COUNSELLOR')) {
+    tabs = tabs.filter(t => t.id !== 'assignments');
+  }
 
   return (
     <div className="space-y-6">
