@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { fetchApi } from '@/lib/api/client';
+import { getLeadAssignmentHistoryAction } from '../../actions';
 
 export function LeadDistributionHistory({ leadId }: { leadId: string }) {
   const [cursor, setCursor] = useState<string | null>(null);
@@ -13,7 +13,7 @@ export function LeadDistributionHistory({ leadId }: { leadId: string }) {
     let active = true;
     setIsLoading(true);
     setError(false);
-    fetchApi(`/leads/${leadId}/assignments`)
+    getLeadAssignmentHistoryAction(leadId)
       .then(res => {
         if (active) {
           setData(res);
