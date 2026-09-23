@@ -594,8 +594,8 @@ export class LeadService {
       where: { leadId: id },
       orderBy: { assignedAt: 'desc' },
       include: {
-        newOwnerUser: { include: { employee: true } },
-        oldOwnerUser: { include: { employee: true } },
+        newOwner: { include: { employee: true } },
+        oldOwner: { include: { employee: true } },
         assignedByUser: { include: { employee: true } },
       }
     });
@@ -607,10 +607,10 @@ export class LeadService {
         assignmentMethod: h.assignmentType,
         isReassignment: !!h.oldOwnerUserId,
         assignedAt: h.assignedAt,
-        newOwner: h.newOwnerUser ? {
+        newOwner: h.newOwner ? {
           employee: {
-            firstName: h.newOwnerUser.employee?.firstName || '',
-            lastName: h.newOwnerUser.employee?.lastName || ''
+            firstName: h.newOwner.employee?.firstName || '',
+            lastName: h.newOwner.employee?.lastName || ''
           }
         } : null,
       })),
