@@ -60,7 +60,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
     { id: 'demos', label: 'Demos', icon: Calendar },
     { id: 'finance', label: 'Finance', icon: DollarSign },
     { id: 'notes', label: 'Sales Notes', icon: FileText },
-    { id: 'assignments', label: 'Distribution History', icon: User },
+    { id: 'assignments', label: 'Assignment History', icon: User },
     { id: 'history', label: 'Timeline', icon: CheckCircle },
   ];
 

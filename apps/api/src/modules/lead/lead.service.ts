@@ -588,6 +588,36 @@ export class LeadService {
     await this.prisma.salesNote.delete({ where: { id: noteId } });
   }
 
+  async getAssignmentHistory(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
+    const history = await this.prisma.leadAssignmentHistory.findMany({
+      where: { leadId: id },
+      orderBy: { assignedAt: 'desc' },
+      include: {
+        newOwnerUser: { include: { employee: true } },
+        oldOwnerUser: { include: { employee: true } },
+        assignedByUser: { include: { employee: true } },
+      }
+    });
+
+    // Map to a format similar to what the UI expected from DistributionEvent
+    return {
+      data: history.map(h => ({
+        id: h.id,
+        assignmentMethod: h.assignmentType,
+        isReassignment: !!h.oldOwnerUserId,
+        assignedAt: h.assignedAt,
+        newOwner: h.newOwnerUser ? {
+          employee: {
+            firstName: h.newOwnerUser.employee?.firstName || '',
+            lastName: h.newOwnerUser.employee?.lastName || ''
+          }
+        } : null,
+      })),
+      pagination: { hasNextPage: false, nextCursor: null, limit: 50 }
+    };
+  }
+
   async getTimeline(id: string, userId: string, hasReadAll: boolean) {
     await this.checkOwnership(id, userId, hasReadAll);
     const lead = await this.prisma.lead.findUnique({

@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-
-import { getDistributionHistory } from '@/lib/api/round-robin';
+import { fetchApi } from '@/lib/api/client';
 
 export function LeadDistributionHistory({ leadId }: { leadId: string }) {
   const [cursor, setCursor] = useState<string | null>(null);
@@ -14,7 +13,7 @@ export function LeadDistributionHistory({ leadId }: { leadId: string }) {
     let active = true;
     setIsLoading(true);
     setError(false);
-    getDistributionHistory({ leadId, cursor })
+    fetchApi(`/leads/${leadId}/assignments`)
       .then(res => {
         if (active) {
           setData(res);
