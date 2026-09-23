@@ -38,7 +38,12 @@ export function LeadList() {
     async function loadEmployees() {
       try {
         const res = await getEmployeesAction();
-        const activeEmployees = (res.data || []).filter((emp: any) => emp.employmentStatus === 'ACTIVE');
+        const activeEmployees = (res.data || []).filter((emp: any) => {
+          if (emp.employmentStatus !== 'ACTIVE') return false;
+          return emp.user?.userRoles?.some((ur: any) => 
+            ur.role?.code === 'SALES_HEAD' || ur.role?.code === 'SALES_COUNSELLOR'
+          );
+        });
         setEmployees(activeEmployees);
       } catch (err) {
         console.error("Failed to load employees", err);
