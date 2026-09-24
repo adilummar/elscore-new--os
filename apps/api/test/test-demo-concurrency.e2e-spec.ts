@@ -15,7 +15,7 @@ class MockQueueModule {}
 jest.mock('bullmq', () => {
   return {
     Queue: jest.fn().mockImplementation(() => ({
-      add: jest.fn(),
+      add: jest.fn(), upsertJobScheduler: jest.fn(),
       close: jest.fn(),
     })),
     Worker: jest.fn().mockImplementation(() => ({
@@ -36,7 +36,7 @@ describe('DemoModule Concurrency (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideModule(QueueModule).useModule(MockQueueModule)
+      
       .overrideProvider(CACHE_MANAGER).useValue({
         get: () => Promise.resolve(null),
         set: () => Promise.resolve(),

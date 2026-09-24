@@ -26,7 +26,7 @@ export default function LoginPage() {
         return;
       }
       // Hard navigation so the browser sends the newly set HttpOnly cookies
-      if (result.requiresPasswordChange) {
+      if (result.mustChangePassword) {
         window.location.href = '/setup-password';
       } else {
         window.location.href = '/dashboard';
@@ -69,8 +69,10 @@ export default function LoginPage() {
           </form>
           
           <div className="mt-8 border-t border-slate-100 pt-6">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 text-center">Quick Login (Testing)</p>
-            <div className="flex flex-wrap gap-2 justify-center">
+            {process.env.NEXT_PUBLIC_APP_ENV === 'staging' && (
+              <>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 text-center">Quick Login (Testing)</p>
+                <div className="flex flex-wrap gap-2 justify-center">
               {[
                 { label: 'Admin/CEO', email: 'admin@elscore.internal', pass: 'Admin@123!' },
                 { label: 'UAT Sales A', email: 'uat_sca@elscore.test', pass: 'Test@1234!' },
@@ -107,6 +109,8 @@ export default function LoginPage() {
                 </button>
               ))}
             </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

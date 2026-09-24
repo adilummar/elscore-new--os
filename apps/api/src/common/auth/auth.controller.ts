@@ -53,7 +53,7 @@ export class AuthController {
     const tokens = await this.authService.login(req.user, { userAgent, ipAddress });
     return {
       message: 'Login successful',
-      requiresPasswordChange: req.user.requiresPasswordChange,
+      mustChangePassword: req.user.mustChangePassword,
       ...tokens,
     };
   }

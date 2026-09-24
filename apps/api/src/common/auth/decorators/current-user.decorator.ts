@@ -4,7 +4,7 @@ import type { Request } from 'express';
 export interface RequestUser {
   id: string;
   email: string;
-  requiresPasswordChange?: boolean;
+  mustChangePassword?: boolean;
 }
 
 /**

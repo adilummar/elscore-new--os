@@ -29,7 +29,7 @@ describe('LocalStrategy', () => {
    * Test 1: Valid credentials → returns ValidatedUser
    */
   it('returns the validated user when credentials are correct', async () => {
-    const user = { id: 'user-uuid', email: 'admin@elscore.internal', requiresPasswordChange: false };
+    const user = { id: 'user-uuid', email: 'admin@elscore.internal', mustChangePassword: false };
     mockAuthService.validateCredentials.mockResolvedValueOnce(user);
 
     const result = await strategy.validate('admin@elscore.internal', 'CorrectPassword123!');

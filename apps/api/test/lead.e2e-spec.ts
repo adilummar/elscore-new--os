@@ -10,7 +10,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { QueueModule } from '../src/common/queue/queue.module';
 
 jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
+  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), upsertJobScheduler: jest.fn(), close: jest.fn(), on: jest.fn() })),
   Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
 }));
@@ -51,8 +51,8 @@ describe('LeadModule (e2e)', () => {
         set: () => Promise.resolve(),
         del: () => Promise.resolve(),
       })
-      .overrideModule(QueueModule)
-      .useModule(MockQueueModule)
+      
+      
       .compile();
 
     app = moduleFixture.createNestApplication();

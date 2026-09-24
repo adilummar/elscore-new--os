@@ -9,7 +9,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 const request = require('supertest');
 
 jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
+  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), upsertJobScheduler: jest.fn(), close: jest.fn(), on: jest.fn() })),
   Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
 }));
@@ -70,7 +70,7 @@ describe('FinanceModule Rules (e2e)', () => {
     }
     const lead = await prisma.lead.create({
       data: {
-        businessId: 'LED-0002',
+        businessId: ('LED-' + Date.now()),
         firstName: 'Rules',
         lastName: 'Student',
         primaryPhone: '+1000000002',
@@ -85,7 +85,7 @@ describe('FinanceModule Rules (e2e)', () => {
 
     const student = await prisma.student.create({
       data: {
-        businessId: 'STU-0002',
+        businessId: ('STU-' + Date.now()),
         leadId: lead.id,
         firstName: 'Rules',
         enrollmentState: 'ENROLLED'

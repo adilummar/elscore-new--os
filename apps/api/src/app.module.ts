@@ -53,6 +53,7 @@ import { RoundRobinModule } from './modules/round-robin/round-robin.module';
 import { StudentModule } from './modules/student/student.module';
 import { TutorModule } from './modules/tutor/tutor.module';
 import { UserModule } from './modules/user/user.module';
+import { HealthModule } from './modules/health/health.module';
 
 import { AuditMiddleware } from './common/audit/audit.middleware';
 
@@ -111,6 +112,7 @@ import { AuditMiddleware } from './common/audit/audit.middleware';
     AttendanceModule,
     MarketingModule,
     SalesTargetModule,
+    HealthModule,
     // Phase 2+: add module imports here as each phase is implemented.
     // Do not add placeholder imports for unbuilt modules.
   ],

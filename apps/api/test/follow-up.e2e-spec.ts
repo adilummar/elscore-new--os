@@ -38,7 +38,7 @@ describe('FollowUpModule (e2e)', () => {
       imports: [AppModule],
     })
       .overrideProvider(CACHE_MANAGER).useValue({ get: () => Promise.resolve(null), set: () => Promise.resolve(), del: () => Promise.resolve() })
-      .overrideModule(QueueModule).useModule(MockQueueModule)
+      
       .overrideProvider(FollowUpReminderProcessor).useValue({})
       .overrideProvider(FollowUpOverdueProcessor).useValue({})
       .compile();

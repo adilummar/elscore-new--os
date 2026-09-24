@@ -8,7 +8,7 @@ import { TransformInterceptor } from '../src/common/interceptors/transform.inter
 import { QueueModule } from '../src/common/queue/queue.module';
 
 jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
+  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), upsertJobScheduler: jest.fn(), close: jest.fn(), on: jest.fn() })),
   Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
 }));
@@ -39,8 +39,8 @@ describe('Auth (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideModule(QueueModule)
-      .useModule(MockQueueModule)
+      
+      
       .overrideProvider(CACHE_MANAGER)
       .useValue({
         get: () => Promise.resolve(null),
@@ -103,6 +103,38 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/login')
         .send({ password: 'test' })
         .expect(401);
+    });
+    it('should reject Quick Login UAT accounts in production environment', async () => {
+      // Temporarily set to production environment
+      const originalEnv = process.env.APP_ENV;
+      process.env.APP_ENV = 'production';
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: 'uat_test@elscore.test', password: 'Test@1234!' })
+        .expect(401);
+
+      expect(res.body.message).toBe('UAT accounts are only available in the staging environment.');
+
+      // Restore environment
+      process.env.APP_ENV = originalEnv;
+    });
+
+    it('should allow Quick Login UAT accounts in staging environment', async () => {
+      // Temporarily set to staging environment
+      const originalEnv = process.env.APP_ENV;
+      process.env.APP_ENV = 'staging';
+
+      // It will still fail with invalid credentials/not found, but shouldn't throw the environment exception
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: 'uat_test@elscore.test', password: 'WrongPassword123!' })
+        .expect(401);
+
+      expect(res.body.message).not.toBe('UAT accounts are only available in the staging environment.');
+
+      // Restore environment
+      process.env.APP_ENV = originalEnv;
     });
   });
 

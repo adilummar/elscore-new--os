@@ -5,6 +5,11 @@ const prisma = new PrismaClient();
 
 async function seedTestUsers() {
   console.log('🌱 Seeding UAT test users...');
+  
+  if (process.env.APP_ENV !== 'staging' && process.env.NODE_ENV === 'production') {
+    console.log('⚠️ Skipping UAT test users in true production environment.');
+    return;
+  }
 
   const password = 'Test@1234!';
   const passwordHash = await argon2.hash(password, {

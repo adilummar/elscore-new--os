@@ -9,7 +9,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 const request = require('supertest');
 
 jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
+  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), upsertJobScheduler: jest.fn(), close: jest.fn(), on: jest.fn() })),
   Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
 }));
@@ -80,7 +80,7 @@ describe('FinanceModule Concurrency (e2e)', () => {
     }
     const lead = await prisma.lead.create({
       data: {
-        businessId: 'LED-0001',
+        businessId: ('LED-' + Date.now()),
         firstName: 'Fin',
         lastName: 'Student',
         primaryPhone: '+1000000000',
@@ -94,7 +94,7 @@ describe('FinanceModule Concurrency (e2e)', () => {
 
     const student = await prisma.student.create({
       data: {
-        businessId: 'STU-0001',
+        businessId: ('STU-' + Date.now()),
         leadId: lead.id,
         firstName: 'Fin',
         enrollmentState: 'ENROLLED'

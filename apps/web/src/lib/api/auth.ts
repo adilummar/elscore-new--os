@@ -2,7 +2,7 @@
 import { fetchApi } from './client';
 import { cookies } from 'next/headers';
 
-export async function login(credentials: { email: string; password: string }): Promise<{ requiresPasswordChange?: boolean; error?: string }> {
+export async function login(credentials: { email: string; password: string }): Promise<{ mustChangePassword?: boolean; error?: string }> {
   const apiBase = process.env.API_URL || 'http://localhost:3001/api/v1';
   console.log('Attempting login to API:', `${apiBase}/auth/login`);
   
@@ -58,7 +58,7 @@ export async function login(credentials: { email: string; password: string }): P
 
   // Return data so client can decide where to navigate
   return {
-    requiresPasswordChange: data.requiresPasswordChange ?? false,
+    mustChangePassword: data.mustChangePassword ?? false,
   };
 }
 

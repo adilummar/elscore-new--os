@@ -55,8 +55,8 @@ describe('DemoModule (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideModule(QueueModule)
-      .useModule(MockQueueModule)
+      
+      
       .overrideProvider(CACHE_MANAGER)
       .useValue({
         get: () => Promise.resolve(null),
@@ -137,7 +137,7 @@ describe('DemoModule (e2e)', () => {
         email: u.email, 
         roles: [roleCode], 
         permissions: [], 
-        requiresPasswordChange: false 
+        mustChangePassword: false 
       } as any);
       return `Bearer ${tokens.accessToken}`;
     };
@@ -205,7 +205,7 @@ describe('DemoModule (e2e)', () => {
     await prisma.demo.deleteMany();
     await prisma.requirement.deleteMany({ where: { businessId: 'REQ-9999' } });
     await prisma.student.deleteMany({ where: { businessId: 'STU-9999' } });
-    await prisma.lead.deleteMany({ where: { primaryPhone: '1234567890' } });
+    await prisma.leadAssignmentHistory.deleteMany({ where: { lead: { createdByUser: { email: { in: testEmails } } } } }); await prisma.salesNote.deleteMany({ where: { lead: { createdByUser: { email: { in: testEmails } } } } }); await prisma.student.deleteMany({ where: { lead: { createdByUser: { email: { in: testEmails } } } } }); await prisma.requirement.deleteMany({ where: { student: { lead: { createdByUser: { email: { in: testEmails } } } } } }); await prisma.lead.deleteMany({ where: { createdByUser: { email: { in: testEmails } } } }); await prisma.userRole.deleteMany({ where: { user: { email: { in: testEmails } } } }); await prisma.lead.deleteMany({ where: { primaryPhone: '1234567890' } });
     await prisma.user.deleteMany({ where: { email: { contains: 'demo@elscore.test' } } });
     await app.close();
   });

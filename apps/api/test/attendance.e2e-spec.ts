@@ -9,7 +9,7 @@ import { RbacService } from '../src/common/rbac/rbac.service';
 const request = require('supertest');
 
 jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
+  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), upsertJobScheduler: jest.fn(), close: jest.fn(), on: jest.fn() })),
   Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
 }));

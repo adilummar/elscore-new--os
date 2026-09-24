@@ -65,15 +65,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         leads,
         refresh_tokens,
         user_roles,
-        role_permissions,
         audit_events,
         notifications,
         employees,
-        users,
-        permissions,
-        roles,
-        departments,
-        sequences
+        users
       RESTART IDENTITY CASCADE
     `;
   }

@@ -48,7 +48,7 @@ describe('JwtStrategy', () => {
 
     const result = await strategy.validate(VALID_PAYLOAD);
 
-    expect(result).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, requiresPasswordChange: false });
+    expect(result).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, mustChangePassword: false });
     expect(mockUserStatusCacheService.getStatus).toHaveBeenCalledWith(VALID_PAYLOAD.sub);
   });
 
@@ -82,7 +82,7 @@ describe('JwtStrategy', () => {
     // Initially ACTIVE
     mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
     const firstCall = await strategy.validate(VALID_PAYLOAD);
-    expect(firstCall).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, requiresPasswordChange: false });
+    expect(firstCall).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, mustChangePassword: false });
 
     // Status changes server-side (cache invalidated, next check hits DB → SUSPENDED)
     mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.SUSPENDED, mustChangePassword: false });
@@ -119,7 +119,7 @@ describe('JwtStrategy', () => {
 
     const result = await strategy.validate(VALID_PAYLOAD);
 
-    expect(result).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, requiresPasswordChange: true });
+    expect(result).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, mustChangePassword: true });
     expect(mockUserStatusCacheService.getStatus).toHaveBeenCalledWith(VALID_PAYLOAD.sub);
   });
 });

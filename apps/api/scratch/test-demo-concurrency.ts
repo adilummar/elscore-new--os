@@ -69,7 +69,7 @@ async function run() {
   
   const futureDate = new Date(Date.now() + 86400000).toISOString();
   const dbUser = await prisma.user.findFirstOrThrow();
-  const user: any = { id: dbUser.id, email: dbUser.email, requiresPasswordChange: false };
+  const user: any = { id: dbUser.id, email: dbUser.email, mustChangePassword: false };
 
   console.log('Simulating 2 concurrent demo bookings...');
   

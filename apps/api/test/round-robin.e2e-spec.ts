@@ -12,7 +12,7 @@ import { QueueModule } from '../src/common/queue/queue.module';
 import { RbacService } from '../src/common/rbac/rbac.service';
 
 jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), close: jest.fn(), on: jest.fn() })),
+  Queue: jest.fn().mockImplementation(() => ({ add: jest.fn(), upsertJobScheduler: jest.fn(), close: jest.fn(), on: jest.fn() })),
   Worker: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation(() => ({ close: jest.fn(), on: jest.fn() })),
 }));
@@ -32,8 +32,8 @@ describe('RoundRobin (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideModule(QueueModule)
-      .useModule(MockQueueModule)
+      
+      
       .overrideProvider(CACHE_MANAGER)
       .useValue({
         get: () => Promise.resolve(null),

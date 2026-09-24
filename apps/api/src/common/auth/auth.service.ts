@@ -15,7 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export interface ValidatedUser {
   id: string;
   email: string;
-  requiresPasswordChange: boolean;
+  mustChangePassword: boolean;
 }
 
 export interface TokenPair {
@@ -61,6 +61,11 @@ export class AuthService {
    * username enumeration via timing differences.
    */
   async validateCredentials(email: string, password: string): Promise<ValidatedUser | null> {
+    const isUatAccount = email.startsWith('uat_') || email.endsWith('@elscore.test') || email.endsWith('@test.com');
+    if (isUatAccount && process.env.APP_ENV !== 'staging') {
+      throw new UnauthorizedException('UAT accounts are only available in the staging environment.');
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     // Always verify to prevent timing-based username enumeration
@@ -84,7 +89,7 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active. Contact your administrator.');
     }
 
-    return { id: user.id, email: user.email, requiresPasswordChange: user.mustChangePassword };
+    return { id: user.id, email: user.email, mustChangePassword: user.mustChangePassword };
   }
 
   /**

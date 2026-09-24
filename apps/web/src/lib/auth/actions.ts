@@ -29,7 +29,7 @@ export async function login(prevState: any, formData: FormData) {
       return { error: data.message || "Invalid credentials" }
     }
 
-    const { accessToken, refreshToken, requiresPasswordChange } = data
+    const { accessToken, refreshToken, mustChangePassword } = data
 
     const cookieStore = cookies()
     // Secure cookies in production
@@ -51,7 +51,7 @@ export async function login(prevState: any, formData: FormData) {
       maxAge: 60 * 60 * 24 * 7, // 7 days
     })
 
-    if (requiresPasswordChange) {
+    if (mustChangePassword) {
       redirect("/setup-password")
     } else {
       redirect("/dashboard")

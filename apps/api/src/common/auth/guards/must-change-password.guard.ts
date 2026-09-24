@@ -8,7 +8,7 @@ import { SKIP_MUST_CHANGE_PASSWORD_KEY } from '../decorators/skip-must-change-pa
 /**
  * MustChangePasswordGuard — enforces the mustChangePassword state.
  *
- * Runs after JwtAuthGuard. If the user has requiresPasswordChange = true in their
+ * Runs after JwtAuthGuard. If the user has mustChangePassword = true in their
  * token payload (set by JwtStrategy via cache lookup), this guard blocks access
  * to all protected routes except those explicitly marked with @SkipMustChangePassword().
  */
@@ -43,7 +43,7 @@ export class MustChangePasswordGuard implements CanActivate {
       return true;
     }
 
-    if (user.requiresPasswordChange) {
+    if (user.mustChangePassword) {
       throw new ForbiddenException('Password change required before accessing this resource');
     }
 
