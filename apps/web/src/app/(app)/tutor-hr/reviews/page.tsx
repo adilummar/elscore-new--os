@@ -27,11 +27,13 @@ export default function TutorHrReviewsPage() {
   useEffect(() => { load(); }, []);
 
   async function handleApprove(lead: any) {
-    if (!confirm(
-      `Approve ${lead.firstName} ${lead.lastName} (${lead.businessId})?\n\n` +
-      `This will create a Tutor Profile record linked to this candidate.\n` +
-      `No login account will be created — employee onboarding is a separate process.`
-    )) return;
+    const msg = [
+      `Approve ${lead.firstName} ${lead.lastName} (${lead.businessId})?`,
+      '',
+      'This will create a Tutor Profile record linked to this candidate.',
+      'No login account will be created — employee onboarding is a separate process.',
+    ].join('\n');
+    if (!confirm(msg)) return;
 
     setApprovingId(lead.id);
     try {

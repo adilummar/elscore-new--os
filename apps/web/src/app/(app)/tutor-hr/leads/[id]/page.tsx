@@ -116,18 +116,19 @@ export default function TutorLeadDetailPage() {
 
   // Approve
   async function handleApprove() {
-    if (!confirm(
-      `Approve ${lead.firstName} ${lead.lastName}?\n\n` +
-      `This creates a Tutor Profile. No OS login account is created at this stage.\n` +
-      `Employee onboarding is done separately.`
-    )) return;
+    const employeeId = prompt(
+      'To approve this candidate:\n' +
+      '1. First onboard them as an Employee in the HR module\n' +
+      '2. Then enter their Employee ID here\n\nEmployee ID:'
+    );
+    if (!employeeId?.trim()) return;
     setApproving(true);
     try {
-      await approveTutorLeadAction(id, {});
-      alert("✅ Approved! Tutor Profile created.");
+      await approveTutorLeadAction(id, { existingEmployeeId: employeeId.trim() });
+      alert('Approved! Tutor Profile created and linked.');
       await reload();
     } catch (err: any) {
-      alert("Error: " + (err?.message ?? "Could not approve"));
+      alert('Error: ' + (err?.message ?? 'Could not approve'));
     } finally {
       setApproving(false);
     }
@@ -672,7 +673,7 @@ export default function TutorLeadDetailPage() {
                       )}
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded ${STAGE_COLORS[h.newStage] ?? "bg-slate-100 text-slate-600"}`}>{h.newStage}</span>
                     </div>
-                    {h.remarks && <p className="text-sm text-slate-600 mt-2 italic">"{h.remarks}"</p>}
+                    {h.remarks && <p className="text-sm text-slate-600 mt-2 italic">&ldquo;{h.remarks}&rdquo;</p>}
                     <p className="text-xs text-slate-400 mt-2">
                       By {h.changedBy?.email ?? "system"} • {new Date(h.changedAt).toLocaleString()}
                     </p>
