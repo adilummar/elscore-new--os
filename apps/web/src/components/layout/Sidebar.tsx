@@ -39,6 +39,7 @@ export function Sidebar({ user }: { user: any }) {
     ...(hasMarketingRole || hasPermission("analytics.ceo.read") ? [{ name: "Marketing", href: "/marketing", icon: BarChart3 }] : []),
     ...(hasPermission("report.view") || hasPermission("analytics.ceo.read") || hasPermission("target.read.team") ? [{ name: "Reports", href: "/reports", icon: BarChart3 }] : []),
     ...(hasPermission("employee.read-all") || hasPermission("analytics.ceo.read") ? [{ name: "HR / Employees", href: "/employees", icon: Users }] : []),
+    ...(hasPermission("tutor_lead.read") || hasPermission("tutor_lead.manage") ? [{ name: "Tutor HR", href: "/tutor-hr", icon: Users }] : []),
   ];
 
   if (hasPermission("role.manage") || hasPermission("settings.read") || hasPermission("audit.view") || hasPermission("user.read") || hasPermission("employee.read-all") || hasPermission("reference.manage")) {

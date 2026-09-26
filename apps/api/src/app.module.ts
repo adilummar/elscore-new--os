@@ -52,6 +52,7 @@ import { RoleModule } from './modules/role/role.module';
 import { RoundRobinModule } from './modules/round-robin/round-robin.module';
 import { StudentModule } from './modules/student/student.module';
 import { TutorModule } from './modules/tutor/tutor.module';
+import { TutorHrModule } from './modules/tutor-hr/tutor-hr.module';
 import { UserModule } from './modules/user/user.module';
 import { HealthModule } from './modules/health/health.module';
 
@@ -102,6 +103,7 @@ import { AuditMiddleware } from './common/audit/audit.middleware';
     ReferenceModule,
     RoleModule,
     TutorModule,
+    TutorHrModule,
     UserModule,
     LeadModule,
     StudentModule,

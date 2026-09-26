@@ -56,12 +56,12 @@ export default function LoginPage() {
               </div>
             )}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Email address</label>
-              <Input name="email" type="email" required placeholder="you@elscore.internal" />
+              <label htmlFor="email" className="text-sm font-medium text-slate-700">Email address</label>
+              <Input id="email" name="email" type="email" autoComplete="username" required placeholder="you@elscore.internal" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Password</label>
-              <Input name="password" type="password" required />
+              <label htmlFor="password" className="text-sm font-medium text-slate-700">Password</label>
+              <Input id="password" name="password" type="password" autoComplete="current-password" required />
             </div>
             <Button type="submit" className="w-full mt-6" isLoading={isLoading}>
               Sign In

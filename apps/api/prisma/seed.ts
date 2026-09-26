@@ -514,29 +514,48 @@ const PERMISSIONS: Array<{
   },
 
   // ── Tutor recruitment ─────────────────────────────────────────────────────
-  {
-    code: 'tutor.recruitment.read',
-    resource: 'tutor.recruitment',
-    action: 'read',
-    description: 'View recruitment records and history',
-    isDelegatable: true,
-  },
-  {
-    code: 'tutor.recruitment.create',
-    resource: 'tutor.recruitment',
-    action: 'create',
-    description: 'Create a new tutor recruitment enquiry',
-    isDelegatable: true,
-  },
-  {
-    code: 'tutor.recruitment.manage',
-    resource: 'tutor.recruitment',
-    action: 'manage',
-    description: 'Advance stages, record interviews, reject, hire',
-    isDelegatable: true,
-  },
+  
+  
+  
 
-  // ── Tutor profile ─────────────────────────────────────────────────────────
+  
+    {
+      code: 'tutor_lead.read',
+      resource: 'tutor_lead',
+      action: 'read',
+      description: 'View tutor leads and their history',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.manage',
+      resource: 'tutor_lead',
+      action: 'manage',
+      description: 'Create/update tutor leads, change stages, record calls/demos, convert to tutor',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.training.read',
+      resource: 'tutor_lead_training',
+      action: 'read',
+      description: 'View tutor lead training sessions',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.training.manage',
+      resource: 'tutor_lead_training',
+      action: 'manage',
+      description: 'Create and update tutor lead training sessions',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_hr.settings.manage',
+      resource: 'tutor_hr_settings',
+      action: 'manage',
+      description: 'Manage mother tongues, communication languages, and salary slabs',
+      isDelegatable: false,
+    },
+
+    // ── Tutor profile ─────────────────────────────────────────────────────────
   {
     code: 'tutor.profile.read',
     resource: 'tutor.profile',
@@ -917,9 +936,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'role.create',
     'role.manage',
     'role.assign',
-    'tutor.recruitment.read',
-    'tutor.recruitment.create',
-    'tutor.recruitment.manage',
+    'tutor_lead.read',
+    'tutor_lead.manage',
+    'tutor_lead.training.read',
+    'tutor_lead.training.manage',
+    'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
     'tutor.rate.read',
@@ -936,9 +957,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'employee.update',
     'department.read',
     'role.read',
-    'tutor.recruitment.read',
-    'tutor.recruitment.create',
-    'tutor.recruitment.manage',
+    'tutor_lead.read',
+    'tutor_lead.manage',
+    'tutor_lead.training.read',
+    'tutor_lead.training.manage',
+    'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
     // tutor.rate.read: NOT granted to HR Executive per Revision 3.1
@@ -1124,7 +1147,9 @@ const SEQUENCES = [
   { entityType: 'TCR', prefix: 'TCR-', padding: 7 }, // Tutor Class Record
 
   { entityType: 'EMP', prefix: 'EMP', padding: 4 },
-  { entityType: 'REC', prefix: 'REC', padding: 4 }, // Tutor recruitment (new in Phase 1)
+    { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
+
+  { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
   { entityType: 'LED', prefix: 'LED', nextNumber: 1, padding: 4 }, // Lead
   { entityType: 'REQ', prefix: 'REQ', nextNumber: 1, padding: 4 }, // Requirement
   { entityType: 'STU', prefix: 'STU', padding: 4 },
