@@ -10,7 +10,17 @@ export class TutorTrainingService {
     private readonly audit: AuditService,
   ) {}
 
+  async findAll(tutorLeadId: string) {
+    const lead = await this.prisma.tutorLead.findUnique({ where: { id: tutorLeadId } });
+    if (!lead) throw new (await import('@nestjs/common')).NotFoundException('Tutor lead not found');
+    return this.prisma.tutorLeadTrainingSession.findMany({
+      where: { tutorLeadId },
+      orderBy: { sessionDate: 'desc' },
+    });
+  }
+
   async create(tutorLeadId: string, dto: CreateTutorLeadTrainingDto, actorUserId: string) {
+
     const lead = await this.prisma.tutorLead.findUnique({ where: { id: tutorLeadId } });
     if (!lead) throw new NotFoundException('Tutor lead not found');
 

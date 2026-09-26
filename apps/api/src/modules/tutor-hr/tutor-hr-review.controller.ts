@@ -6,8 +6,7 @@ import { CurrentUser } from '../../common/auth/decorators/current-user.decorator
 import { JwtAuthGuard } from '../../common/auth/guards/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequestUser } from '../../common/auth/decorators/current-user.decorator';
-import { ApproveTutorLeadDto } from './dto/tutor-hr-review.dto';
-import { TutorHrReviewService } from './tutor-hr-review.service';
+import { ApproveTutorLeadDto, TutorHrReviewService } from './tutor-hr-review.service';
 
 @ApiTags('Tutor HR')
 @ApiBearerAuth()
@@ -16,16 +15,24 @@ import { TutorHrReviewService } from './tutor-hr-review.service';
 export class TutorHrReviewController {
   constructor(private readonly reviewService: TutorHrReviewService) {}
 
+  @Get()
+  @RequirePermissions('tutor_lead.manage')
+  @ApiOperation({ summary: 'Get all tutor leads ready for assignment (pending review)' })
+  findPending() {
+    return this.reviewService.findPending();
+  }
+
+  /** Legacy alias — keep for backward compat */
   @Get('pending')
   @RequirePermissions('tutor_lead.manage')
-  @ApiOperation({ summary: 'Get all tutor leads ready for assignment' })
-  findPending() {
+  @ApiOperation({ summary: 'Alias for GET /tutor-hr/reviews' })
+  findPendingAlias() {
     return this.reviewService.findPending();
   }
 
   @Post(':leadId/approve')
   @RequirePermissions('tutor_lead.manage')
-  @ApiOperation({ summary: 'Approve a tutor lead and convert them to a Tutor Profile' })
+  @ApiOperation({ summary: 'Approve a tutor lead and create their Tutor Profile (no login account created)' })
   approve(
     @Param('leadId') leadId: string,
     @Body() dto: ApproveTutorLeadDto,

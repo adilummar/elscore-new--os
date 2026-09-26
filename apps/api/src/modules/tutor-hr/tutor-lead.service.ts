@@ -296,4 +296,48 @@ export class TutorLeadService {
       return { success: true };
     });
   }
+
+  // ── Sub-resource reads ──────────────────────────────────────────────────
+
+  async getStageHistory(leadId: string) {
+    await this.findOne(leadId); // 404 guard
+    return this.prisma.tutorLeadStageHistory.findMany({
+      where: { tutorLeadId: leadId },
+      orderBy: { changedAt: 'desc' },
+      include: {
+        changedBy: { select: { id: true, email: true } },
+      },
+    });
+  }
+
+  async getCalls(leadId: string) {
+    await this.findOne(leadId); // 404 guard
+    return this.prisma.tutorLeadCall.findMany({
+      where: { tutorLeadId: leadId },
+      orderBy: { calledAt: 'desc' },
+      include: {
+        caller: { select: { id: true, email: true } },
+      },
+    });
+  }
+
+  async getDemos(leadId: string) {
+    await this.findOne(leadId); // 404 guard
+    return this.prisma.tutorLeadDemo.findMany({
+      where: { tutorLeadId: leadId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        recordedBy: { select: { id: true, email: true } },
+      },
+    });
+  }
+
+  async getTrainingSessions(leadId: string) {
+    await this.findOne(leadId); // 404 guard
+    return this.prisma.tutorLeadTrainingSession.findMany({
+      where: { tutorLeadId: leadId },
+      orderBy: { sessionDate: 'desc' },
+    });
+  }
 }
+

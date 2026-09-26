@@ -302,6 +302,7 @@ model User {
   distributionAssignedBy    LeadDistributionEvent[]     @relation("DistributionAssignedBy")
 
   tutorLeadsCreated      TutorLead[]                @relation("TutorLeadCreator")
+  tutorLeadsAssigned     TutorLead[]                @relation("TutorLeadAssignee")
   tutorLeadStagesChanged TutorLeadStageHistory[]    @relation("StageChangedBy")
   tutorLeadCalls         TutorLeadCall[]            @relation("TutorLeadCalledBy")
   tutorLeadDemos         TutorLeadDemo[]            @relation("TutorLeadDemoRecordedBy")
@@ -1810,11 +1811,18 @@ model TutorLead {
 
   salarySlabId String? @map("salary_slab_id")
 
-  createdByUserId String   @map("created_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdByUserId  String  @map("created_by_user_id")
+  assignedToUserId String? @map("assigned_to_user_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") // soft delete
+
+  /// Set when the lead is approved and a TutorProfile is created
+  convertedTutorProfileId String? @unique @map("converted_tutor_profile_id")
 
   createdBy    User             @relation("TutorLeadCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo   User?            @relation("TutorLeadAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   motherTongue MotherTongue?    @relation(fields: [motherTongueId], references: [id], onDelete: Restrict)
   salarySlab   TutorSalarySlab? @relation(fields: [salarySlabId], references: [id], onDelete: Restrict)
 
@@ -1831,8 +1839,11 @@ model TutorLead {
 
   @@index([currentStage])
   @@index([createdByUserId])
+  @@index([assignedToUserId])
+  @@index([deletedAt])
   @@map("tutor_leads")
 }
+
 
 model TutorLeadSubject {
   tutorLeadId String @map("tutor_lead_id")

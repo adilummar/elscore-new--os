@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
@@ -13,13 +13,20 @@ import { TutorTrainingService } from './tutor-training.service';
 @ApiTags('Tutor HR')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RbacGuard)
-@Controller('tutor-hr')
+@Controller('tutor-hr/leads/:leadId/training-sessions')
 export class TutorTrainingController {
   constructor(private readonly tutorTrainingService: TutorTrainingService) {}
 
-  @Post('leads/:leadId/training')
+  @Get()
+  @RequirePermissions('tutor_lead.read', 'tutor_lead.manage', 'tutor_lead.training.read')
+  @ApiOperation({ summary: 'List all training sessions for a tutor lead' })
+  findAll(@Param('leadId') leadId: string) {
+    return this.tutorTrainingService.findAll(leadId);
+  }
+
+  @Post()
   @RequirePermissions('tutor_lead.training.manage', 'tutor_lead.manage')
-  @ApiOperation({ summary: 'Create a training session for a tutor lead' })
+  @ApiOperation({ summary: 'Add a new training session for a tutor lead' })
   create(
     @Param('leadId') leadId: string,
     @Body() dto: CreateTutorLeadTrainingDto,
@@ -28,14 +35,15 @@ export class TutorTrainingController {
     return this.tutorTrainingService.create(leadId, dto, user.id);
   }
 
-  @Patch('training/:id')
+  @Patch(':sessionId')
   @RequirePermissions('tutor_lead.training.manage', 'tutor_lead.manage')
-  @ApiOperation({ summary: 'Update a training session' })
+  @ApiOperation({ summary: 'Update a training session (attendance, task status, remarks)' })
   update(
-    @Param('id') id: string,
+    @Param('leadId') leadId: string,
+    @Param('sessionId') sessionId: string,
     @Body() dto: UpdateTutorLeadTrainingDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.tutorTrainingService.update(id, dto, user.id);
+    return this.tutorTrainingService.update(sessionId, dto, user.id);
   }
 }

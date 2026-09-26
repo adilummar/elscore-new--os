@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../../common/auth/auth.module';
 import { IdGeneratorModule } from '../../common/id-generator/id-generator.module';
-import { UserModule } from '../user/user.module';
 
 import { TutorHrReviewController } from './tutor-hr-review.controller';
 import { TutorHrReviewService } from './tutor-hr-review.service';
@@ -13,7 +12,7 @@ import { TutorTrainingController } from './tutor-training.controller';
 import { TutorTrainingService } from './tutor-training.service';
 
 @Module({
-  imports: [AuthModule, IdGeneratorModule, UserModule],
+  imports: [AuthModule, IdGeneratorModule],
   controllers: [
     TutorLeadController,
     TutorTrainingController,
