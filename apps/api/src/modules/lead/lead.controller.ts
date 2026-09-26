@@ -35,8 +35,10 @@ export class LeadController {
   }
 
   @Get()
-  async findAll(@Query() query: LeadQueryDto) {
-    return this.leadService.findAll(query, 'user-1', true);
+  @RequirePermissions('lead.read')
+  async findAll(@Query() query: LeadQueryDto, @CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.findAll(query, user.id, readAll);
   }
 
   @Get(':id')
