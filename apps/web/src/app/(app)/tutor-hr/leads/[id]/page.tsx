@@ -166,7 +166,7 @@ export default function LeadDetailPage() {
                 <h4 className="text-xs font-semibold uppercase text-slate-500 tracking-wider mb-3">Approved Subjects</h4>
                 <div className="flex flex-wrap gap-2">
                   {lead.subjects?.length > 0 ? lead.subjects.map((s:any) => (
-                    <Badge key={s.subjectId} variant="outline" className="bg-slate-50">{s.subject?.name}</Badge>
+                    <Badge key={s.subjectId}  className="bg-slate-50">{s.subject?.name}</Badge>
                   )) : <span className="text-sm text-slate-400 italic">None assigned</span>}
                 </div>
               </div>
@@ -174,7 +174,7 @@ export default function LeadDetailPage() {
                 <h4 className="text-xs font-semibold uppercase text-slate-500 tracking-wider mb-3">Approved Grades</h4>
                 <div className="flex flex-wrap gap-2">
                   {lead.grades?.length > 0 ? lead.grades.map((g:any) => (
-                    <Badge key={g.gradeId} variant="outline" className="bg-slate-50">{g.grade?.name}</Badge>
+                    <Badge key={g.gradeId}  className="bg-slate-50">{g.grade?.name}</Badge>
                   )) : <span className="text-sm text-slate-400 italic">None assigned</span>}
                 </div>
               </div>
@@ -276,12 +276,12 @@ export default function LeadDetailPage() {
                       <TableCell className="font-medium text-slate-700">{new Date(t.sessionDate).toLocaleDateString()}</TableCell>
                       <TableCell className="text-slate-600">{t.startTime ? new Date(t.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`${t.attendanceStatus === 'ATTENDED' ? 'border-green-200 text-green-700 bg-green-50' : 'border-red-200 text-red-700 bg-red-50'}`}>
+                        <Badge  className={`${t.attendanceStatus === 'ATTENDED' ? 'border-green-200 text-green-700 bg-green-50' : 'border-red-200 text-red-700 bg-red-50'}`}>
                           {t.attendanceStatus}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-slate-50">
+                        <Badge  className="bg-slate-50">
                           {t.taskStatus}
                         </Badge>
                       </TableCell>
