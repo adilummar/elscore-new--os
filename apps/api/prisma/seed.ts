@@ -554,6 +554,35 @@ const PERMISSIONS: Array<{
       description: 'Manage mother tongues, communication languages, and salary slabs',
       isDelegatable: false,
     },
+    // Granular tutor lead permissions (P2 — more precise than tutor_lead.manage)
+    {
+      code: 'tutor_lead.create',
+      resource: 'tutor_lead',
+      action: 'create',
+      description: 'Create new tutor leads in the HR pipeline',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.update',
+      resource: 'tutor_lead',
+      action: 'update',
+      description: 'Edit tutor lead profile fields (name, experience, subjects, etc.)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.stage.update',
+      resource: 'tutor_lead',
+      action: 'stage.update',
+      description: 'Change the pipeline stage of a tutor lead',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.approve',
+      resource: 'tutor_lead',
+      action: 'approve',
+      description: 'Approve a READY_FOR_ASSIGNMENT tutor lead and create their Tutor Profile',
+      isDelegatable: false,
+    },
 
     // ── Tutor profile ─────────────────────────────────────────────────────────
   {
@@ -938,6 +967,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'role.assign',
     'tutor_lead.read',
     'tutor_lead.manage',
+    'tutor_lead.create',
+    'tutor_lead.update',
+    'tutor_lead.stage.update',
+    'tutor_lead.approve',
     'tutor_lead.training.read',
     'tutor_lead.training.manage',
     'tutor_hr.settings.manage',
@@ -959,13 +992,16 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'role.read',
     'tutor_lead.read',
     'tutor_lead.manage',
+    'tutor_lead.create',
+    'tutor_lead.update',
+    'tutor_lead.stage.update',
+    // tutor_lead.approve: NOT granted — approval requires HR Manager
     'tutor_lead.training.read',
     'tutor_lead.training.manage',
     'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
     // tutor.rate.read: NOT granted to HR Executive per Revision 3.1
-    // tutor.feedback.read: NOT granted to HR Executive — HR Executive CAN read feedback
     'tutor.feedback.read',
   ],
 
@@ -1038,7 +1074,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'roundrobin.history.read.own',
     'target.read.own',
     'target.read.team',
-    'target.manage',
+    'target.manage',
     'employee.read',
     'department.read',
     'lead.create',
