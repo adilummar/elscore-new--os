@@ -45,7 +45,7 @@ async function run() {
   await sshExec(conn, `mkdir -p ${STAGING}/apps/web/.next/standalone/apps/web/.next && cp -r ${STAGING}/apps/web/.next/static ${STAGING}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null; cp -r ${STAGING}/apps/web/public ${STAGING}/apps/web/.next/standalone/apps/web/ 2>/dev/null; echo done`);
 
   console.log('\n=== STEP 8: Restart staging ===');
-  await sshExec(conn, 'pm2 restart elscore-api; pm2 restart elscore-web; pm2 save');
+  await sshExec(conn, `cd /var/www/elscore-os && pm2 restart ecosystem.config.js --only elscore-api --update-env; pm2 restart ecosystem.config.js --only elscore-web --update-env; pm2 save`);
 
   console.log('\nWaiting 8s for services...');
   await new Promise(r => setTimeout(r, 8000));
