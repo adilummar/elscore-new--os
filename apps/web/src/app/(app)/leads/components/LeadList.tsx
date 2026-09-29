@@ -349,7 +349,24 @@ export function LeadList() {
       {/* Mobile cards */}
       <div className="md:hidden space-y-4">
         {loading ? (
-          <div className="text-center py-8 text-slate-400">Loading leads...</div>
+          // Mobile skeleton
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-lg border border-slate-200 p-4 animate-pulse">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="space-y-2">
+                    <div className="h-4 bg-slate-200 rounded w-28" />
+                    <div className="h-3 bg-slate-100 rounded w-20" />
+                  </div>
+                  <div className="h-5 bg-slate-200 rounded-full w-14" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 bg-slate-100 rounded w-24" />
+                  <div className="h-3 bg-slate-100 rounded w-20" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : error ? (
           <div className="text-center py-8 text-red-500">{error}</div>
         ) : leads.length === 0 ? (
@@ -415,11 +432,21 @@ export function LeadList() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-slate-400">
-                  Loading leads...
-                </TableCell>
-              </TableRow>
+              // Desktop skeleton rows
+              <>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <TableRow key={i} className="animate-pulse">
+                    <TableCell><div className="h-4 bg-slate-200 rounded w-28" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-100 rounded w-24" /></TableCell>
+                    <TableCell><div className="h-5 bg-slate-200 rounded-full w-16" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-100 rounded w-20" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-100 rounded w-20" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-100 rounded w-16" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-100 rounded w-16" /></TableCell>
+                    <TableCell />
+                  </TableRow>
+                ))}
+              </>
             ) : error ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center py-12 text-red-500">{error}</TableCell>
