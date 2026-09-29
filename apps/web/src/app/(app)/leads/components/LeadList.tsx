@@ -71,6 +71,7 @@ export function LeadList() {
   const [classification, setClassification] = React.useState('');
   const [ownerId, setOwnerId] = React.useState('');
   const [followUpState, setFollowUpState] = React.useState('');
+  const [limit, setLimit] = React.useState(20);
 
   // Date filters
   const [dateFrom, setDateFrom] = React.useState('');
@@ -83,6 +84,7 @@ export function LeadList() {
   const { hasPermission } = usePermissions();
   const router = useRouter();
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+  const [totalLoaded, setTotalLoaded] = React.useState(0);
 
   // ── Load employees ──────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -143,13 +145,20 @@ export function LeadList() {
       if (followUpState) params.append('followUpState', followUpState);
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
+      params.append('limit', String(limit));
       if (cursor) params.append('cursor', cursor);
 
       const res = await getLeadsAction(params.toString());
+      const newData = res?.data || [];
       if (cursor) {
-        setLeads(prev => [...prev, ...(res?.data || [])]);
+        setLeads(prev => {
+          const updated = [...prev, ...newData];
+          setTotalLoaded(updated.length);
+          return updated;
+        });
       } else {
-        setLeads(res?.data || []);
+        setLeads(newData);
+        setTotalLoaded(newData.length);
       }
       setNextCursor(res?.pagination?.nextCursor || null);
     } catch (e: any) {
@@ -157,7 +166,7 @@ export function LeadList() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, status, source, classification, ownerId, followUpState, dateFrom, dateTo]);
+  }, [debouncedSearch, status, source, classification, ownerId, followUpState, dateFrom, dateTo, limit]);
 
   React.useEffect(() => {
     loadLeads();
@@ -181,8 +190,10 @@ export function LeadList() {
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Leads</h1>
           <p className="text-slate-500 text-sm mt-1">
             Manage and track your CRM leads.
-            {leads.length > 0 && !loading && (
-              <span className="ml-2 text-slate-400">({leads.length}{nextCursor ? '+' : ''} leads)</span>
+            {!loading && (
+              <span className="ml-2 text-slate-400">
+                Showing {totalLoaded}{nextCursor ? '+' : ''} lead{totalLoaded !== 1 ? 's' : ''}
+              </span>
             )}
           </p>
         </div>
@@ -231,6 +242,16 @@ export function LeadList() {
             <option value="REFERRAL">Referral</option>
             <option value="DIRECT">Direct</option>
             <option value="OTHER">Other</option>
+          </Select>
+          <Select
+            className="w-full md:w-32"
+            value={String(limit)}
+            onChange={(e) => { setLimit(Number(e.target.value)); }}
+            title="Rows per page"
+          >
+            <option value="20">20 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
           </Select>
         </div>
 
@@ -478,12 +499,41 @@ export function LeadList() {
         </Table>
       </Card>
 
-      {/* Load More */}
-      {nextCursor && (
-        <div className="flex justify-center pt-4">
-          <Button variant="outline" onClick={() => loadLeads(nextCursor)} disabled={loading}>
-            {loading ? 'Loading...' : 'Load More'}
-          </Button>
+      {/* Pagination footer */}
+      {leads.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-1 py-3 border-t border-slate-100">
+          <p className="text-sm text-slate-500 order-2 sm:order-1">
+            Showing <span className="font-semibold text-slate-700">{totalLoaded}</span> lead{totalLoaded !== 1 ? 's' : ''}
+            {nextCursor && <span className="text-slate-400"> — more available</span>}
+          </p>
+
+          <div className="flex items-center gap-3 order-1 sm:order-2">
+            {nextCursor ? (
+              <Button
+                variant="outline"
+                onClick={() => loadLeads(nextCursor)}
+                disabled={loading}
+                className="flex items-center gap-2 min-w-[140px] justify-center"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    Load More
+                    <span className="bg-slate-100 text-slate-600 text-xs px-1.5 py-0.5 rounded-full">+{limit}</span>
+                  </>
+                )}
+              </Button>
+            ) : (
+              <span className="text-sm text-slate-400 italic">All leads loaded</span>
+            )}
+          </div>
         </div>
       )}
 
