@@ -247,6 +247,19 @@ export class LeadService {
       }
     }
 
+    // Date range filter on createdAt
+    if (query.dateFrom || query.dateTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.dateFrom) {
+        dateFilter.gte = new Date(query.dateFrom + 'T00:00:00.000Z');
+      }
+      if (query.dateTo) {
+        // Include the full end day (up to 23:59:59)
+        dateFilter.lte = new Date(query.dateTo + 'T23:59:59.999Z');
+      }
+      where.createdAt = dateFilter;
+    }
+
     const limit = query.limit ?? 20;
     const take = Math.min(limit + 1, 101);
 
@@ -254,7 +267,7 @@ export class LeadService {
       where,
       take,
       ...(query.cursor ? { cursor: { id: decodeCursor(query.cursor) }, skip: 1 } : {}),
-      orderBy: { createdAt: 'asc' }, // Oldest uncontacted first logic foundation
+      orderBy: { createdAt: 'desc' }, // Newest first
       include: {
         assignedToUser: {
           select: {
