@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { getLeadStatusHistoryAction } from '../../actions';
 import { ArrowRight, RefreshCcw, User } from 'lucide-react';
+import { fmtDateTime } from '@/lib/time';
 
 function statusColor(status: string) {
   const map: Record<string, string> = {
@@ -98,7 +99,7 @@ export function LeadStatusHistory({ leadId }: { leadId: string }) {
                 <User className="w-3 h-3" />
                 <span>{item.changedBy}</span>
                 <span className="mx-1">·</span>
-                <span>{new Date(item.changedAt).toLocaleString()}</span>
+                <span>{fmtDateTime(item.changedAt)}</span>
               </div>
             </div>
           ))

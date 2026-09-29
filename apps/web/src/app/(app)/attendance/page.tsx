@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { getAttendanceStatusAction, getAttendanceHistoryAction, performAttendanceAction, getDailySummaryAction } from "./actions";
+import { fmtTime } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -52,8 +53,8 @@ export default function MyAttendancePage() {
           return {
             id: s.id,
             date: s.calendarDate,
-            checkIn: checkInEvent ? new Date(checkInEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
-            checkOut: checkOutEvent ? new Date(checkOutEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
+            checkIn: checkInEvent ? fmtTime(checkInEvent.timestamp) : '-',
+            checkOut: checkOutEvent ? fmtTime(checkOutEvent.timestamp) : '-',
             workedTime: `${Math.floor((s.netDurationMinutes || 0) / 60)}h ${(s.netDurationMinutes || 0) % 60}m`,
             note: s.note,
           };

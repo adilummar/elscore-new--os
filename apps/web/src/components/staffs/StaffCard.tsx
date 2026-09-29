@@ -3,15 +3,12 @@
 import React from 'react';
 import { Clock, Coffee, AlertCircle, Briefcase, ChevronRight } from 'lucide-react';
 import type { StaffSummary } from '@/app/(app)/staffs/actions';
+import { fmtTime } from '@/lib/time';
 
 function fmt(mins: number) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-function fmtTime(ts: string | null) {
-  if (!ts) return null;
-  return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-}
 
 const STATUS_CONFIG = {
   ACTIVE: { label: 'Working', bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },

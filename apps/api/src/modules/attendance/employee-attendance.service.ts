@@ -101,9 +101,9 @@ export class EmployeeAttendanceService {
       let lateMinutes = 0;
 
       if (schedule && schedule.startTime) {
-        // schedule.startTime is like "09:00"
-        const scheduleDateStr = `${today}T${schedule.startTime}:00+05:30`; // IST offset
-        const scheduleTime = new Date(scheduleDateStr);
+        // Build the scheduled start time as IST using date-fns-tz — no hardcoded offset strings
+        const { fromZonedTime } = await import('date-fns-tz');
+        const scheduleTime = fromZonedTime(`${today}T${schedule.startTime}:00`, TIMEZONE);
         if (checkInTime > scheduleTime) {
           isLate = true;
           lateMinutes = Math.floor((checkInTime.getTime() - scheduleTime.getTime()) / 60000);
