@@ -18,6 +18,7 @@ import { DemosTab } from './DemosTab';
 import { StudentWorkspace } from './StudentWorkspace';
 import { EditLeadDialog } from './EditLeadDialog';
 import { LeadDistributionHistory } from './LeadDistributionHistory';
+import { LeadStatusHistory } from './LeadStatusHistory';
 
 type TabId = 'students' | 'followups' | 'demos' | 'finance' | 'notes' | 'history' | 'assignments';
 
@@ -182,7 +183,10 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
             <LeadDistributionHistory leadId={leadId} />
           )}
           {activeTab === 'history' && (
-            <UnifiedTimeline leadId={leadId} />
+            <div className="space-y-6">
+              <LeadStatusHistory leadId={leadId} />
+              <UnifiedTimeline leadId={leadId} />
+            </div>
           )}
         </div>
       </div>

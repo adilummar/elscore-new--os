@@ -620,6 +620,16 @@ export class LeadService {
         assignmentMethod: h.assignmentType,
         isReassignment: !!h.oldOwnerUserId,
         assignedAt: h.assignedAt,
+        reason: h.reason,
+        assignedByUser: h.assignedByUser?.employee
+          ? `${h.assignedByUser.employee.firstName} ${h.assignedByUser.employee.lastName}`
+          : h.assignedByUser?.email || 'System',
+        oldOwner: h.oldOwner ? {
+          employee: {
+            firstName: h.oldOwner.employee?.firstName || '',
+            lastName: h.oldOwner.employee?.lastName || ''
+          }
+        } : null,
         newOwner: h.newOwner ? {
           employee: {
             firstName: h.newOwner.employee?.firstName || '',
@@ -629,6 +639,28 @@ export class LeadService {
       })),
       pagination: { hasNextPage: false, nextCursor: null, limit: 50 }
     };
+  }
+
+  async getStatusHistory(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
+    const history = await this.prisma.leadStatusHistory.findMany({
+      where: { leadId: id },
+      orderBy: { changedAt: 'desc' },
+      include: {
+        changedByUser: { include: { employee: true } },
+      },
+    });
+    return history.map(h => ({
+      id: h.id,
+      oldStatus: h.oldStatus,
+      newStatus: h.newStatus,
+      reason: h.reason,
+      note: h.note,
+      changedAt: h.changedAt,
+      changedBy: h.changedByUser?.employee
+        ? `${h.changedByUser.employee.firstName} ${h.changedByUser.employee.lastName}`
+        : h.changedByUser?.email || 'System',
+    }));
   }
 
   async getTimeline(id: string, userId: string, hasReadAll: boolean) {

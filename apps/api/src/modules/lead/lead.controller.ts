@@ -116,6 +116,13 @@ export class LeadController {
     return this.leadService.deleteNote(leadId, noteId, user.id, readAll);
   }
 
+  @Get(':id/status-history')
+  @RequirePermissions('lead.read')
+  async getStatusHistory(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    const hasReadAll = await this.hasReadAll(user.id);
+    return this.leadService.getStatusHistory(id, user.id, hasReadAll);
+  }
+
   @Get(':id/assignments')
   @RequirePermissions('lead.read')
   async getAssignmentHistory(@Param('id') id: string, @CurrentUser() user: RequestUser) {

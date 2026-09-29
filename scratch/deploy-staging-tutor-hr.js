@@ -41,8 +41,16 @@ async function run() {
   console.log('\n=== STEP 6: Build Web ===');
   await sshExec(conn, `cd ${STAGING} && pnpm --filter web run build 2>&1 | tail -10`);
 
-  console.log('\n=== STEP 7: Copy static assets ===');
-  await sshExec(conn, `mkdir -p ${STAGING}/apps/web/.next/standalone/apps/web/.next && cp -r ${STAGING}/apps/web/.next/static ${STAGING}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null; cp -r ${STAGING}/apps/web/public ${STAGING}/apps/web/.next/standalone/apps/web/ 2>/dev/null; echo done`);
+  console.log('\n=== STEP 7: Sync standalone with fresh build ===');
+  // Copy static client chunks (browser-side JS)
+  await sshExec(conn, `mkdir -p ${STAGING}/apps/web/.next/standalone/apps/web/.next && cp -rf ${STAGING}/apps/web/.next/static ${STAGING}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null; echo "static done"`);
+  // Copy server chunks (server actions, RSC, etc.)
+  await sshExec(conn, `cp -rf ${STAGING}/apps/web/.next/server ${STAGING}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null; echo "server done"`);
+  // Copy public assets
+  await sshExec(conn, `cp -rf ${STAGING}/apps/web/public ${STAGING}/apps/web/.next/standalone/apps/web/ 2>/dev/null; echo "public done"`);
+  // Copy BUILD_ID and required files
+  await sshExec(conn, `cp -f ${STAGING}/apps/web/.next/BUILD_ID ${STAGING}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null; cp -f ${STAGING}/apps/web/.next/required-server-files.json ${STAGING}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null; echo "meta done"`);
+
 
   console.log('\n=== STEP 8: Restart staging ===');
   await sshExec(conn, `cd /var/www/elscore-os && pm2 restart ecosystem.config.js --only elscore-api --update-env; pm2 restart ecosystem.config.js --only elscore-web --update-env; pm2 save`);

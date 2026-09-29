@@ -183,6 +183,10 @@ export async function getReferenceDataAction(endpoint: string) {
   return fetchApi<any>(`/reference/${endpoint}?limit=100`);
 }
 
+export async function getLeadStatusHistoryAction(leadId: string) {
+  return fetchApi<any>(`/leads/${leadId}/status-history`);
+}
+
 export async function getLeadAssignmentHistoryAction(leadId: string) {
   return fetchApi<any>(`/leads/${leadId}/assignments`);
 }
