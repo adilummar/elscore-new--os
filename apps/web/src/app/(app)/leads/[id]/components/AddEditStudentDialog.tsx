@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/Select';
 import { createStudentAction, updateStudentAction, saveStudentBundleAction } from '../../actions';
 import { getSubjectsAction, getGradesAction, getCurriculaAction } from '@/app/(app)/settings/actions';
 import { Plus, Trash } from 'lucide-react';
+import { BulletNoteField } from '@/components/ui/BulletNoteField';
 
 export function AddEditStudentDialog({
   leadId,
@@ -35,6 +36,9 @@ export function AddEditStudentDialog({
   const [lastName, setLastName] = React.useState('');
   const [schoolName, setSchoolName] = React.useState('');
   const [notes, setNotes] = React.useState('');
+  const [parentConcern, setParentConcern] = React.useState('');
+  const [studentIssue, setStudentIssue] = React.useState('');
+  const [studentEngagement, setStudentEngagement] = React.useState('');
 
   // Academic Info (Requirements mapped)
   const [curriculumId, setCurriculumId] = React.useState('');
@@ -50,7 +54,29 @@ export function AddEditStudentDialog({
       setFirstName(student?.firstName || '');
       setLastName(student?.lastName || '');
       setSchoolName(student?.schoolName || '');
-      setNotes(student?.notes || '');
+      
+      // Parse composite notes
+      let baseNotes = student?.notes || '';
+      let pc = '';
+      let si = '';
+      let se = '';
+      
+      if (baseNotes) {
+        const sections = baseNotes.split(/--- (Parent Concern|Student Issue|Student Engagement) ---/);
+        baseNotes = sections[0].trim();
+        for (let i = 1; i < sections.length; i += 2) {
+          const title = sections[i];
+          const content = sections[i+1]?.trim() || '';
+          if (title === 'Parent Concern') pc = content;
+          if (title === 'Student Issue') si = content;
+          if (title === 'Student Engagement') se = content;
+        }
+      }
+      
+      setNotes(baseNotes);
+      setParentConcern(pc);
+      setStudentIssue(si);
+      setStudentEngagement(se);
       
       // Try to auto-populate curriculum and grade directly from student, fallback to existing requirements
       const defaultCurriculum = student?.curriculumId || student?.requirements?.[0]?.curriculumId || '';
@@ -83,11 +109,18 @@ export function AddEditStudentDialog({
     setError(null);
     
     try {
+      const combinedNotes = [
+        notes,
+        parentConcern ? `\n--- Parent Concern ---\n${parentConcern}` : '',
+        studentIssue ? `\n--- Student Issue ---\n${studentIssue}` : '',
+        studentEngagement ? `\n--- Student Engagement ---\n${studentEngagement}` : '',
+      ].filter(Boolean).join('').trim() || undefined;
+
       const payload = {
         firstName,
         lastName,
         schoolName,
-        notes,
+        notes: combinedNotes,
         curriculumId,
         gradeId,
         subjectIds,
@@ -119,7 +152,7 @@ export function AddEditStudentDialog({
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
       <h2 className="text-lg font-bold mb-4">{student ? 'Edit Student' : 'Add Student'}</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto px-1">
         {error && <div className="p-3 bg-red-50 text-red-600 rounded-md text-sm">{error}</div>}
         
         <div className="grid grid-cols-2 gap-4">
@@ -178,7 +211,36 @@ export function AddEditStudentDialog({
           <Input value={schoolName} onChange={e => setSchoolName(e.target.value)} placeholder="School name" />
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+        {/* Notes Section */}
+        <div className="pt-4 mt-2 border-t border-slate-100 space-y-4">
+          <h4 className="font-semibold text-sm text-slate-700">Notes & Observations</h4>
+          <BulletNoteField
+            label="General Notes"
+            placeholder="Any general notes about the student..."
+            value={notes}
+            onChange={setNotes}
+          />
+          <BulletNoteField
+            label="Parent Concern"
+            placeholder="What is the parent's main concern or expectation?"
+            value={parentConcern}
+            onChange={setParentConcern}
+          />
+          <BulletNoteField
+            label="Student Issue"
+            placeholder="Any academic or behavioural issues to note?"
+            value={studentIssue}
+            onChange={setStudentIssue}
+          />
+          <BulletNoteField
+            label="Student Engagement"
+            placeholder="How engaged is the student? Any observations?"
+            value={studentEngagement}
+            onChange={setStudentEngagement}
+          />
+        </div>
+
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 sticky bottom-0 bg-white py-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
           <Button type="submit" disabled={loading || !firstName.trim()}>
             {loading ? 'Saving...' : 'Save Student'}
