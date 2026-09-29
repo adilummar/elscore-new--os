@@ -19,7 +19,10 @@ function statusColor(status: string) {
   return map[status] ?? 'bg-slate-100 text-slate-600';
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status?: string | null }) {
+  if (!status) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-500">None</span>;
+  }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${statusColor(status)}`}>
       {status.replace(/_/g, ' ')}

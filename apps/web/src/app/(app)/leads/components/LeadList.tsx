@@ -58,33 +58,78 @@ const QUICK_FILTERS = [
   },
 ];
 
+// ── Cache for instant back navigation ───────────────────────────────────────
+let cachedState: {
+  leads: any[];
+  search: string;
+  status: string;
+  source: string;
+  classification: string;
+  ownerId: string;
+  followUpState: string;
+  limit: number;
+  dateFrom: string;
+  dateTo: string;
+  activeQuick: string | null;
+  nextCursor: string | null;
+  totalLoaded: number;
+  scrollY: number;
+} | null = null;
+
 // ─── component ────────────────────────────────────────────────────────────────
 export function LeadList() {
-  const [leads, setLeads] = React.useState<any[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [leads, setLeads] = React.useState<any[]>(cachedState?.leads || []);
+  const [loading, setLoading] = React.useState(!cachedState?.leads?.length);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [search, setSearch] = React.useState('');
-  const [debouncedSearch, setDebouncedSearch] = React.useState('');
-  const [status, setStatus] = React.useState('');
-  const [source, setSource] = React.useState('');
-  const [classification, setClassification] = React.useState('');
-  const [ownerId, setOwnerId] = React.useState('');
-  const [followUpState, setFollowUpState] = React.useState('');
-  const [limit, setLimit] = React.useState(20);
+  const [search, setSearch] = React.useState(cachedState?.search || '');
+  const [debouncedSearch, setDebouncedSearch] = React.useState(cachedState?.search || '');
+  const [status, setStatus] = React.useState(cachedState?.status || '');
+  const [source, setSource] = React.useState(cachedState?.source || '');
+  const [classification, setClassification] = React.useState(cachedState?.classification || '');
+  const [ownerId, setOwnerId] = React.useState(cachedState?.ownerId || '');
+  const [followUpState, setFollowUpState] = React.useState(cachedState?.followUpState || '');
+  const [limit, setLimit] = React.useState(cachedState?.limit || 20);
 
   // Date filters
-  const [dateFrom, setDateFrom] = React.useState('');
-  const [dateTo, setDateTo] = React.useState('');
-  const [activeQuick, setActiveQuick] = React.useState<string | null>(null);
+  const [dateFrom, setDateFrom] = React.useState(cachedState?.dateFrom || '');
+  const [dateTo, setDateTo] = React.useState(cachedState?.dateTo || '');
+  const [activeQuick, setActiveQuick] = React.useState<string | null>(cachedState?.activeQuick || null);
 
   const [employees, setEmployees] = React.useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
 
   const { hasPermission } = usePermissions();
   const router = useRouter();
-  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
-  const [totalLoaded, setTotalLoaded] = React.useState(0);
+  const [nextCursor, setNextCursor] = React.useState<string | null>(cachedState?.nextCursor || null);
+  const [totalLoaded, setTotalLoaded] = React.useState(cachedState?.totalLoaded || 0);
+
+  // Restore scroll position
+  React.useEffect(() => {
+    if (cachedState?.scrollY) {
+      window.scrollTo(0, cachedState.scrollY);
+    }
+  }, []);
+
+  // Update cache whenever state changes
+  React.useEffect(() => {
+    const handleScroll = () => {
+      if (cachedState) {
+        cachedState.scrollY = window.scrollY;
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  React.useEffect(() => {
+    cachedState = {
+      leads, search, status, source, classification, ownerId, followUpState, limit,
+      dateFrom, dateTo, activeQuick, nextCursor, totalLoaded,
+      scrollY: cachedState?.scrollY || window.scrollY
+    };
+  }, [leads, search, status, source, classification, ownerId, followUpState, limit, dateFrom, dateTo, activeQuick, nextCursor, totalLoaded]);
+
 
   // ── Load employees ──────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -134,7 +179,7 @@ export function LeadList() {
 
   // ── Load leads ──────────────────────────────────────────────────────────────
   const loadLeads = React.useCallback(async (cursor?: string) => {
-    if (!cursor) setLoading(true);
+    if (!cursor && !leads.length) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (debouncedSearch) params.append('search', debouncedSearch);
@@ -166,7 +211,8 @@ export function LeadList() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, status, source, classification, ownerId, followUpState, dateFrom, dateTo, limit]);
+  }, [debouncedSearch, status, source, classification, ownerId, followUpState, dateFrom, dateTo, limit, leads.length]);
+
 
   React.useEffect(() => {
     loadLeads();
