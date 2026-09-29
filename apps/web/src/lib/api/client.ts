@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { unstable_noStore as noStore } from 'next/cache';
 
 const BASE_URL = process.env.API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:3001/api/v1' : '');
 
@@ -8,6 +9,9 @@ if (!BASE_URL) {
 }
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit & { skipGodView?: boolean } = {}): Promise<T> {
+  // Opt out of Next.js fetch cache — all API calls must be fresh
+  noStore();
+
   const cookieStore = cookies();
   const token = cookieStore.get('accessToken')?.value;
   const godViewUserId = cookieStore.get('godViewUserId')?.value;
@@ -27,6 +31,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
   }
 
   const response = await fetch(`${BASE_URL}${endpoint}`, {
+    cache: 'no-store',
     ...options,
     headers,
   });
