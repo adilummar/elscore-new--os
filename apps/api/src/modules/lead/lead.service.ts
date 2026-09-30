@@ -42,18 +42,65 @@ export class LeadService {
   async create(dto: CreateLeadDto, actorUserId: string, hasReadAll: boolean, providedTx?: Prisma.TransactionClient) {
     const runInTx = providedTx ? (fn: (tx: Prisma.TransactionClient) => Promise<any>) => fn(providedTx) : this.prisma.$transaction.bind(this.prisma);
 
-    const existing = await this.prisma.lead.findFirst({
-      where: { primaryPhone: dto.primaryPhone },
-      select: { firstName: true, lastName: true, primaryPhone: true },
-    });
+    const normalizedIncomingPhone = dto.primaryPhone.replace(/\D/g, '');
+    const duplicateQuery = await (providedTx || this.prisma).$queryRaw<{ id: string }[]>`
+      SELECT id FROM "leads"
+      WHERE REGEXP_REPLACE(primary_phone, '[^0-9]', '', 'g') = ${normalizedIncomingPhone}
+    `;
+
+    const duplicateIds = duplicateQuery.map(d => d.id);
 
     const warnings: any[] = [];
-    if (existing) {
+    if (duplicateIds.length > 0) {
+      const existingLeads = await (providedTx || this.prisma).lead.findMany({
+        where: { id: { in: duplicateIds } },
+        select: {
+          id: true,
+          businessId: true,
+          firstName: true,
+          lastName: true,
+          primaryPhone: true,
+          status: true,
+          createdAt: true,
+          assignedToUserId: true,
+          assignedToUser: {
+            select: {
+              employee: { select: { firstName: true, lastName: true } }
+            }
+          }
+        }
+      });
+
       warnings.push({
         type: 'DUPLICATE_PHONE',
-        message: 'A lead with this primary phone already exists.',
-        existingLead: existing,
+        message: existingLeads.length === 1 
+          ? 'A lead with this primary phone already exists.' 
+          : `${existingLeads.length} leads with this primary phone already exist.`,
+        existingLeads: existingLeads.map(lead => {
+          const hasAccess = hasReadAll || lead.assignedToUserId === actorUserId;
+          if (hasAccess) {
+            return {
+              hasAccess: true,
+              id: lead.id,
+              businessId: lead.businessId,
+              firstName: lead.firstName,
+              lastName: lead.lastName,
+              primaryPhone: lead.primaryPhone,
+              status: lead.status,
+              createdAt: lead.createdAt,
+              ownerName: lead.assignedToUser?.employee ? `${lead.assignedToUser.employee.firstName} ${lead.assignedToUser.employee.lastName}` : 'Unassigned',
+            };
+          } else {
+            return {
+              hasAccess: false,
+            };
+          }
+        })
       });
+
+      if (!dto.continueAnyway) {
+        return { duplicateFound: true, warnings };
+      }
     }
 
     const lead = await runInTx(async (tx: Prisma.TransactionClient) => {
@@ -174,7 +221,7 @@ export class LeadService {
       return newLead;
     });
 
-    return { lead, warnings };
+    return { lead, warnings, duplicateFound: false };
   }
 
   async findAll(query: LeadQueryDto, userId: string, hasReadAll: boolean) {
