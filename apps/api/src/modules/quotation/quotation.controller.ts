@@ -27,6 +27,12 @@ export class QuotationController {
     return this.quotationService.getQuotationsByStudent(studentId, user);
   }
 
+  @Post('preview')
+  @RequirePermissions('quotation.create')
+  previewQuotation(@Body() dto: GenerateQuotationDto, @CurrentUser() user: any) {
+    return this.quotationService.previewQuotation(dto, user);
+  }
+
   @Post('generate')
   @RequirePermissions('quotation.create')
   generateQuotation(@Body() dto: GenerateQuotationDto, @CurrentUser() user: any) {

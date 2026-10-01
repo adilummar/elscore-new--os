@@ -190,3 +190,19 @@ export async function getLeadStatusHistoryAction(leadId: string) {
 export async function getLeadAssignmentHistoryAction(leadId: string) {
   return fetchApi<any>(`/leads/${leadId}/assignments`);
 }
+
+// Quotations
+export async function previewQuotationAction(studentId: string, offerHourlyRate?: number) {
+  return fetchApi<any>('/quotations/preview', {
+    method: 'POST',
+    body: JSON.stringify({ studentId, offerHourlyRate }),
+  });
+}
+
+export async function generateQuotationAction(studentId: string, offerHourlyRate?: number) {
+  const res = await fetchApi<any>('/quotations/generate', {
+    method: 'POST',
+    body: JSON.stringify({ studentId, offerHourlyRate }),
+  });
+  return res;
+}

@@ -160,6 +160,8 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
           student={activeStudentForQuotation}
           isOpen={isQuotationDialogOpen}
           onClose={() => setIsQuotationDialogOpen(false)}
+          onAddRequirement={() => openAddRequirement(activeStudentForQuotation.id)}
+          onEditRequirement={(req) => openEditRequirement(activeStudentForQuotation.id, req)}
           onSuccess={(id) => {
             setIsQuotationDialogOpen(false);
             // Optionally redirect to a quotation viewer or just refresh
