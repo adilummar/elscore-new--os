@@ -254,6 +254,13 @@ const PERMISSIONS: Array<{
   { code: 'finance.report.read', resource: 'finance_report', action: 'read', isDelegatable: false },
 
   // ---------------------------------------------------------------------------
+  // Quotations (Slice 4)
+  // ---------------------------------------------------------------------------
+  { code: 'quotation.create', resource: 'quotation', action: 'create', description: 'Generate quotations', isDelegatable: false },
+  { code: 'quotation.read', resource: 'quotation', action: 'read', description: 'Read quotations', isDelegatable: false },
+  { code: 'quotation.update', resource: 'quotation', action: 'update', description: 'Update quotations', isDelegatable: false },
+
+  // ---------------------------------------------------------------------------
   // Demo (Slice 2D)
   // ---------------------------------------------------------------------------
   {
@@ -1063,6 +1070,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'attendance.action.own',
     'attendance.read.own','department.read'],
   SALES_HEAD: [
+    'quotation.create',
+    'quotation.read',
+    'quotation.update',
     'attendance.action.own',
     'attendance.read.own',
     'attendance.read.team',
@@ -1109,6 +1119,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'sales-routing.manage',
   ],
   SALES_COUNSELLOR: [
+    'quotation.create',
+    'quotation.read',
+    'quotation.update',
     'attendance.action.own',
     'attendance.read.own',
 
