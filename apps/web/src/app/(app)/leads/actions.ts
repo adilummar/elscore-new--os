@@ -193,16 +193,25 @@ export async function getLeadAssignmentHistoryAction(leadId: string) {
 
 // Quotations
 export async function previewQuotationAction(studentId: string, offerHourlyRate?: number) {
-  return fetchApi<any>('/quotations/preview', {
-    method: 'POST',
-    body: JSON.stringify({ studentId, offerHourlyRate }),
-  });
+  try {
+    const res = await fetchApi<any>('/quotations/preview', {
+      method: 'POST',
+      body: JSON.stringify({ studentId, offerHourlyRate }),
+    });
+    return { data: res, error: null };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Failed to preview quotation' };
+  }
 }
 
 export async function generateQuotationAction(studentId: string, offerHourlyRate?: number) {
-  const res = await fetchApi<any>('/quotations/generate', {
-    method: 'POST',
-    body: JSON.stringify({ studentId, offerHourlyRate }),
-  });
-  return res;
+  try {
+    const res = await fetchApi<any>('/quotations/generate', {
+      method: 'POST',
+      body: JSON.stringify({ studentId, offerHourlyRate }),
+    });
+    return { data: res, error: null };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Failed to generate quotation' };
+  }
 }

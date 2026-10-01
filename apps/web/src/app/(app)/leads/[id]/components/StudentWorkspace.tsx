@@ -145,16 +145,6 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
         />
       )}
 
-      {isRequirementDialogOpen && activeStudentIdForReq && (
-        <AddEditRequirementDialog 
-          student={lead.students.find((s: any) => s.id === activeStudentIdForReq)} 
-          requirement={editingRequirement} 
-          isOpen={isRequirementDialogOpen} 
-          onClose={() => setIsRequirementDialogOpen(false)} 
-          onSuccess={onUpdate} 
-        />
-      )}
-
       {isQuotationDialogOpen && activeStudentForQuotation && (
         <GenerateQuotationDialog
           student={activeStudentForQuotation}
@@ -168,6 +158,16 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
             alert(`Quotation generated! ID: ${id}`);
             onUpdate();
           }}
+        />
+      )}
+
+      {isRequirementDialogOpen && activeStudentIdForReq && (
+        <AddEditRequirementDialog 
+          student={lead.students.find((s: any) => s.id === activeStudentIdForReq)} 
+          requirement={editingRequirement} 
+          isOpen={isRequirementDialogOpen} 
+          onClose={() => setIsRequirementDialogOpen(false)} 
+          onSuccess={onUpdate} 
         />
       )}
     </div>

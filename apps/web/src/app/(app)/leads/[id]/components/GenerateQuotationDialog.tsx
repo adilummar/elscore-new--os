@@ -41,7 +41,12 @@ export function GenerateQuotationDialog({
     setError(null);
     try {
       const res = await previewQuotationAction(studentId, offerRate);
-      setPreviewData(res);
+      if (res.error) {
+        setError(res.error);
+        setPreviewData(null);
+      } else {
+        setPreviewData(res.data);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to calculate pricing.');
       setPreviewData(null);
@@ -56,8 +61,10 @@ export function GenerateQuotationDialog({
     try {
       const rate = offerRateInput ? Number(offerRateInput) : undefined;
       const res = await generateQuotationAction(student.id, rate);
-      if (res && res.id) {
-        onSuccess(res.id);
+      if (res.error) {
+        setError(res.error);
+      } else if (res.data && res.data.id) {
+        onSuccess(res.data.id);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to generate quotation.');
