@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/Button';
 import { usePermissions } from '@/components/providers/AuthProvider';
 import { AddEditStudentDialog } from './AddEditStudentDialog';
 import { AddEditRequirementDialog } from './AddEditRequirementDialog';
+import { GenerateQuotationDialog } from './GenerateQuotationDialog';
+import { useRouter } from 'next/navigation';
 
 export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () => void }) {
   const { hasPermission } = usePermissions();
@@ -16,6 +18,10 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
   const [editingRequirement, setEditingRequirement] = React.useState<any>(null);
   const [activeStudentIdForReq, setActiveStudentIdForReq] = React.useState<string | null>(null);
   const [isRequirementDialogOpen, setIsRequirementDialogOpen] = React.useState(false);
+  const [isQuotationDialogOpen, setIsQuotationDialogOpen] = React.useState(false);
+  const [activeStudentForQuotation, setActiveStudentForQuotation] = React.useState<any>(null);
+  
+  const router = useRouter();
 
   const openAddStudent = () => {
     setEditingStudent(null);
@@ -76,9 +82,17 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
               <CardContent className="pt-4 space-y-4">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Subjects</h3>
-                  {hasPermission('requirement.create') && (
-                    <Button variant="outline" size="sm" onClick={() => openAddRequirement(student.id)}>Add Subject</Button>
-                  )}
+                  <div className="flex gap-2">
+                    {hasPermission('requirement.create') && (
+                      <Button variant="outline" size="sm" onClick={() => openAddRequirement(student.id)}>Add Subject</Button>
+                    )}
+                    {hasPermission('quotation.create') && lead.status === 'DEMO_COMPLETED' && (
+                      <Button variant="primary" size="sm" onClick={() => {
+                        setActiveStudentForQuotation(student);
+                        setIsQuotationDialogOpen(true);
+                      }}>Generate Quotation</Button>
+                    )}
+                  </div>
                 </div>
                 
                 {student.requirements?.length > 0 ? (
@@ -138,6 +152,20 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
           isOpen={isRequirementDialogOpen} 
           onClose={() => setIsRequirementDialogOpen(false)} 
           onSuccess={onUpdate} 
+        />
+      )}
+
+      {isQuotationDialogOpen && activeStudentForQuotation && (
+        <GenerateQuotationDialog
+          student={activeStudentForQuotation}
+          isOpen={isQuotationDialogOpen}
+          onClose={() => setIsQuotationDialogOpen(false)}
+          onSuccess={(id) => {
+            setIsQuotationDialogOpen(false);
+            // Optionally redirect to a quotation viewer or just refresh
+            alert(`Quotation generated! ID: ${id}`);
+            onUpdate();
+          }}
         />
       )}
     </div>

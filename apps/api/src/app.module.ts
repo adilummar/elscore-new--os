@@ -55,6 +55,8 @@ import { TutorModule } from './modules/tutor/tutor.module';
 import { TutorHrModule } from './modules/tutor-hr/tutor-hr.module';
 import { UserModule } from './modules/user/user.module';
 import { HealthModule } from './modules/health/health.module';
+import { PricingModule } from './modules/pricing/pricing.module';
+import { QuotationModule } from './modules/quotation/quotation.module';
 
 import { AuditMiddleware } from './common/audit/audit.middleware';
 
@@ -115,6 +117,8 @@ import { AuditMiddleware } from './common/audit/audit.middleware';
     MarketingModule,
     SalesTargetModule,
     HealthModule,
+    PricingModule,
+    QuotationModule,
     // Phase 2+: add module imports here as each phase is implemented.
     // Do not add placeholder imports for unbuilt modules.
   ],

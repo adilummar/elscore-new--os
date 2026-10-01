@@ -308,6 +308,7 @@ model User {
   tutorLeadDemos         TutorLeadDemo[]            @relation("TutorLeadDemoRecordedBy")
   tutorTrainingsCreated  TutorLeadTrainingSession[] @relation("TutorTrainingCreatedBy")
   tutorTrainingsUpdated  TutorLeadTrainingSession[] @relation("TutorTrainingUpdatedBy")
+  Quotation              Quotation[]
 
   @@map("users")
 }
@@ -449,6 +450,8 @@ model Subject {
   demos                  Demo[]
   TutorSalarySlabSubject TutorSalarySlabSubject[]
   TutorLeadSubject       TutorLeadSubject[]
+  ExceptionalSubjectRate ExceptionalSubjectRate?
+  QuotationLineItem      QuotationLineItem[]
 
   @@map("subjects")
 }
@@ -487,6 +490,7 @@ model Curriculum {
   requirements   Requirement[]
   demos          Demo[]
   Student        Student[]
+  PricingSlab    PricingSlab[]
 
   @@map("curricula")
 }
@@ -897,6 +901,7 @@ model Lead {
   marketingAttribution  MarketingAttribution?
   marketingInteractions MarketingInteraction[]
   distributionEvents    LeadDistributionEvent[]
+  Quotation             Quotation[]
 
   @@index([assignedToUserId])
   @@index([primaryPhone])
@@ -933,6 +938,7 @@ model Student {
   invoices           Invoice[]
   targetCreditLedger TargetCreditLedger[]
   StudentAttendance  StudentAttendance[]
+  Quotation          Quotation[]
 
   @@index([leadId])
   @@map("students")
@@ -945,6 +951,7 @@ model Requirement {
   subjectId    String   @map("subject_id")
   curriculumId String   @map("curriculum_id")
   gradeId      String   @map("grade_id")
+  monthlyHours Decimal? @map("monthly_hours") @db.Decimal(10, 2)
   syllabus     String?
   notes        String?  @db.Text
   createdAt    DateTime @default(now()) @map("created_at")
@@ -1844,7 +1851,6 @@ model TutorLead {
   @@map("tutor_leads")
 }
 
-
 model TutorLeadSubject {
   tutorLeadId String @map("tutor_lead_id")
   subjectId   String @map("subject_id")
@@ -1962,4 +1968,118 @@ model TutorLeadTrainingSession {
 
   @@index([tutorLeadId])
   @@map("tutor_lead_training_sessions")
+}
+
+// =============================================================================
+// M-012 — QUOTATION (Slice 3)
+// =============================================================================
+
+model PricingSlab {
+  id           String   @id @default(uuid())
+  businessId   String   @unique @map("business_id")
+  curriculumId String   @map("curriculum_id")
+  gradeFrom    Int      @map("grade_from")
+  gradeTo      Int      @map("grade_to")
+  hourlyRate   Decimal  @map("hourly_rate") @db.Decimal(10, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by")
+  updatedBy    String?  @map("updated_by")
+
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+
+  @@index([curriculumId, isActive])
+  @@map("pricing_slabs")
+}
+
+model ExceptionalSubjectRate {
+  id         String   @id @default(uuid())
+  businessId String   @unique @map("business_id")
+  subjectId  String   @unique @map("subject_id")
+  hourlyRate Decimal  @map("hourly_rate") @db.Decimal(10, 2)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  createdBy  String?  @map("created_by")
+  updatedBy  String?  @map("updated_by")
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@index([subjectId, isActive])
+  @@map("exceptional_subject_rates")
+}
+
+model FinanceSetting {
+  id              String   @id @default(uuid())
+  registrationFee Decimal  @map("registration_fee") @db.Decimal(10, 2)
+  currency        String   @default("AED")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  updatedBy       String?  @map("updated_by")
+
+  @@map("finance_settings")
+}
+
+enum QuotationStatus {
+  DRAFT
+  GENERATED
+}
+
+model Quotation {
+  id              String          @id @default(uuid())
+  quotationNumber String          @unique @map("quotation_number")
+  studentId       String          @map("student_id")
+  leadId          String          @map("lead_id")
+  quotationDate   DateTime        @map("quotation_date")
+  currency        String          @default("AED")
+  status          QuotationStatus @default(DRAFT)
+
+  // Snapshots
+  studentName    String @map("student_name")
+  curriculumName String @map("curriculum_name")
+  gradeName      String @map("grade_name")
+
+  normalMonthlyTotal Decimal  @map("normal_monthly_total") @db.Decimal(10, 2)
+  offerHourlyRate    Decimal? @map("offer_hourly_rate") @db.Decimal(10, 2)
+  offerMonthlyTotal  Decimal? @map("offer_monthly_total") @db.Decimal(10, 2)
+  savingAmount       Decimal  @default(0) @map("saving_amount") @db.Decimal(10, 2)
+  savingPercentage   Decimal  @default(0) @map("saving_percentage") @db.Decimal(10, 2)
+  registrationFee    Decimal  @default(0) @map("registration_fee") @db.Decimal(10, 2)
+  totalAmountDue     Decimal  @map("total_amount_due") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  creator User    @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  lineItems QuotationLineItem[]
+
+  @@index([studentId])
+  @@index([leadId])
+  @@index([quotationNumber])
+  @@map("quotations")
+}
+
+model QuotationLineItem {
+  id          String @id @default(uuid())
+  quotationId String @map("quotation_id")
+  subjectId   String @map("subject_id")
+
+  // Snapshots
+  subjectName            String   @map("subject_name")
+  monthlyHours           Decimal  @map("monthly_hours") @db.Decimal(10, 2)
+  originalHourlyRate     Decimal  @map("original_hourly_rate") @db.Decimal(10, 2)
+  appliedOfferHourlyRate Decimal? @map("applied_offer_hourly_rate") @db.Decimal(10, 2)
+  normalMonthlyAmount    Decimal  @map("normal_monthly_amount") @db.Decimal(10, 2)
+  offerMonthlyAmount     Decimal? @map("offer_monthly_amount") @db.Decimal(10, 2)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@index([quotationId])
+  @@map("quotation_line_items")
 }

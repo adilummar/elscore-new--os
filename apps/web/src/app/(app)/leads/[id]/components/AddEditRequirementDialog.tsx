@@ -33,6 +33,7 @@ export function AddEditRequirementDialog({
   const [subjectId, setSubjectId] = React.useState(requirement?.subjectId || '');
   const [curriculumId, setCurriculumId] = React.useState(requirement?.curriculumId || defaultCurriculum);
   const [gradeId, setGradeId] = React.useState(requirement?.gradeId || defaultGrade);
+  const [monthlyHours, setMonthlyHours] = React.useState(requirement?.monthlyHours || '');
   const [notes, setNotes] = React.useState(requirement?.notes || '');
 
   React.useEffect(() => {
@@ -40,6 +41,7 @@ export function AddEditRequirementDialog({
       setSubjectId(requirement?.subjectId || '');
       setCurriculumId(requirement?.curriculumId || defaultCurriculum);
       setGradeId(requirement?.gradeId || defaultGrade);
+      setMonthlyHours(requirement?.monthlyHours || '');
       setNotes(requirement?.notes || '');
       setError(null);
       loadReferenceData();
@@ -79,6 +81,7 @@ export function AddEditRequirementDialog({
         subjectId,
         curriculumId,
         gradeId,
+        monthlyHours: monthlyHours ? Number(monthlyHours) : null,
         notes,
       };
 
@@ -152,6 +155,19 @@ export function AddEditRequirementDialog({
                 </div>
               </>
             )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Monthly Hours</label>
+              <input
+                type="number"
+                min="0.5"
+                step="0.5"
+                className="w-full p-2 border border-slate-200 rounded-md text-sm"
+                value={monthlyHours}
+                onChange={e => setMonthlyHours(e.target.value)}
+                placeholder="e.g. 10"
+              />
+            </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Notes</label>
