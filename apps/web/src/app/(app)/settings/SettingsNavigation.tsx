@@ -19,6 +19,7 @@ export function SettingsNavigation() {
     ...(hasPermission('role.read') ? [{ name: 'Roles', href: '/settings/roles' }] : []),
     ...(hasPermission('role.read') ? [{ name: 'Permissions', href: '/settings/permissions' }] : []),
     ...(hasPermission('role.assign') ? [{ name: 'Delegations', href: '/settings/delegations' }] : []),
+    ...(hasPermission('pricing.manage') ? [{ name: 'Pricing', href: '/settings/pricing' }] : []),
     ...(hasPermission('reference.manage') ? [{ name: 'Reference Data', href: '/settings/reference-data' }] : []),
     ...(hasPermission('attendance.settings.manage') ? [{ name: 'Attendance', href: '/settings/attendance' }] : []),
     ...(hasPermission('audit.view') ? [{ name: 'Audit', href: '/settings/audit' }] : [])

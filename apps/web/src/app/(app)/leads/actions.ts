@@ -192,11 +192,11 @@ export async function getLeadAssignmentHistoryAction(leadId: string) {
 }
 
 // Quotations
-export async function previewQuotationAction(studentId: string, offerHourlyRate?: number) {
+export async function previewQuotationAction(studentId: string, offerHourlyRate?: number, quotationNotes?: string) {
   try {
     const res = await fetchApi<any>('/quotations/preview', {
       method: 'POST',
-      body: JSON.stringify({ studentId, offerHourlyRate }),
+      body: JSON.stringify({ studentId, offerHourlyRate, quotationNotes }),
     });
     return { data: res, error: null };
   } catch (err: any) {
@@ -204,11 +204,11 @@ export async function previewQuotationAction(studentId: string, offerHourlyRate?
   }
 }
 
-export async function generateQuotationAction(studentId: string, offerHourlyRate?: number) {
+export async function generateQuotationAction(studentId: string, offerHourlyRate?: number, quotationNotes?: string) {
   try {
     const res = await fetchApi<any>('/quotations/generate', {
       method: 'POST',
-      body: JSON.stringify({ studentId, offerHourlyRate }),
+      body: JSON.stringify({ studentId, offerHourlyRate, quotationNotes }),
     });
     return { data: res, error: null };
   } catch (err: any) {

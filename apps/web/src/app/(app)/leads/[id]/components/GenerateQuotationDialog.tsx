@@ -25,22 +25,25 @@ export function GenerateQuotationDialog({
   const [loading, setLoading] = React.useState(false);
   const [fetchingPreview, setFetchingPreview] = React.useState(true);
   const [offerRateInput, setOfferRateInput] = React.useState<string>('');
+  const [quotationNotes, setQuotationNotes] = React.useState<string>('');
+  
   const debouncedOfferRate = useDebounce(offerRateInput, 500);
+  const debouncedNotes = useDebounce(quotationNotes, 500);
   
   const [previewData, setPreviewData] = React.useState<any>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (isOpen && student) {
-      fetchPreview(student.id, debouncedOfferRate ? Number(debouncedOfferRate) : undefined);
+      fetchPreview(student.id, debouncedOfferRate ? Number(debouncedOfferRate) : undefined, debouncedNotes);
     }
-  }, [isOpen, student, debouncedOfferRate]);
+  }, [isOpen, student, debouncedOfferRate, debouncedNotes]);
 
-  const fetchPreview = async (studentId: string, offerRate?: number) => {
+  const fetchPreview = async (studentId: string, offerRate?: number, notes?: string) => {
     setFetchingPreview(true);
     setError(null);
     try {
-      const res = await previewQuotationAction(studentId, offerRate);
+      const res = await previewQuotationAction(studentId, offerRate, notes);
       if (res.error) {
         setError(res.error);
         setPreviewData(null);
@@ -60,7 +63,7 @@ export function GenerateQuotationDialog({
     setError(null);
     try {
       const rate = offerRateInput ? Number(offerRateInput) : undefined;
-      const res = await generateQuotationAction(student.id, rate);
+      const res = await generateQuotationAction(student.id, rate, quotationNotes);
       if (res.error) {
         setError(res.error);
       } else if (res.data && res.data.id) {
@@ -73,30 +76,44 @@ export function GenerateQuotationDialog({
     }
   };
 
-  // If there are requirements missing in the local student object, the parent should be refreshing.
-  // We use `previewData.lineItems` to display the actual authoritative calculation.
+  const getSourceLabel = (source: string) => {
+    if (source === 'SLAB') return 'General Pricing Slab';
+    if (source === 'EXCEPTIONAL_SUBJECT') return 'Exceptional Subject Rate';
+    return source;
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Quotation Builder</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Student: <span className="font-semibold text-slate-700">{student?.firstName} {student?.lastName}</span>
-            {student?.curriculum && ` | Curriculum: ${student.curriculum.name}`}
-            {student?.grade && ` | Grade: ${student.grade.name}`}
-          </p>
-        </div>
+      <div className="flex justify-between items-start mb-6 border-b border-slate-200 pb-4">
+        <h2 className="text-2xl font-bold text-slate-900">Quotation Builder</h2>
       </div>
 
       {error && <div className="mb-4 p-4 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Subjects Section */}
+          
+          {/* Customer / Student Presentation */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">PREPARED FOR</h3>
+              <p className="text-sm"><span className="font-medium text-slate-700">Parent/Guardian:</span> {student?.lead?.parentName || 'Unknown'}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Phone:</span> {student?.lead?.phone || 'Unknown'}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Email:</span> {student?.lead?.email || 'N/A'}</p>
+            </div>
+            
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">STUDENT</h3>
+              <p className="text-sm"><span className="font-medium text-slate-700">Student:</span> {student?.firstName} {student?.lastName}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Curriculum:</span> {student?.curriculum?.name || 'N/A'}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Grade:</span> {student?.grade?.name || 'N/A'}</p>
+            </div>
+          </div>
+
+          {/* Subjects / Requirements */}
           <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
             <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="font-semibold text-slate-800">Subjects & Monthly Hours</h3>
+              <h3 className="font-semibold text-slate-800 uppercase tracking-wider text-sm">SUBJECTS / REQUIREMENTS</h3>
               <Button variant="outline" size="sm" onClick={onAddRequirement}>+ Add Subject</Button>
             </div>
             
@@ -107,28 +124,34 @@ export function GenerateQuotationDialog({
                   
                   return (
                     <div key={req.id} className="p-4 border border-slate-100 bg-slate-50 rounded-lg">
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start mb-3 border-b border-slate-200 pb-2">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-900">{req.subject?.name}</span>
-                          <Badge variant="default">{student.curriculum?.name}</Badge>
-                          <Badge variant="default">{student.grade?.name}</Badge>
+                          <Badge variant="info">{req.curriculum?.name || 'No Curr'}</Badge>
+                          <Badge variant="info">{req.grade?.name || 'No Grade'}</Badge>
                         </div>
                         <Button variant="ghost" size="sm" onClick={() => onEditRequirement(req)}>Edit</Button>
                       </div>
                       
-                      <div className="grid grid-cols-3 gap-4 mt-3 text-sm">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-sm">
                         <div>
-                          <p className="text-slate-500 mb-1">Monthly Hours</p>
+                          <p className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Monthly Hours</p>
                           <p className="font-semibold">{req.monthlyHours} hours</p>
                         </div>
                         <div>
-                          <p className="text-slate-500 mb-1">Normal Rate</p>
+                          <p className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Normal Hourly Rate</p>
                           <p className="font-semibold">
-                            {lineItem ? `AED ${lineItem.originalHourlyRate}/hour` : '-'}
+                            {lineItem ? `AED ${lineItem.originalHourlyRate}` : '-'}
                           </p>
                         </div>
                         <div>
-                          <p className="text-slate-500 mb-1">Monthly Amount</p>
+                          <p className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Pricing Source</p>
+                          <p className="font-semibold text-brand-600">
+                            {lineItem ? getSourceLabel(lineItem.pricingSource) : '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Monthly Amount</p>
                           <p className="font-semibold text-brand-700">
                             {lineItem ? `AED ${lineItem.normalMonthlyAmount}` : '-'}
                           </p>
@@ -145,20 +168,36 @@ export function GenerateQuotationDialog({
             </div>
           </div>
           
-          {/* Offer Section */}
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden p-4">
-            <h3 className="font-semibold text-slate-800 mb-3">Special Offer</h3>
-            <div className="space-y-2 max-w-sm">
-              <label className="text-sm font-medium text-slate-700">Offer Hourly Rate (AED) - Optional</label>
-              <input
-                type="number"
-                min="1"
-                className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
-                value={offerRateInput}
-                onChange={e => setOfferRateInput(e.target.value)}
-                placeholder="Leave blank for normal pricing"
-              />
-              <p className="text-xs text-slate-500">Applies a flat hourly rate to all subjects.</p>
+          {/* Offer & Notes Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">Special Offer</h3>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Offer Hourly Rate (AED)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
+                  value={offerRateInput}
+                  onChange={e => setOfferRateInput(e.target.value)}
+                  placeholder="Leave blank for normal pricing"
+                />
+                <p className="text-xs text-slate-500">Applies a flat hourly rate to all subjects.</p>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">Customer Notes</h3>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Quotation Notes (Customer Facing)</label>
+                <textarea
+                  className="w-full h-[68px] p-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
+                  value={quotationNotes}
+                  onChange={e => setQuotationNotes(e.target.value)}
+                  placeholder="Add notes to appear on the PDF..."
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -190,8 +229,12 @@ export function GenerateQuotationDialog({
                       <span className="font-semibold">AED {previewData.offerMonthlyTotal}</span>
                     </div>
                     <div className="flex justify-between items-center border-t border-slate-700 pt-2 text-green-300">
-                      <span>Savings</span>
-                      <span className="font-bold">AED {previewData.savingAmount} ({previewData.savingPercentage.toFixed(2)}%)</span>
+                      <span>Savings Amount</span>
+                      <span className="font-bold">AED {previewData.savingAmount}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-green-300">
+                      <span>Savings Percentage</span>
+                      <span className="font-bold">{previewData.savingPercentage.toFixed(2)}%</span>
                     </div>
                   </>
                 )}
@@ -202,7 +245,7 @@ export function GenerateQuotationDialog({
                 </div>
                 
                 <div className="flex justify-between items-center border-t border-slate-700 pt-4 mt-2">
-                  <span className="font-bold text-base text-white">TOTAL AMOUNT DUE</span>
+                  <span className="font-bold text-base text-white">INITIAL AMOUNT DUE</span>
                   <span className="font-bold text-xl text-brand-400">AED {previewData.totalAmountDue}</span>
                 </div>
               </div>

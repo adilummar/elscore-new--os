@@ -2036,9 +2036,13 @@ model Quotation {
   status          QuotationStatus @default(DRAFT)
 
   // Snapshots
-  studentName    String @map("student_name")
-  curriculumName String @map("curriculum_name")
-  gradeName      String @map("grade_name")
+  parentName     String  @map("parent_name")
+  parentPhone    String  @map("parent_phone")
+  parentEmail    String? @map("parent_email")
+  studentName    String  @map("student_name")
+  curriculumName String  @map("curriculum_name")
+  gradeName      String  @map("grade_name")
+  quotationNotes String? @map("quotation_notes") @db.Text
 
   normalMonthlyTotal Decimal  @map("normal_monthly_total") @db.Decimal(10, 2)
   offerHourlyRate    Decimal? @map("offer_hourly_rate") @db.Decimal(10, 2)
@@ -2071,6 +2075,9 @@ model QuotationLineItem {
 
   // Snapshots
   subjectName            String   @map("subject_name")
+  curriculumName         String   @map("curriculum_name")
+  gradeName              String   @map("grade_name")
+  pricingSource          String   @map("pricing_source")
   monthlyHours           Decimal  @map("monthly_hours") @db.Decimal(10, 2)
   originalHourlyRate     Decimal  @map("original_hourly_rate") @db.Decimal(10, 2)
   appliedOfferHourlyRate Decimal? @map("applied_offer_hourly_rate") @db.Decimal(10, 2)

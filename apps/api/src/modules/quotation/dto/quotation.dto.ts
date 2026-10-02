@@ -8,4 +8,8 @@ export class GenerateQuotationDto {
   @IsNumber()
   @Min(0)
   offerHourlyRate?: number;
+
+  @IsOptional()
+  @IsString()
+  quotationNotes?: string;
 }

@@ -259,6 +259,7 @@ const PERMISSIONS: Array<{
   { code: 'quotation.create', resource: 'quotation', action: 'create', description: 'Generate quotations', isDelegatable: false },
   { code: 'quotation.read', resource: 'quotation', action: 'read', description: 'Read quotations', isDelegatable: false },
   { code: 'quotation.update', resource: 'quotation', action: 'update', description: 'Update quotations', isDelegatable: false },
+  { code: 'pricing.manage', resource: 'pricing', action: 'manage', description: 'Manage pricing slabs and exceptional rates', isDelegatable: false },
 
   // ---------------------------------------------------------------------------
   // Demo (Slice 2D)
@@ -1070,6 +1071,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'attendance.action.own',
     'attendance.read.own','department.read'],
   SALES_HEAD: [
+    'pricing.manage',
     'quotation.create',
     'quotation.read',
     'quotation.update',

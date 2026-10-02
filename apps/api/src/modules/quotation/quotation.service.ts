@@ -49,24 +49,26 @@ export class QuotationService {
         curriculum: true,
         grade: true,
         requirements: {
-          include: { subject: true },
+          include: { subject: true, curriculum: true, grade: true },
         },
       },
     });
 
     if (!student) throw new NotFoundException('Student not found');
     if (!student.lead) throw new BadRequestException('Student must be attached to a Lead');
-    if (!student.curriculum || !student.grade) throw new BadRequestException('Student must have a curriculum and grade selected.');
 
     // 2. Validate Demo Completion (Temporary Rule)
     if (!student.lead || !this.canGenerateQuotation(student.lead)) {
       throw new BadRequestException('Quotation can only be generated after the Lead reaches DEMO_COMPLETED.');
     }
 
-    // 3. Load Finance Setting
+    // 3. Load Finance Setting (NO FALLBACK)
     const financeSetting = await tx.financeSetting.findFirst();
-    const registrationFee = financeSetting ? Number(financeSetting.registrationFee) : 0;
-    const currency = financeSetting ? financeSetting.currency : 'AED';
+    if (!financeSetting) {
+      throw new BadRequestException('Configuration Error: Finance Settings (Registration Fee) not configured. Please contact administrator.');
+    }
+    const registrationFee = Number(financeSetting.registrationFee);
+    const currency = financeSetting.currency;
 
     // 4. Validate Requirements
     if (student.requirements.length === 0) {
@@ -76,24 +78,26 @@ export class QuotationService {
     const lineItems = [];
     let totalMonthlyHours = 0;
     let normalMonthlyTotal = 0;
+    let minNormalRate = Infinity;
 
     for (const req of student.requirements) {
       if (!req.monthlyHours || Number(req.monthlyHours) <= 0) {
         throw new BadRequestException(`Monthly hours missing or invalid for subject ${req.subject.name}.`);
       }
+      
+      if (!req.curriculumId || !req.gradeId) {
+        throw new BadRequestException(`Subject ${req.subject.name} is missing a Curriculum or Grade. Please edit the subject to assign them.`);
+      }
 
       const hours = Number(req.monthlyHours);
-      const normalRate = await this.pricingService.resolveHourlyRate(
-        student.curriculumId!,
-        student.grade.sortOrder,
+      const { rate: normalRate, source: pricingSource } = await this.pricingService.resolveHourlyRate(
+        req.curriculumId,
+        req.grade.sortOrder,
         req.subjectId,
       );
-
-      if (dto.offerHourlyRate !== undefined && dto.offerHourlyRate !== null && dto.offerHourlyRate > normalRate) {
-        throw new BadRequestException(`Offer hourly rate (${dto.offerHourlyRate}) cannot exceed the normal rate (${normalRate}) for ${req.subject.name}.`);
-      }
-      if (dto.offerHourlyRate !== undefined && dto.offerHourlyRate !== null && dto.offerHourlyRate <= 0) {
-        throw new BadRequestException(`Offer hourly rate must be greater than 0.`);
+      
+      if (normalRate < minNormalRate) {
+        minNormalRate = normalRate;
       }
 
       const monthlyAmount = hours * normalRate;
@@ -105,12 +109,24 @@ export class QuotationService {
       lineItems.push({
         subjectId: req.subjectId,
         subjectName: req.subject.name,
+        curriculumName: req.curriculum.name,
+        gradeName: req.grade.name,
+        pricingSource,
         monthlyHours: hours,
         originalHourlyRate: normalRate,
         appliedOfferHourlyRate: dto.offerHourlyRate || null,
         normalMonthlyAmount: monthlyAmount,
         offerMonthlyAmount: offerAmount,
       });
+    }
+
+    if (dto.offerHourlyRate !== undefined && dto.offerHourlyRate !== null) {
+      if (dto.offerHourlyRate <= 0) {
+        throw new BadRequestException(`Offer hourly rate must be greater than 0.`);
+      }
+      if (dto.offerHourlyRate > minNormalRate) {
+        throw new BadRequestException(`Offer hourly rate (${dto.offerHourlyRate}) cannot exceed the lowest applicable normal rate (${minNormalRate}).`);
+      }
     }
 
     // 5. Calculate Totals
@@ -131,6 +147,7 @@ export class QuotationService {
       savingAmount,
       savingPercentage,
       totalAmountDue,
+      quotationNotes: dto.quotationNotes,
       lineItems
     };
   }
@@ -176,9 +193,15 @@ export class QuotationService {
           quotationDate: new Date(),
           currency: calc.currency,
           status: 'GENERATED',
+          
+          parentName: calc.student.lead.parentName || 'Unknown',
+          parentPhone: calc.student.lead.phone || 'Unknown',
+          parentEmail: calc.student.lead.email || null,
           studentName: calc.student.firstName + (calc.student.lastName ? ' ' + calc.student.lastName : ''),
-          curriculumName: calc.student.curriculum.name,
-          gradeName: calc.student.grade.name,
+          curriculumName: calc.student.curriculum?.name || 'Unknown',
+          gradeName: calc.student.grade?.name || 'Unknown',
+          quotationNotes: calc.quotationNotes || null,
+
           normalMonthlyTotal: calc.normalMonthlyTotal,
           offerHourlyRate: calc.offerHourlyRate,
           offerMonthlyTotal: calc.offerMonthlyTotal,

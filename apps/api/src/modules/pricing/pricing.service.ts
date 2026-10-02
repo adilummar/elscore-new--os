@@ -137,14 +137,14 @@ export class PricingService {
   /**
    * Resolves the normal hourly rate for a subject.
    */
-  async resolveHourlyRate(curriculumId: string, gradeSortOrder: number, subjectId: string): Promise<number> {
+  async resolveHourlyRate(curriculumId: string, gradeSortOrder: number, subjectId: string): Promise<{ rate: number, source: string }> {
     // 1. Exceptional Rate overrides all
     const exceptional = await this.prisma.exceptionalSubjectRate.findFirst({
       where: { subjectId, isActive: true },
     });
 
     if (exceptional) {
-      return Number(exceptional.hourlyRate);
+      return { rate: Number(exceptional.hourlyRate), source: 'EXCEPTIONAL_SUBJECT' };
     }
 
     // 2. Base Slab
@@ -161,6 +161,6 @@ export class PricingService {
       throw new NotFoundException('No applicable pricing slab found for this curriculum and grade.');
     }
 
-    return Number(slab.hourlyRate);
+    return { rate: Number(slab.hourlyRate), source: 'SLAB' };
   }
 }
