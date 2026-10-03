@@ -54,7 +54,7 @@ pm2 restart elscore-api || pm2 start apps/api/dist/main.js --name "elscore-api"
 # For Web (Next.js standalone)
 # Note: Next.js standalone build outputs to apps/web/.next/standalone/server.js
 # You might need to set HOST=0.0.0.0 PORT=3000 in your PM2 ecosystem file
-pm2 restart elscore-web || pm2 start apps/web/.next/standalone/server.js --name "elscore-web"
+pm2 restart elscore-web || pm2 start apps/web/.next/standalone/apps/web/server.js --name "elscore-web"
 
 echo "✅ Staging Deployment Completed Successfully!"
 echo "Please verify the deployment at your staging URL."

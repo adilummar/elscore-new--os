@@ -152,8 +152,8 @@ echo "STEP4_OK"
 
   // ── Step 11: Copy Next.js static assets ──────────────────────────────────────
   console.log('\n=== STEP 11: Copying Next.js static assets ===');
-  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/.next/static ${PROJECT_DIR}/apps/web/.next/standalone/.next/ 2>/dev/null || true`);
-  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/public ${PROJECT_DIR}/apps/web/.next/standalone/ 2>/dev/null || true`);
+  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/.next/static ${PROJECT_DIR}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null || true`);
+  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/public ${PROJECT_DIR}/apps/web/.next/standalone/apps/web/ 2>/dev/null || true`);
   console.log('✅ Static assets copied');
 
   // ── Step 12: PM2 ecosystem config ────────────────────────────────────────────
@@ -176,8 +176,8 @@ echo "STEP4_OK"
     },
     {
       name: 'elscore-web',
-      script: '${PROJECT_DIR}/apps/web/.next/standalone/server.js',
-      cwd: '${PROJECT_DIR}/apps/web/.next/standalone',
+      script: '${PROJECT_DIR}/apps/web/.next/standalone/apps/web/server.js',
+      cwd: '${PROJECT_DIR}/apps/web/.next/standalone/apps/web',
       instances: 1,
       exec_mode: 'fork',
       env: {
