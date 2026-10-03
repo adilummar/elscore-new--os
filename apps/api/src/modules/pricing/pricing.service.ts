@@ -20,7 +20,9 @@ export class PricingService {
   }
 
   async createPricingSlab(dto: CreatePricingSlabDto, userId: string) {
+    this.assertOrderedGradeRange(dto.gradeFrom, dto.gradeTo);
     return this.prisma.$transaction(async (tx) => {
+      // gradeFrom/gradeTo are Grade.sortOrder values, not displayed grade numbers.
       // Check for overlapping/ambiguous active slabs
       const existing = await tx.pricingSlab.findFirst({
         where: {
@@ -52,6 +54,51 @@ export class PricingService {
         entityId: slab.id,
         action: 'CREATED',
         actorUserId: userId,
+        newValue: slab,
+      });
+
+      return slab;
+    });
+  }
+
+  async updatePricingSlab(id: string, dto: CreatePricingSlabDto, userId: string) {
+    this.assertOrderedGradeRange(dto.gradeFrom, dto.gradeTo);
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.pricingSlab.findUnique({ where: { id } });
+      if (!current) throw new NotFoundException('Pricing slab not found');
+
+      if (current.isActive) {
+        const existing = await tx.pricingSlab.findFirst({
+          where: {
+            id: { not: id },
+            curriculumId: dto.curriculumId,
+            isActive: true,
+            gradeFrom: { lte: dto.gradeTo },
+            gradeTo: { gte: dto.gradeFrom },
+          },
+        });
+        if (existing) {
+          throw new BadRequestException('An active pricing slab already exists for this curriculum and overlapping grade range.');
+        }
+      }
+
+      const slab = await tx.pricingSlab.update({
+        where: { id },
+        data: {
+          curriculumId: dto.curriculumId,
+          gradeFrom: dto.gradeFrom,
+          gradeTo: dto.gradeTo,
+          hourlyRate: dto.hourlyRate,
+          updatedBy: userId,
+        },
+      });
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'PricingSlab',
+        entityId: slab.id,
+        action: 'UPDATED',
+        actorUserId: userId,
+        oldValue: current,
         newValue: slab,
       });
 
@@ -168,6 +215,12 @@ export class PricingService {
     }
 
     return { rate: Number(slab.hourlyRate), source: 'SLAB' };
+  }
+
+  private assertOrderedGradeRange(gradeFrom: number, gradeTo: number) {
+    if (gradeFrom > gradeTo) {
+      throw new BadRequestException('Grade From must be the same as or before Grade To.');
+    }
   }
 
   async getFinanceSetting() {

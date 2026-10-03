@@ -50,6 +50,23 @@ export async function createPricingSlabAction(data: {
   return res;
 }
 
+export async function updatePricingSlabAction(
+  id: string,
+  data: {
+    curriculumId: string;
+    gradeFrom: number;
+    gradeTo: number;
+    hourlyRate: number;
+  },
+) {
+  const res = await fetchApi<any>(`/pricing/slabs/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}
+
 export async function updatePricingSlabStatusAction(id: string, isActive: boolean) {
   const res = await fetchApi<any>(`/pricing/slabs/${id}/status`, {
     method: 'PATCH',

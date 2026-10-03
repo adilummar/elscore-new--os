@@ -31,6 +31,12 @@ export class PricingController {
     return this.pricingService.createPricingSlab(dto, user.id);
   }
 
+  @Patch('slabs/:id')
+  @RequirePermissions('pricing.manage')
+  updateSlab(@Param('id') id: string, @Body() dto: CreatePricingSlabDto, @CurrentUser() user: RequestUser) {
+    return this.pricingService.updatePricingSlab(id, dto, user.id);
+  }
+
   @Patch('slabs/:id/status')
   @RequirePermissions('pricing.manage')
   updateSlabStatus(@Param('id') id: string, @Body() dto: UpdatePricingSlabDto, @CurrentUser() user: RequestUser) {

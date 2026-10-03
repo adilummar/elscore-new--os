@@ -1,6 +1,6 @@
 module.exports = {
   rootDir: '.',
-  testRegex: 'src/lib/auth/.*\\.spec\\.ts$',
+  testRegex: '\\.spec\\.ts$',
   testEnvironment: 'node',
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: { esModuleInterop: true, module: 'commonjs' } }],

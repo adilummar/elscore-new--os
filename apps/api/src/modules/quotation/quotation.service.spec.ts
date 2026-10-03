@@ -75,6 +75,9 @@ describe('QuotationService', () => {
       leadId: 'lead-1',
       firstName: extra.studentFirstName ?? 'Jane',
       lastName: extra.studentLastName ?? 'Doe',
+      curriculumId: 'student-curriculum',
+      gradeId: 'student-grade',
+      grade: { name: 'Grade 12', sortOrder: 13 },
       lead: {
         assignedToUserId: 'u1',
         status: leadStatus,
@@ -90,7 +93,7 @@ describe('QuotationService', () => {
           monthlyHours: 10,
           subject: { name: 'Math' },
           curriculum: { name: 'CBSE' },
-          grade: { name: 'Grade 5', sortOrder: 5 },
+          grade: { name: 'Grade 5', sortOrder: 6 },
         },
       ],
     });
@@ -240,10 +243,59 @@ describe('QuotationService', () => {
     expect(result.iban).toBe('AE000000000000000000001');
   });
 
+  it('prices Economics at the requirement grade using the general slab', async () => {
+    setupMockStudent('DEMO_COMPLETED', {
+      requirements: [
+        {
+          subjectId: 'economics',
+          curriculumId: 'cbse',
+          gradeId: 'grade-5',
+          monthlyHours: 15,
+          subject: { name: 'Economics' },
+          curriculum: { name: 'CBSE' },
+          grade: { name: 'Grade 5', sortOrder: 6 },
+        },
+      ],
+    });
+    mockPricingService.resolveHourlyRate.mockResolvedValue({ rate: 11, source: 'SLAB' });
+
+    const preview: any = await service.previewQuotation({ studentId: 's1' }, testUser('u1'));
+
+    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('cbse', 6, 'economics', mockPrisma);
+    expect(preview.lineItems[0].originalHourlyRate).toBe(11);
+    expect(preview.lineItems[0].normalMonthlyAmount).toBe(165);
+    expect(preview.lineItems[0].pricingSource).toBe('SLAB');
+    expect(preview.curriculumName).toBe('CBSE');
+    expect(preview.gradeName).toBe('Grade 5');
+  });
+
+  it('uses an exceptional subject rate returned for the requirement subject', async () => {
+    setupMockStudent('DEMO_COMPLETED', {
+      requirements: [
+        {
+          subjectId: 'economics',
+          curriculumId: 'cbse',
+          gradeId: 'grade-5',
+          monthlyHours: 15,
+          subject: { name: 'Economics' },
+          curriculum: { name: 'CBSE' },
+          grade: { name: 'Grade 5', sortOrder: 6 },
+        },
+      ],
+    });
+    mockPricingService.resolveHourlyRate.mockResolvedValue({ rate: 14, source: 'EXCEPTIONAL_SUBJECT' });
+
+    const preview: any = await service.previewQuotation({ studentId: 's1' }, testUser('u1'));
+
+    expect(preview.lineItems[0].originalHourlyRate).toBe(14);
+    expect(preview.lineItems[0].normalMonthlyAmount).toBe(210);
+    expect(preview.lineItems[0].pricingSource).toBe('EXCEPTIONAL_SUBJECT');
+  });
+
   it('should resolve pricing through the transaction client', async () => {
     setupMockStudent('DEMO_COMPLETED');
     await service.generateQuotation({ studentId: 's1', offerHourlyRate: 40 }, testUser('u1'));
-    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('c1', 5, 'subj1', mockPrisma);
+    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('c1', 6, 'subj1', mockPrisma);
   });
 
   it('should apply offer totals from the shared calculation engine', async () => {

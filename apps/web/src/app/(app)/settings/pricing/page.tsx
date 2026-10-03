@@ -14,10 +14,12 @@ import {
   getFinanceSettingAction,
   getPricingSlabsAction,
   updateExceptionalRateStatusAction,
+  updatePricingSlabAction,
   updatePricingSlabStatusAction,
   upsertFinanceSettingAction,
 } from '../actions';
 import { Modal } from '@/components/ui/Modal';
+import { formatSlabGradeRange, gradeIdForSortOrder, slabSortOrdersForGrades } from './grade-range';
 
 export default function PricingSettingsPage() {
   const { hasPermission } = usePermissions();
@@ -28,6 +30,8 @@ export default function PricingSettingsPage() {
 
   const [subjects, setSubjects] = React.useState<any[]>([]);
   const [curriculums, setCurriculums] = React.useState<any[]>([]);
+  const [grades, setGrades] = React.useState<any[]>([]);
+  const [editingSlab, setEditingSlab] = React.useState<any>(null);
 
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -38,12 +42,13 @@ export default function PricingSettingsPage() {
   const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [slabsRes, exRes, financeRes, subRes, curRes] = await Promise.all([
+      const [slabsRes, exRes, financeRes, subRes, curRes, gradeRes] = await Promise.all([
         getPricingSlabsAction(),
         getExceptionalRatesAction(),
         getFinanceSettingAction(),
         getReferenceDataAction('subjects'),
         getReferenceDataAction('curricula'),
+        getReferenceDataAction('grades'),
       ]);
 
       setSlabs(Array.isArray(slabsRes) ? slabsRes : []);
@@ -51,6 +56,7 @@ export default function PricingSettingsPage() {
       setFinanceSetting(financeRes);
       setSubjects(subRes?.data || subRes || []);
       setCurriculums(curRes?.data || curRes || []);
+      setGrades(gradeRes?.data || gradeRes || []);
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -99,7 +105,7 @@ export default function PricingSettingsPage() {
               Curriculum + grade range only. This hourly rate applies to all subjects in that range.
             </p>
           </div>
-          <Button onClick={() => setIsSlabModalOpen(true)} size="sm" className="shrink-0">Add Slab</Button>
+          <Button onClick={() => { setEditingSlab(null); setIsSlabModalOpen(true); }} size="sm" className="shrink-0">Add Slab</Button>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -117,7 +123,7 @@ export default function PricingSettingsPage() {
                 {slabs.map((slab) => (
                   <tr key={slab.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">{slab.curriculum?.name || slab.curriculumId}</td>
-                    <td className="px-4 py-3">Grade {slab.gradeFrom} to Grade {slab.gradeTo}</td>
+                    <td className="px-4 py-3">{formatSlabGradeRange(grades, slab.gradeFrom, slab.gradeTo)}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{slab.hourlyRate}</td>
                     <td className="px-4 py-3">
                       <Badge variant={slab.isActive ? 'success' : 'default'}>
@@ -125,9 +131,14 @@ export default function PricingSettingsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button variant="outline" size="sm" onClick={() => toggleSlab(slab.id, slab.isActive)}>
-                        {slab.isActive ? 'Deactivate' : 'Activate'}
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => { setEditingSlab(slab); setIsSlabModalOpen(true); }}>
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => toggleSlab(slab.id, slab.isActive)}>
+                          {slab.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -192,9 +203,11 @@ export default function PricingSettingsPage() {
 
       <AddSlabModal
         isOpen={isSlabModalOpen}
-        onClose={() => setIsSlabModalOpen(false)}
+        onClose={() => { setIsSlabModalOpen(false); setEditingSlab(null); }}
         onSuccess={loadData}
         curriculums={curriculums}
+        grades={grades}
+        slab={editingSlab}
       />
 
       <AddExceptionalModal
@@ -290,25 +303,40 @@ function FinanceSettingsCard({ setting, onSuccess }: { setting: any; onSuccess: 
   );
 }
 
-function AddSlabModal({ isOpen, onClose, onSuccess, curriculums }: any) {
+function AddSlabModal({ isOpen, onClose, onSuccess, curriculums, grades, slab }: any) {
   const [curriculumId, setCurriculumId] = React.useState('');
-  const [gradeFrom, setGradeFrom] = React.useState('');
-  const [gradeTo, setGradeTo] = React.useState('');
+  const [gradeFromId, setGradeFromId] = React.useState('');
+  const [gradeToId, setGradeToId] = React.useState('');
   const [hourlyRate, setHourlyRate] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setCurriculumId(slab?.curriculumId || '');
+    setGradeFromId(slab ? gradeIdForSortOrder(grades, slab.gradeFrom) : '');
+    setGradeToId(slab ? gradeIdForSortOrder(grades, slab.gradeTo) : '');
+    setHourlyRate(slab?.hourlyRate ?? '');
+    setError('');
+  }, [isOpen, slab, grades]);
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      await createPricingSlabAction({
+      const range = slabSortOrdersForGrades(grades, gradeFromId, gradeToId);
+      const payload = {
         curriculumId,
-        gradeFrom: Number(gradeFrom),
-        gradeTo: Number(gradeTo),
+        gradeFrom: range.gradeFrom,
+        gradeTo: range.gradeTo,
         hourlyRate: Number(hourlyRate),
-      });
+      };
+      if (slab?.id) {
+        await updatePricingSlabAction(slab.id, payload);
+      } else {
+        await createPricingSlabAction(payload);
+      }
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -320,7 +348,7 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums }: any) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-2">Add General Pricing Slab</h2>
+      <h2 className="text-lg font-bold mb-2">{slab ? 'Edit General Pricing Slab' : 'Add General Pricing Slab'}</h2>
       <p className="text-xs text-slate-500 mb-4">
         Applies to all subjects for this curriculum and grade range. Subject-specific pricing is added under Exceptional Subject Rates.
       </p>
@@ -336,20 +364,26 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums }: any) {
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
             <label className="text-sm font-medium">Grade From *</label>
-            <input type="number" required min="0" value={gradeFrom} onChange={(e) => setGradeFrom(e.target.value)} className="w-full p-2 border rounded-md" />
+            <Select value={gradeFromId} onChange={(e) => setGradeFromId(e.target.value)} required>
+              <option value="">Select Grade</option>
+              {grades.map((grade: any) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+            </Select>
           </div>
           <div className="flex-1">
             <label className="text-sm font-medium">Grade To *</label>
-            <input type="number" required min="0" value={gradeTo} onChange={(e) => setGradeTo(e.target.value)} className="w-full p-2 border rounded-md" />
+            <Select value={gradeToId} onChange={(e) => setGradeToId(e.target.value)} required>
+              <option value="">Select Grade</option>
+              {grades.map((grade: any) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+            </Select>
           </div>
         </div>
         <div>
           <label className="text-sm font-medium">Hourly Rate (AED) *</label>
-          <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2 border rounded-md" />
+          <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2 border rounded-md" placeholder="11.00" />
         </div>
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={loading}>Save Slab</Button>
+          <Button type="submit" disabled={loading}>{slab ? 'Save Changes' : 'Save Slab'}</Button>
         </div>
       </form>
     </Modal>
