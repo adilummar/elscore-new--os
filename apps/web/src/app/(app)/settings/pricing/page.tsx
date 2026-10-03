@@ -81,7 +81,9 @@ export default function PricingSettingsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Pricing Settings</h1>
-          <p className="text-slate-500">Manage global pricing slabs, exceptional subject rates, and quotation account details.</p>
+          <p className="text-slate-500">
+            General slabs price by curriculum and grade range for all subjects. Subject-specific overrides belong in Exceptional Subject Rates.
+          </p>
         </div>
       </div>
 
@@ -90,9 +92,14 @@ export default function PricingSettingsPage() {
       <FinanceSettingsCard setting={financeSetting} onSuccess={loadData} />
 
       <Card>
-        <CardHeader className="flex flex-row justify-between items-center">
-          <CardTitle>General Pricing Slabs</CardTitle>
-          <Button onClick={() => setIsSlabModalOpen(true)} size="sm">Add Slab</Button>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
+          <div className="space-y-1">
+            <CardTitle>General Pricing Slabs</CardTitle>
+            <p className="text-sm text-slate-500">
+              Curriculum + grade range only. This hourly rate applies to all subjects in that range.
+            </p>
+          </div>
+          <Button onClick={() => setIsSlabModalOpen(true)} size="sm" className="shrink-0">Add Slab</Button>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -134,9 +141,14 @@ export default function PricingSettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row justify-between items-center">
-          <CardTitle>Exceptional Subject Rates</CardTitle>
-          <Button onClick={() => setIsExModalOpen(true)} size="sm">Add Exceptional Rate</Button>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
+          <div className="space-y-1">
+            <CardTitle>Exceptional Subject Rates</CardTitle>
+            <p className="text-sm text-slate-500">
+              Subject-specific hourly rates. Use this section when one subject should not follow the general slab.
+            </p>
+          </div>
+          <Button onClick={() => setIsExModalOpen(true)} size="sm" className="shrink-0">Add Exceptional Rate</Button>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-brand-600 font-medium mb-4 bg-brand-50 p-3 rounded-md border border-brand-100">
@@ -308,7 +320,10 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums }: any) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-4">Add General Pricing Slab</h2>
+      <h2 className="text-lg font-bold mb-2">Add General Pricing Slab</h2>
+      <p className="text-xs text-slate-500 mb-4">
+        Applies to all subjects for this curriculum and grade range. Subject-specific pricing is added under Exceptional Subject Rates.
+      </p>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="text-red-500 text-sm">{error}</div>}
         <div>
@@ -318,13 +333,13 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums }: any) {
             {curriculums.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
-            <label className="text-sm font-medium">Grade From (Sort Order) *</label>
+            <label className="text-sm font-medium">Grade From *</label>
             <input type="number" required min="0" value={gradeFrom} onChange={(e) => setGradeFrom(e.target.value)} className="w-full p-2 border rounded-md" />
           </div>
           <div className="flex-1">
-            <label className="text-sm font-medium">Grade To (Sort Order) *</label>
+            <label className="text-sm font-medium">Grade To *</label>
             <input type="number" required min="0" value={gradeTo} onChange={(e) => setGradeTo(e.target.value)} className="w-full p-2 border rounded-md" />
           </div>
         </div>
@@ -367,9 +382,9 @@ function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects }: any) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-4">Add Exceptional Subject Rate</h2>
+      <h2 className="text-lg font-bold mb-2">Add Exceptional Subject Rate</h2>
       <p className="text-xs text-brand-600 mb-4 bg-brand-50 p-2 rounded">
-        This rate overrides standard slabs and applies regardless of grade/curriculum.
+        Select one subject. This hourly rate overrides the general slab for that subject, regardless of curriculum or grade.
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="text-red-500 text-sm">{error}</div>}
