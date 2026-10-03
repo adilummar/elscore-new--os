@@ -139,6 +139,7 @@ echo "STEP4_OK"
 
   // ── Step 8: Build ─────────────────────────────────────────────────────────────
   console.log('\n=== STEP 8: Building application (may take 3-5 min) ===');
+  await sshExec(conn, `cd ${PROJECT_DIR} && pnpm run db:generate 2>&1`);
   await sshExec(conn, `cd ${PROJECT_DIR} && pnpm run build 2>&1 | tail -30`);
 
   // ── Step 9: Migrations ────────────────────────────────────────────────────────
