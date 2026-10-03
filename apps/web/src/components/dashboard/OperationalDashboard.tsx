@@ -6,6 +6,8 @@ import { Users, PhoneCall, Calendar, Trophy, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { getSession } from '@/lib/api/auth';
+import { DelayedContactQueue } from './DelayedContactQueue';
+import type { DelayedLeadsResponse } from './actions';
 
 export default async function OperationalDashboard() {
   const user = await getSession();
@@ -16,6 +18,8 @@ export default async function OperationalDashboard() {
   let pipelineData: any = null;
   let sourcesData: any = null;
   let teamData: any = null;
+  let delayedData: DelayedLeadsResponse | null = null;
+  let delayedError: string | null = null;
   let upcomingFollowUps = { data: [] };
   let error = null;
   let errorDetails = '';
@@ -27,7 +31,8 @@ export default async function OperationalDashboard() {
       fetchApi<any>('/dashboard/pipeline'),
       fetchApi<any>('/follow-ups?view=upcoming&limit=5'),
       fetchApi<any>('/dashboard/sources'),
-      fetchApi<any>('/dashboard/team')
+      fetchApi<any>('/dashboard/team'),
+      fetchApi<DelayedLeadsResponse>('/dashboard/delayed-leads'),
     ]);
     
     if (results[0].status === 'fulfilled') recentLeads = results[0].value;
@@ -47,6 +52,9 @@ export default async function OperationalDashboard() {
 
     if (results[5].status === 'fulfilled') teamData = results[5].value.data || results[5].value;
     else errorDetails += `Team error: ${results[5].reason?.message || 'Unknown'}. `;
+
+    if (results[6].status === 'fulfilled') delayedData = results[6].value;
+    else delayedError = results[6].reason?.message || 'Delayed contacts are unavailable';
 
     if (errorDetails) {
       error = errorDetails;
@@ -71,6 +79,8 @@ export default async function OperationalDashboard() {
           <p className="text-slate-500 text-sm mt-1">Overview of sales performance and recent activity.</p>
         </div>
       </div>
+
+      <DelayedContactQueue initial={delayedData} initialError={delayedError} />
 
       {/* KPI Area */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">

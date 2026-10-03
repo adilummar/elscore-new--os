@@ -17,6 +17,12 @@ export class DashboardController {
     return perms.has('lead.read-all');
   }
 
+  @Get('delayed-leads')
+  async getDelayedLeads(@CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    return this.dashboardService.getDelayedLeads(user.id, readAll);
+  }
+
   @Get('kpi')
   async getKpi(@CurrentUser() user: RequestUser) {
     const readAll = await this.hasReadAll(user.id);
