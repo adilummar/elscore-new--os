@@ -28,6 +28,8 @@ export function DelayedContactQueue({
   const [data, setData] = React.useState<DelayedLeadsResponse | null>(initial);
   const [error, setError] = React.useState<string | null>(initialError ?? null);
   const [now, setNow] = React.useState(() => new Date());
+  const [page, setPage] = React.useState(1);
+  const itemsPerPage = 5;
 
   const refresh = React.useCallback(async () => {
     try {
@@ -50,6 +52,16 @@ export function DelayedContactQueue({
   const leads = data?.delayedLeads ?? [];
   const count = data?.delayedCount ?? leads.length;
 
+  const totalPages = Math.ceil(leads.length / itemsPerPage);
+  
+  React.useEffect(() => {
+    if (page > totalPages && totalPages > 0) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const paginatedLeads = leads.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+
   return (
     <Card className="border-amber-200">
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -68,8 +80,9 @@ export function DelayedContactQueue({
         ) : leads.length === 0 ? (
           <p className="text-sm text-slate-500 py-4">No leads are waiting past the 15-minute contact SLA.</p>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {leads.map((lead) => {
+          <>
+            <div className="divide-y divide-slate-100">
+            {paginatedLeads.map((lead) => {
               const digits = whatsappDigits(lead.primaryPhone);
               return (
                 <div key={lead.id} className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
@@ -113,6 +126,30 @@ export function DelayedContactQueue({
               );
             })}
           </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-slate-100 pt-4 mt-4">
+                <p className="text-xs text-slate-500">
+                  Showing {(page - 1) * itemsPerPage + 1} to {Math.min(page * itemsPerPage, leads.length)} of {leads.length}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="inline-flex h-8 items-center rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="inline-flex h-8 items-center rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

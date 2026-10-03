@@ -80,8 +80,6 @@ export default async function OperationalDashboard() {
         </div>
       </div>
 
-      <DelayedContactQueue initial={delayedData} initialError={delayedError} />
-
       {/* KPI Area */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {kpis.map((kpi, i) => (
@@ -279,6 +277,8 @@ export default async function OperationalDashboard() {
           </Card>
         </div>
       </div>
+
+      <DelayedContactQueue initial={delayedData} initialError={delayedError} />
     </div>
   );
 }
