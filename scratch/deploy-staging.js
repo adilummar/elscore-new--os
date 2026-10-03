@@ -89,12 +89,27 @@ echo "STEP4_OK"
 
   // ── Step 5: Generate secrets ─────────────────────────────────────────────────
   console.log('\n=== STEP 5: Generating JWT secrets ===');
-  const secretRes = await sshExec(conn, `node -e "const c=require('crypto');console.log(c.randomBytes(48).toString('hex'));console.log(c.randomBytes(48).toString('hex'))"`);
-  const lines = secretRes.out.trim().split('\n').map(l => l.trim()).filter(l => /^[a-f0-9]{96}$/.test(l));
-  const JWT_ACCESS = lines[0] || 'please-set-a-strong-access-secret-min-32-chars-here';
-  const JWT_REFRESH = lines[1] || 'please-set-a-strong-refresh-secret-min-32-chars-here';
-  console.log(`\nGenerated Access Secret (first 12): ${JWT_ACCESS.substring(0, 12)}...`);
-  console.log(`Generated Refresh Secret (first 12): ${JWT_REFRESH.substring(0, 12)}...`);
+  const envCheck = await sshExec(conn, `cat ${PROJECT_DIR}/apps/api/.env || true`);
+  const envContent = envCheck.out || '';
+  
+  let JWT_ACCESS = '';
+  let JWT_REFRESH = '';
+
+  const accessMatch = envContent.match(/JWT_ACCESS_SECRET=(.+)/);
+  const refreshMatch = envContent.match(/JWT_REFRESH_SECRET=(.+)/);
+
+  if (accessMatch && refreshMatch) {
+    JWT_ACCESS = accessMatch[1].trim();
+    JWT_REFRESH = refreshMatch[1].trim();
+    console.log('Using existing JWT secrets from .env');
+  } else {
+    const secretRes = await sshExec(conn, `node -e "const c=require('crypto');console.log(c.randomBytes(48).toString('hex'));console.log(c.randomBytes(48).toString('hex'))"`);
+    const lines = secretRes.out.trim().split('\n').map(l => l.trim()).filter(l => /^[a-f0-9]{96}$/.test(l));
+    JWT_ACCESS = lines[0] || 'please-set-a-strong-access-secret-min-32-chars-here';
+    JWT_REFRESH = lines[1] || 'please-set-a-strong-refresh-secret-min-32-chars-here';
+    console.log(`\nGenerated Access Secret (first 12): ${JWT_ACCESS.substring(0, 12)}...`);
+    console.log(`Generated Refresh Secret (first 12): ${JWT_REFRESH.substring(0, 12)}...`);
+  }
 
   // ── Step 6: Write .env files ─────────────────────────────────────────────────
   console.log('\n=== STEP 6: Writing .env files ===');
