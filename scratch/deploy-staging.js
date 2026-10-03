@@ -129,6 +129,8 @@ echo "STEP4_OK"
   const webEnv = [
     `API_URL=http://localhost:${STAGING_API_PORT}/api/v1`,
     `NEXT_PUBLIC_API_URL=http://200.234.39.163:${STAGING_API_PORT}/api/v1`,
+    // This staging origin is plain HTTP. Production must not copy this override.
+    'COOKIE_SECURE=false',
   ].join('\n');
   await sshWrite(conn, `${PROJECT_DIR}/apps/web/.env.local`, webEnv);
   console.log('✅ Web .env.local written');
@@ -184,6 +186,7 @@ echo "STEP4_OK"
         NODE_ENV: 'production',
         PORT: ${STAGING_WEB_PORT},
         HOSTNAME: '0.0.0.0',
+        COOKIE_SECURE: 'false',
       },
       error_file: '/var/log/elscore/web-error.log',
       out_file: '/var/log/elscore/web-out.log',

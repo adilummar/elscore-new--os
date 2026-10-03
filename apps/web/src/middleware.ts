@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { authCookieOptions } from '@/lib/auth/auth-cookie-options';
 import { unwrapRefreshPayload } from '@/lib/auth/unwrap-refresh-payload';
 
 export async function middleware(request: NextRequest) {
@@ -51,8 +52,6 @@ export async function middleware(request: NextRequest) {
           response.cookies.delete('refreshToken');
           return response;
         }
-        const secureCookies = process.env.COOKIE_SECURE !== 'false';
-        
         // Seamlessly continue the request with new cookies
         const requestHeaders = new Headers(request.headers);
         
@@ -74,22 +73,10 @@ export async function middleware(request: NextRequest) {
           },
         });
         
-        response.cookies.set('accessToken', data.accessToken, {
-          httpOnly: true,
-          secure: secureCookies,
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 15 * 60,
-        });
-        
+        response.cookies.set('accessToken', data.accessToken, authCookieOptions(15 * 60));
+
         if (data.refreshToken) {
-          response.cookies.set('refreshToken', data.refreshToken, {
-            httpOnly: true,
-            secure: secureCookies,
-            sameSite: 'lax',
-            path: '/',
-            maxAge: 7 * 24 * 60 * 60,
-          });
+          response.cookies.set('refreshToken', data.refreshToken, authCookieOptions(7 * 24 * 60 * 60));
         }
         
         return response;
