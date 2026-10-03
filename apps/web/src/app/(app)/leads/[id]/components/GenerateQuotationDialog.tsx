@@ -9,6 +9,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 export function GenerateQuotationDialog({
   student,
+  lead,
   isOpen,
   onClose,
   onSuccess,
@@ -16,6 +17,7 @@ export function GenerateQuotationDialog({
   onEditRequirement,
 }: {
   student: any;
+  lead: any;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (quotationId: string) => void;
@@ -76,6 +78,11 @@ export function GenerateQuotationDialog({
     }
   };
 
+  const parentName = [lead?.firstName, lead?.lastName].filter(Boolean).join(' ').trim() || 'Unavailable';
+  const parentPhone = lead?.primaryPhone || 'Unavailable';
+  const curriculumName = previewData?.curriculumName || null;
+  const gradeName = previewData?.gradeName || null;
+
   const getSourceLabel = (source: string) => {
     if (source === 'SLAB') return 'General Pricing Slab';
     if (source === 'EXCEPTIONAL_SUBJECT') return 'Exceptional Subject Rate';
@@ -97,16 +104,16 @@ export function GenerateQuotationDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">PREPARED FOR</h3>
-              <p className="text-sm"><span className="font-medium text-slate-700">Parent/Guardian:</span> {student?.lead?.parentName || 'Unknown'}</p>
-              <p className="text-sm"><span className="font-medium text-slate-700">Phone:</span> {student?.lead?.phone || 'Unknown'}</p>
-              <p className="text-sm"><span className="font-medium text-slate-700">Email:</span> {student?.lead?.email || 'N/A'}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Parent/Guardian:</span> {parentName}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Phone:</span> {parentPhone}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Email:</span> N/A</p>
             </div>
             
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">STUDENT</h3>
               <p className="text-sm"><span className="font-medium text-slate-700">Student:</span> {student?.firstName} {student?.lastName}</p>
-              <p className="text-sm"><span className="font-medium text-slate-700">Curriculum:</span> {student?.curriculum?.name || 'N/A'}</p>
-              <p className="text-sm"><span className="font-medium text-slate-700">Grade:</span> {student?.grade?.name || 'N/A'}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Curriculum:</span> {curriculumName || 'Pending validation'}</p>
+              <p className="text-sm"><span className="font-medium text-slate-700">Grade:</span> {gradeName || 'Pending validation'}</p>
             </div>
           </div>
 

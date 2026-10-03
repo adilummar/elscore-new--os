@@ -31,7 +31,7 @@ export class TutorProfileController {
   }
 
   @Get(':id')
-  @RequirePermissions('tutor.read') // HR, Mentor, Demo Coordinator
+  @RequirePermissions('tutor.profile.read')
   @ApiOperation({ summary: 'Get tutor profile by Profile ID' })
   async getProfile(@Param('id') id: string) {
     return this.tutorProfileService.findByProfileId(id);
@@ -39,7 +39,7 @@ export class TutorProfileController {
 
   // --- HR-Managed Fields ---
   @Patch(':id/experience')
-  @RequirePermissions('tutor.manage')
+  @RequirePermissions('tutor.profile.manage')
   @ApiOperation({ summary: 'Update teaching experience (HR only)' })
   async updateExperience(
     @Param('id') id: string,
@@ -50,7 +50,7 @@ export class TutorProfileController {
   }
 
   @Post(':id/curricula/:curriculumId')
-  @RequirePermissions('tutor.manage')
+  @RequirePermissions('tutor.profile.manage')
   @ApiOperation({ summary: 'Add a curriculum to tutor profile (HR only)' })
   async addCurriculum(
     @Param('id') id: string,
@@ -62,7 +62,7 @@ export class TutorProfileController {
   }
 
   @Delete(':id/curricula/:curriculumId')
-  @RequirePermissions('tutor.manage')
+  @RequirePermissions('tutor.profile.manage')
   @ApiOperation({ summary: 'Remove a curriculum from tutor profile (HR only)' })
   async removeCurriculum(
     @Param('id') id: string,

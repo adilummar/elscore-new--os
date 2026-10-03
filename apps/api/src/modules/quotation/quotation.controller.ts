@@ -1,8 +1,7 @@
-import { Controller, Get, Post, Param, Body, UseGuards, Res } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { QuotationService } from './quotation.service';
 import { PdfService } from './pdf.service';
-import { JwtAuthGuard } from '../../common/auth/guards/jwt-auth.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 import { CurrentUser } from '../../common/auth/decorators/current-user.decorator';
 import { GenerateQuotationDto } from './dto/quotation.dto';
@@ -12,7 +11,6 @@ import { AuthorizationService } from '../../common/rbac/authorization.service';
 import { NotFoundException } from '@nestjs/common';
 
 @Controller('quotations')
-@UseGuards(JwtAuthGuard)
 export class QuotationController {
   constructor(
     private readonly quotationService: QuotationService,
@@ -22,7 +20,7 @@ export class QuotationController {
   ) {}
 
   @Get('student/:studentId')
-  @RequirePermissions('quotation.read.own', 'quotation.read.team', 'quotation.read.all')
+  @RequirePermissions('quotation.read')
   getStudentQuotations(@Param('studentId') studentId: string, @CurrentUser() user: any) {
     return this.quotationService.getQuotationsByStudent(studentId, user);
   }
@@ -40,7 +38,7 @@ export class QuotationController {
   }
 
   @Get(':id/pdf')
-  @RequirePermissions('quotation.read.own', 'quotation.read.team', 'quotation.read.all')
+  @RequirePermissions('quotation.read')
   async downloadPdf(@Param('id') id: string, @CurrentUser() user: any, @Res() res: Response) {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id },
@@ -48,7 +46,7 @@ export class QuotationController {
     });
     if (!quotation) throw new NotFoundException('Quotation not found');
 
-    const hasBypass = await this.authzService.hasPermissions(user.id, ['quotation.read.all']);
+    const hasBypass = await this.authzService.hasPermissions(user.id, ['lead.read-all']);
     assertOwnershipOrBypass(quotation.lead?.assignedToUserId, user.id, hasBypass, 'You do not have permission to download this quotation');
 
     const buffer = await this.pdfService.generateQuotationPdf(quotation);

@@ -5,19 +5,30 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
-import { usePermissions, useAuth } from '@/components/providers/AuthProvider';
+import { usePermissions } from '@/components/providers/AuthProvider';
 import { getReferenceDataAction } from '../../leads/actions';
+import {
+  createExceptionalRateAction,
+  createPricingSlabAction,
+  getExceptionalRatesAction,
+  getFinanceSettingAction,
+  getPricingSlabsAction,
+  updateExceptionalRateStatusAction,
+  updatePricingSlabStatusAction,
+  upsertFinanceSettingAction,
+} from '../actions';
 import { Modal } from '@/components/ui/Modal';
 
 export default function PricingSettingsPage() {
   const { hasPermission } = usePermissions();
-  
+
   const [slabs, setSlabs] = React.useState<any[]>([]);
   const [exceptionalRates, setExceptionalRates] = React.useState<any[]>([]);
-  
+  const [financeSetting, setFinanceSetting] = React.useState<any>(null);
+
   const [subjects, setSubjects] = React.useState<any[]>([]);
   const [curriculums, setCurriculums] = React.useState<any[]>([]);
-  
+
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -27,19 +38,20 @@ export default function PricingSettingsPage() {
   const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [slabsRes, exRes, subRes, curRes] = await Promise.all([
-        fetch('/api/pricing/slabs'),
-        fetch('/api/pricing/exceptional-rates'),
+      const [slabsRes, exRes, financeRes, subRes, curRes] = await Promise.all([
+        getPricingSlabsAction(),
+        getExceptionalRatesAction(),
+        getFinanceSettingAction(),
         getReferenceDataAction('subjects'),
-        getReferenceDataAction('curricula')
+        getReferenceDataAction('curricula'),
       ]);
 
-      if (!slabsRes.ok || !exRes.ok) throw new Error('Failed to load pricing data');
-      
-      setSlabs(await slabsRes.json());
-      setExceptionalRates(await exRes.json());
-      setSubjects(subRes.data || []);
-      setCurriculums(curRes.data || []);
+      setSlabs(Array.isArray(slabsRes) ? slabsRes : []);
+      setExceptionalRates(Array.isArray(exRes) ? exRes : []);
+      setFinanceSetting(financeRes);
+      setSubjects(subRes?.data || subRes || []);
+      setCurriculums(curRes?.data || curRes || []);
+      setError(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -52,20 +64,12 @@ export default function PricingSettingsPage() {
   }, [loadData]);
 
   const toggleSlab = async (id: string, current: boolean) => {
-    await fetch(`/api/pricing/slabs/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json',  },
-      body: JSON.stringify({ isActive: !current })
-    });
+    await updatePricingSlabStatusAction(id, !current);
     loadData();
   };
 
   const toggleEx = async (id: string, current: boolean) => {
-    await fetch(`/api/pricing/exceptional-rates/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json',  },
-      body: JSON.stringify({ isActive: !current })
-    });
+    await updateExceptionalRateStatusAction(id, !current);
     loadData();
   };
 
@@ -77,11 +81,13 @@ export default function PricingSettingsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Pricing Settings</h1>
-          <p className="text-slate-500">Manage global pricing slabs and exceptional subject rates.</p>
+          <p className="text-slate-500">Manage global pricing slabs, exceptional subject rates, and quotation account details.</p>
         </div>
       </div>
-      
+
       {error && <div className="p-4 bg-red-50 text-red-600 rounded-md">{error}</div>}
+
+      <FinanceSettingsCard setting={financeSetting} onSuccess={loadData} />
 
       <Card>
         <CardHeader className="flex flex-row justify-between items-center">
@@ -172,20 +178,103 @@ export default function PricingSettingsPage() {
         </CardContent>
       </Card>
 
-      <AddSlabModal 
-        isOpen={isSlabModalOpen} 
-        onClose={() => setIsSlabModalOpen(false)} 
-        onSuccess={loadData} 
+      <AddSlabModal
+        isOpen={isSlabModalOpen}
+        onClose={() => setIsSlabModalOpen(false)}
+        onSuccess={loadData}
         curriculums={curriculums}
       />
-      
-      <AddExceptionalModal 
-        isOpen={isExModalOpen} 
-        onClose={() => setIsExModalOpen(false)} 
-        onSuccess={loadData} 
+
+      <AddExceptionalModal
+        isOpen={isExModalOpen}
+        onClose={() => setIsExModalOpen(false)}
+        onSuccess={loadData}
         subjects={subjects}
       />
     </div>
+  );
+}
+
+function FinanceSettingsCard({ setting, onSuccess }: { setting: any; onSuccess: () => void }) {
+  const [registrationFee, setRegistrationFee] = React.useState(setting?.registrationFee ?? '');
+  const [accountHolderName, setAccountHolderName] = React.useState(setting?.accountHolderName ?? '');
+  const [bankName, setBankName] = React.useState(setting?.bankName ?? '');
+  const [accountNumber, setAccountNumber] = React.useState(setting?.accountNumber ?? '');
+  const [iban, setIban] = React.useState(setting?.iban ?? '');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    setRegistrationFee(setting?.registrationFee ?? '');
+    setAccountHolderName(setting?.accountHolderName ?? '');
+    setBankName(setting?.bankName ?? '');
+    setAccountNumber(setting?.accountNumber ?? '');
+    setIban(setting?.iban ?? '');
+  }, [setting]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      await upsertFinanceSettingAction({
+        registrationFee: Number(registrationFee),
+        accountHolderName,
+        bankName,
+        accountNumber,
+        iban,
+        currency: 'AED',
+      });
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save finance settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Quotation Account Details</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-slate-500 mb-4">
+          These values are snapshotted onto each generated quotation. Historical PDFs do not change when you update this form.
+          Currency is AED.
+        </p>
+        {error && <div className="text-red-500 text-sm mb-3">{error}</div>}
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm font-medium">Registration Fee (AED) *</label>
+            <input type="number" required min="0" step="0.01" value={registrationFee} onChange={(e) => setRegistrationFee(e.target.value)} className="w-full p-2 border rounded-md" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Currency</label>
+            <input value="AED" disabled className="w-full p-2 border rounded-md bg-slate-50" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Account Holder Name *</label>
+            <input required value={accountHolderName} onChange={(e) => setAccountHolderName(e.target.value)} className="w-full p-2 border rounded-md" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Bank Name *</label>
+            <input required value={bankName} onChange={(e) => setBankName(e.target.value)} className="w-full p-2 border rounded-md" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Account Number *</label>
+            <input required value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} className="w-full p-2 border rounded-md" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">IBAN *</label>
+            <input required value={iban} onChange={(e) => setIban(e.target.value)} className="w-full p-2 border rounded-md" />
+          </div>
+          <div className="md:col-span-2 flex justify-end">
+            <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Account Details'}</Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -202,21 +291,16 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums }: any) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/pricing/slabs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json',  },
-        body: JSON.stringify({ 
-          curriculumId, 
-          gradeFrom: Number(gradeFrom), 
-          gradeTo: Number(gradeTo), 
-          hourlyRate: Number(hourlyRate) 
-        })
+      await createPricingSlabAction({
+        curriculumId,
+        gradeFrom: Number(gradeFrom),
+        gradeTo: Number(gradeTo),
+        hourlyRate: Number(hourlyRate),
       });
-      if (!res.ok) throw new Error((await res.json()).message || 'Failed to create');
       onSuccess();
       onClose();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -268,19 +352,14 @@ function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects }: any) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/pricing/exceptional-rates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json',  },
-        body: JSON.stringify({ 
-          subjectId, 
-          hourlyRate: Number(hourlyRate) 
-        })
+      await createExceptionalRateAction({
+        subjectId,
+        hourlyRate: Number(hourlyRate),
       });
-      if (!res.ok) throw new Error((await res.json()).message || 'Failed to create');
       onSuccess();
       onClose();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }

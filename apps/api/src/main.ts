@@ -59,7 +59,7 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-God-View-Target'],
   });
 
   // ─── Global prefix ────────────────────────────────────────────────────────
@@ -99,11 +99,6 @@ async function bootstrap() {
 
   // ─── Graceful shutdown ────────────────────────────────────────────────────
   app.enableShutdownHooks();
-
-  const prismaService = app.get(require('./common/prisma/prisma.service').PrismaService);
-  await prismaService.sequence.upsert({where: {entityType: 'LED'}, update: {nextNumber: {increment: 1000}}, create: {entityType: 'LED', prefix: 'LED-', nextNumber: 5000}});
-  await prismaService.sequence.upsert({where: {entityType: 'STU'}, update: {nextNumber: {increment: 1000}}, create: {entityType: 'STU', prefix: 'STU-', nextNumber: 5000}});
-  await prismaService.sequence.upsert({where: {entityType: 'RQT'}, update: {nextNumber: {increment: 1000}}, create: {entityType: 'RQT', prefix: 'RQT-', nextNumber: 5000}});
 
   await app.listen(port);
 

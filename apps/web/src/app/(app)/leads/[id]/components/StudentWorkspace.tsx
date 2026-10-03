@@ -8,7 +8,7 @@ import { usePermissions } from '@/components/providers/AuthProvider';
 import { AddEditStudentDialog } from './AddEditStudentDialog';
 import { AddEditRequirementDialog } from './AddEditRequirementDialog';
 import { GenerateQuotationDialog } from './GenerateQuotationDialog';
-import { useRouter } from 'next/navigation';
+import { QuotationHistory } from './QuotationHistory';
 
 export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () => void }) {
   const { hasPermission } = usePermissions();
@@ -20,8 +20,7 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
   const [isRequirementDialogOpen, setIsRequirementDialogOpen] = React.useState(false);
   const [isQuotationDialogOpen, setIsQuotationDialogOpen] = React.useState(false);
   const [activeStudentForQuotation, setActiveStudentForQuotation] = React.useState<any>(null);
-  
-  const router = useRouter();
+  const [quotationHistoryKey, setQuotationHistoryKey] = React.useState(0);
 
   const openAddStudent = () => {
     setEditingStudent(null);
@@ -114,6 +113,12 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
                 ) : (
                   <p className="text-sm text-slate-500 italic">No subjects added yet.</p>
                 )}
+
+                <QuotationHistory
+                  studentId={student.id}
+                  studentName={`${student.firstName} ${student.lastName || ''}`.trim()}
+                  refreshKey={quotationHistoryKey}
+                />
               </CardContent>
             </Card>
           ))}
@@ -148,14 +153,14 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
       {isQuotationDialogOpen && activeStudentForQuotation && (
         <GenerateQuotationDialog
           student={activeStudentForQuotation}
+          lead={lead}
           isOpen={isQuotationDialogOpen}
           onClose={() => setIsQuotationDialogOpen(false)}
           onAddRequirement={() => openAddRequirement(activeStudentForQuotation.id)}
           onEditRequirement={(req) => openEditRequirement(activeStudentForQuotation.id, req)}
-          onSuccess={(id) => {
+          onSuccess={() => {
             setIsQuotationDialogOpen(false);
-            // Optionally redirect to a quotation viewer or just refresh
-            alert(`Quotation generated! ID: ${id}`);
+            setQuotationHistoryKey((key) => key + 1);
             onUpdate();
           }}
         />

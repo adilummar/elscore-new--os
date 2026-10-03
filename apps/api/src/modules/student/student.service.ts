@@ -153,6 +153,11 @@ export class StudentService {
       const { subjectIds, ...studentData } = dto;
 
       if (studentId) {
+        const existing = await tx.student.findUnique({ where: { id: studentId } });
+        if (!existing) throw new NotFoundException('Student not found');
+        if (existing.leadId !== leadId) {
+          throw new ForbiddenException('Student does not belong to this lead');
+        }
         student = await tx.student.update({ where: { id: studentId }, data: studentData });
       } else {
         const businessId = await this.idGen.nextIdInTx(tx, 'STU');

@@ -215,3 +215,7 @@ export async function generateQuotationAction(studentId: string, offerHourlyRate
     return { data: null, error: err.message || 'Failed to generate quotation' };
   }
 }
+
+export async function getStudentQuotationsAction(studentId: string) {
+  return fetchApi<any[]>(`/quotations/student/${studentId}`);
+}

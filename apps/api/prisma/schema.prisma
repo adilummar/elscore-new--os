@@ -2011,12 +2011,17 @@ model ExceptionalSubjectRate {
 }
 
 model FinanceSetting {
-  id              String   @id @default(uuid())
-  registrationFee Decimal  @map("registration_fee") @db.Decimal(10, 2)
-  currency        String   @default("AED")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  updatedBy       String?  @map("updated_by")
+  id                String   @id @default(uuid())
+  code              String   @unique @default("DEFAULT")
+  registrationFee   Decimal  @map("registration_fee") @db.Decimal(10, 2)
+  currency          String   @default("AED")
+  accountHolderName String?  @map("account_holder_name")
+  bankName          String?  @map("bank_name")
+  accountNumber     String?  @map("account_number")
+  iban              String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedBy         String?  @map("updated_by")
 
   @@map("finance_settings")
 }
@@ -2051,6 +2056,11 @@ model Quotation {
   savingPercentage   Decimal  @default(0) @map("saving_percentage") @db.Decimal(10, 2)
   registrationFee    Decimal  @default(0) @map("registration_fee") @db.Decimal(10, 2)
   totalAmountDue     Decimal  @map("total_amount_due") @db.Decimal(10, 2)
+
+  accountHolderName String? @map("account_holder_name")
+  bankName          String? @map("bank_name")
+  accountNumber     String? @map("account_number")
+  iban              String?
 
   createdAt DateTime @default(now()) @map("created_at")
   createdBy String   @map("created_by")

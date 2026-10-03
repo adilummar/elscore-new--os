@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { unwrapRefreshPayload } from '@/lib/auth/unwrap-refresh-payload';
+
 export async function middleware(request: NextRequest) {
   const accessToken = request.cookies.get('accessToken')?.value;
   const refreshToken = request.cookies.get('refreshToken')?.value;
@@ -41,7 +43,14 @@ export async function middleware(request: NextRequest) {
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const json = await res.json();
+        const data = unwrapRefreshPayload(json);
+        if (!data.accessToken) {
+          const response = NextResponse.redirect(new URL('/login', request.url), 303);
+          response.cookies.delete('accessToken');
+          response.cookies.delete('refreshToken');
+          return response;
+        }
         const secureCookies = process.env.COOKIE_SECURE !== 'false';
         
         // Seamlessly continue the request with new cookies

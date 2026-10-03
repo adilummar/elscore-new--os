@@ -31,3 +31,72 @@ export async function updateGradeStatusAction(id: string, status: boolean) { con
 export async function updateCurriculumStatusAction(id: string, status: boolean) { const res = await fetchApi<any>('/reference/curricula/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ isActive: status }) }); revalidatePath('/settings/reference-data'); return res; }
 
 export async function getAuditAction(query: string) { return fetchApi<any>('/audit?' + query); }
+
+export async function getPricingSlabsAction() {
+  return fetchApi<any[]>('/pricing/slabs');
+}
+
+export async function createPricingSlabAction(data: {
+  curriculumId: string;
+  gradeFrom: number;
+  gradeTo: number;
+  hourlyRate: number;
+}) {
+  const res = await fetchApi<any>('/pricing/slabs', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}
+
+export async function updatePricingSlabStatusAction(id: string, isActive: boolean) {
+  const res = await fetchApi<any>(`/pricing/slabs/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}
+
+export async function getExceptionalRatesAction() {
+  return fetchApi<any[]>('/pricing/exceptional-rates');
+}
+
+export async function createExceptionalRateAction(data: { subjectId: string; hourlyRate: number }) {
+  const res = await fetchApi<any>('/pricing/exceptional-rates', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}
+
+export async function updateExceptionalRateStatusAction(id: string, isActive: boolean) {
+  const res = await fetchApi<any>(`/pricing/exceptional-rates/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}
+
+export async function getFinanceSettingAction() {
+  return fetchApi<any>('/pricing/finance-settings');
+}
+
+export async function upsertFinanceSettingAction(data: {
+  registrationFee: number;
+  accountHolderName: string;
+  bankName: string;
+  accountNumber: string;
+  iban: string;
+  currency?: string;
+}) {
+  const res = await fetchApi<any>('/pricing/finance-settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ ...data, currency: data.currency || 'AED' }),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}

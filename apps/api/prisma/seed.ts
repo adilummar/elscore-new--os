@@ -1202,7 +1202,8 @@ const SEQUENCES = [
 
   { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
   { entityType: 'LED', prefix: 'LED', nextNumber: 1, padding: 4 }, // Lead
-  { entityType: 'REQ', prefix: 'REQ', nextNumber: 1, padding: 4 }, // Requirement
+  { entityType: 'RQT', prefix: 'RQT', nextNumber: 1, padding: 4 }, // Requirement (canonical runtime key)
+  { entityType: 'QUO', prefix: 'QUO', nextNumber: 1, padding: 4 }, // Quotation
   { entityType: 'STU', prefix: 'STU', padding: 4 },
   { entityType: 'FUP', prefix: 'FUP', nextNumber: 1, padding: 4 }, // FollowUp
   { entityType: 'DMO', prefix: 'DMO', nextNumber: 1, padding: 4 }, // Demo-ups (Slice 2B)

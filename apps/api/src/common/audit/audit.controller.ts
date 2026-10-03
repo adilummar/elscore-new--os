@@ -15,7 +15,7 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @RequirePermissions('audit.read')
+  @RequirePermissions('audit.view')
   @ApiOperation({ summary: 'List audit logs with filtering and pagination' })
   async findAll(@Query() query: AuditQueryDto) {
     return this.auditService.findAll({

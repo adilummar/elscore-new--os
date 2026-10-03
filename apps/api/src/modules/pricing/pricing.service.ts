@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma/prisma.service';
+
 import { AuditService } from '../../common/audit/audit.service';
-import { CreatePricingSlabDto, UpdatePricingSlabDto, CreateExceptionalRateDto, UpdateExceptionalRateDto } from './dto/pricing.dto';
-import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
+
+import { CreatePricingSlabDto, UpdatePricingSlabDto, CreateExceptionalRateDto, UpdateExceptionalRateDto, UpsertFinanceSettingDto } from './dto/pricing.dto';
 
 @Injectable()
 export class PricingService {
@@ -136,10 +137,16 @@ export class PricingService {
 
   /**
    * Resolves the normal hourly rate for a subject.
+   * Pass the active transaction client during quotation generation so pricing
+   * is read from the same transaction as the quotation snapshot.
    */
-  async resolveHourlyRate(curriculumId: string, gradeSortOrder: number, subjectId: string): Promise<{ rate: number, source: string }> {
-    // 1. Exceptional Rate overrides all
-    const exceptional = await this.prisma.exceptionalSubjectRate.findFirst({
+  async resolveHourlyRate(
+    curriculumId: string,
+    gradeSortOrder: number,
+    subjectId: string,
+    db: PrismaTxClient | PrismaService = this.prisma,
+  ): Promise<{ rate: number, source: string }> {
+    const exceptional = await db.exceptionalSubjectRate.findFirst({
       where: { subjectId, isActive: true },
     });
 
@@ -147,8 +154,7 @@ export class PricingService {
       return { rate: Number(exceptional.hourlyRate), source: 'EXCEPTIONAL_SUBJECT' };
     }
 
-    // 2. Base Slab
-    const slab = await this.prisma.pricingSlab.findFirst({
+    const slab = await db.pricingSlab.findFirst({
       where: {
         curriculumId,
         isActive: true,
@@ -162,5 +168,68 @@ export class PricingService {
     }
 
     return { rate: Number(slab.hourlyRate), source: 'SLAB' };
+  }
+
+  async getFinanceSetting() {
+    return this.prisma.financeSetting.findUnique({
+      where: { code: 'DEFAULT' },
+    });
+  }
+
+  async upsertFinanceSetting(dto: UpsertFinanceSettingDto, userId: string) {
+    const currency = dto.currency || 'AED';
+    if (currency !== 'AED') {
+      throw new BadRequestException('AED is the authoritative quotation currency.');
+    }
+
+    const accountHolderName = dto.accountHolderName.trim();
+    const bankName = dto.bankName.trim();
+    const accountNumber = dto.accountNumber.trim();
+    const iban = dto.iban.trim();
+
+    if (!accountHolderName || !bankName || !accountNumber || !iban) {
+      throw new BadRequestException(
+        'Account Holder Name, Bank Name, Account Number, and IBAN are required.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const setting = await tx.financeSetting.upsert({
+        where: { code: 'DEFAULT' },
+        update: {
+          registrationFee: dto.registrationFee,
+          currency: 'AED',
+          accountHolderName,
+          bankName,
+          accountNumber,
+          iban,
+          updatedBy: userId,
+        },
+        create: {
+          code: 'DEFAULT',
+          registrationFee: dto.registrationFee,
+          currency: 'AED',
+          accountHolderName,
+          bankName,
+          accountNumber,
+          iban,
+          updatedBy: userId,
+        },
+      });
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'FinanceSetting',
+        entityId: setting.id,
+        action: 'UPSERTED',
+        actorUserId: userId,
+        newValue: {
+          code: setting.code,
+          registrationFee: setting.registrationFee,
+          currency: setting.currency,
+        },
+      });
+
+      return setting;
+    });
   }
 }

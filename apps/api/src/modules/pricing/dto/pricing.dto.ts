@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsNumber, IsBoolean, IsOptional, Min } from 'class-validator';
+import { IsString, IsInt, IsNumber, IsBoolean, IsOptional, Min, Equals } from 'class-validator';
 
 export class CreatePricingSlabDto {
   @IsString()
@@ -35,3 +35,26 @@ export class UpdateExceptionalRateDto {
   @IsBoolean()
   isActive: boolean;
 }
+
+export class UpsertFinanceSettingDto {
+  @IsNumber()
+  @Min(0)
+  registrationFee: number;
+
+  @IsString()
+  accountHolderName: string;
+
+  @IsString()
+  bankName: string;
+
+  @IsString()
+  accountNumber: string;
+
+  @IsString()
+  iban: string;
+
+  @IsOptional()
+  @Equals('AED')
+  currency?: string;
+}
+
