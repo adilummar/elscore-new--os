@@ -94,6 +94,11 @@ export class DemoService {
         throw new BadRequestException('Invalid Student or Requirement combination');
       }
 
+      const canBookAnyLead = hasHeadAccess || await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
+      if (!canBookAnyLead && requirement.student.lead?.assignedToUserId !== user.id) {
+        throw new ForbiddenException('You can only book demos for your assigned leads');
+      }
+
       // Overlap check
       await this.checkOverlap(tx, dto.studentId, null, start, end);
 
@@ -356,12 +361,25 @@ export class DemoService {
     const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const demo = await tx.demo.findUnique({ where: { id }, select: { id: true, status: true, bookedByUserId: true, studentId: true } });
+      const demo = await tx.demo.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          bookedByUserId: true,
+          studentId: true,
+          student: { select: { lead: { select: { assignedToUserId: true } } } },
+        },
+      });
       if (!demo) throw new NotFoundException('Demo not found');
 
       const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
       if (terminalStates.includes(demo.status)) {
         throw new BadRequestException('Cannot edit a terminal demo');
+      }
+
+      if (!isCoordinator && !isHead && demo.student.lead.assignedToUserId !== user.id) {
+        throw new ForbiddenException('You can only edit demos for your assigned leads');
       }
 
       if (demo.status === DemoStatus.ASSIGNED && !isCoordinator && !isHead) {
@@ -373,7 +391,16 @@ export class DemoService {
       }
 
       const updateData: any = {};
-      if (dto.studentId) updateData.studentId = dto.studentId;
+      if (dto.studentId && dto.studentId !== demo.studentId) {
+        const nextStudent = await tx.student.findUnique({
+          where: { id: dto.studentId },
+          select: { lead: { select: { assignedToUserId: true } } },
+        });
+        if (!isCoordinator && !isHead && nextStudent?.lead.assignedToUserId !== user.id) {
+          throw new ForbiddenException('You can only book demos for your assigned leads');
+        }
+        updateData.studentId = dto.studentId;
+      }
       if (dto.requirementId) updateData.requirementId = dto.requirementId;
 
       if (Object.keys(updateData).length === 0) {
