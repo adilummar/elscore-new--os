@@ -42,6 +42,17 @@ describe('StudentService.saveBundle', () => {
     service = module.get(StudentService);
   });
 
+  it('denies a counsellor reading a student reached through another counsellor lead', async () => {
+    mockPrisma.student.findUnique.mockResolvedValue({
+      id: 'student-b',
+      leadId: 'lead-b',
+      requirements: [],
+    });
+    mockPrisma.lead.findUnique.mockResolvedValue({ assignedToUserId: 'counsellor-b' });
+
+    await expect(service.findOne('student-b', 'counsellor-a', false)).rejects.toThrow(ForbiddenException);
+  });
+
   it('rejects updating a student that belongs to a different lead', async () => {
     mockPrisma.student.findUnique.mockResolvedValue({
       id: 'foreign-student',

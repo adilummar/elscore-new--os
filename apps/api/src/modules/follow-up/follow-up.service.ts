@@ -266,6 +266,9 @@ export class FollowUpService {
     if (query.ownerUserId && query.ownerUserId !== userId && !hasReadAll) {
       throw new ForbiddenException('Only Sales Head can filter by ownerUserId');
     }
+    if (query.leadId) {
+      await this.checkLeadAccess(query.leadId, userId, hasReadAll);
+    }
     const limit = query.limit ?? 20;
     const take = limit + 1;
     const cursorId = query.cursor ? decodeCursor(query.cursor) : undefined;

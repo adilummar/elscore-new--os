@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
-import { usePermissions } from '@/components/providers/AuthProvider';
+import { useAuth, usePermissions } from '@/components/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, Calendar, User, ChevronRight, X } from 'lucide-react';
 import { CreateLeadDialog } from './CreateLeadDialog';
@@ -60,6 +60,7 @@ const QUICK_FILTERS = [
 
 // ── Cache for instant back navigation ───────────────────────────────────────
 let cachedState: {
+  userId: string;
   leads: any[];
   search: string;
   status: string;
@@ -78,38 +79,43 @@ let cachedState: {
 
 // ─── component ────────────────────────────────────────────────────────────────
 export function LeadList() {
-  const [leads, setLeads] = React.useState<any[]>(cachedState?.leads || []);
-  const [loading, setLoading] = React.useState(!cachedState?.leads?.length);
+  const { effectiveUser } = useAuth();
+  const viewerId = effectiveUser?.id ?? '';
+  const viewerCache = cachedState?.userId === viewerId ? cachedState : null;
+
+  const [leads, setLeads] = React.useState<any[]>(viewerCache?.leads || []);
+  const [loading, setLoading] = React.useState(!viewerCache?.leads?.length);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [search, setSearch] = React.useState(cachedState?.search || '');
-  const [debouncedSearch, setDebouncedSearch] = React.useState(cachedState?.search || '');
-  const [status, setStatus] = React.useState(cachedState?.status || '');
-  const [source, setSource] = React.useState(cachedState?.source || '');
-  const [classification, setClassification] = React.useState(cachedState?.classification || '');
-  const [ownerId, setOwnerId] = React.useState(cachedState?.ownerId || '');
-  const [followUpState, setFollowUpState] = React.useState(cachedState?.followUpState || '');
-  const [limit, setLimit] = React.useState(cachedState?.limit || 20);
+  const [search, setSearch] = React.useState(viewerCache?.search || '');
+  const [debouncedSearch, setDebouncedSearch] = React.useState(viewerCache?.search || '');
+  const [status, setStatus] = React.useState(viewerCache?.status || '');
+  const [source, setSource] = React.useState(viewerCache?.source || '');
+  const [classification, setClassification] = React.useState(viewerCache?.classification || '');
+  const [ownerId, setOwnerId] = React.useState(viewerCache?.ownerId || '');
+  const [followUpState, setFollowUpState] = React.useState(viewerCache?.followUpState || '');
+  const [limit, setLimit] = React.useState(viewerCache?.limit || 20);
 
   // Date filters
-  const [dateFrom, setDateFrom] = React.useState(cachedState?.dateFrom || '');
-  const [dateTo, setDateTo] = React.useState(cachedState?.dateTo || '');
-  const [activeQuick, setActiveQuick] = React.useState<string | null>(cachedState?.activeQuick || null);
+  const [dateFrom, setDateFrom] = React.useState(viewerCache?.dateFrom || '');
+  const [dateTo, setDateTo] = React.useState(viewerCache?.dateTo || '');
+  const [activeQuick, setActiveQuick] = React.useState<string | null>(viewerCache?.activeQuick || null);
 
   const [employees, setEmployees] = React.useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
 
   const { hasPermission } = usePermissions();
   const router = useRouter();
-  const [nextCursor, setNextCursor] = React.useState<string | null>(cachedState?.nextCursor || null);
-  const [totalLoaded, setTotalLoaded] = React.useState(cachedState?.totalLoaded || 0);
+  const [nextCursor, setNextCursor] = React.useState<string | null>(viewerCache?.nextCursor || null);
+  const [totalLoaded, setTotalLoaded] = React.useState(viewerCache?.totalLoaded || 0);
+  const canReadAllLeads = hasPermission('lead.read-all');
 
   // Restore scroll position
   React.useEffect(() => {
-    if (cachedState?.scrollY) {
+    if (cachedState?.userId === viewerId && cachedState.scrollY) {
       window.scrollTo(0, cachedState.scrollY);
     }
-  }, []);
+  }, [viewerId]);
 
   // Update cache whenever state changes
   React.useEffect(() => {
@@ -124,15 +130,17 @@ export function LeadList() {
 
   React.useEffect(() => {
     cachedState = {
+      userId: viewerId,
       leads, search, status, source, classification, ownerId, followUpState, limit,
       dateFrom, dateTo, activeQuick, nextCursor, totalLoaded,
-      scrollY: cachedState?.scrollY || window.scrollY
+      scrollY: cachedState?.userId === viewerId ? cachedState.scrollY : window.scrollY,
     };
-  }, [leads, search, status, source, classification, ownerId, followUpState, limit, dateFrom, dateTo, activeQuick, nextCursor, totalLoaded]);
+  }, [viewerId, leads, search, status, source, classification, ownerId, followUpState, limit, dateFrom, dateTo, activeQuick, nextCursor, totalLoaded]);
 
 
   // ── Load employees ──────────────────────────────────────────────────────────
   React.useEffect(() => {
+    if (!canReadAllLeads) return;
     async function loadEmployees() {
       try {
         const res = await getEmployeesAction();
@@ -148,7 +156,7 @@ export function LeadList() {
       }
     }
     loadEmployees();
-  }, []);
+  }, [canReadAllLeads]);
 
   // ── Debounce search ─────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -186,7 +194,7 @@ export function LeadList() {
       if (status) params.append('status', status);
       if (source) params.append('source', source);
       if (classification) params.append('classification', classification);
-      if (ownerId) params.append('assignedToUserId', ownerId);
+      if (canReadAllLeads && ownerId) params.append('assignedToUserId', ownerId);
       if (followUpState) params.append('followUpState', followUpState);
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
@@ -211,7 +219,7 @@ export function LeadList() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, status, source, classification, ownerId, followUpState, dateFrom, dateTo, limit, leads.length]);
+  }, [debouncedSearch, status, source, classification, ownerId, followUpState, dateFrom, dateTo, limit, leads.length, canReadAllLeads]);
 
 
   React.useEffect(() => {
@@ -310,12 +318,14 @@ export function LeadList() {
             <option value="NO_RESPONSE">No Response</option>
             <option value="JUNK">Junk</option>
           </Select>
-          <Select className="w-full md:w-48" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-            <option value="">All Owners</option>
-            {employees.map(emp => (
-              <option key={emp.id} value={emp.userId}>{emp.firstName} {emp.lastName}</option>
-            ))}
-          </Select>
+          {canReadAllLeads && (
+            <Select className="w-full md:w-48" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+              <option value="">All Owners</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.userId}>{emp.firstName} {emp.lastName}</option>
+              ))}
+            </Select>
+          )}
           <Select className="w-full md:w-48" value={followUpState} onChange={(e) => setFollowUpState(e.target.value)}>
             <option value="">All Follow-Ups</option>
             <option value="SCHEDULED">Scheduled</option>

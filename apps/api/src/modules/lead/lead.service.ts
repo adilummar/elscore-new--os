@@ -225,10 +225,16 @@ export class LeadService {
   }
 
   async findAll(query: LeadQueryDto, userId: string, hasReadAll: boolean) {
+    if (!hasReadAll && !userId) {
+      throw new ForbiddenException('User identity not found');
+    }
+
     const where: Prisma.LeadWhereInput = {
       isArchived: query.isArchived ?? false,
     };
 
+    // Ownership is part of the database predicate. A missing user id must not
+    // drop the filter, and a client assignee filter cannot widen it.
     if (!hasReadAll) {
       where.assignedToUserId = userId;
     } else if (query.assignedToUserId !== undefined) {
@@ -284,11 +290,11 @@ export class LeadService {
       if (searchTerms.length > 0) {
         where.AND = searchTerms.map(term => ({
           OR: [
-            { firstName: { contains: term, mode: 'insensitive' } },
-            { lastName: { contains: term, mode: 'insensitive' } },
+            { firstName: { contains: term, mode: 'insensitive' as const } },
+            { lastName: { contains: term, mode: 'insensitive' as const } },
             { primaryPhone: { contains: term } },
-            { students: { some: { firstName: { contains: term, mode: 'insensitive' } } } },
-            { students: { some: { lastName: { contains: term, mode: 'insensitive' } } } },
+            { students: { some: { firstName: { contains: term, mode: 'insensitive' as const } } } },
+            { students: { some: { lastName: { contains: term, mode: 'insensitive' as const } } } },
           ]
         }));
       }
@@ -507,8 +513,8 @@ export class LeadService {
     });
   }
 
-  async setArchive(id: string, isArchived: boolean, userId: string) {
-    // Only lead.archive / lead.reopen
+  async setArchive(id: string, isArchived: boolean, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Ensure lead exists
       await tx.lead.findUniqueOrThrow({ where: { id } });
@@ -533,7 +539,8 @@ export class LeadService {
     });
   }
 
-  async reopen(id: string, userId: string) {
+  async reopen(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const oldLead = await tx.lead.findUniqueOrThrow({ where: { id } });
       

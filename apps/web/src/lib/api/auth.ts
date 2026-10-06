@@ -66,6 +66,7 @@ export async function logout() {
 
   cookieStore.delete('accessToken');
   cookieStore.delete('refreshToken');
+  cookieStore.delete('godViewUserId');
 }
 
 export async function getSession() {

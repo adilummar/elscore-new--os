@@ -71,19 +71,22 @@ export class LeadController {
   @Post(':id/archive')
   @RequirePermissions('lead.archive')
   async archive(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.leadService.setArchive(id, true, user.id);
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.setArchive(id, true, user.id, readAll);
   }
 
   @Post(':id/unarchive')
   @RequirePermissions('lead.archive') // same permission logically
   async unarchive(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.leadService.setArchive(id, false, user.id);
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.setArchive(id, false, user.id, readAll);
   }
 
   @Post(':id/reopen')
   @RequirePermissions('lead.reopen')
   async reopen(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.leadService.reopen(id, user.id);
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.reopen(id, user.id, readAll);
   }
 
   @Post(':id/notes')
