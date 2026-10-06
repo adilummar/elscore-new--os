@@ -55,6 +55,13 @@ apps/api/prisma/dev.db
 # Database Backups
 *.dump
 
+# Private keys and certificates (never commit)
+*.pem
+*.key
+
+# Scratch scripts may contain credentials; keep local, never commit
+/scratch/
+
 # Production Env Files
 .env.production
 

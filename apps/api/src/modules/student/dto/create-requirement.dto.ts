@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, IsNumber } from 'class-validator';
 
 export class CreateRequirementDto {
   @IsUUID()
@@ -12,6 +12,10 @@ export class CreateRequirementDto {
   @IsUUID()
   @IsNotEmpty()
   gradeId!: string;
+  
+  @IsNumber()
+  @IsOptional()
+  monthlyHours?: number;
 
   @IsString()
   @IsOptional()

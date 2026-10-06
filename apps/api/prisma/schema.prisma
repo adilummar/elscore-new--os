@@ -247,12 +247,10 @@ model User {
   notifications    Notification[] @relation("UserNotifications")
 
   // Phase 1 additions
-  createdCustomRoles       Role[]                         @relation("CustomRoleCreator")
-  receivedPermissions      UserPermission[]               @relation("PermissionRecipient")
-  delegatedPermissions     UserPermission[]               @relation("PermissionDelegator")
-  createdRecruitments      TutorRecruitment[]             @relation("RecruitmentCreator")
-  advancedStages           TutorRecruitmentStage[]        @relation("StageAdvancedBy")
-  conductedInterviews      TutorInterview[]               @relation("InterviewConductor")
+  createdCustomRoles   Role[]           @relation("CustomRoleCreator")
+  receivedPermissions  UserPermission[] @relation("PermissionRecipient")
+  delegatedPermissions UserPermission[] @relation("PermissionDelegator")
+
   attendanceCorrections    EmployeeAttendanceCorrection[]
   addedTutorSubjects       TutorSubject[]                 @relation("TutorSubjectAddedBy")
   addedTutorGrades         TutorGrade[]                   @relation("TutorGradeAddedBy")
@@ -302,6 +300,15 @@ model User {
   distributionPreviousUser  LeadDistributionEvent[]     @relation("DistributionPreviousOwner")
   distributionNewUser       LeadDistributionEvent[]     @relation("DistributionNewOwner")
   distributionAssignedBy    LeadDistributionEvent[]     @relation("DistributionAssignedBy")
+
+  tutorLeadsCreated      TutorLead[]                @relation("TutorLeadCreator")
+  tutorLeadsAssigned     TutorLead[]                @relation("TutorLeadAssignee")
+  tutorLeadStagesChanged TutorLeadStageHistory[]    @relation("StageChangedBy")
+  tutorLeadCalls         TutorLeadCall[]            @relation("TutorLeadCalledBy")
+  tutorLeadDemos         TutorLeadDemo[]            @relation("TutorLeadDemoRecordedBy")
+  tutorTrainingsCreated  TutorLeadTrainingSession[] @relation("TutorTrainingCreatedBy")
+  tutorTrainingsUpdated  TutorLeadTrainingSession[] @relation("TutorTrainingUpdatedBy")
+  Quotation              Quotation[]
 
   @@map("users")
 }
@@ -372,10 +379,10 @@ model Employee {
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  user               User                        @relation("UserEmployee", fields: [userId], references: [id])
-  department         Department                  @relation(fields: [departmentId], references: [id])
-  tutorProfile       TutorProfile?               @relation("EmployeeTutorProfile")
-  recruitment        TutorRecruitment?           @relation("RecruitmentHiredEmployee")
+  user         User          @relation("UserEmployee", fields: [userId], references: [id])
+  department   Department    @relation(fields: [departmentId], references: [id])
+  tutorProfile TutorProfile? @relation("EmployeeTutorProfile")
+
   attendanceSessions EmployeeAttendanceSession[]
 
   @@index([departmentId])
@@ -438,9 +445,13 @@ model Subject {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tutorSubjects TutorSubject[]
-  requirements  Requirement[]
-  demos         Demo[]
+  tutorSubjects          TutorSubject[]
+  requirements           Requirement[]
+  demos                  Demo[]
+  TutorSalarySlabSubject TutorSalarySlabSubject[]
+  TutorLeadSubject       TutorLeadSubject[]
+  ExceptionalSubjectRate ExceptionalSubjectRate?
+  QuotationLineItem      QuotationLineItem[]
 
   @@map("subjects")
 }
@@ -456,10 +467,12 @@ model Grade {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tutorGrades  TutorGrade[]
-  requirements Requirement[]
-  demos        Demo[]
-  Student      Student[]
+  tutorGrades          TutorGrade[]
+  requirements         Requirement[]
+  demos                Demo[]
+  Student              Student[]
+  TutorSalarySlabGrade TutorSalarySlabGrade[]
+  TutorLeadGrade       TutorLeadGrade[]
 
   @@map("grades")
 }
@@ -477,6 +490,7 @@ model Curriculum {
   requirements   Requirement[]
   demos          Demo[]
   Student        Student[]
+  PricingSlab    PricingSlab[]
 
   @@map("curricula")
 }
@@ -486,21 +500,8 @@ model Curriculum {
 // =============================================================================
 
 /// Pipeline stages for a Tutor recruitment application.
-enum TutorRecruitmentStageCode {
-  LEAD
-  DETAILS_SHARED
-  CV_SHARED
-  CALLED
-  INTERVIEW
-  RECRUITED
-}
 
 /// Reason a recruitment application was closed without hire.
-enum TutorRejectionReason {
-  REJECTED // rejected by the academy
-  NOT_INTERESTED // candidate declined the offer
-  NO_RESPONSE // candidate stopped responding
-}
 
 /// Master record for one Tutor recruitment application.
 /// A candidate may have multiple records (e.g. different applications, or rehire).
@@ -511,98 +512,11 @@ enum TutorRejectionReason {
 /// After hire, the TutorProfile uses proper junction tables (TutorSubject, TutorGrade,
 /// TutorCurriculum) referencing the master lists.
 ///
-/// HISTORY: Records are never hard-deleted. isRejected + rejectionReason record closure.
-model TutorRecruitment {
-  id         String @id @default(uuid())
-  businessId String @unique @map("business_id") // REC-####
-
-  // Candidate identity (not yet a User at this stage)
-  firstName String  @map("first_name")
-  lastName  String  @map("last_name")
-  phone     String
-  email     String? // optional at enquiry stage
-
-  // Candidate-stated information (plain text — informal at enquiry stage)
-  yearsOfExperience  Int?     @map("years_of_experience")
-  expectedHourlyRate Decimal? @map("expected_hourly_rate") @db.Decimal(10, 2)
-  subjectsText       String?  @map("subjects_text") // e.g. "Arabic, English"
-  gradesText         String?  @map("grades_text") // e.g. "Grade 4–8"
-  curriculumText     String?  @map("curriculum_text") // e.g. "CBSE, IGCSE"
-  availabilityText   String?  @map("availability_text") // e.g. "Weekday afternoons"
-  remarks            String?
-
-  // Denormalized current stage (mirrors latest TutorRecruitmentStage.stage for filtering)
-  currentStage TutorRecruitmentStageCode @default(LEAD) @map("current_stage")
-
-  // Rejection state
-  isRejected      Boolean               @default(false) @map("is_rejected")
-  rejectionReason TutorRejectionReason? @map("rejection_reason")
-  rejectedAt      DateTime?             @map("rejected_at")
-
-  // Set when successfully hired
-  employeeId String?   @unique @map("employee_id")
-  hiredAt    DateTime? @map("hired_at")
-
-  createdByUserId String   @map("created_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  employee  Employee? @relation("RecruitmentHiredEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
-  createdBy User      @relation("RecruitmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
-
-  stages       TutorRecruitmentStage[]
-  interviews   TutorInterview[]
-  tutorProfile TutorProfile?           @relation("RecruitmentTutorProfile")
-
-  @@index([currentStage])
-  @@index([isRejected])
-  @@index([createdByUserId])
-  @@map("tutor_recruitment")
-}
 
 /// One row per stage transition. APPEND-ONLY — never updated after creation.
-/// Preserves the complete stage progression history for every recruitment application.
-model TutorRecruitmentStage {
-  id              String                    @id @default(uuid())
-  recruitmentId   String                    @map("recruitment_id")
-  stage           TutorRecruitmentStageCode
-  enteredAt       DateTime                  @default(now()) @map("entered_at")
-  enteredByUserId String                    @map("entered_by_user_id")
-  notes           String?
-
-  recruitment TutorRecruitment @relation(fields: [recruitmentId], references: [id], onDelete: Restrict)
-  enteredBy   User             @relation("StageAdvancedBy", fields: [enteredByUserId], references: [id], onDelete: Restrict)
-
-  @@index([recruitmentId])
-  @@map("tutor_recruitment_stages")
-}
 
 /// Interview record. Multiple interviews are supported per recruitment application.
 /// One row = one formal interview event.
-/// conductedAt null means the interview has not yet taken place.
-model TutorInterview {
-  id            String @id @default(uuid())
-  recruitmentId String @map("recruitment_id") // NOT unique — multiple per recruitment
-
-  conductedByUserId String?   @map("conducted_by_user_id")
-  scheduledAt       DateTime? @map("scheduled_at") // planned interview date/time
-  conductedAt       DateTime? @map("conducted_at") // actual interview date/time; null = not yet held
-  wasConducted      Boolean   @default(false) @map("was_conducted")
-
-  offeredHourlyRate Decimal? @map("offered_hourly_rate") @db.Decimal(10, 2)
-  candidateAccepted Boolean? @map("candidate_accepted") // null = pending response
-
-  interviewNotes String? @map("interview_notes")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  recruitment TutorRecruitment @relation(fields: [recruitmentId], references: [id], onDelete: Restrict)
-  conductedBy User?            @relation("InterviewConductor", fields: [conductedByUserId], references: [id], onDelete: SetNull)
-
-  @@index([recruitmentId])
-  @@map("tutor_interviews")
-}
 
 // =============================================================================
 // M-007 — TUTOR PROFILE
@@ -637,9 +551,9 @@ enum TutorOperationalStatus {
 ///     - TutorCurriculum (HR-managed in Phase 1)
 ///     - TutorRate (HR Manager only)
 model TutorProfile {
-  id                  String  @id @default(uuid())
-  employeeId          String  @unique @map("employee_id")
-  sourceRecruitmentId String? @unique @map("source_recruitment_id")
+  id                String  @id @default(uuid())
+  employeeId        String  @unique @map("employee_id")
+  sourceTutorLeadId String? @unique @map("source_tutor_lead_id")
 
   // HR-managed fields
   teachingExperience Int? @map("teaching_experience_years")
@@ -654,8 +568,7 @@ model TutorProfile {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  employee    Employee          @relation("EmployeeTutorProfile", fields: [employeeId], references: [id], onDelete: Restrict)
-  recruitment TutorRecruitment? @relation("RecruitmentTutorProfile", fields: [sourceRecruitmentId], references: [id], onDelete: SetNull)
+  employee Employee @relation("EmployeeTutorProfile", fields: [employeeId], references: [id], onDelete: Restrict)
 
   subjects     TutorSubject[]
   grades       TutorGrade[]
@@ -663,6 +576,8 @@ model TutorProfile {
   availability TutorAvailabilitySlot[]
   rates        TutorRate[]
   feedback     TutorFeedback[]
+
+  tutorLead TutorLead? @relation("LeadTutorProfile", fields: [sourceTutorLeadId], references: [id], onDelete: SetNull)
 
   @@map("tutor_profiles")
 }
@@ -986,6 +901,7 @@ model Lead {
   marketingAttribution  MarketingAttribution?
   marketingInteractions MarketingInteraction[]
   distributionEvents    LeadDistributionEvent[]
+  Quotation             Quotation[]
 
   @@index([assignedToUserId])
   @@index([primaryPhone])
@@ -1022,6 +938,7 @@ model Student {
   invoices           Invoice[]
   targetCreditLedger TargetCreditLedger[]
   StudentAttendance  StudentAttendance[]
+  Quotation          Quotation[]
 
   @@index([leadId])
   @@map("students")
@@ -1034,6 +951,7 @@ model Requirement {
   subjectId    String   @map("subject_id")
   curriculumId String   @map("curriculum_id")
   gradeId      String   @map("grade_id")
+  monthlyHours Decimal? @map("monthly_hours") @db.Decimal(10, 2)
   syllabus     String?
   notes        String?  @db.Text
   createdAt    DateTime @default(now()) @map("created_at")
@@ -1791,4 +1709,394 @@ model EmployeeAttendanceCorrection {
 
   @@index([sessionId])
   @@map("employee_attendance_corrections")
+}
+
+// ============================================================================
+// TUTOR HR - RECRUITMENT & FOUNDATION
+// ============================================================================
+
+enum TutorLeadStageCode {
+  LEAD
+  DETAILS_SHARED
+  CV_SHARED
+  DEMO
+  TRAINING
+  READY_FOR_ASSIGNMENT
+  NOT_INTERESTED
+  REJECTED
+}
+
+enum TutorLeadAttendance {
+  ATTENDED
+  NOT_ATTENDED
+}
+
+enum TutorLeadTaskStatus {
+  DONE
+  NOT_DONE
+}
+
+model MotherTongue {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutorLeads TutorLead[]
+
+  @@map("mother_tongues")
+}
+
+model CommunicationLanguage {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutorLeadLanguages TutorLeadLanguage[]
+
+  @@map("communication_languages")
+}
+
+model TutorSalarySlab {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  hourlyRate Decimal  @map("hourly_rate") @db.Decimal(10, 2)
+  currency   String   @default("AED")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  subjects   TutorSalarySlabSubject[]
+  grades     TutorSalarySlabGrade[]
+  tutorLeads TutorLead[]
+
+  @@map("tutor_salary_slabs")
+}
+
+model TutorSalarySlabSubject {
+  slabId    String @map("slab_id")
+  subjectId String @map("subject_id")
+
+  slab    TutorSalarySlab @relation(fields: [slabId], references: [id], onDelete: Cascade)
+  subject Subject         @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@id([slabId, subjectId])
+  @@map("tutor_salary_slab_subjects")
+}
+
+model TutorSalarySlabGrade {
+  slabId  String @map("slab_id")
+  gradeId String @map("grade_id")
+
+  slab  TutorSalarySlab @relation(fields: [slabId], references: [id], onDelete: Cascade)
+  grade Grade           @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+
+  @@id([slabId, gradeId])
+  @@map("tutor_salary_slab_grades")
+}
+
+model TutorLead {
+  id         String @id @default(uuid())
+  businessId String @unique @map("business_id") // TL-####
+
+  firstName String  @map("first_name")
+  lastName  String  @map("last_name")
+  phone     String
+  email     String?
+
+  motherTongueId            String?  @map("mother_tongue_id")
+  totalTeachingExperience   Int?     @map("total_teaching_experience")
+  offlineTeachingExperience Int?     @map("offline_teaching_experience")
+  expectedHourlyRate        Decimal? @map("expected_hourly_rate") @db.Decimal(10, 2)
+  remarks                   String?
+
+  currentStage      TutorLeadStageCode @default(LEAD) @map("current_stage")
+  trainingStartedAt DateTime?          @map("training_started_at")
+
+  salarySlabId String? @map("salary_slab_id")
+
+  createdByUserId  String  @map("created_by_user_id")
+  assignedToUserId String? @map("assigned_to_user_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") // soft delete
+
+  /// Set when the lead is approved and a TutorProfile is created
+  convertedTutorProfileId String? @unique @map("converted_tutor_profile_id")
+
+  createdBy    User             @relation("TutorLeadCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo   User?            @relation("TutorLeadAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  motherTongue MotherTongue?    @relation(fields: [motherTongueId], references: [id], onDelete: Restrict)
+  salarySlab   TutorSalarySlab? @relation(fields: [salarySlabId], references: [id], onDelete: Restrict)
+
+  tutorProfile TutorProfile? @relation("LeadTutorProfile")
+
+  subjects         TutorLeadSubject[]
+  grades           TutorLeadGrade[]
+  languages        TutorLeadLanguage[]
+  availability     TutorLeadAvailability[]
+  stageHistory     TutorLeadStageHistory[]
+  calls            TutorLeadCall[]
+  demos            TutorLeadDemo[]
+  trainingSessions TutorLeadTrainingSession[]
+
+  @@index([currentStage])
+  @@index([createdByUserId])
+  @@index([assignedToUserId])
+  @@index([deletedAt])
+  @@map("tutor_leads")
+}
+
+model TutorLeadSubject {
+  tutorLeadId String @map("tutor_lead_id")
+  subjectId   String @map("subject_id")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@id([tutorLeadId, subjectId])
+  @@map("tutor_lead_subjects")
+}
+
+model TutorLeadGrade {
+  tutorLeadId String @map("tutor_lead_id")
+  gradeId     String @map("grade_id")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  grade     Grade     @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+
+  @@id([tutorLeadId, gradeId])
+  @@map("tutor_lead_grades")
+}
+
+model TutorLeadLanguage {
+  tutorLeadId String @map("tutor_lead_id")
+  languageId  String @map("language_id")
+
+  tutorLead TutorLead             @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  language  CommunicationLanguage @relation(fields: [languageId], references: [id], onDelete: Restrict)
+
+  @@id([tutorLeadId, languageId])
+  @@map("tutor_lead_languages")
+}
+
+model TutorLeadAvailability {
+  id          String   @id @default(uuid())
+  tutorLeadId String   @map("tutor_lead_id")
+  dayOfWeek   Int      @map("day_of_week") // 0=Sun, 1=Mon...
+  startTime   DateTime @map("start_time") @db.Time
+  endTime     DateTime @map("end_time") @db.Time
+  isActive    Boolean  @default(true) @map("is_active")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+
+  @@map("tutor_lead_availability")
+}
+
+model TutorLeadStageHistory {
+  id              String              @id @default(uuid())
+  tutorLeadId     String              @map("tutor_lead_id")
+  previousStage   TutorLeadStageCode? @map("previous_stage")
+  newStage        TutorLeadStageCode  @map("new_stage")
+  changedByUserId String              @map("changed_by_user_id")
+  remarks         String?
+  changedAt       DateTime            @default(now()) @map("changed_at")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  changedBy User      @relation("StageChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_lead_stage_history")
+}
+
+model TutorLeadCall {
+  id           String   @id @default(uuid())
+  tutorLeadId  String   @map("tutor_lead_id")
+  callerUserId String   @map("caller_user_id")
+  remark       String
+  calledAt     DateTime @default(now()) @map("called_at")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  caller    User      @relation("TutorLeadCalledBy", fields: [callerUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_lead_calls")
+}
+
+model TutorLeadDemo {
+  id          String @id @default(uuid())
+  tutorLeadId String @map("tutor_lead_id")
+
+  isLiveDemo Boolean   @default(false) @map("is_live_demo")
+  demoDate   DateTime? @map("demo_date") @db.Date
+  startTime  DateTime? @map("start_time") @db.Time
+  endTime    DateTime? @map("end_time") @db.Time
+
+  remarks          String?
+  recordedByUserId String   @map("recorded_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tutorLead  TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  recordedBy User      @relation("TutorLeadDemoRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_lead_demos")
+}
+
+model TutorLeadTrainingSession {
+  id               String              @id @default(uuid())
+  tutorLeadId      String              @map("tutor_lead_id")
+  sessionDate      DateTime            @map("session_date") @db.Date
+  startTime        DateTime?           @map("start_time") @db.Time
+  endTime          DateTime?           @map("end_time") @db.Time
+  attendanceStatus TutorLeadAttendance @map("attendance_status")
+  taskStatus       TutorLeadTaskStatus @map("task_status")
+  remarks          String?
+
+  createdById String   @map("created_by_id")
+  updatedById String   @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("TutorTrainingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User      @relation("TutorTrainingUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_lead_training_sessions")
+}
+
+// =============================================================================
+// M-012 — QUOTATION (Slice 3)
+// =============================================================================
+
+model PricingSlab {
+  id           String   @id @default(uuid())
+  businessId   String   @unique @map("business_id")
+  curriculumId String   @map("curriculum_id")
+  gradeFrom    Int      @map("grade_from")
+  gradeTo      Int      @map("grade_to")
+  hourlyRate   Decimal  @map("hourly_rate") @db.Decimal(10, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by")
+  updatedBy    String?  @map("updated_by")
+
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+
+  @@index([curriculumId, isActive])
+  @@map("pricing_slabs")
+}
+
+model ExceptionalSubjectRate {
+  id         String   @id @default(uuid())
+  businessId String   @unique @map("business_id")
+  subjectId  String   @unique @map("subject_id")
+  hourlyRate Decimal  @map("hourly_rate") @db.Decimal(10, 2)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  createdBy  String?  @map("created_by")
+  updatedBy  String?  @map("updated_by")
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@index([subjectId, isActive])
+  @@map("exceptional_subject_rates")
+}
+
+model FinanceSetting {
+  id                String   @id @default(uuid())
+  code              String   @unique @default("DEFAULT")
+  registrationFee   Decimal  @map("registration_fee") @db.Decimal(10, 2)
+  currency          String   @default("AED")
+  accountHolderName String?  @map("account_holder_name")
+  bankName          String?  @map("bank_name")
+  accountNumber     String?  @map("account_number")
+  iban              String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedBy         String?  @map("updated_by")
+
+  @@map("finance_settings")
+}
+
+enum QuotationStatus {
+  DRAFT
+  GENERATED
+}
+
+model Quotation {
+  id              String          @id @default(uuid())
+  quotationNumber String          @unique @map("quotation_number")
+  studentId       String          @map("student_id")
+  leadId          String          @map("lead_id")
+  quotationDate   DateTime        @map("quotation_date")
+  currency        String          @default("AED")
+  status          QuotationStatus @default(DRAFT)
+
+  // Snapshots
+  parentName     String  @map("parent_name")
+  parentPhone    String  @map("parent_phone")
+  parentEmail    String? @map("parent_email")
+  studentName    String  @map("student_name")
+  curriculumName String  @map("curriculum_name")
+  gradeName      String  @map("grade_name")
+  quotationNotes String? @map("quotation_notes") @db.Text
+
+  normalMonthlyTotal Decimal  @map("normal_monthly_total") @db.Decimal(10, 2)
+  offerHourlyRate    Decimal? @map("offer_hourly_rate") @db.Decimal(10, 2)
+  offerMonthlyTotal  Decimal? @map("offer_monthly_total") @db.Decimal(10, 2)
+  savingAmount       Decimal  @default(0) @map("saving_amount") @db.Decimal(10, 2)
+  savingPercentage   Decimal  @default(0) @map("saving_percentage") @db.Decimal(10, 2)
+  registrationFee    Decimal  @default(0) @map("registration_fee") @db.Decimal(10, 2)
+  totalAmountDue     Decimal  @map("total_amount_due") @db.Decimal(10, 2)
+
+  accountHolderName String? @map("account_holder_name")
+  bankName          String? @map("bank_name")
+  accountNumber     String? @map("account_number")
+  iban              String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  creator User    @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  lineItems QuotationLineItem[]
+
+  @@index([studentId])
+  @@index([leadId])
+  @@index([quotationNumber])
+  @@map("quotations")
+}
+
+model QuotationLineItem {
+  id          String @id @default(uuid())
+  quotationId String @map("quotation_id")
+  subjectId   String @map("subject_id")
+
+  // Snapshots
+  subjectName            String   @map("subject_name")
+  curriculumName         String   @map("curriculum_name")
+  gradeName              String   @map("grade_name")
+  pricingSource          String   @map("pricing_source")
+  monthlyHours           Decimal  @map("monthly_hours") @db.Decimal(10, 2)
+  originalHourlyRate     Decimal  @map("original_hourly_rate") @db.Decimal(10, 2)
+  appliedOfferHourlyRate Decimal? @map("applied_offer_hourly_rate") @db.Decimal(10, 2)
+  normalMonthlyAmount    Decimal  @map("normal_monthly_amount") @db.Decimal(10, 2)
+  offerMonthlyAmount     Decimal? @map("offer_monthly_amount") @db.Decimal(10, 2)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@index([quotationId])
+  @@map("quotation_line_items")
 }

@@ -25,8 +25,9 @@ const SETTINGS_SECTIONS = [
     ]
   },
   {
-    title: 'CRM',
+    title: 'CRM & Billing',
     items: [
+      { name: 'Pricing & Slabs', href: '/settings/pricing', icon: Database, permission: 'pricing.manage' },
       { name: 'Reference Data', href: '/settings/reference-data', icon: Database, permission: 'reference.manage' },
     ]
   },

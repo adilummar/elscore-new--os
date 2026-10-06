@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
+import { AuditContext } from '../../common/audit/audit.context';
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RbacService } from '../../common/rbac/rbac.service';
@@ -23,7 +24,9 @@ export class LeadController {
   ) {}
 
   private async hasReadAll(userId: string): Promise<boolean> {
-    const perms = await this.rbacService.getPermissionsForUser(userId);
+    const store = AuditContext.getStore();
+    const effectiveUserId = store?.realActorId || userId;
+    const perms = await this.rbacService.getPermissionsForUser(effectiveUserId);
     return perms.has('lead.read-all');
   }
 
@@ -71,19 +74,22 @@ export class LeadController {
   @Post(':id/archive')
   @RequirePermissions('lead.archive')
   async archive(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.leadService.setArchive(id, true, user.id);
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.setArchive(id, true, user.id, readAll);
   }
 
   @Post(':id/unarchive')
   @RequirePermissions('lead.archive') // same permission logically
   async unarchive(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.leadService.setArchive(id, false, user.id);
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.setArchive(id, false, user.id, readAll);
   }
 
   @Post(':id/reopen')
   @RequirePermissions('lead.reopen')
   async reopen(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.leadService.reopen(id, user.id);
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.reopen(id, user.id, readAll);
   }
 
   @Post(':id/notes')
@@ -114,6 +120,13 @@ export class LeadController {
   ) {
     const readAll = await this.hasReadAll(user.id);
     return this.leadService.deleteNote(leadId, noteId, user.id, readAll);
+  }
+
+  @Get(':id/status-history')
+  @RequirePermissions('lead.read')
+  async getStatusHistory(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    const hasReadAll = await this.hasReadAll(user.id);
+    return this.leadService.getStatusHistory(id, user.id, hasReadAll);
   }
 
   @Get(':id/assignments')

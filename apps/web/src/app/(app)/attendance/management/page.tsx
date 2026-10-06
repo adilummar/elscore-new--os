@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import { getTeamAttendanceAction, correctAttendanceEventAction } from "../actions";
+import { fmtTime, fmtDateTime, BUSINESS_TIMEZONE } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
 import { Input } from "@/components/ui/Input";
 
 export default function AttendanceManagementPage() {
-  const [date, setDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState<string>(new Date().toLocaleDateString('en-CA', { timeZone: BUSINESS_TIMEZONE })); // IST today
   const [teamData, setTeamData] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -32,7 +33,10 @@ export default function AttendanceManagementPage() {
   const handleCorrectTimestamp = async () => {
     if (!selectedEventId || !selectedSessionId || !newTimestamp) return;
     try {
-      await correctAttendanceEventAction(selectedEventId, selectedSessionId, newTimestamp, reason);
+      // newTimestamp from datetime-local input is "YYYY-MM-DDTHH:mm" — treated as IST.
+      // We append the IST offset so the server stores the correct UTC value.
+      const istIsoString = `${newTimestamp}:00+05:30`;
+      await correctAttendanceEventAction(selectedEventId, selectedSessionId, istIsoString, reason);
       setSelectedEventId(null);
       setSelectedSessionId(null);
       setReason("");
@@ -63,23 +67,35 @@ export default function AttendanceManagementPage() {
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Check In</TableHead>
-                <TableHead>Check Out</TableHead>
+                <TableHead>Check In (IST)</TableHead>
+                <TableHead>Check Out (IST)</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {teamData.map((record) => (
-                <TableRow key={record.id}>
-                  <TableCell>{record.employeeName}</TableCell>
-                  <TableCell>{record.status}</TableCell>
-                  <TableCell>{record.checkIn}</TableCell>
-                  <TableCell>{record.checkOut}</TableCell>
-                  <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => { setSelectedEventId(record.eventId); setSelectedSessionId(record.id); }}>Correct Time</Button>
-                  </TableCell>
+              {teamData.map((record) => {
+                const checkInEvt  = record.events?.find((e: any) => e.eventType === 'CHECK_IN');
+                const checkOutEvt = record.events?.find((e: any) => e.eventType === 'CHECK_OUT' || e.eventType === 'AUTO_CHECK_OUT');
+                const employeeName = record.employee
+                  ? `${record.employee.firstName ?? ''} ${record.employee.lastName ?? ''}`.trim()
+                  : record.employeeName ?? '-';
+                return (
+                  <TableRow key={record.id}>
+                    <TableCell>{employeeName}</TableCell>
+                    <TableCell>{record.status}</TableCell>
+                    <TableCell className="font-mono text-sm">{fmtTime(checkInEvt?.timestamp)}</TableCell>
+                    <TableCell className="font-mono text-sm">{fmtTime(checkOutEvt?.timestamp)}</TableCell>
+                    <TableCell>
+                      <Button variant="outline" size="sm" onClick={() => { setSelectedEventId(checkInEvt?.id ?? null); setSelectedSessionId(record.id); }}>Correct Time</Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {teamData.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">No attendance records for this date.</TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -92,17 +108,18 @@ export default function AttendanceManagementPage() {
               <CardTitle>Correct Timestamp</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <p className="text-sm text-slate-500">Enter the correct time in <strong>IST (India Standard Time)</strong>. The system will save it correctly regardless of your device timezone.</p>
               <div>
-                <label className="block mb-1">New Timestamp:</label>
+                <label className="block mb-1 text-sm font-medium">New Time (IST):</label>
                 <input 
                   type="datetime-local" 
                   value={newTimestamp}
                   onChange={(e) => setNewTimestamp(e.target.value)}
-                  className="w-full border rounded p-2"
+                  className="w-full border rounded p-2 text-sm"
                 />
               </div>
               <div>
-                <label className="block mb-1">Reason:</label>
+                <label className="block mb-1 text-sm font-medium">Reason:</label>
                 <Input 
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -111,7 +128,7 @@ export default function AttendanceManagementPage() {
               </div>
               <div className="flex justify-end space-x-2">
                 <Button variant="outline" onClick={() => { setSelectedEventId(null); setSelectedSessionId(null); setReason(""); }}>Cancel</Button>
-                <Button onClick={handleCorrectTimestamp}>Save</Button>
+                <Button onClick={handleCorrectTimestamp}>Save Correction</Button>
               </div>
             </CardContent>
           </Card>

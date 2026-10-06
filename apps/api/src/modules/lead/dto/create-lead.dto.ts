@@ -1,6 +1,6 @@
 import { LeadSource } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsArray, IsDate, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, ValidateNested } from 'class-validator';
+import { IsArray, IsDate, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, ValidateNested, IsBoolean } from 'class-validator';
 
 export class NestedRequirementDto {
   @IsUUID()
@@ -137,4 +137,8 @@ export class CreateLeadDto {
   @IsDate()
   @IsOptional()
   receivedAt?: Date;
+
+  @IsBoolean()
+  @IsOptional()
+  continueAnyway?: boolean;
 }

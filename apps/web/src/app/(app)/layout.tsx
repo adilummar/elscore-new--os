@@ -15,7 +15,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const effectiveUser = await getSession();
   
   if (!effectiveUser) {
-    redirect('/login');
+    // Redirect to a route handler that will clear cookies to break infinite redirect loops
+    redirect('/api/auth/clear-session');
   }
 
   // ── God View ───────────────────────────────────────────────────────────────

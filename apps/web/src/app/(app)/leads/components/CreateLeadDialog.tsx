@@ -11,6 +11,7 @@ import { createLeadAction } from '../actions';
 import { getSubjectsAction, getGradesAction, getCurriculaAction } from '@/app/(app)/settings/actions';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash, ArrowRight, ArrowLeft, Check, AlertCircle } from 'lucide-react';
+import { BulletNoteField } from '@/components/ui/BulletNoteField';
 
 interface RequirementForm {
   id: string;
@@ -30,6 +31,9 @@ interface StudentForm {
   schoolName: string;
   cityLocation: string;
   notes: string;
+  parentConcern: string;
+  studentIssue: string;
+  studentEngagement: string;
   curriculumId: string;
   gradeId: string;
   subjectIds: string[];
@@ -42,6 +46,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
   const [error, setError] = React.useState<string | null>(null);
   const [validationErrors, setValidationErrors] = React.useState<Record<string, string>>({});
   const [warning, setWarning] = React.useState<any>(null);
+  const [duplicateWarningData, setDuplicateWarningData] = React.useState<any>(null);
   const [successData, setSuccessData] = React.useState<any>(null);
 
   // Reference Data
@@ -102,6 +107,9 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
       schoolName: '',
       cityLocation: '',
       notes: '',
+      parentConcern: '',
+      studentIssue: '',
+      studentEngagement: '',
       curriculumId: '',
       gradeId: '',
       subjectIds: []
@@ -189,7 +197,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
   };
 
   // Submission
-  const handleSubmit = async () => {
+  const handleSubmit = async (continueAnyway: boolean = false) => {
     if (!validateStep1() || !validateStep2()) {
       setError("Please fix validation errors before submitting.");
       return;
@@ -201,6 +209,7 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
     // Prepare payload
     const payload = {
       ...parent,
+      continueAnyway,
       students: students.map(s => ({
         firstName: s.firstName,
         lastName: s.lastName || undefined,
@@ -208,7 +217,12 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
         gender: s.gender || undefined,
         schoolName: s.schoolName || undefined,
         cityLocation: s.cityLocation || undefined,
-        notes: s.notes || undefined,
+        notes: [
+          s.notes,
+          s.parentConcern ? `\n--- Parent Concern ---\n${s.parentConcern}` : '',
+          s.studentIssue ? `\n--- Student Issue ---\n${s.studentIssue}` : '',
+          s.studentEngagement ? `\n--- Student Engagement ---\n${s.studentEngagement}` : '',
+        ].filter(Boolean).join('').trim() || undefined,
         curriculumId: s.curriculumId || undefined,
         gradeId: s.gradeId || undefined,
         requirements: s.subjectIds.map(subjectId => ({
@@ -224,6 +238,12 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
       
       if (res.error) {
         throw new Error(res.message || 'Validation failed on server');
+      }
+
+      if (res.duplicateFound) {
+        setDuplicateWarningData(res.warnings[0]);
+        setLoading(false);
+        return;
       }
 
       if (res.warnings && res.warnings.length > 0) {
@@ -397,6 +417,29 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
                   </div>
                 )}
               </div>
+
+              {/* Notes Section */}
+              <div className="mt-6 pt-4 border-t border-gray-200 space-y-4">
+                <h4 className="font-semibold text-sm text-slate-700">Notes & Observations</h4>
+                <BulletNoteField
+                  label="Parent Concern"
+                  placeholder="What is the parent's main concern or expectation?"
+                  value={student.parentConcern}
+                  onChange={v => updateStudent(student.id, 'parentConcern', v)}
+                />
+                <BulletNoteField
+                  label="Student Issue"
+                  placeholder="Any academic or behavioural issues to note?"
+                  value={student.studentIssue}
+                  onChange={v => updateStudent(student.id, 'studentIssue', v)}
+                />
+                <BulletNoteField
+                  label="Student Engagement"
+                  placeholder="How engaged is the student? Any observations?"
+                  value={student.studentEngagement}
+                  onChange={v => updateStudent(student.id, 'studentEngagement', v)}
+                />
+              </div>
             </div>
           ))}
           <Button type="button" onClick={addStudent} variant="outline" className="w-full border-dashed"><Plus className="w-4 h-4 mr-2" /> Add Another Student</Button>
@@ -505,10 +548,54 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
     );
   };
 
+  const renderDuplicateWarning = () => {
+    if (!duplicateWarningData) return null;
+    return (
+      <div className="space-y-6 animate-in fade-in">
+        <Alert variant="error" className="border-l-4">
+          <AlertCircle className="w-5 h-5 mr-2 inline" />
+          <strong>Existing Lead Found</strong>
+          <p className="mt-1 text-sm">{duplicateWarningData.message}</p>
+        </Alert>
+
+        <div className="space-y-4 max-h-[40vh] overflow-y-auto">
+          {duplicateWarningData.existingLeads?.map((lead: any, idx: number) => (
+            <div key={idx} className="bg-orange-50 border border-orange-200 p-4 rounded-lg">
+              {lead.hasAccess ? (
+                <>
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h4 className="font-bold text-orange-900">{lead.firstName} {lead.lastName}</h4>
+                      <p className="text-xs font-mono text-orange-700">{lead.businessId}</p>
+                    </div>
+                    <span className="bg-orange-200 text-orange-800 text-xs px-2 py-1 rounded font-medium">{lead.status}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm text-orange-800 mt-2">
+                    <div><span className="font-medium text-orange-900">Phone:</span> {lead.primaryPhone}</div>
+                    <div><span className="font-medium text-orange-900">Owner:</span> {lead.ownerName}</div>
+                    <div><span className="font-medium text-orange-900">Created:</span> {new Date(lead.createdAt).toLocaleDateString()}</div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-orange-800">
+                  <p className="font-bold">An existing Lead with this phone number was found.</p>
+                  <p className="text-xs mt-1">You do not have permission to view the details of this lead.</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="text-sm text-gray-600 mt-4 font-medium">
+          This may be an existing client. Are you sure you want to create a new lead?
+        </p>
+      </div>
+    );
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size={step === 4 ? "md" : "xl"}>
       <div className="flex flex-col h-full">
-        {step < 4 && (
+        {step < 4 && !duplicateWarningData && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xl font-bold">Create New Lead</h2>
@@ -520,27 +607,52 @@ export function CreateLeadDialog({ isOpen, onClose, onSuccess }: { isOpen: boole
           </div>
         )}
 
+        {duplicateWarningData && (
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-orange-600">Duplicate Warning</h2>
+          </div>
+        )}
+
         <div className="flex-1">
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
-          {step === 3 && renderStep3()}
-          {step === 4 && renderStep4()}
+          {duplicateWarningData ? (
+            renderDuplicateWarning()
+          ) : (
+            <>
+              {step === 1 && renderStep1()}
+              {step === 2 && renderStep2()}
+              {step === 3 && renderStep3()}
+              {step === 4 && renderStep4()}
+            </>
+          )}
         </div>
 
         {step < 4 && (
           <div className="mt-8 pt-4 border-t flex justify-between items-center">
-            <Button variant="outline" onClick={step === 1 ? handleClose : () => setStep(step - 1)}>
-              {step === 1 ? 'Cancel' : <><ArrowLeft className="w-4 h-4 mr-2" /> Back</>}
-            </Button>
-            
-            {step < 3 ? (
-              <Button onClick={handleNext}>
-                Next <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+            {duplicateWarningData ? (
+              <>
+                <Button variant="outline" onClick={() => setDuplicateWarningData(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={() => handleSubmit(true)} disabled={loading} className="bg-orange-500 hover:bg-orange-600">
+                  {loading ? 'Creating...' : 'Continue Anyway'}
+                </Button>
+              </>
             ) : (
-              <Button onClick={handleSubmit} disabled={loading} className="bg-green-600 hover:bg-green-700">
-                {loading ? 'Creating...' : <><Check className="w-4 h-4 mr-2" /> Submit Lead</>}
-              </Button>
+              <>
+                <Button variant="outline" onClick={step === 1 ? handleClose : () => setStep(step - 1)}>
+                  {step === 1 ? 'Cancel' : <><ArrowLeft className="w-4 h-4 mr-2" /> Back</>}
+                </Button>
+                
+                {step < 3 ? (
+                  <Button onClick={handleNext}>
+                    Next <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                ) : (
+                  <Button onClick={() => handleSubmit(false)} disabled={loading} className="bg-green-600 hover:bg-green-700">
+                    {loading ? 'Creating...' : <><Check className="w-4 h-4 mr-2" /> Submit Lead</>}
+                  </Button>
+                )}
+              </>
             )}
           </div>
         )}

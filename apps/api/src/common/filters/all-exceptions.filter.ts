@@ -38,6 +38,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'An unexpected error occurred';
     let error = 'Internal Server Error';
+    let code: string | undefined;
+    let blockers: string[] | undefined;
 
     if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
@@ -49,6 +51,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const res = exceptionResponse as Record<string, unknown>;
         message = (res['message'] as string | string[]) ?? exception.message;
         error = (res['error'] as string) ?? exception.name;
+        if (typeof res['code'] === 'string') code = res['code'];
+        if (Array.isArray(res['blockers']) && res['blockers'].every((item) => typeof item === 'string')) {
+          blockers = res['blockers'];
+        }
       }
     } else if (exception instanceof Error) {
       // Non-HTTP errors — log the full error, return generic message
@@ -69,6 +75,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode,
       message,
       error,
+      ...(code ? { code } : {}),
+      ...(blockers ? { blockers } : {}),
       correlationId,
       timestamp: new Date().toISOString(),
       path: request.url,

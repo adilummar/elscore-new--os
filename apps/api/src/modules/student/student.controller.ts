@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
 
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
@@ -7,6 +7,7 @@ import { RequirePermissions } from '../../common/rbac/require-permissions.decora
 
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
+import { DeleteStudentDto } from './dto/delete-student.dto';
 import { UpdateRequirementDto } from './dto/update-requirement.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { StudentService } from './student.service';
@@ -43,6 +44,18 @@ export class StudentController {
   async update(@Param('id') id: string, @Body() dto: UpdateStudentDto, @CurrentUser() user: RequestUser) {
     const readAll = await this.hasReadAll(user.id);
     return this.studentService.update(id, dto, user.id, readAll);
+  }
+
+  @Delete('students/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions('student.delete')
+  async deleteStudent(
+    @Param('id') id: string,
+    @Body() dto: DeleteStudentDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const readAll = await this.hasReadAll(user.id);
+    await this.studentService.deleteStudent(id, dto.reason, user.id, readAll);
   }
 
   @Post('students/:id/requirements')

@@ -254,6 +254,14 @@ const PERMISSIONS: Array<{
   { code: 'finance.report.read', resource: 'finance_report', action: 'read', isDelegatable: false },
 
   // ---------------------------------------------------------------------------
+  // Quotations (Slice 4)
+  // ---------------------------------------------------------------------------
+  { code: 'quotation.create', resource: 'quotation', action: 'create', description: 'Generate quotations', isDelegatable: false },
+  { code: 'quotation.read', resource: 'quotation', action: 'read', description: 'Read quotations', isDelegatable: false },
+  { code: 'quotation.update', resource: 'quotation', action: 'update', description: 'Update quotations', isDelegatable: false },
+  { code: 'pricing.manage', resource: 'pricing', action: 'manage', description: 'Manage pricing slabs and exceptional rates', isDelegatable: false },
+
+  // ---------------------------------------------------------------------------
   // Demo (Slice 2D)
   // ---------------------------------------------------------------------------
   {
@@ -514,29 +522,77 @@ const PERMISSIONS: Array<{
   },
 
   // ── Tutor recruitment ─────────────────────────────────────────────────────
-  {
-    code: 'tutor.recruitment.read',
-    resource: 'tutor.recruitment',
-    action: 'read',
-    description: 'View recruitment records and history',
-    isDelegatable: true,
-  },
-  {
-    code: 'tutor.recruitment.create',
-    resource: 'tutor.recruitment',
-    action: 'create',
-    description: 'Create a new tutor recruitment enquiry',
-    isDelegatable: true,
-  },
-  {
-    code: 'tutor.recruitment.manage',
-    resource: 'tutor.recruitment',
-    action: 'manage',
-    description: 'Advance stages, record interviews, reject, hire',
-    isDelegatable: true,
-  },
+  
+  
+  
 
-  // ── Tutor profile ─────────────────────────────────────────────────────────
+  
+    {
+      code: 'tutor_lead.read',
+      resource: 'tutor_lead',
+      action: 'read',
+      description: 'View tutor leads and their history',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.manage',
+      resource: 'tutor_lead',
+      action: 'manage',
+      description: 'Create/update tutor leads, change stages, record calls/demos, convert to tutor',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.training.read',
+      resource: 'tutor_lead_training',
+      action: 'read',
+      description: 'View tutor lead training sessions',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.training.manage',
+      resource: 'tutor_lead_training',
+      action: 'manage',
+      description: 'Create and update tutor lead training sessions',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_hr.settings.manage',
+      resource: 'tutor_hr_settings',
+      action: 'manage',
+      description: 'Manage mother tongues, communication languages, and salary slabs',
+      isDelegatable: false,
+    },
+    // Granular tutor lead permissions (P2 — more precise than tutor_lead.manage)
+    {
+      code: 'tutor_lead.create',
+      resource: 'tutor_lead',
+      action: 'create',
+      description: 'Create new tutor leads in the HR pipeline',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.update',
+      resource: 'tutor_lead',
+      action: 'update',
+      description: 'Edit tutor lead profile fields (name, experience, subjects, etc.)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.stage.update',
+      resource: 'tutor_lead',
+      action: 'stage.update',
+      description: 'Change the pipeline stage of a tutor lead',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_lead.approve',
+      resource: 'tutor_lead',
+      action: 'approve',
+      description: 'Approve a READY_FOR_ASSIGNMENT tutor lead and create their Tutor Profile',
+      isDelegatable: false,
+    },
+
+    // ── Tutor profile ─────────────────────────────────────────────────────────
   {
     code: 'tutor.profile.read',
     resource: 'tutor.profile',
@@ -795,6 +851,13 @@ const PERMISSIONS: Array<{
     description: 'Update student',
     isDelegatable: true,
   },
+  {
+    code: 'student.delete',
+    resource: 'student',
+    action: 'delete',
+    description: 'Delete an unused pending student',
+    isDelegatable: false,
+  },
 
   {
     code: 'requirement.create',
@@ -917,9 +980,15 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'role.create',
     'role.manage',
     'role.assign',
-    'tutor.recruitment.read',
-    'tutor.recruitment.create',
-    'tutor.recruitment.manage',
+    'tutor_lead.read',
+    'tutor_lead.manage',
+    'tutor_lead.create',
+    'tutor_lead.update',
+    'tutor_lead.stage.update',
+    'tutor_lead.approve',
+    'tutor_lead.training.read',
+    'tutor_lead.training.manage',
+    'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
     'tutor.rate.read',
@@ -936,13 +1005,18 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'employee.update',
     'department.read',
     'role.read',
-    'tutor.recruitment.read',
-    'tutor.recruitment.create',
-    'tutor.recruitment.manage',
+    'tutor_lead.read',
+    'tutor_lead.manage',
+    'tutor_lead.create',
+    'tutor_lead.update',
+    'tutor_lead.stage.update',
+    // tutor_lead.approve: NOT granted — approval requires HR Manager
+    'tutor_lead.training.read',
+    'tutor_lead.training.manage',
+    'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
     // tutor.rate.read: NOT granted to HR Executive per Revision 3.1
-    // tutor.feedback.read: NOT granted to HR Executive — HR Executive CAN read feedback
     'tutor.feedback.read',
   ],
 
@@ -1004,6 +1078,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'attendance.action.own',
     'attendance.read.own','department.read'],
   SALES_HEAD: [
+    'pricing.manage',
+    'quotation.create',
+    'quotation.read',
+    'quotation.update',
     'attendance.action.own',
     'attendance.read.own',
     'attendance.read.team',
@@ -1015,7 +1093,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'roundrobin.history.read.own',
     'target.read.own',
     'target.read.team',
-    'target.manage',
+    'target.manage',
     'employee.read',
     'department.read',
     'lead.create',
@@ -1040,6 +1118,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'student.create',
     'student.read',
     'student.update',
+    'student.delete',
     'requirement.create',
     'requirement.read',
     'requirement.update',
@@ -1050,6 +1129,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'sales-routing.manage',
   ],
   SALES_COUNSELLOR: [
+    'quotation.create',
+    'quotation.read',
+    'quotation.update',
     'attendance.action.own',
     'attendance.read.own',
 
@@ -1124,9 +1206,12 @@ const SEQUENCES = [
   { entityType: 'TCR', prefix: 'TCR-', padding: 7 }, // Tutor Class Record
 
   { entityType: 'EMP', prefix: 'EMP', padding: 4 },
-  { entityType: 'REC', prefix: 'REC', padding: 4 }, // Tutor recruitment (new in Phase 1)
+    { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
+
+  { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
   { entityType: 'LED', prefix: 'LED', nextNumber: 1, padding: 4 }, // Lead
-  { entityType: 'REQ', prefix: 'REQ', nextNumber: 1, padding: 4 }, // Requirement
+  { entityType: 'RQT', prefix: 'RQT', nextNumber: 1, padding: 4 }, // Requirement (canonical runtime key)
+  { entityType: 'QUO', prefix: 'QUO', nextNumber: 1, padding: 4 }, // Quotation
   { entityType: 'STU', prefix: 'STU', padding: 4 },
   { entityType: 'FUP', prefix: 'FUP', nextNumber: 1, padding: 4 }, // FollowUp
   { entityType: 'DMO', prefix: 'DMO', nextNumber: 1, padding: 4 }, // Demo-ups (Slice 2B)

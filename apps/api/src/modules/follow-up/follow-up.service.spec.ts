@@ -1,8 +1,7 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { FollowUpStatus } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
@@ -22,7 +21,7 @@ describe('FollowUpService', () => {
   beforeEach(async () => {
     mockPrisma = {
       lead: { findUnique: jest.fn(), update: jest.fn() },
-      followUp: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      followUp: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
       followUpRescheduleHistory: { create: jest.fn() },
       leadStatusHistory: { create: jest.fn() },
       $transaction: jest.fn((cb) => cb(mockPrisma)),
@@ -82,6 +81,34 @@ describe('FollowUpService', () => {
 
       expect(mockPrisma.followUp.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
       expect(mockPrisma.lead.update).toHaveBeenCalledWith(expect.objectContaining({ data: { requiresFollowUp: false } }));
+    });
+  });
+
+  describe('cross-counsellor visibility', () => {
+    it('denies follow-ups on another counsellor lead', async () => {
+      mockPrisma.lead.findUnique.mockResolvedValue({ id: 'lead-b', assignedToUserId: 'counsellor-b', isArchived: false });
+      mockPrisma.followUp.findMany.mockResolvedValue([]);
+
+      await expect(service.findByLead('lead-b', 'counsellor-a', false, {})).rejects.toThrow(ForbiddenException);
+      await expect(service.findAll('counsellor-a', false, { leadId: 'lead-b' })).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.followUp.findMany).not.toHaveBeenCalled();
+    });
+
+    it('scopes the follow-up list to the caller when they lack followup.read-all', async () => {
+      mockPrisma.followUp.findMany.mockResolvedValue([]);
+      await service.findAll('counsellor-a', false, {});
+      expect(mockPrisma.followUp.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          lead: { assignedToUserId: 'counsellor-a' },
+        }),
+      }));
+    });
+
+    it('lets a Sales Head list follow-ups without an owner filter', async () => {
+      mockPrisma.followUp.findMany.mockResolvedValue([]);
+      await service.findAll('sales-head', true, {});
+      const where = mockPrisma.followUp.findMany.mock.calls[0][0].where;
+      expect(where.lead).toBeUndefined();
     });
   });
 });

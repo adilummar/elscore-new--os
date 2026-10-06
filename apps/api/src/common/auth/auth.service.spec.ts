@@ -67,7 +67,7 @@ describe('AuthService', () => {
       // argon2.verify runs on the dummy hash — mock it to return false
       mockArgon2.verify.mockResolvedValue(false);
 
-      const result = await authService.validateCredentials('unknown@test.com', 'any');
+      const result = await authService.validateCredentials('unknown@example.com', 'any');
 
       expect(result).toBeNull();
       // Verify argon2.verify was still called (timing-safe: runs even when user not found)

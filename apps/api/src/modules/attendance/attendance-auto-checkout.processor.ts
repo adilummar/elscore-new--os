@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JOBS, QUEUES } from '../../common/queue/queue.constants';
 import { format, subDays } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 
 const TIMEZONE = 'Asia/Kolkata';
 
@@ -28,9 +28,10 @@ export class AttendanceAutoCheckoutProcessor extends WorkerHost {
     const targetDate = subDays(zonedNow, 1);
     const targetDateStr = format(targetDate, 'yyyy-MM-dd');
 
-    const closureTimestampStr = `${targetDateStr}T23:59:59.999+05:30`;
-    const closureTimestamp = new Date(closureTimestampStr);
-    const breakClosureTimestamp = new Date(closureTimestampStr);
+    // Build end-of-day timestamp in IST using fromZonedTime — no hardcoded offsets
+    const closureTimestamp     = fromZonedTime(`${targetDateStr}T23:59:59.999`, TIMEZONE);
+    const breakClosureTimestamp = fromZonedTime(`${targetDateStr}T23:59:59.999`, TIMEZONE);
+
 
     const openSessions = await this.prisma.employeeAttendanceSession.findMany({
       where: {

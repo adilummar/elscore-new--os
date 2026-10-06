@@ -89,12 +89,27 @@ echo "STEP4_OK"
 
   // ── Step 5: Generate secrets ─────────────────────────────────────────────────
   console.log('\n=== STEP 5: Generating JWT secrets ===');
-  const secretRes = await sshExec(conn, `node -e "const c=require('crypto');console.log(c.randomBytes(48).toString('hex'));console.log(c.randomBytes(48).toString('hex'))"`);
-  const lines = secretRes.out.trim().split('\n').map(l => l.trim()).filter(l => /^[a-f0-9]{96}$/.test(l));
-  const JWT_ACCESS = lines[0] || 'please-set-a-strong-access-secret-min-32-chars-here';
-  const JWT_REFRESH = lines[1] || 'please-set-a-strong-refresh-secret-min-32-chars-here';
-  console.log(`\nGenerated Access Secret (first 12): ${JWT_ACCESS.substring(0, 12)}...`);
-  console.log(`Generated Refresh Secret (first 12): ${JWT_REFRESH.substring(0, 12)}...`);
+  const envCheck = await sshExec(conn, `cat ${PROJECT_DIR}/apps/api/.env || true`);
+  const envContent = envCheck.out || '';
+  
+  let JWT_ACCESS = '';
+  let JWT_REFRESH = '';
+
+  const accessMatch = envContent.match(/JWT_ACCESS_SECRET=(.+)/);
+  const refreshMatch = envContent.match(/JWT_REFRESH_SECRET=(.+)/);
+
+  if (accessMatch && refreshMatch) {
+    JWT_ACCESS = accessMatch[1].trim();
+    JWT_REFRESH = refreshMatch[1].trim();
+    console.log('Using existing JWT secrets from .env');
+  } else {
+    const secretRes = await sshExec(conn, `node -e "const c=require('crypto');console.log(c.randomBytes(48).toString('hex'));console.log(c.randomBytes(48).toString('hex'))"`);
+    const lines = secretRes.out.trim().split('\n').map(l => l.trim()).filter(l => /^[a-f0-9]{96}$/.test(l));
+    JWT_ACCESS = lines[0] || 'please-set-a-strong-access-secret-min-32-chars-here';
+    JWT_REFRESH = lines[1] || 'please-set-a-strong-refresh-secret-min-32-chars-here';
+    console.log(`\nGenerated Access Secret (first 12): ${JWT_ACCESS.substring(0, 12)}...`);
+    console.log(`Generated Refresh Secret (first 12): ${JWT_REFRESH.substring(0, 12)}...`);
+  }
 
   // ── Step 6: Write .env files ─────────────────────────────────────────────────
   console.log('\n=== STEP 6: Writing .env files ===');
@@ -129,6 +144,8 @@ echo "STEP4_OK"
   const webEnv = [
     `API_URL=http://localhost:${STAGING_API_PORT}/api/v1`,
     `NEXT_PUBLIC_API_URL=http://200.234.39.163:${STAGING_API_PORT}/api/v1`,
+    // This staging origin is plain HTTP. Production must not copy this override.
+    'COOKIE_SECURE=false',
   ].join('\n');
   await sshWrite(conn, `${PROJECT_DIR}/apps/web/.env.local`, webEnv);
   console.log('✅ Web .env.local written');
@@ -139,6 +156,7 @@ echo "STEP4_OK"
 
   // ── Step 8: Build ─────────────────────────────────────────────────────────────
   console.log('\n=== STEP 8: Building application (may take 3-5 min) ===');
+  await sshExec(conn, `cd ${PROJECT_DIR} && pnpm run db:generate 2>&1`);
   await sshExec(conn, `cd ${PROJECT_DIR} && pnpm run build 2>&1 | tail -30`);
 
   // ── Step 9: Migrations ────────────────────────────────────────────────────────
@@ -151,8 +169,8 @@ echo "STEP4_OK"
 
   // ── Step 11: Copy Next.js static assets ──────────────────────────────────────
   console.log('\n=== STEP 11: Copying Next.js static assets ===');
-  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/.next/static ${PROJECT_DIR}/apps/web/.next/standalone/.next/ 2>/dev/null || true`);
-  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/public ${PROJECT_DIR}/apps/web/.next/standalone/ 2>/dev/null || true`);
+  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/.next/static ${PROJECT_DIR}/apps/web/.next/standalone/apps/web/.next/ 2>/dev/null || true`);
+  await sshExec(conn, `cp -r ${PROJECT_DIR}/apps/web/public ${PROJECT_DIR}/apps/web/.next/standalone/apps/web/ 2>/dev/null || true`);
   console.log('✅ Static assets copied');
 
   // ── Step 12: PM2 ecosystem config ────────────────────────────────────────────
@@ -175,14 +193,15 @@ echo "STEP4_OK"
     },
     {
       name: 'elscore-web',
-      script: '${PROJECT_DIR}/apps/web/.next/standalone/server.js',
-      cwd: '${PROJECT_DIR}/apps/web/.next/standalone',
+      script: '${PROJECT_DIR}/apps/web/.next/standalone/apps/web/server.js',
+      cwd: '${PROJECT_DIR}/apps/web/.next/standalone/apps/web',
       instances: 1,
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
         PORT: ${STAGING_WEB_PORT},
         HOSTNAME: '0.0.0.0',
+        COOKIE_SECURE: 'false',
       },
       error_file: '/var/log/elscore/web-error.log',
       out_file: '/var/log/elscore/web-out.log',

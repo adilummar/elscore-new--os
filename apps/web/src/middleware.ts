@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { authCookieOptions } from '@/lib/auth/auth-cookie-options';
+import { unwrapRefreshPayload } from '@/lib/auth/unwrap-refresh-payload';
+
 export async function middleware(request: NextRequest) {
   const accessToken = request.cookies.get('accessToken')?.value;
   const refreshToken = request.cookies.get('refreshToken')?.value;
@@ -41,9 +44,14 @@ export async function middleware(request: NextRequest) {
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const secureCookies = process.env.COOKIE_SECURE !== 'false';
-        
+        const json = await res.json();
+        const data = unwrapRefreshPayload(json);
+        if (!data.accessToken) {
+          const response = NextResponse.redirect(new URL('/login', request.url), 303);
+          response.cookies.delete('accessToken');
+          response.cookies.delete('refreshToken');
+          return response;
+        }
         // Seamlessly continue the request with new cookies
         const requestHeaders = new Headers(request.headers);
         
@@ -65,22 +73,10 @@ export async function middleware(request: NextRequest) {
           },
         });
         
-        response.cookies.set('accessToken', data.accessToken, {
-          httpOnly: true,
-          secure: secureCookies,
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 15 * 60,
-        });
-        
+        response.cookies.set('accessToken', data.accessToken, authCookieOptions(15 * 60));
+
         if (data.refreshToken) {
-          response.cookies.set('refreshToken', data.refreshToken, {
-            httpOnly: true,
-            secure: secureCookies,
-            sameSite: 'lax',
-            path: '/',
-            maxAge: 7 * 24 * 60 * 60,
-          });
+          response.cookies.set('refreshToken', data.refreshToken, authCookieOptions(7 * 24 * 60 * 60));
         }
         
         return response;

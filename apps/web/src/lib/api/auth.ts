@@ -1,6 +1,9 @@
 'use server';
-import { fetchApi } from './client';
 import { cookies } from 'next/headers';
+
+import { authCookieOptions } from '@/lib/auth/auth-cookie-options';
+
+import { fetchApi } from './client';
 
 export async function login(credentials: { email: string; password: string }): Promise<{ mustChangePassword?: boolean; error?: string }> {
   const apiBase = process.env.API_URL || 'http://localhost:3001/api/v1';
@@ -36,25 +39,9 @@ export async function login(credentials: { email: string; password: string }): P
   const data = json.data ?? json;
 
   const cookieStore = cookies();
-  // COOKIE_SECURE=false disables the Secure flag for HTTP staging environments.
-  // In production (HTTPS), COOKIE_SECURE should be 'true' or unset (defaults secure).
-  const secureCookies = process.env.COOKIE_SECURE !== 'false';
 
-  cookieStore.set('accessToken', data.accessToken, {
-    httpOnly: true,
-    secure: secureCookies,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 15 * 60, // 15 mins
-  });
-
-  cookieStore.set('refreshToken', data.refreshToken, {
-    httpOnly: true,
-    secure: secureCookies,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
-  });
+  cookieStore.set('accessToken', data.accessToken, authCookieOptions(15 * 60));
+  cookieStore.set('refreshToken', data.refreshToken, authCookieOptions(7 * 24 * 60 * 60));
 
   // Return data so client can decide where to navigate
   return {
@@ -79,6 +66,7 @@ export async function logout() {
 
   cookieStore.delete('accessToken');
   cookieStore.delete('refreshToken');
+  cookieStore.delete('godViewUserId');
 }
 
 export async function getSession() {

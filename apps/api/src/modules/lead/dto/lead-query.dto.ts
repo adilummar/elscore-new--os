@@ -51,4 +51,13 @@ export class LeadQueryDto {
   @IsString()
   @IsOptional()
   cursor?: string;
+
+  @IsString()
+  @IsOptional()
+  dateFrom?: string; // ISO date, e.g. 2026-09-01
+
+  @IsString()
+  @IsOptional()
+  dateTo?: string; // ISO date, e.g. 2026-09-30 (end of day inclusive)
 }
+

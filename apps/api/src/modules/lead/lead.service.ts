@@ -42,18 +42,65 @@ export class LeadService {
   async create(dto: CreateLeadDto, actorUserId: string, hasReadAll: boolean, providedTx?: Prisma.TransactionClient) {
     const runInTx = providedTx ? (fn: (tx: Prisma.TransactionClient) => Promise<any>) => fn(providedTx) : this.prisma.$transaction.bind(this.prisma);
 
-    const existing = await this.prisma.lead.findFirst({
-      where: { primaryPhone: dto.primaryPhone },
-      select: { firstName: true, lastName: true, primaryPhone: true },
-    });
+    const normalizedIncomingPhone = dto.primaryPhone.replace(/\D/g, '');
+    const duplicateQuery = await (providedTx || this.prisma).$queryRaw<{ id: string }[]>`
+      SELECT id FROM "leads"
+      WHERE REGEXP_REPLACE(primary_phone, '[^0-9]', '', 'g') = ${normalizedIncomingPhone}
+    `;
+
+    const duplicateIds = duplicateQuery.map(d => d.id);
 
     const warnings: any[] = [];
-    if (existing) {
+    if (duplicateIds.length > 0) {
+      const existingLeads = await (providedTx || this.prisma).lead.findMany({
+        where: { id: { in: duplicateIds } },
+        select: {
+          id: true,
+          businessId: true,
+          firstName: true,
+          lastName: true,
+          primaryPhone: true,
+          status: true,
+          createdAt: true,
+          assignedToUserId: true,
+          assignedToUser: {
+            select: {
+              employee: { select: { firstName: true, lastName: true } }
+            }
+          }
+        }
+      });
+
       warnings.push({
         type: 'DUPLICATE_PHONE',
-        message: 'A lead with this primary phone already exists.',
-        existingLead: existing,
+        message: existingLeads.length === 1 
+          ? 'A lead with this primary phone already exists.' 
+          : `${existingLeads.length} leads with this primary phone already exist.`,
+        existingLeads: existingLeads.map(lead => {
+          const hasAccess = hasReadAll || lead.assignedToUserId === actorUserId;
+          if (hasAccess) {
+            return {
+              hasAccess: true,
+              id: lead.id,
+              businessId: lead.businessId,
+              firstName: lead.firstName,
+              lastName: lead.lastName,
+              primaryPhone: lead.primaryPhone,
+              status: lead.status,
+              createdAt: lead.createdAt,
+              ownerName: lead.assignedToUser?.employee ? `${lead.assignedToUser.employee.firstName} ${lead.assignedToUser.employee.lastName}` : 'Unassigned',
+            };
+          } else {
+            return {
+              hasAccess: false,
+            };
+          }
+        })
       });
+
+      if (!dto.continueAnyway) {
+        return { duplicateFound: true, warnings };
+      }
     }
 
     const lead = await runInTx(async (tx: Prisma.TransactionClient) => {
@@ -174,14 +221,20 @@ export class LeadService {
       return newLead;
     });
 
-    return { lead, warnings };
+    return { lead, warnings, duplicateFound: false };
   }
 
   async findAll(query: LeadQueryDto, userId: string, hasReadAll: boolean) {
+    if (!hasReadAll && !userId) {
+      throw new ForbiddenException('User identity not found');
+    }
+
     const where: Prisma.LeadWhereInput = {
       isArchived: query.isArchived ?? false,
     };
 
+    // Ownership is part of the database predicate. A missing user id must not
+    // drop the filter, and a client assignee filter cannot widen it.
     if (!hasReadAll) {
       where.assignedToUserId = userId;
     } else if (query.assignedToUserId !== undefined) {
@@ -237,14 +290,27 @@ export class LeadService {
       if (searchTerms.length > 0) {
         where.AND = searchTerms.map(term => ({
           OR: [
-            { firstName: { contains: term, mode: 'insensitive' } },
-            { lastName: { contains: term, mode: 'insensitive' } },
+            { firstName: { contains: term, mode: 'insensitive' as const } },
+            { lastName: { contains: term, mode: 'insensitive' as const } },
             { primaryPhone: { contains: term } },
-            { students: { some: { firstName: { contains: term, mode: 'insensitive' } } } },
-            { students: { some: { lastName: { contains: term, mode: 'insensitive' } } } },
+            { students: { some: { firstName: { contains: term, mode: 'insensitive' as const } } } },
+            { students: { some: { lastName: { contains: term, mode: 'insensitive' as const } } } },
           ]
         }));
       }
+    }
+
+    // Date range filter on createdAt
+    if (query.dateFrom || query.dateTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.dateFrom) {
+        dateFilter.gte = new Date(query.dateFrom + 'T00:00:00.000Z');
+      }
+      if (query.dateTo) {
+        // Include the full end day (up to 23:59:59)
+        dateFilter.lte = new Date(query.dateTo + 'T23:59:59.999Z');
+      }
+      where.createdAt = dateFilter;
     }
 
     const limit = query.limit ?? 20;
@@ -254,7 +320,7 @@ export class LeadService {
       where,
       take,
       ...(query.cursor ? { cursor: { id: decodeCursor(query.cursor) }, skip: 1 } : {}),
-      orderBy: { createdAt: 'asc' }, // Oldest uncontacted first logic foundation
+      orderBy: { createdAt: 'desc' }, // Newest first
       include: {
         assignedToUser: {
           select: {
@@ -447,8 +513,8 @@ export class LeadService {
     });
   }
 
-  async setArchive(id: string, isArchived: boolean, userId: string) {
-    // Only lead.archive / lead.reopen
+  async setArchive(id: string, isArchived: boolean, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Ensure lead exists
       await tx.lead.findUniqueOrThrow({ where: { id } });
@@ -473,7 +539,8 @@ export class LeadService {
     });
   }
 
-  async reopen(id: string, userId: string) {
+  async reopen(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const oldLead = await tx.lead.findUniqueOrThrow({ where: { id } });
       
@@ -607,6 +674,16 @@ export class LeadService {
         assignmentMethod: h.assignmentType,
         isReassignment: !!h.oldOwnerUserId,
         assignedAt: h.assignedAt,
+        reason: h.reason,
+        assignedByUser: h.assignedByUser?.employee
+          ? `${h.assignedByUser.employee.firstName} ${h.assignedByUser.employee.lastName}`
+          : h.assignedByUser?.email || 'System',
+        oldOwner: h.oldOwner ? {
+          employee: {
+            firstName: h.oldOwner.employee?.firstName || '',
+            lastName: h.oldOwner.employee?.lastName || ''
+          }
+        } : null,
         newOwner: h.newOwner ? {
           employee: {
             firstName: h.newOwner.employee?.firstName || '',
@@ -616,6 +693,28 @@ export class LeadService {
       })),
       pagination: { hasNextPage: false, nextCursor: null, limit: 50 }
     };
+  }
+
+  async getStatusHistory(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
+    const history = await this.prisma.leadStatusHistory.findMany({
+      where: { leadId: id },
+      orderBy: { changedAt: 'desc' },
+      include: {
+        changedByUser: { include: { employee: true } },
+      },
+    });
+    return history.map(h => ({
+      id: h.id,
+      oldStatus: h.oldStatus,
+      newStatus: h.newStatus,
+      reason: h.reason,
+      note: h.note,
+      changedAt: h.changedAt,
+      changedBy: h.changedByUser?.employee
+        ? `${h.changedByUser.employee.firstName} ${h.changedByUser.employee.lastName}`
+        : h.changedByUser?.email || 'System',
+    }));
   }
 
   async getTimeline(id: string, userId: string, hasReadAll: boolean) {
@@ -640,7 +739,14 @@ export class LeadService {
 
     const events = await this.prisma.auditEvent.findMany({
       where: {
-        entityId: { in: entityIds }
+        OR: [
+          { entityId: { in: entityIds } },
+          {
+            entityType: 'Student',
+            action: 'DELETE',
+            metadata: { path: ['leadId'], equals: id },
+          },
+        ],
       },
       orderBy: { timestamp: 'desc' },
       include: { actor: { include: { employee: true } } }

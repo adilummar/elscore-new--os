@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { EnrollmentState, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
@@ -8,6 +9,10 @@ import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateRequirementDto } from './dto/update-requirement.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+import {
+  StudentDeletionBlocker,
+  studentDeletionBlockedMessage,
+} from './student-deletion-message';
 
 @Injectable()
 export class StudentService {
@@ -153,6 +158,11 @@ export class StudentService {
       const { subjectIds, ...studentData } = dto;
 
       if (studentId) {
+        const existing = await tx.student.findUnique({ where: { id: studentId } });
+        if (!existing) throw new NotFoundException('Student not found');
+        if (existing.leadId !== leadId) {
+          throw new ForbiddenException('Student does not belong to this lead');
+        }
         student = await tx.student.update({ where: { id: studentId }, data: studentData });
       } else {
         const businessId = await this.idGen.nextIdInTx(tx, 'STU');
@@ -197,6 +207,114 @@ export class StudentService {
       }
 
       return student;
+    });
+  }
+
+  async deleteStudent(id: string, reason: string, userId: string, hasReadAll: boolean): Promise<void> {
+    const existing = await this.prisma.student.findUnique({
+      where: { id },
+      select: { id: true, leadId: true },
+    });
+    if (!existing) throw new NotFoundException('Student not found');
+    await this.checkLeadOwnership(existing.leadId, userId, hasReadAll);
+
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      // FOR UPDATE conflicts with the key-share lock taken by a child insert,
+      // so a protected record cannot commit between the checks and the delete.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "students" WHERE "id" = ${id} FOR UPDATE
+      `;
+      if (locked.length === 0) throw new NotFoundException('Student not found');
+
+      const student = await tx.student.findUnique({ where: { id } });
+      if (!student) throw new NotFoundException('Student not found');
+
+      const lead = await tx.lead.findUnique({
+        where: { id: student.leadId },
+        select: { assignedToUserId: true },
+      });
+      if (!lead) throw new NotFoundException('Lead not found');
+      if (!hasReadAll && lead.assignedToUserId !== userId) {
+        throw new ForbiddenException('You do not have access to this lead');
+      }
+
+      const blockers = await this.collectDeletionBlockers(tx, student.id, student.enrollmentState);
+      if (blockers.length > 0) {
+        throw this.studentInUse(blockers);
+      }
+
+      const requirementCount = await tx.requirement.count({ where: { studentId: student.id } });
+
+      try {
+        await tx.student.delete({ where: { id: student.id } });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError
+          && (error.code === 'P2003' || error.code === 'P2014')
+        ) {
+          throw new ConflictException({
+            code: 'STUDENT_IN_USE',
+            message: studentDeletionBlockedMessage([]),
+            blockers: [],
+          });
+        }
+        throw error;
+      }
+
+      const displayName = [student.firstName, student.lastName].filter(Boolean).join(' ');
+      const summary = {
+        businessId: student.businessId,
+        leadId: student.leadId,
+        displayName,
+        enrollmentState: student.enrollmentState,
+        requirementCount,
+      };
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'Student',
+        entityId: student.id,
+        action: 'DELETE',
+        actorUserId: userId,
+        reason,
+        oldValue: {
+          id: student.id,
+          ...summary,
+        },
+        newValue: summary,
+        metadata: summary,
+      });
+    });
+  }
+
+  private async collectDeletionBlockers(
+    tx: PrismaTxClient,
+    studentId: string,
+    enrollmentState: EnrollmentState,
+  ): Promise<StudentDeletionBlocker[]> {
+    const [demos, quotations, invoices, targetCredits, attendance] = await Promise.all([
+      tx.demo.count({ where: { studentId } }),
+      tx.quotation.count({ where: { studentId } }),
+      tx.invoice.count({ where: { studentId } }),
+      tx.targetCreditLedger.count({ where: { studentId } }),
+      tx.studentAttendance.count({ where: { studentId } }),
+    ]);
+
+    const blockers: StudentDeletionBlocker[] = [];
+    if (demos > 0) blockers.push('DEMO');
+    if (quotations > 0) blockers.push('QUOTATION');
+    if (invoices > 0) blockers.push('INVOICE');
+    if (targetCredits > 0) blockers.push('TARGET_CREDIT');
+    if (attendance > 0) blockers.push('ATTENDANCE');
+    if (enrollmentState === EnrollmentState.ENROLLED) blockers.push('ENROLLED');
+    if (enrollmentState === EnrollmentState.NOT_ENROLLING) blockers.push('NOT_ENROLLING');
+    return blockers;
+  }
+
+  private studentInUse(blockers: StudentDeletionBlocker[]): ConflictException {
+    return new ConflictException({
+      code: 'STUDENT_IN_USE',
+      message: studentDeletionBlockedMessage(blockers),
+      blockers,
     });
   }
 }

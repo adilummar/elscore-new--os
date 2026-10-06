@@ -1,5 +1,6 @@
 'use server';
 import { cookies } from 'next/headers';
+import { authCookieOptions } from '@/lib/auth/auth-cookie-options';
 import { fetchApi } from '@/lib/api/client';
 import { revalidatePath } from 'next/cache';
 
@@ -10,14 +11,7 @@ export async function enterGodViewAction(targetUserId: string): Promise<{ error?
     await fetchApi(`/auth/god-view/${targetUserId}`);
 
     const cookieStore = cookies();
-    const secureCookies = process.env.COOKIE_SECURE !== 'false';
-    cookieStore.set('godViewUserId', targetUserId, {
-      httpOnly: true,
-      secure: secureCookies,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 4 * 60 * 60, // 4 hours max god view session
-    });
+    cookieStore.set('godViewUserId', targetUserId, authCookieOptions(4 * 60 * 60));
     revalidatePath('/', 'layout');
     return {};
   } catch (e: any) {
