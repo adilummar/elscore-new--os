@@ -1,9 +1,11 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Request } from 'express';
-import { RbacService } from './rbac.service';
-import { RequestUser } from '../auth/decorators/current-user.decorator';
+
 import { AuditContext } from '../audit/audit.context';
+import { RequestUser } from '../auth/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+
+import { RbacService } from './rbac.service';
 
 /**
  * GodViewGuard — Overrides the CurrentUser if X-God-View-Target is provided.
@@ -19,7 +21,9 @@ export class GodViewGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & { user: RequestUser }>();
+    const request = context.switchToHttp().getRequest<
+      Request & { user: RequestUser; isGodViewReadOnly?: boolean }
+    >();
     const realUser = request.user;
     
     if (!realUser) {
@@ -34,8 +38,14 @@ export class GodViewGuard implements CanActivate {
 
     // Check if the real user is authorized to enter God View
     const realPerms = await this.rbacService.getPermissionsForUser(realUser.id);
-    const isCeo = realPerms.has('analytics.ceo.read');
-    const canEnter = isCeo || realPerms.has('god-view.enter');
+    const ceoRole = await this.prisma.userRole.findFirst({
+      where: { userId: realUser.id, role: { code: 'CEO' } },
+      select: { userId: true },
+    });
+    const isCeo = Boolean(ceoRole);
+    const canEnter = isCeo
+      || realPerms.has('god-view.enter')
+      || realPerms.has('analytics.ceo.read');
 
     if (!canEnter) {
       throw new ForbiddenException('You do not have permission to use God View');
@@ -68,7 +78,7 @@ export class GodViewGuard implements CanActivate {
     // ReadOnlyGuard handles the CO_FOUNDER exception, but let's add a flag for it if we want.
     // Actually, we can attach `isGodViewReadOnly` to the request object and have ReadOnlyGuard check it.
     if (!isCeo) {
-      (request as any).isGodViewReadOnly = true;
+      request.isGodViewReadOnly = true;
     }
 
     return true;
