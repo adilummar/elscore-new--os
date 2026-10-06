@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
+import { AuditContext } from '../../common/audit/audit.context';
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RbacService } from '../../common/rbac/rbac.service';
@@ -106,7 +107,9 @@ export class FollowUpAggregateController {
   ) {}
 
   private async hasReadAll(userId: string): Promise<boolean> {
-    const perms = await this.rbacService.getPermissionsForUser(userId);
+    const store = AuditContext.getStore();
+    const effectiveUserId = store?.realActorId || userId;
+    const perms = await this.rbacService.getPermissionsForUser(effectiveUserId);
     return perms.has('followup.read-all');
   }
 
