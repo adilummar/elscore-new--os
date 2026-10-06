@@ -165,6 +165,29 @@ export async function updateRequirementAction(id: string, data: any, leadId?: st
   return res;
 }
 
+export async function deleteStudentAction(id: string, reason: string, leadId: string): Promise<
+  { ok: true } | { ok: false; message: string; code?: string; blockers?: string[] }
+> {
+  try {
+    await fetchApi<any>(`/students/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason }),
+    });
+    revalidatePath(`/leads/${leadId}`);
+    revalidatePath('/leads');
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') throw error;
+    const err = error as Error & { code?: string; blockers?: string[] };
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : 'Failed to delete student',
+      code: err.code,
+      blockers: err.blockers,
+    };
+  }
+}
+
 export async function saveStudentBundleAction(data: any) {
   const res = await fetchApi<any>('/students/bundle', {
     method: 'POST',

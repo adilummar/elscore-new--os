@@ -44,9 +44,13 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
 
   if (!response.ok) {
     let errorMsg = `API error: ${response.status}`;
+    let errorCode: string | undefined;
+    let blockers: string[] | undefined;
     try {
       const errorData = await response.json();
       errorMsg = errorData.message || errorMsg;
+      if (typeof errorData.code === 'string') errorCode = errorData.code;
+      if (Array.isArray(errorData.blockers)) blockers = errorData.blockers.filter((item: unknown) => typeof item === 'string');
       console.error('[API ERROR]', response.status, endpoint, errorData);
     } catch (e) {
       console.error('[API ERROR]', response.status, endpoint, 'No JSON');
@@ -56,7 +60,10 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
       // In Server Actions, throwing a specific error might be caught to trigger redirect
       throw new Error('UNAUTHORIZED');
     }
-    throw new Error(errorMsg);
+    const error = new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+    if (errorCode) (error as Error & { code?: string }).code = errorCode;
+    if (blockers) (error as Error & { blockers?: string[] }).blockers = blockers;
+    throw error;
   }
 
   // Handle empty responses (like 204 No Content)

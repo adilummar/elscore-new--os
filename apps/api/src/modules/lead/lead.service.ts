@@ -732,7 +732,14 @@ export class LeadService {
 
     const events = await this.prisma.auditEvent.findMany({
       where: {
-        entityId: { in: entityIds }
+        OR: [
+          { entityId: { in: entityIds } },
+          {
+            entityType: 'Student',
+            action: 'DELETE',
+            metadata: { path: ['leadId'], equals: id },
+          },
+        ],
       },
       orderBy: { timestamp: 'desc' },
       include: { actor: { include: { employee: true } } }

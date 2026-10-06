@@ -9,6 +9,8 @@ import { AddEditStudentDialog } from './AddEditStudentDialog';
 import { AddEditRequirementDialog } from './AddEditRequirementDialog';
 import { GenerateQuotationDialog } from './GenerateQuotationDialog';
 import { QuotationHistory } from './QuotationHistory';
+import { DeleteStudentDialog } from './DeleteStudentDialog';
+import { studentsAfterDeletion } from './student-deletion';
 
 export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () => void }) {
   const { hasPermission } = usePermissions();
@@ -21,6 +23,14 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
   const [isQuotationDialogOpen, setIsQuotationDialogOpen] = React.useState(false);
   const [activeStudentForQuotation, setActiveStudentForQuotation] = React.useState<any>(null);
   const [quotationHistoryKey, setQuotationHistoryKey] = React.useState(0);
+  const [studentPendingDelete, setStudentPendingDelete] = React.useState<any>(null);
+  const [openActionsFor, setOpenActionsFor] = React.useState<string | null>(null);
+  const [students, setStudents] = React.useState<any[]>(lead.students ?? []);
+  const [notice, setNotice] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setStudents(lead.students ?? []);
+  }, [lead.students]);
 
   const openAddStudent = () => {
     setEditingStudent(null);
@@ -49,20 +59,22 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-slate-900">Students & Requirements</h2>
         <div className="flex gap-2">
-          {hasPermission('student.update') && lead.students?.length > 0 && (
-            <Button onClick={() => openEditStudent(lead.students[0])}>Edit Student Details</Button>
+          {hasPermission('student.update') && students.length > 0 && (
+            <Button onClick={() => openEditStudent(students[0])}>Edit Student Details</Button>
           )}
           {hasPermission('student.create') && (
-            <Button variant={lead.students?.length > 0 ? 'outline' : 'primary'} onClick={openAddStudent}>
-              {lead.students?.length > 0 ? '+ Add Another Student' : 'Add Student'}
+            <Button variant={students.length > 0 ? 'outline' : 'primary'} onClick={openAddStudent}>
+              {students.length > 0 ? '+ Add Another Student' : 'Add Student'}
             </Button>
           )}
         </div>
       </div>
 
-      {lead.students?.length > 0 ? (
+      {notice && <p className="text-sm text-emerald-700" role="status">{notice}</p>}
+
+      {students.length > 0 ? (
         <div className="grid grid-cols-1 gap-6">
-          {lead.students.map((student: any) => (
+          {students.map((student: any) => (
             <Card key={student.id} className="border-slate-200 shadow-sm">
               <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4 flex flex-row items-center justify-between">
                 <div>
@@ -74,9 +86,40 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
                     {student.currentGrade && <span>Grade: {student.currentGrade}</span>}
                   </p>
                 </div>
-                {hasPermission('student.update') && (
-                  <Button variant="outline" size="sm" onClick={() => openEditStudent(student)}>Edit Student</Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {hasPermission('student.update') && (
+                    <Button variant="outline" size="sm" onClick={() => openEditStudent(student)}>Edit Student</Button>
+                  )}
+                  {hasPermission('student.delete') && (
+                    <div className="relative">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-haspopup="menu"
+                        aria-expanded={openActionsFor === student.id}
+                        onClick={() => setOpenActionsFor(openActionsFor === student.id ? null : student.id)}
+                      >
+                        Actions
+                      </Button>
+                      {openActionsFor === student.id && (
+                        <div role="menu" className="absolute right-0 z-10 mt-1 w-44 rounded-md border border-slate-200 bg-white p-1">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="w-full rounded px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              setOpenActionsFor(null);
+                              setStudentPendingDelete(student);
+                            }}
+                          >
+                            Delete Student
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
                 <div className="flex justify-between items-center mb-2">
@@ -140,6 +183,20 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
         </Card>
       )}
 
+      {studentPendingDelete && (
+        <DeleteStudentDialog
+          student={studentPendingDelete}
+          lead={lead}
+          isOpen={!!studentPendingDelete}
+          onClose={() => setStudentPendingDelete(null)}
+          onDeleted={() => {
+            setStudents((current) => studentsAfterDeletion(current, studentPendingDelete.id));
+            setNotice('Student deleted.');
+            onUpdate();
+          }}
+        />
+      )}
+
       {isStudentDialogOpen && (
         <AddEditStudentDialog 
           leadId={lead.id} 
@@ -168,7 +225,7 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
 
       {isRequirementDialogOpen && activeStudentIdForReq && (
         <AddEditRequirementDialog 
-          student={lead.students.find((s: any) => s.id === activeStudentIdForReq)} 
+          student={students.find((s: any) => s.id === activeStudentIdForReq)} 
           requirement={editingRequirement} 
           isOpen={isRequirementDialogOpen} 
           onClose={() => setIsRequirementDialogOpen(false)} 

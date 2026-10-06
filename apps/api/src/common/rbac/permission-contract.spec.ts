@@ -1,5 +1,6 @@
 import { PricingController } from '../../modules/pricing/pricing.controller';
 import { QuotationController } from '../../modules/quotation/quotation.controller';
+import { StudentController } from '../../modules/student/student.controller';
 import { TutorProfileController } from '../../modules/tutor/tutor-profile.controller';
 import { AuditController } from '../audit/audit.controller';
 
@@ -43,6 +44,10 @@ describe('canonical permission contracts', () => {
     const all = methods.flatMap((method) => requiredPermissions(QuotationController.prototype, method));
     expect(all).not.toEqual(expect.arrayContaining(['quotation.read.own', 'quotation.read.team', 'quotation.read.all']));
     expect(all.some((code) => code.startsWith('quotation.read.'))).toBe(false);
+  });
+
+  it('student deletion requires the non-delegated student.delete permission', () => {
+    expect(requiredPermissions(StudentController.prototype, 'deleteStudent')).toEqual(['student.delete']);
   });
 
   it('pricing and finance-setting management keep pricing.manage', () => {

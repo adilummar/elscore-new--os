@@ -104,4 +104,13 @@ describe('RbacGuard', () => {
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
     });
   });
+
+  it('denies student.delete when the actor does not have that permission', async () => {
+    reflector.getAllAndOverride.mockReturnValue(['student.delete']);
+    rbacService.hasPermissions.mockResolvedValue(false);
+
+    await expect(guard.canActivate(createMockContext({ id: 'counsellor-1' }))).rejects.toThrow(ForbiddenException);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(rbacService.hasPermissions).toHaveBeenCalledWith('counsellor-1', ['student.delete']);
+  });
 });

@@ -851,6 +851,13 @@ const PERMISSIONS: Array<{
     description: 'Update student',
     isDelegatable: true,
   },
+  {
+    code: 'student.delete',
+    resource: 'student',
+    action: 'delete',
+    description: 'Delete an unused pending student',
+    isDelegatable: false,
+  },
 
   {
     code: 'requirement.create',
@@ -1111,6 +1118,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'student.create',
     'student.read',
     'student.update',
+    'student.delete',
     'requirement.create',
     'requirement.read',
     'requirement.update',
