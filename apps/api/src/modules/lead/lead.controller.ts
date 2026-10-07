@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
+import { AuditContext } from '../../common/audit/audit.context';
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RbacService } from '../../common/rbac/rbac.service';
@@ -23,9 +24,9 @@ export class LeadController {
   ) {}
 
   private async hasReadAll(userId: string): Promise<boolean> {
-    // userId is the effective user. God View has already swapped it to the target,
-    // so the real actor's lead.read-all must not widen this target's data scope.
-    const perms = await this.rbacService.getPermissionsForUser(userId);
+    const store = AuditContext.getStore();
+    const effectiveUserId = store?.realActorId || userId;
+    const perms = await this.rbacService.getPermissionsForUser(effectiveUserId);
     return perms.has('lead.read-all');
   }
 
