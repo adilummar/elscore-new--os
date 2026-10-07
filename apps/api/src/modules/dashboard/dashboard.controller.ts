@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { AuditContext } from '../../common/audit/audit.context';
+
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RbacService } from '../../common/rbac/rbac.service';
@@ -15,9 +15,8 @@ export class DashboardController {
   ) {}
 
   private async hasReadAll(userId: string): Promise<boolean> {
-    const store = AuditContext.getStore();
-    const effectiveUserId = store?.realActorId || userId;
-    const perms = await this.rbacService.getPermissionsForUser(effectiveUserId);
+    // userId is the effective user. God View has already swapped it to the target.
+    const perms = await this.rbacService.getPermissionsForUser(userId);
     return perms.has('lead.read-all');
   }
 
