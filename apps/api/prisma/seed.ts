@@ -231,6 +231,7 @@ const PERMISSIONS: Array<{
     { code: 'attendance.read.own', resource: 'attendance.employee', action: 'read.own', description: 'Read own attendance history', isDelegatable: false },
     { code: 'attendance.read.team', resource: 'attendance.employee', action: 'read.team', description: 'Read team attendance history', isDelegatable: false },
     { code: 'attendance.correct', resource: 'attendance.employee', action: 'correct', description: 'Correct historical attendance records', isDelegatable: false },
+    { code: 'attendance.missed-checkout.approve', resource: 'attendance.employee', action: 'missed-checkout.approve', description: 'Review and resolve scoped employee missed checkouts', isDelegatable: false },
     { code: 'attendance.settings.manage', resource: 'attendance.employee', action: 'settings.manage', description: 'Manage global working schedule', isDelegatable: false },
 
     // ---------------------------------------------------------------------------
@@ -1085,6 +1086,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'attendance.action.own',
     'attendance.read.own',
     'attendance.read.team',
+    'attendance.missed-checkout.approve',
     'demo.book',
     'demo.read_own',
     'demo.manage_team','roundrobin.read', 'roundrobin.manage',

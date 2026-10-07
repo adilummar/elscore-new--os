@@ -1,4 +1,5 @@
 import {
+  exceptionalGradeSelection,
   formatSlabGradeRange,
   gradeIdForSortOrder,
   slabSortOrdersForGrades,
@@ -29,5 +30,14 @@ describe('pricing slab grade range', () => {
 
   it('displays grade names for a correctly stored Grade 1–5 slab', () => {
     expect(formatSlabGradeRange(grades, 2, 6)).toBe('Grade 1 to Grade 5');
+  });
+
+  it('requires the authoritative Grade record for an exceptional rate', () => {
+    expect(exceptionalGradeSelection(grades, 'g5')).toEqual({
+      gradeId: 'g5',
+      gradeName: 'Grade 5',
+    });
+    expect(() => exceptionalGradeSelection(grades, '')).toThrow(/Select a Grade/);
+    expect(() => exceptionalGradeSelection(grades, '5')).toThrow(/Select a Grade/);
   });
 });

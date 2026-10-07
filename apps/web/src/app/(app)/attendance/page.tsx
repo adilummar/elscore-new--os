@@ -1,13 +1,21 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { getAttendanceStatusAction, getAttendanceHistoryAction, performAttendanceAction, getDailySummaryAction } from "./actions";
+import {
+  getAttendanceStatusAction,
+  getAttendanceHistoryAction,
+  getMyMissedCheckoutAction,
+  performAttendanceAction,
+  getDailySummaryAction,
+  requestMissedCheckoutApprovalAction,
+} from "./actions";
 import { fmtTime } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
+import { employeeMissedCheckoutPresentation } from "./missed-checkout";
 
 export default function MyAttendancePage() {
   const [status, setStatus] = useState<any>(null);
@@ -19,6 +27,11 @@ export default function MyAttendancePage() {
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
   const [isCheckOutModalOpen, setIsCheckOutModalOpen] = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [missedCheckout, setMissedCheckout] = useState<any>(null);
+  const [isRequestingApproval, setIsRequestingApproval] = useState(false);
+  const missedCheckoutPresentation = missedCheckout
+    ? employeeMissedCheckoutPresentation(missedCheckout.status, missedCheckout.rejectionReason)
+    : null;
 
   const showToast = (message: string, type: 'success' | 'warning') => {
     setToast({ message, type });
@@ -55,6 +68,7 @@ export default function MyAttendancePage() {
             date: s.calendarDate,
             checkIn: checkInEvent ? fmtTime(checkInEvent.timestamp) : '-',
             checkOut: checkOutEvent ? fmtTime(checkOutEvent.timestamp) : '-',
+            autoClosed: checkOutEvent?.eventType === 'AUTO_CHECK_OUT',
             workedTime: `${Math.floor((s.netDurationMinutes || 0) / 60)}h ${(s.netDurationMinutes || 0) % 60}m`,
             note: s.note,
           };
@@ -65,9 +79,18 @@ export default function MyAttendancePage() {
     }
   };
 
+  const fetchMissedCheckout = async () => {
+    try {
+      setMissedCheckout(await getMyMissedCheckoutAction());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
     fetchHistory();
+    fetchMissedCheckout();
   }, []);
 
   const handleAction = async (action: string) => {
@@ -75,6 +98,9 @@ export default function MyAttendancePage() {
       const res = await performAttendanceAction(action, action === 'CHECK_IN' ? note : undefined);
       if (!res.success) {
         showToast(res.error, 'warning');
+        if (res.code === 'MISSED_CHECKOUT_APPROVAL_REQUIRED') {
+          await fetchMissedCheckout();
+        }
         return;
       }
       showToast('Action successful', 'success');
@@ -87,10 +113,29 @@ export default function MyAttendancePage() {
       }
       fetchStatus();
       fetchHistory();
+      fetchMissedCheckout();
     } catch (e) {
       console.error(e);
       showToast('An unexpected error occurred', 'warning');
     }
+  };
+
+  const handleRequestApproval = async () => {
+    if (!missedCheckout?.id || isRequestingApproval) return;
+    setIsRequestingApproval(true);
+    const result = await requestMissedCheckoutApprovalAction(missedCheckout.id);
+    if (result.success) {
+      showToast(
+        missedCheckout.status === 'REJECTED'
+          ? 'Approval request submitted again.'
+          : 'Approval request submitted.',
+        'success',
+      );
+      await fetchMissedCheckout();
+    } else {
+      showToast(result.error, 'warning');
+    }
+    setIsRequestingApproval(false);
   };
 
   const loadSummary = async () => {
@@ -118,6 +163,38 @@ export default function MyAttendancePage() {
   return (
     <div className="p-4 space-y-4 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">My Attendance</h1>
+
+      {missedCheckout && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4" role="alert">
+          <h2 className="font-bold text-amber-900">Missed Checkout</h2>
+          <p className="mt-1 text-sm text-amber-800">
+            You forgot to check out on {missedCheckout.session?.calendarDate}. Your previous attendance was
+            automatically closed, and your next check-in requires management approval.
+          </p>
+          {missedCheckoutPresentation?.pending ? (
+            <p className="mt-3 text-sm font-medium text-amber-900">
+              Waiting for management approval.
+            </p>
+          ) : (
+            <>
+              {missedCheckout.status === 'REJECTED' && (
+                <div className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-800">
+                  <p className="font-semibold">Your request was rejected.</p>
+                  <p>{missedCheckoutPresentation?.rejectionMessage}</p>
+                </div>
+              )}
+              <Button
+                className="mt-3"
+                onClick={handleRequestApproval}
+                isLoading={isRequestingApproval}
+                disabled={isRequestingApproval}
+              >
+                {missedCheckoutPresentation?.actionLabel}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
@@ -129,7 +206,7 @@ export default function MyAttendancePage() {
               Status: <Badge>{status?.state || 'Not Checked In'}</Badge>
             </div>
             <div className="flex flex-wrap gap-3 mt-2">
-              {(!status?.state || status?.state === 'Not Checked In') && (
+              {(!status?.state || status?.state === 'Not Checked In') && !missedCheckout && (
                 <div className="w-full space-y-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">What are you working on today? <span className="text-slate-400 font-normal">(optional)</span></label>
@@ -198,6 +275,7 @@ export default function MyAttendancePage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Check In</TableHead>
                 <TableHead>Check Out</TableHead>
+                <TableHead>Closure</TableHead>
                 <TableHead>Worked</TableHead>
               </TableRow>
             </TableHeader>
@@ -207,6 +285,13 @@ export default function MyAttendancePage() {
                   <TableCell>{session.date}</TableCell>
                   <TableCell>{session.checkIn}</TableCell>
                   <TableCell>{session.checkOut}</TableCell>
+                  <TableCell>
+                    {session.autoClosed ? (
+                      <Badge variant="warning">Automatically closed</Badge>
+                    ) : (
+                      <Badge>Normal checkout</Badge>
+                    )}
+                  </TableCell>
                   <TableCell>{session.workedTime}</TableCell>
                 </TableRow>
               ))}

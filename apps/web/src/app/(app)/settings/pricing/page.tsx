@@ -13,13 +13,14 @@ import {
   getExceptionalRatesAction,
   getFinanceSettingAction,
   getPricingSlabsAction,
+  updateExceptionalRateAction,
   updateExceptionalRateStatusAction,
   updatePricingSlabAction,
   updatePricingSlabStatusAction,
   upsertFinanceSettingAction,
 } from '../actions';
 import { Modal } from '@/components/ui/Modal';
-import { formatSlabGradeRange, gradeIdForSortOrder, slabSortOrdersForGrades } from './grade-range';
+import { exceptionalGradeSelection, formatSlabGradeRange, gradeIdForSortOrder, slabSortOrdersForGrades } from './grade-range';
 
 export default function PricingSettingsPage() {
   const { hasPermission } = usePermissions();
@@ -32,6 +33,7 @@ export default function PricingSettingsPage() {
   const [curriculums, setCurriculums] = React.useState<any[]>([]);
   const [grades, setGrades] = React.useState<any[]>([]);
   const [editingSlab, setEditingSlab] = React.useState<any>(null);
+  const [editingRate, setEditingRate] = React.useState<any>(null);
 
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -156,20 +158,21 @@ export default function PricingSettingsPage() {
           <div className="space-y-1">
             <CardTitle>Exceptional Subject Rates</CardTitle>
             <p className="text-sm text-slate-500">
-              Subject-specific hourly rates. Use this section when one subject should not follow the general slab.
+              Subject and exact grade hourly rates. An exception applies only to that subject and grade.
             </p>
           </div>
-          <Button onClick={() => setIsExModalOpen(true)} size="sm" className="shrink-0">Add Exceptional Rate</Button>
+          <Button onClick={() => { setEditingRate(null); setIsExModalOpen(true); }} size="sm" className="shrink-0">Add Exceptional Rate</Button>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-brand-600 font-medium mb-4 bg-brand-50 p-3 rounded-md border border-brand-100">
-            Exceptional subject rates apply regardless of curriculum or grade and override general slabs.
+            An exceptional rate overrides the general slab only for the selected subject and exact grade.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Subject</th>
+                  <th className="px-4 py-3">Grade</th>
                   <th className="px-4 py-3">Hourly Rate (AED)</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -179,6 +182,7 @@ export default function PricingSettingsPage() {
                 {exceptionalRates.map((rate) => (
                   <tr key={rate.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">{rate.subject?.name || rate.subjectId}</td>
+                    <td className="px-4 py-3">{rate.grade?.name || 'Grade required'}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{rate.hourlyRate}</td>
                     <td className="px-4 py-3">
                       <Badge variant={rate.isActive ? 'success' : 'default'}>
@@ -186,14 +190,19 @@ export default function PricingSettingsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button variant="outline" size="sm" onClick={() => toggleEx(rate.id, rate.isActive)}>
-                        {rate.isActive ? 'Deactivate' : 'Activate'}
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => { setEditingRate(rate); setIsExModalOpen(true); }}>
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => toggleEx(rate.id, rate.isActive)}>
+                          {rate.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {exceptionalRates.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">No exceptional rates configured.</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No exceptional rates configured.</td></tr>
                 )}
               </tbody>
             </table>
@@ -212,9 +221,11 @@ export default function PricingSettingsPage() {
 
       <AddExceptionalModal
         isOpen={isExModalOpen}
-        onClose={() => setIsExModalOpen(false)}
+        onClose={() => { setIsExModalOpen(false); setEditingRate(null); }}
         onSuccess={loadData}
         subjects={subjects}
+        grades={grades}
+        rate={editingRate}
       />
     </div>
   );
@@ -390,21 +401,37 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums, grades, slab }:
   );
 }
 
-function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects }: any) {
+function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects, grades, rate }: any) {
   const [subjectId, setSubjectId] = React.useState('');
+  const [gradeId, setGradeId] = React.useState('');
   const [hourlyRate, setHourlyRate] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setSubjectId(rate?.subjectId || '');
+    setGradeId(rate?.gradeId || '');
+    setHourlyRate(rate?.hourlyRate ?? '');
+    setError('');
+  }, [isOpen, rate]);
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      await createExceptionalRateAction({
+      const selectedGrade = exceptionalGradeSelection(grades, gradeId);
+      const payload = {
         subjectId,
+        gradeId: selectedGrade.gradeId,
         hourlyRate: Number(hourlyRate),
-      });
+      };
+      if (rate?.id) {
+        await updateExceptionalRateAction(rate.id, payload);
+      } else {
+        await createExceptionalRateAction(payload);
+      }
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -416,9 +443,9 @@ function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects }: any) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-2">Add Exceptional Subject Rate</h2>
+      <h2 className="text-lg font-bold mb-2">{rate ? 'Edit Exceptional Subject Rate' : 'Add Exceptional Subject Rate'}</h2>
       <p className="text-xs text-brand-600 mb-4 bg-brand-50 p-2 rounded">
-        Select one subject. This hourly rate overrides the general slab for that subject, regardless of curriculum or grade.
+        This hourly rate applies only to the selected subject and exact grade. It does not apply to other grades of the same subject.
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="text-red-500 text-sm">{error}</div>}
@@ -430,12 +457,19 @@ function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects }: any) {
           </Select>
         </div>
         <div>
-          <label className="text-sm font-medium">Hourly Rate (AED) *</label>
+          <label className="text-sm font-medium">Grade *</label>
+          <Select value={gradeId} onChange={(e) => setGradeId(e.target.value)} required>
+            <option value="">Select Grade</option>
+            {grades.map((grade: any) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+          </Select>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Exceptional Hourly Rate (AED) *</label>
           <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2 border rounded-md" />
         </div>
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={loading}>Save Rate</Button>
+          <Button type="submit" disabled={loading}>{rate ? 'Save Changes' : 'Save Rate'}</Button>
         </div>
       </form>
     </Modal>

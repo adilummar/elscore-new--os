@@ -55,6 +55,16 @@ export class PricingController {
     return this.pricingService.createExceptionalRate(dto, user.id);
   }
 
+  @Patch('exceptional-rates/:id')
+  @RequirePermissions('pricing.manage')
+  updateExceptionalRate(
+    @Param('id') id: string,
+    @Body() dto: CreateExceptionalRateDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.pricingService.updateExceptionalRate(id, dto, user.id);
+  }
+
   @Patch('exceptional-rates/:id/status')
   @RequirePermissions('pricing.manage')
   updateExceptionalRateStatus(

@@ -1,5 +1,6 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import { JOBS, QUEUES } from './queue.constants';
@@ -33,6 +34,7 @@ export class HousekeepingScheduler implements OnApplicationBootstrap {
 
   constructor(
     @InjectQueue(QUEUES.HOUSEKEEPING) private readonly housekeepingQueue: Queue,
+    private readonly config: ConfigService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -74,10 +76,11 @@ export class HousekeepingScheduler implements OnApplicationBootstrap {
         },
       );
 
-      // Attendance auto-checkout at 18:35 UTC (00:05 IST)
+      // Attendance auto-close at 00:05 in the configured business timezone.
+      const businessTimezone = this.config.get<string>('crm.businessTimezone') ?? 'Asia/Kolkata';
       await this.housekeepingQueue.upsertJobScheduler(
         'attendance-auto-checkout',
-        { pattern: '35 18 * * *' },
+        { pattern: '5 0 * * *', tz: businessTimezone },
         {
           name: JOBS.ATTENDANCE_AUTO_CHECKOUT,
           data: {
@@ -106,7 +109,7 @@ export class HousekeepingScheduler implements OnApplicationBootstrap {
         },
       );
 
-      this.logger.log('Housekeeping schedules registered: [daily-token-cleanup @ 02:00 UTC, round-robin-daily-reset @ 18:30 UTC, attendance-auto-checkout @ 18:35 UTC, round-robin-history-cleanup @ 02:30 UTC]');
+      this.logger.log(`Housekeeping schedules registered: [daily-token-cleanup @ 02:00 UTC, round-robin-daily-reset @ 18:30 UTC, attendance-auto-checkout @ 00:05 ${businessTimezone}, round-robin-history-cleanup @ 02:30 UTC]`);
     } catch (err) {
       // Scheduling failure should not crash the application.
       // Log prominently; the job will be re-scheduled on next startup.

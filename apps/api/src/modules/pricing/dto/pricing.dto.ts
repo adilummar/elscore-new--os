@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsNumber, IsBoolean, IsOptional, Min, Equals } from 'class-validator';
+import { IsString, IsInt, IsNumber, IsBoolean, IsOptional, IsNotEmpty, Min, Equals } from 'class-validator';
 
 export class CreatePricingSlabDto {
   @IsString()
@@ -24,7 +24,12 @@ export class UpdatePricingSlabDto {
 
 export class CreateExceptionalRateDto {
   @IsString()
+  @IsNotEmpty()
   subjectId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  gradeId: string;
 
   @IsNumber()
   @Min(0)

@@ -46,11 +46,15 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
     let errorMsg = `API error: ${response.status}`;
     let errorCode: string | undefined;
     let blockers: string[] | undefined;
+    let details: Record<string, unknown> | undefined;
     try {
       const errorData = await response.json();
       errorMsg = errorData.message || errorMsg;
       if (typeof errorData.code === 'string') errorCode = errorData.code;
       if (Array.isArray(errorData.blockers)) blockers = errorData.blockers.filter((item: unknown) => typeof item === 'string');
+      if (typeof errorData.details === 'object' && errorData.details !== null && !Array.isArray(errorData.details)) {
+        details = errorData.details;
+      }
       console.error('[API ERROR]', response.status, endpoint, errorData);
     } catch (e) {
       console.error('[API ERROR]', response.status, endpoint, 'No JSON');
@@ -63,6 +67,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
     const error = new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
     if (errorCode) (error as Error & { code?: string }).code = errorCode;
     if (blockers) (error as Error & { blockers?: string[] }).blockers = blockers;
+    if (details) (error as Error & { details?: Record<string, unknown> }).details = details;
     throw error;
   }
 

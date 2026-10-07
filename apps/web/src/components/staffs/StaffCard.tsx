@@ -14,6 +14,7 @@ const STATUS_CONFIG = {
   ACTIVE: { label: 'Working', bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   ON_BREAK: { label: 'On Break', bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
   COMPLETED: { label: 'Checked Out', bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-400' },
+  AUTO_CHECKED_OUT: { label: 'Auto-closed', bg: 'bg-amber-100', text: 'text-amber-800', dot: 'bg-amber-500' },
 };
 
 interface Props {

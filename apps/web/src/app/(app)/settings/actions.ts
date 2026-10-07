@@ -80,9 +80,29 @@ export async function getExceptionalRatesAction() {
   return fetchApi<any[]>('/pricing/exceptional-rates');
 }
 
-export async function createExceptionalRateAction(data: { subjectId: string; hourlyRate: number }) {
+export async function createExceptionalRateAction(data: {
+  subjectId: string;
+  gradeId: string;
+  hourlyRate: number;
+}) {
   const res = await fetchApi<any>('/pricing/exceptional-rates', {
     method: 'POST',
+    body: JSON.stringify(data),
+  });
+  revalidatePath('/settings/pricing');
+  return res;
+}
+
+export async function updateExceptionalRateAction(
+  id: string,
+  data: {
+    subjectId: string;
+    gradeId: string;
+    hourlyRate: number;
+  },
+) {
+  const res = await fetchApi<any>(`/pricing/exceptional-rates/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(data),
   });
   revalidatePath('/settings/pricing');

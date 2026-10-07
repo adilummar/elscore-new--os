@@ -179,6 +179,7 @@ export class QuotationService {
         req.curriculumId,
         req.grade.sortOrder,
         req.subjectId,
+        req.gradeId,
         tx,
       );
 

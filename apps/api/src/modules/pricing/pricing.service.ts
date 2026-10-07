@@ -127,25 +127,22 @@ export class PricingService {
 
   async getExceptionalRates() {
     return this.prisma.exceptionalSubjectRate.findMany({
-      include: { subject: true },
+      include: { subject: true, grade: true },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async createExceptionalRate(dto: CreateExceptionalRateDto, userId: string) {
+    this.assertExceptionalGrade(dto.gradeId);
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.exceptionalSubjectRate.findFirst({
-        where: { subjectId: dto.subjectId, isActive: true },
-      });
-
-      if (existing) {
-        throw new BadRequestException('An active exceptional rate already exists for this subject.');
-      }
+      await this.assertGradeExists(tx, dto.gradeId);
+      await this.assertNoActiveConflict(tx, dto.subjectId, dto.gradeId);
 
       const rate = await tx.exceptionalSubjectRate.create({
         data: {
           businessId: 'EXR-' + Date.now(),
           subjectId: dto.subjectId,
+          gradeId: dto.gradeId,
           hourlyRate: dto.hourlyRate,
           createdBy: userId,
         },
@@ -163,8 +160,48 @@ export class PricingService {
     });
   }
 
+  async updateExceptionalRate(id: string, dto: CreateExceptionalRateDto, userId: string) {
+    this.assertExceptionalGrade(dto.gradeId);
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.exceptionalSubjectRate.findUnique({ where: { id } });
+      if (!current) throw new NotFoundException('Exceptional subject rate not found');
+
+      await this.assertGradeExists(tx, dto.gradeId);
+      if (current.isActive) {
+        await this.assertNoActiveConflict(tx, dto.subjectId, dto.gradeId, id);
+      }
+
+      const rate = await tx.exceptionalSubjectRate.update({
+        where: { id },
+        data: {
+          subjectId: dto.subjectId,
+          gradeId: dto.gradeId,
+          hourlyRate: dto.hourlyRate,
+          updatedBy: userId,
+        },
+      });
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'ExceptionalSubjectRate',
+        entityId: rate.id,
+        action: 'UPDATED',
+        actorUserId: userId,
+        oldValue: current,
+        newValue: rate,
+      });
+
+      return rate;
+    });
+  }
+
   async updateExceptionalRateStatus(id: string, dto: UpdateExceptionalRateDto, userId: string) {
     return this.prisma.$transaction(async (tx) => {
+      const current = await tx.exceptionalSubjectRate.findUnique({ where: { id } });
+      if (!current) throw new NotFoundException('Exceptional subject rate not found');
+      if (dto.isActive) {
+        await this.assertNoActiveConflict(tx, current.subjectId, current.gradeId, id);
+      }
+
       const rate = await tx.exceptionalSubjectRate.update({
         where: { id },
         data: { isActive: dto.isActive, updatedBy: userId },
@@ -191,11 +228,14 @@ export class PricingService {
     curriculumId: string,
     gradeSortOrder: number,
     subjectId: string,
+    gradeId: string,
     db: PrismaTxClient | PrismaService = this.prisma,
   ): Promise<{ rate: number, source: string }> {
-    const exceptional = await db.exceptionalSubjectRate.findFirst({
-      where: { subjectId, isActive: true },
-    });
+    const exceptional = gradeId
+      ? await db.exceptionalSubjectRate.findFirst({
+          where: { subjectId, gradeId, isActive: true },
+        })
+      : null;
 
     if (exceptional) {
       return { rate: Number(exceptional.hourlyRate), source: 'EXCEPTIONAL_SUBJECT' };
@@ -220,6 +260,36 @@ export class PricingService {
   private assertOrderedGradeRange(gradeFrom: number, gradeTo: number) {
     if (gradeFrom > gradeTo) {
       throw new BadRequestException('Grade From must be the same as or before Grade To.');
+    }
+  }
+
+  private assertExceptionalGrade(gradeId: string) {
+    if (!gradeId?.trim()) {
+      throw new BadRequestException('Grade is required for an exceptional subject rate.');
+    }
+  }
+
+  private async assertGradeExists(tx: PrismaTxClient, gradeId: string) {
+    const grade = await tx.grade.findUnique({ where: { id: gradeId }, select: { id: true } });
+    if (!grade) throw new BadRequestException('Grade not found.');
+  }
+
+  private async assertNoActiveConflict(
+    tx: PrismaTxClient,
+    subjectId: string,
+    gradeId: string,
+    excludeId?: string,
+  ) {
+    const existing = await tx.exceptionalSubjectRate.findFirst({
+      where: {
+        subjectId,
+        gradeId,
+        isActive: true,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('An active exceptional rate already exists for this subject and grade.');
     }
   }
 

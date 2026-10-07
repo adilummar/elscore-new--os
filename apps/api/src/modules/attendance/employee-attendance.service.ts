@@ -1,27 +1,28 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { Prisma, AttendanceSessionStatus } from '@prisma/client';
-import { AuditService } from '../../common/audit/audit.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { format, differenceInMinutes, parse, startOfDay, endOfDay } from 'date-fns';
-import { formatInTimeZone, toZonedTime, getTimezoneOffset } from 'date-fns-tz';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { startOfDay, endOfDay } from 'date-fns';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 
-const TIMEZONE = 'Asia/Kolkata';
+import { AuditService } from '../../common/audit/audit.service';
+import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
+
+import { MissedCheckoutService } from './missed-checkout.service';
 
 @Injectable()
 export class EmployeeAttendanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly missedCheckout: MissedCheckoutService,
   ) {}
 
   private getTodayStr(date = new Date()): string {
-    return formatInTimeZone(date, TIMEZONE, 'yyyy-MM-dd');
+    return this.missedCheckout.getBusinessDate(date);
   }
 
   async getDailyTaskSummary(userId: string) {
     const today = new Date();
-    const start = startOfDay(toZonedTime(today, TIMEZONE));
-    const end = endOfDay(toZonedTime(today, TIMEZONE));
+    const start = startOfDay(toZonedTime(today, this.missedCheckout.businessTimezone));
+    const end = endOfDay(toZonedTime(today, this.missedCheckout.businessTimezone));
 
     const [pendingFollowUps, completedFollowUps, pendingDemos, completedDemos] = await Promise.all([
       // Pending Follow-ups (scheduled for today or earlier, status SCHEDULED)
@@ -75,15 +76,28 @@ export class EmployeeAttendanceService {
   }
 
   async checkIn(userId: string, requestedDate?: Date, note?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const checkInTime = requestedDate || new Date();
+
+    // Commit recovery separately so the deliberate check-in rejection below does
+    // not roll back the recovered auto-close and its missed-checkout case.
+    await this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const employee = await tx.employee.findUnique({ where: { userId } });
+      if (!employee) throw new NotFoundException('Employee not found');
+      await tx.$executeRaw`SELECT 1 FROM employees WHERE id = ${employee.id} FOR UPDATE`;
+      await this.missedCheckout.reconcileEmployeeInTx(tx, employee.id, checkInTime);
+    });
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
       if (!employee) throw new NotFoundException('Employee not found');
       if (employee.employmentStatus !== 'ACTIVE') {
         throw new ForbiddenException('Only active employees can check in');
       }
 
-      const checkInTime = requestedDate || new Date();
       const today = this.getTodayStr(checkInTime);
+
+      await tx.$executeRaw`SELECT 1 FROM employees WHERE id = ${employee.id} FOR UPDATE`;
+      await this.missedCheckout.assertNoUnresolvedInTx(tx, employee.id);
 
       const existingActive = await tx.employeeAttendanceSession.findFirst({
         where: { employeeId: employee.id, status: { in: ['ACTIVE', 'ON_BREAK'] } },
@@ -96,31 +110,50 @@ export class EmployeeAttendanceService {
         where: { effectiveFrom: { lte: checkInTime } },
         orderBy: { effectiveFrom: 'desc' },
       });
+      if (!schedule) {
+        throw new ConflictException({
+          code: 'ATTENDANCE_SCHEDULE_REQUIRED',
+          message: 'Attendance check-in is unavailable because no working schedule is configured.',
+        });
+      }
+      if (schedule.endTime <= schedule.startTime) {
+        throw new ConflictException({
+          code: 'ATTENDANCE_SCHEDULE_UNSUPPORTED',
+          message: 'Attendance check-in is unavailable because the configured working schedule is unsupported.',
+        });
+      }
+
+      const existingToday = await tx.employeeAttendanceSession.findUnique({
+        where: { employeeId_calendarDate: { employeeId: employee.id, calendarDate: today } },
+        select: { id: true },
+      });
+      if (existingToday) {
+        throw new BadRequestException('Attendance already exists for this business day');
+      }
 
       let isLate = false;
       let lateMinutes = 0;
 
-      if (schedule && schedule.startTime) {
-        // Build the scheduled start time as IST using date-fns-tz — no hardcoded offset strings
-        const { fromZonedTime } = await import('date-fns-tz');
-        const scheduleTime = fromZonedTime(`${today}T${schedule.startTime}:00`, TIMEZONE);
-        if (checkInTime > scheduleTime) {
-          isLate = true;
-          lateMinutes = Math.floor((checkInTime.getTime() - scheduleTime.getTime()) / 60000);
-        }
+      const scheduleTime = fromZonedTime(
+        `${today}T${schedule.startTime}:00`,
+        schedule.timezone || this.missedCheckout.businessTimezone,
+      );
+      if (checkInTime > scheduleTime) {
+        isLate = true;
+        lateMinutes = Math.floor((checkInTime.getTime() - scheduleTime.getTime()) / 60000);
       }
 
       const session = await tx.employeeAttendanceSession.create({
         data: {
           employeeId: employee.id,
           calendarDate: today,
-          scheduleSnapshot: schedule ? {
+          scheduleSnapshot: {
              startTime: schedule.startTime,
              endTime: schedule.endTime,
              timezone: schedule.timezone,
              id: schedule.id,
              effectiveFrom: schedule.effectiveFrom.toISOString()
-          } : {},
+          },
           status: 'ACTIVE',
           isLate,
           lateMinutes,

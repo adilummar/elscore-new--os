@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { X, Clock, Coffee, CheckCircle, AlertCircle, Calendar, Briefcase } from 'lucide-react';
 import type { StaffDetail } from '@/app/(app)/staffs/actions';
+import { fmtTime } from '@/lib/time';
 
 interface Props {
   staff: StaffDetail | null;
@@ -11,11 +12,6 @@ interface Props {
 
 function fmt(mins: number) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
-
-function fmtTime(ts: string | null) {
-  if (!ts) return '-';
-  return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
 function fmtDate(dateStr: string) {
@@ -28,8 +24,14 @@ function StatusBadge({ status }: { status: string | null }) {
     ACTIVE: 'bg-emerald-100 text-emerald-700',
     ON_BREAK: 'bg-amber-100 text-amber-700',
     COMPLETED: 'bg-blue-100 text-blue-700',
+    AUTO_CHECKED_OUT: 'bg-amber-100 text-amber-800',
   };
-  const label: Record<string, string> = { ACTIVE: 'Working', ON_BREAK: 'On Break', COMPLETED: 'Checked Out' };
+  const label: Record<string, string> = {
+    ACTIVE: 'Working',
+    ON_BREAK: 'On Break',
+    COMPLETED: 'Checked Out',
+    AUTO_CHECKED_OUT: 'Auto-closed',
+  };
   return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${map[status] ?? 'bg-slate-100 text-slate-500'}`}>{label[status] ?? status}</span>;
 }
 
@@ -95,7 +97,7 @@ export function StaffDetailPanel({ staff, onClose }: Props) {
                 <span className="text-sm text-text-secondary flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" />Check In</span>
                 <span className="text-sm font-medium text-text-primary">{fmtTime(todaySession.events?.find((e: any) => e.eventType === 'CHECK_IN')?.timestamp ?? null)}</span>
               </div>
-              {(todaySession.status === 'COMPLETED') && (
+              {(todaySession.status === 'COMPLETED' || todaySession.status === 'AUTO_CHECKED_OUT') && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text-secondary flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5" />Check Out</span>
                   <span className="text-sm font-medium text-text-primary">{fmtTime(todaySession.events?.find((e: any) => e.eventType === 'CHECK_OUT' || e.eventType === 'AUTO_CHECK_OUT')?.timestamp ?? null)}</span>

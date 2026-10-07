@@ -40,6 +40,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let error = 'Internal Server Error';
     let code: string | undefined;
     let blockers: string[] | undefined;
+    let details: Record<string, unknown> | undefined;
 
     if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
@@ -54,6 +55,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         if (typeof res['code'] === 'string') code = res['code'];
         if (Array.isArray(res['blockers']) && res['blockers'].every((item) => typeof item === 'string')) {
           blockers = res['blockers'];
+        }
+        if (typeof res['details'] === 'object' && res['details'] !== null && !Array.isArray(res['details'])) {
+          details = res['details'] as Record<string, unknown>;
         }
       }
     } else if (exception instanceof Error) {
@@ -77,6 +81,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error,
       ...(code ? { code } : {}),
       ...(blockers ? { blockers } : {}),
+      ...(details ? { details } : {}),
       correlationId,
       timestamp: new Date().toISOString(),
       path: request.url,

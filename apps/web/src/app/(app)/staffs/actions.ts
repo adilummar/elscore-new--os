@@ -2,7 +2,7 @@
 
 import { fetchApi } from '@/lib/api/client';
 
-export type StaffAttendanceStatus = 'ACTIVE' | 'ON_BREAK' | 'COMPLETED' | null;
+export type StaffAttendanceStatus = 'ACTIVE' | 'ON_BREAK' | 'COMPLETED' | 'AUTO_CHECKED_OUT' | null;
 
 export interface StaffSummary {
   id: string;

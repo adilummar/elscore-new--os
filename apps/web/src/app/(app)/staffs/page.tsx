@@ -76,7 +76,9 @@ export default function StaffsPage() {
   const total = staffs.length;
   const working = staffs.filter(s => s.todaySession?.status === 'ACTIVE').length;
   const onBreak = staffs.filter(s => s.todaySession?.status === 'ON_BREAK').length;
-  const checkedOut = staffs.filter(s => s.todaySession?.status === 'COMPLETED').length;
+  const checkedOut = staffs.filter(
+    s => s.todaySession?.status === 'COMPLETED' || s.todaySession?.status === 'AUTO_CHECKED_OUT',
+  ).length;
   const absent = staffs.filter(s => !s.todaySession).length;
 
   if (!hasPermission('attendance.read.team') && !hasPermission('employee.read')) {

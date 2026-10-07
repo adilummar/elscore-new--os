@@ -20,6 +20,14 @@ export function gradeIdForSortOrder(grades: GradeRef[], sortOrder: number) {
   return grades.find((grade) => grade.sortOrder === sortOrder)?.id ?? '';
 }
 
+export function exceptionalGradeSelection(grades: GradeRef[], gradeId: string) {
+  const grade = grades.find((item) => item.id === gradeId);
+  if (!grade) {
+    throw new Error('Select a Grade.');
+  }
+  return { gradeId: grade.id, gradeName: grade.name };
+}
+
 export function formatSlabGradeRange(grades: GradeRef[], gradeFrom: number, gradeTo: number) {
   const fromName = grades.find((grade) => grade.sortOrder === gradeFrom)?.name;
   const toName = grades.find((grade) => grade.sortOrder === gradeTo)?.name;

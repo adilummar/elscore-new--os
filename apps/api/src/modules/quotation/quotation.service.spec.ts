@@ -261,7 +261,7 @@ describe('QuotationService', () => {
 
     const preview: any = await service.previewQuotation({ studentId: 's1' }, testUser('u1'));
 
-    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('cbse', 6, 'economics', mockPrisma);
+    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('cbse', 6, 'economics', 'grade-5', mockPrisma);
     expect(preview.lineItems[0].originalHourlyRate).toBe(11);
     expect(preview.lineItems[0].normalMonthlyAmount).toBe(165);
     expect(preview.lineItems[0].pricingSource).toBe('SLAB');
@@ -295,7 +295,7 @@ describe('QuotationService', () => {
   it('should resolve pricing through the transaction client', async () => {
     setupMockStudent('DEMO_COMPLETED');
     await service.generateQuotation({ studentId: 's1', offerHourlyRate: 40 }, testUser('u1'));
-    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('c1', 6, 'subj1', mockPrisma);
+    expect(mockPricingService.resolveHourlyRate).toHaveBeenCalledWith('c1', 6, 'subj1', 'grade1', mockPrisma);
   });
 
   it('should apply offer totals from the shared calculation engine', async () => {
@@ -324,5 +324,26 @@ describe('QuotationService', () => {
     expect(preview.totalAmountDue).toBe(generated.totalAmountDue);
     expect(preview.parentName).toBe(generated.parentName);
     expect(preview.curriculumName).toBe(generated.curriculumName);
+    expect(mockPricingService.resolveHourlyRate).toHaveBeenNthCalledWith(1, 'c1', 6, 'subj1', 'grade1', mockPrisma);
+    expect(mockPricingService.resolveHourlyRate).toHaveBeenNthCalledWith(2, 'c1', 6, 'subj1', 'grade1', mockPrisma);
+  });
+
+  it('stores the resolved rate and does not reprice a saved quotation', async () => {
+    setupMockStudent('DEMO_COMPLETED');
+    mockPricingService.resolveHourlyRate.mockResolvedValue({ rate: 14, source: 'EXCEPTIONAL_SUBJECT' });
+
+    const generated: any = await service.generateQuotation({ studentId: 's1' }, testUser('u1'));
+
+    expect(generated.lineItems.create[0].originalHourlyRate).toBe(14);
+    expect(generated.lineItems.create[0].pricingSource).toBe('EXCEPTIONAL_SUBJECT');
+    mockPricingService.resolveHourlyRate.mockClear();
+    mockPrisma.quotation.findMany.mockResolvedValue([
+      { id: 'q1', lineItems: [{ originalHourlyRate: 14, pricingSource: 'EXCEPTIONAL_SUBJECT' }] },
+    ]);
+
+    const saved = await service.getQuotationsByStudent('s1', testUser('u1'));
+
+    expect(saved[0].lineItems[0].originalHourlyRate).toBe(14);
+    expect(mockPricingService.resolveHourlyRate).not.toHaveBeenCalled();
   });
 });

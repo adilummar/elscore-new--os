@@ -1,14 +1,8 @@
-import { Processor } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { Job } from 'bullmq';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { BaseJobProcessor } from '../base-job-processor';
-import { QUEUES } from '../queue.constants';
-
-export const JOBS = {
-  CLEANUP_REFRESH_TOKENS: 'cleanup-refresh-tokens',
-} as const;
 
 export interface CleanupRefreshTokensJobData {
   /**
@@ -46,7 +40,6 @@ export interface CleanupRefreshTokensJobData {
  *   The idempotencyKey in job data prevents duplicate concurrent executions.
  */
 @Injectable()
-@Processor(QUEUES.HOUSEKEEPING)
 export class TokenCleanupProcessor extends BaseJobProcessor {
   constructor(private readonly prisma: PrismaService) {
     super(TokenCleanupProcessor.name);

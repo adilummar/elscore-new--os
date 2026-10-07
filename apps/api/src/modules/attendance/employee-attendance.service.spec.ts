@@ -1,12 +1,19 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { EmployeeAttendanceService } from './employee-attendance.service';
-import { AuditService } from '../../common/audit/audit.service';
 import { BadRequestException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+
+import { AuditService } from '../../common/audit/audit.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+
+import { EmployeeAttendanceService } from './employee-attendance.service';
+import { MissedCheckoutService } from './missed-checkout.service';
 
 describe('EmployeeAttendanceService', () => {
   let service: EmployeeAttendanceService;
   let prisma: PrismaService;
+  let missedCheckout: {
+    reconcileEmployeeInTx: jest.Mock;
+    assertNoUnresolvedInTx: jest.Mock;
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -21,17 +28,105 @@ describe('EmployeeAttendanceService', () => {
             $executeRaw: jest.fn(),
             employee: { findUnique: jest.fn() },
             employeeAttendanceSession: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
-            globalWorkingSchedule: { findFirst: jest.fn() },
+            globalWorkingSchedule: {
+              findFirst: jest.fn().mockResolvedValue({
+                id: 'schedule-1',
+                startTime: '09:00',
+                endTime: '18:00',
+                timezone: 'Asia/Kolkata',
+                effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+              }),
+            },
             employeeAttendanceEvent: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
             employeeAttendanceCorrection: { create: jest.fn() }
           },
         },
         { provide: AuditService, useValue: { recordInTx: jest.fn() } },
+        {
+          provide: MissedCheckoutService,
+          useValue: {
+            businessTimezone: 'Asia/Kolkata',
+            getBusinessDate: jest.fn().mockReturnValue('2026-09-18'),
+            reconcileEmployeeInTx: jest.fn(),
+            assertNoUnresolvedInTx: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<EmployeeAttendanceService>(EmployeeAttendanceService);
     prisma = module.get<PrismaService>(PrismaService);
+    missedCheckout = module.get(MissedCheckoutService);
+  });
+
+  describe('Missed checkout check-in gate', () => {
+    it('reconciles prior attendance before checking the unresolved gate', async () => {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({
+        id: 'emp1',
+        employmentStatus: 'ACTIVE',
+      } as any);
+      jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockResolvedValue(null);
+      jest.spyOn(prisma.employeeAttendanceSession, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.employeeAttendanceSession, 'create').mockResolvedValue({ id: 'session-new' } as any);
+
+      await service.checkIn('user1', new Date('2026-09-18T04:00:00.000Z'));
+
+      // Recovery and check-in run in separate transactions so a gate rejection
+      // cannot roll back a recovered auto-close.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(missedCheckout.reconcileEmployeeInTx).toHaveBeenCalled();
+      expect(missedCheckout.assertNoUnresolvedInTx).toHaveBeenCalled();
+      expect(missedCheckout.reconcileEmployeeInTx.mock.invocationCallOrder[0]).toBeLessThan(
+        missedCheckout.assertNoUnresolvedInTx.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not create attendance when the missed-checkout gate rejects', async () => {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({
+        id: 'emp1',
+        employmentStatus: 'ACTIVE',
+      } as any);
+      missedCheckout.assertNoUnresolvedInTx.mockRejectedValue(
+        new BadRequestException('Missed checkout approval required'),
+      );
+
+      await expect(service.checkIn('user1')).rejects.toThrow('Missed checkout approval required');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.employeeAttendanceSession.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects check-in when no working schedule is configured', async () => {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({
+        id: 'emp1',
+        employmentStatus: 'ACTIVE',
+      } as any);
+      jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockResolvedValue(null);
+      jest.spyOn(prisma.globalWorkingSchedule, 'findFirst').mockResolvedValue(null);
+
+      await expect(service.checkIn('user1')).rejects.toThrow(/no working schedule/i);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.employeeAttendanceSession.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsupported overnight or zero-length schedules', async () => {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({
+        id: 'emp1',
+        employmentStatus: 'ACTIVE',
+      } as any);
+      jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockResolvedValue(null);
+      jest.spyOn(prisma.globalWorkingSchedule, 'findFirst').mockResolvedValue({
+        id: 'schedule-overnight',
+        startTime: '20:00',
+        endTime: '08:00',
+        timezone: 'Asia/Kolkata',
+        effectiveFrom: new Date(),
+      } as any);
+
+      await expect(service.checkIn('user1')).rejects.toThrow(/unsupported/i);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(prisma.employeeAttendanceSession.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('Correction Immutability', () => {
@@ -85,7 +180,7 @@ describe('EmployeeAttendanceService', () => {
         
         // Mock findFirst to simulate that the first check sees nothing, but subsequent checks see the newly created session.
         // Since we are mocking $transaction directly executing the callback, we can simulate race conditions by tracking activeCount.
-        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((async () => {
+        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((() => {
            if (activeCount > 0) return { id: 'sess1', status: 'ACTIVE' } as any;
            activeCount++;
            return null;
@@ -106,7 +201,7 @@ describe('EmployeeAttendanceService', () => {
         let breakCount = 0;
         jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({ id: 'emp1', employmentStatus: 'ACTIVE' } as any);
         
-        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((async () => {
+        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((() => {
            if (breakCount > 0) return { id: 'sess1', status: 'ON_BREAK' } as any; // already on break
            breakCount++;
            return { id: 'sess1', status: 'ACTIVE' } as any;
@@ -126,7 +221,7 @@ describe('EmployeeAttendanceService', () => {
         let endBreakCount = 0;
         jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({ id: 'emp1', employmentStatus: 'ACTIVE' } as any);
         
-        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((async () => {
+        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((() => {
            if (endBreakCount > 0) return { id: 'sess1', status: 'ACTIVE' } as any; // already active (break ended)
            endBreakCount++;
            return { id: 'sess1', status: 'ON_BREAK' } as any;
@@ -143,7 +238,7 @@ describe('EmployeeAttendanceService', () => {
         let checkoutCount = 0;
         jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({ id: 'emp1', employmentStatus: 'ACTIVE' } as any);
         
-        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((async () => {
+        jest.spyOn(prisma.employeeAttendanceSession, 'findFirst').mockImplementation((() => {
            if (checkoutCount > 0) return { id: 'sess1', status: 'COMPLETED' } as any;
            checkoutCount++;
            return { id: 'sess1', status: 'ACTIVE' } as any;

@@ -1,3 +1,4 @@
+import { EmployeeAttendanceController } from '../../modules/attendance/employee-attendance.controller';
 import { PricingController } from '../../modules/pricing/pricing.controller';
 import { QuotationController } from '../../modules/quotation/quotation.controller';
 import { StudentController } from '../../modules/student/student.controller';
@@ -48,6 +49,22 @@ describe('canonical permission contracts', () => {
 
   it('student deletion requires the non-delegated student.delete permission', () => {
     expect(requiredPermissions(StudentController.prototype, 'deleteStudent')).toEqual(['student.delete']);
+  });
+
+  it('missed-checkout management requires its dedicated approval permission', () => {
+    for (const method of [
+      'listMissedCheckouts',
+      'approveMissedCheckout',
+      'rejectMissedCheckout',
+      'resolveMissedCheckout',
+    ]) {
+      expect(requiredPermissions(EmployeeAttendanceController.prototype, method)).toEqual([
+        'attendance.missed-checkout.approve',
+      ]);
+    }
+    expect(requiredPermissions(EmployeeAttendanceController.prototype, 'requestMissedCheckoutApproval')).toEqual([
+      'attendance.action.own',
+    ]);
   });
 
   it('pricing and finance-setting management keep pricing.manage', () => {

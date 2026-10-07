@@ -31,6 +31,9 @@ export function Sidebar({ user }: { user: any }) {
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Attendance", href: "/attendance", icon: Clock },
+    ...(hasPermission("attendance.missed-checkout.approve")
+      ? [{ name: "Missed Checkouts", href: "/attendance/missed-checkouts", icon: Clock }]
+      : []),
     ...(hasPermission("attendance.read.team") || hasPermission("employee.read-all") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
     ...(hasPermission("target.read.own") || hasPermission("target.read.team") || hasPermission("lead.read") ? [{ name: "Sales", href: "/sales", icon: Users }] : []),
     ...(hasPermission("lead.read") || hasPermission("lead.read-all") ? [{ name: "Leads", href: "/leads", icon: Users }] : []),
