@@ -1,3 +1,4 @@
+import { AuditContext } from './audit.context';
 import { AuditEventInput, AuditService } from './audit.service';
 
 // ─── Mock PrismaService ───────────────────────────────────────────────────────
@@ -172,6 +173,21 @@ describe('AuditService', () => {
 
     // Unlike record(), recordInTx() is NOT swallowed — the TX must roll back
     await expect(service.recordInTx(mockTx as any, VALID_INPUT)).rejects.toThrow('TX failed');
+  });
+
+  it('records the initiating CEO as actor and the counsellor as the God View target', async () => {
+    await AuditContext.run({ realActorId: 'ceo-1', isGodView: true }, () =>
+      service.record({
+        entityType: 'Lead',
+        entityId: 'lead-b',
+        action: 'UPDATE',
+        actorUserId: 'counsellor-a',
+      }),
+    );
+
+    const data = mockPrisma.auditEvent.create.mock.calls[0][0].data;
+    expect(data.actorUserId).toBe('ceo-1');
+    expect(data.metadata.godViewTargetId).toBe('counsellor-a');
   });
 
   it('recordInTx does not expose update/delete on its transaction context', async () => {
