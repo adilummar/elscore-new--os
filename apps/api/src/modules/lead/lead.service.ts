@@ -121,7 +121,7 @@ export class LeadService {
       }
 
       const businessId = await this.idGen.nextIdInTx(tx, 'LED');
-      const { channel, campaign, externalCampaignId, externalLeadId, students, ...leadData } = dto;
+      const { channel, campaign, externalCampaignId, externalLeadId, students, continueAnyway, ...leadData } = dto;
 
       const newLead = await tx.lead.create({
         data: {
