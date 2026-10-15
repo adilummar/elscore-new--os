@@ -215,11 +215,16 @@ export async function getLeadAssignmentHistoryAction(leadId: string) {
 }
 
 // Quotations
-export async function previewQuotationAction(studentId: string, offerHourlyRate?: number, quotationNotes?: string) {
+export async function previewQuotationAction(
+  studentId: string,
+  offerHourlyRate?: number,
+  quotationNotes?: string,
+  subjectHours?: Array<{ subjectId: string; monthlyHours: number }>,
+) {
   try {
     const res = await fetchApi<any>('/quotations/preview', {
       method: 'POST',
-      body: JSON.stringify({ studentId, offerHourlyRate, quotationNotes }),
+      body: JSON.stringify({ studentId, offerHourlyRate, quotationNotes, subjectHours }),
     });
     return { data: res, error: null };
   } catch (err: any) {
@@ -227,11 +232,16 @@ export async function previewQuotationAction(studentId: string, offerHourlyRate?
   }
 }
 
-export async function generateQuotationAction(studentId: string, offerHourlyRate?: number, quotationNotes?: string) {
+export async function generateQuotationAction(
+  studentId: string,
+  offerHourlyRate?: number,
+  quotationNotes?: string,
+  subjectHours?: Array<{ subjectId: string; monthlyHours: number }>,
+) {
   try {
     const res = await fetchApi<any>('/quotations/generate', {
       method: 'POST',
-      body: JSON.stringify({ studentId, offerHourlyRate, quotationNotes }),
+      body: JSON.stringify({ studentId, offerHourlyRate, quotationNotes, subjectHours }),
     });
     return { data: res, error: null };
   } catch (err: any) {

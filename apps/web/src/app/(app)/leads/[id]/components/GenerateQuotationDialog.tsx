@@ -28,24 +28,52 @@ export function GenerateQuotationDialog({
   const [fetchingPreview, setFetchingPreview] = React.useState(true);
   const [offerRateInput, setOfferRateInput] = React.useState<string>('');
   const [quotationNotes, setQuotationNotes] = React.useState<string>('');
+  const [subjectHours, setSubjectHours] = React.useState<Record<string, string>>({});
   
+  React.useEffect(() => {
+    if (student?.requirements) {
+      const initial: Record<string, string> = {};
+      student.requirements.forEach((r: any) => {
+        initial[r.subjectId] = r.monthlyHours ? String(Number(r.monthlyHours)) : '';
+      });
+      setSubjectHours(initial);
+    }
+  }, [student]);
+
   const debouncedOfferRate = useDebounce(offerRateInput, 500);
   const debouncedNotes = useDebounce(quotationNotes, 500);
+  const debouncedSubjectHours = useDebounce(subjectHours, 500);
   
   const [previewData, setPreviewData] = React.useState<any>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (isOpen && student) {
-      fetchPreview(student.id, debouncedOfferRate ? Number(debouncedOfferRate) : undefined, debouncedNotes);
+      fetchPreview(
+        student.id,
+        debouncedOfferRate ? Number(debouncedOfferRate) : undefined,
+        debouncedNotes,
+        debouncedSubjectHours,
+      );
     }
-  }, [isOpen, student, debouncedOfferRate, debouncedNotes]);
+  }, [isOpen, student, debouncedOfferRate, debouncedNotes, debouncedSubjectHours]);
 
-  const fetchPreview = async (studentId: string, offerRate?: number, notes?: string) => {
+  const fetchPreview = async (
+    studentId: string,
+    offerRate?: number,
+    notes?: string,
+    hoursMap?: Record<string, string>,
+  ) => {
     setFetchingPreview(true);
     setError(null);
     try {
-      const res = await previewQuotationAction(studentId, offerRate, notes);
+      const subjectHoursList = hoursMap
+        ? Object.entries(hoursMap)
+            .filter(([_, val]) => val && Number(val) > 0)
+            .map(([subjectId, val]) => ({ subjectId, monthlyHours: Number(val) }))
+        : undefined;
+
+      const res = await previewQuotationAction(studentId, offerRate, notes, subjectHoursList);
       if (res.error) {
         setError(res.error);
         setPreviewData(null);
@@ -65,7 +93,11 @@ export function GenerateQuotationDialog({
     setError(null);
     try {
       const rate = offerRateInput ? Number(offerRateInput) : undefined;
-      const res = await generateQuotationAction(student.id, rate, quotationNotes);
+      const subjectHoursList = Object.entries(subjectHours)
+        .filter(([_, val]) => val && Number(val) > 0)
+        .map(([subjectId, val]) => ({ subjectId, monthlyHours: Number(val) }));
+
+      const res = await generateQuotationAction(student.id, rate, quotationNotes, subjectHoursList);
       if (res.error) {
         setError(res.error);
       } else if (res.data && res.data.id) {
@@ -143,7 +175,21 @@ export function GenerateQuotationDialog({
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-sm">
                         <div>
                           <p className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Monthly Hours</p>
-                          <p className="font-semibold">{req.monthlyHours} hours</p>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              className="w-20 p-1 border border-slate-300 rounded text-sm font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-brand-500 outline-none"
+                              value={subjectHours[req.subjectId] ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSubjectHours((prev) => ({ ...prev, [req.subjectId]: val }));
+                              }}
+                              placeholder="e.g. 10"
+                            />
+                            <span className="text-xs text-slate-500 font-medium">hrs</span>
+                          </div>
                         </div>
                         <div>
                           <p className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Normal Hourly Rate</p>

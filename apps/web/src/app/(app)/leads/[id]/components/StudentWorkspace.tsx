@@ -145,6 +145,11 @@ export function StudentWorkspace({ lead, onUpdate }: { lead: any, onUpdate: () =
                           <Badge variant="info" className="bg-brand-50 text-brand-700 hover:bg-brand-100">{req.subject?.name}</Badge>
                           <Badge variant="default">{req.curriculum?.name}</Badge>
                           <Badge variant="default">{req.grade?.name}</Badge>
+                          {req.monthlyHours ? (
+                            <Badge variant="default" className="text-slate-600 bg-slate-100">{Number(req.monthlyHours)} hrs/mo</Badge>
+                          ) : (
+                            <Badge variant="warning" className="text-amber-700 bg-amber-50 border border-amber-200">Hours not set</Badge>
+                          )}
                           {req.notes && <span className="text-sm text-slate-500 italic ml-2 truncate max-w-xs">{req.notes}</span>}
                         </div>
                         {hasPermission('requirement.update') && (

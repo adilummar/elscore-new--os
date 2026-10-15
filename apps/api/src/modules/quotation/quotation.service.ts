@@ -170,11 +170,13 @@ export class QuotationService {
     let minNormalRate = Infinity;
 
     for (const req of student.requirements) {
-      if (!req.monthlyHours || Number(req.monthlyHours) <= 0) {
+      const override = dto.subjectHours?.find((sh) => sh.subjectId === req.subjectId);
+      const hours = override ? Number(override.monthlyHours) : (req.monthlyHours ? Number(req.monthlyHours) : 0);
+
+      if (!hours || hours <= 0) {
         throw new BadRequestException(`Monthly hours missing or invalid for subject ${req.subject.name}.`);
       }
 
-      const hours = Number(req.monthlyHours);
       const { rate: normalRate, source: pricingSource } = await this.pricingService.resolveHourlyRate(
         req.curriculumId,
         req.grade.sortOrder,
@@ -286,6 +288,15 @@ export class QuotationService {
       );
 
       const calc = await this._calculateQuotation(dto, tx);
+
+      if (dto.subjectHours && dto.subjectHours.length > 0) {
+        for (const sh of dto.subjectHours) {
+          await tx.requirement.updateMany({
+            where: { studentId: studentCheck.id, subjectId: sh.subjectId },
+            data: { monthlyHours: sh.monthlyHours },
+          });
+        }
+      }
 
       const quotationNumber = await this.idGenerator.nextIdInTx(tx, 'QUO');
 

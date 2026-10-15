@@ -79,7 +79,7 @@ export function QuotationHistory({
                     size="sm"
                     className="h-8 flex items-center gap-1"
                     onClick={() => {
-                      window.open(`/api/quotations/${q.id}/pdf`, '_blank');
+                      window.open(`/api/v1/quotations/${q.id}/pdf`, '_blank');
                     }}
                   >
                     <Download className="w-4 h-4" /> PDF

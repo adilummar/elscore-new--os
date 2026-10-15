@@ -26,6 +26,9 @@ describe('QuotationService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
     },
+    requirement: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   };
 
   const mockPricingService = {
@@ -106,7 +109,10 @@ describe('QuotationService', () => {
       accountNumber: '123456',
       iban: 'AE000000000000000000001',
     });
-    mockPrisma.quotation.create.mockImplementation((args: any) => args.data);
+    mockPrisma.quotation.create.mockImplementation((args: any) => ({
+      ...args.data,
+      lineItems: args.data.lineItems?.create ?? [],
+    }));
     mockPricingService.resolveHourlyRate.mockResolvedValue({ rate: 50, source: 'SLAB' });
   };
 
@@ -324,5 +330,67 @@ describe('QuotationService', () => {
     expect(preview.totalAmountDue).toBe(generated.totalAmountDue);
     expect(preview.parentName).toBe(generated.parentName);
     expect(preview.curriculumName).toBe(generated.curriculumName);
+  });
+
+  it('should reject when requirement has no monthlyHours and no subjectHours override is provided', async () => {
+    setupMockStudent('DEMO_COMPLETED', {
+      requirements: [
+        {
+          subjectId: 'subj-no-hours',
+          curriculumId: 'c1',
+          gradeId: 'grade1',
+          monthlyHours: null,
+          subject: { name: 'Physics' },
+          curriculum: { name: 'CBSE' },
+          grade: { name: 'Grade 5', sortOrder: 6 },
+        },
+      ],
+    });
+
+    await expect(
+      service.previewQuotation({ studentId: 's1' }, testUser('u1')),
+    ).rejects.toThrow('Monthly hours missing or invalid for subject Physics.');
+  });
+
+  it('should preview and generate successfully when dto.subjectHours provides hours for a requirement without hours', async () => {
+    setupMockStudent('DEMO_COMPLETED', {
+      requirements: [
+        {
+          subjectId: 'subj-override',
+          curriculumId: 'c1',
+          gradeId: 'grade1',
+          monthlyHours: null,
+          subject: { name: 'Chemistry' },
+          curriculum: { name: 'CBSE' },
+          grade: { name: 'Grade 5', sortOrder: 6 },
+        },
+      ],
+    });
+    mockPricingService.resolveHourlyRate.mockResolvedValue({ rate: 20, source: 'SLAB' });
+
+    const preview: any = await service.previewQuotation(
+      {
+        studentId: 's1',
+        subjectHours: [{ subjectId: 'subj-override', monthlyHours: 15 }],
+      },
+      testUser('u1'),
+    );
+
+    expect(preview.lineItems[0].monthlyHours).toBe(15);
+    expect(preview.normalMonthlyTotal).toBe(300);
+
+    const generated: any = await service.generateQuotation(
+      {
+        studentId: 's1',
+        subjectHours: [{ subjectId: 'subj-override', monthlyHours: 15 }],
+      },
+      testUser('u1'),
+    );
+
+    expect(generated.lineItems[0].monthlyHours).toBe(15);
+    expect(mockPrisma.requirement.updateMany).toHaveBeenCalledWith({
+      where: { studentId: 's1', subjectId: 'subj-override' },
+      data: { monthlyHours: 15 },
+    });
   });
 });
