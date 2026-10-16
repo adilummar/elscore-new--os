@@ -3,7 +3,9 @@ import { Module } from '@nestjs/common';
 
 import { QUEUES } from '../../common/queue/queue.constants';
 
+import { DemoBackfillService } from './backfill/demo-backfill.service';
 import { DemoController } from './demo.controller';
+import { DemoMultiSessionService } from './demo-multisession.service';
 import { DemoService } from './demo.service';
 
 @Module({
@@ -13,7 +15,8 @@ import { DemoService } from './demo.service';
     }),
   ],
   controllers: [DemoController],
-  providers: [DemoService],
-  exports: [DemoService],
+  providers: [DemoService, DemoMultiSessionService, DemoBackfillService],
+  exports: [DemoService, DemoMultiSessionService, DemoBackfillService],
 })
 export class DemoModule {}
+
