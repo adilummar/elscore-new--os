@@ -2,9 +2,15 @@
 -- EL SCORE OS — Demo Module Multi-Session Backfill (Declarative SQL Reference)
 -- STRICTLY DETERMINISTIC & RESUMABLE
 --
--- Safety Notes:
+-- EXECUTION NOTICE & PROHIBITION:
+-- This SQL script is provided as a declarative PostgreSQL reference companion.
+-- DIRECT EXECUTION OF THIS SCRIPT ON LIVE ENVIRONMENTS IS STRICTLY PROHIBITED
+-- unless preceded by full preflight verification. The authoritative execution
+-- path is the TypeScript CLI runner ('demo-multisession-backfill.ts').
+--
+-- Safety Guarantees:
 -- 1. Does NOT mutate or drop legacy tables (demos, demo_feedback, demo_reschedule_history).
--- 2. Uses ON CONFLICT (legacy_demo_id) DO NOTHING for idempotent reruns.
+-- 2. Halts immediately with EXCEPTION if any data collision or conflict is detected.
 -- 3. Excludes orphaned legacy records where referenced students/leads/requirements are missing.
 -- 4. Does NOT fabricate coordinators, attendances, exceptions, or detailed rubric items.
 -- =============================================================================
@@ -20,6 +26,48 @@ FROM demos d
 LEFT JOIN students s ON d.student_id = s.id
 LEFT JOIN leads l ON s.lead_id = l.id
 WHERE s.id IS NULL OR l.id IS NULL;
+
+-- -----------------------------------------------------------------------------
+-- Step 1b: Conflict Detection Gate (MANDATORY HALT ON CONFLICT)
+-- -----------------------------------------------------------------------------
+DO $$
+DECLARE
+    mismatch_count INTEGER;
+    biz_collision_count INTEGER;
+    pk_collision_count INTEGER;
+BEGIN
+    -- Check 1: Existing booking with same legacy_demo_id but mismatched data
+    SELECT COUNT(*) INTO mismatch_count
+    FROM demos d
+    JOIN demo_bookings b ON b.legacy_demo_id = d.id
+    WHERE b.student_id != d.student_id
+       OR b.business_id != d.business_id
+       OR b.scheduled_date != d.scheduled_at;
+
+    IF mismatch_count > 0 THEN
+        RAISE EXCEPTION 'Backfill aborted: % conflicting demo_booking record(s) detected with mismatched student_id, business_id, or scheduled_date!', mismatch_count;
+    END IF;
+
+    -- Check 2: business_id collision with a booking belonging to another legacy demo or non-legacy booking
+    SELECT COUNT(*) INTO biz_collision_count
+    FROM demos d
+    JOIN demo_bookings b ON b.business_id = d.business_id
+    WHERE b.legacy_demo_id IS DISTINCT FROM d.id;
+
+    IF biz_collision_count > 0 THEN
+        RAISE EXCEPTION 'Backfill aborted: % business_id collision(s) detected in demo_bookings!', biz_collision_count;
+    END IF;
+
+    -- Check 3: Primary key collision with a booking belonging to another legacy demo or non-legacy booking
+    SELECT COUNT(*) INTO pk_collision_count
+    FROM demos d
+    JOIN demo_bookings b ON b.id = d.id
+    WHERE b.legacy_demo_id IS DISTINCT FROM d.id;
+
+    IF pk_collision_count > 0 THEN
+        RAISE EXCEPTION 'Backfill aborted: % primary key id collision(s) detected in demo_bookings!', pk_collision_count;
+    END IF;
+END $$;
 
 -- -----------------------------------------------------------------------------
 -- Step 2: Backfill Demo Bookings

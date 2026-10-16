@@ -192,28 +192,83 @@ describe('DemoBackfillService', () => {
       expect(result.eligibleDemos.length).toBe(1);
     });
 
-    it('detects conflicting existing booking mapping and flags mismatches', () => {
-      const conflictingBooking = {
-        id: 'booking-diff-999',
-        legacyDemoId: 'demo-100',
-        businessId: 'DEMO-CONFLICT',
-        studentId: 'student-different',
-        leadId: 'lead-different',
-        scheduledDate: new Date('2026-10-25T14:00:00Z'),
+    it('detects businessId collision when another booking occupies the businessId', () => {
+      const collidingBooking = {
+        id: 'booking-unrelated-555',
+        businessId: 'DEMO-2026-100', // Collides with demo.businessId
+        legacyDemoId: 'demo-different-999',
       };
 
-      const existingMap = new Map([['demo-100', conflictingBooking]]);
-      const result = service.validatePreflight([demo], existingMap, lookups);
+      const maps = {
+        byLegacyId: new Map(),
+        byBusinessId: new Map([['DEMO-2026-100', collidingBooking]]),
+        byId: new Map(),
+      };
 
+      const result = service.validatePreflight([demo], maps, lookups);
       expect(result.conflicts.length).toBe(1);
-      const conflict = result.conflicts[0];
-      expect(conflict.demoId).toBe('demo-100');
-      expect(conflict.existingBookingId).toBe('booking-diff-999');
+      expect(result.conflicts[0].demoId).toBe('demo-100');
+      expect(result.conflicts[0].mismatches[0].field).toBe('businessId');
+      expect(result.conflicts[0].mismatches[0].existingBookingValue).toContain('booking-unrelated-555');
+    });
 
-      const fieldNames = conflict.mismatches.map((m) => m.field);
-      expect(fieldNames).toContain('studentId');
-      expect(fieldNames).toContain('leadId');
-      expect(fieldNames).toContain('businessId');
+    it('detects primary key collision when another booking occupies the demo id', () => {
+      const collidingBooking = {
+        id: 'demo-100', // Collides with demo.id
+        businessId: 'DEMO-OTHER',
+        legacyDemoId: 'demo-other-888',
+      };
+
+      const maps = {
+        byLegacyId: new Map(),
+        byBusinessId: new Map(),
+        byId: new Map([['demo-100', collidingBooking]]),
+      };
+
+      const result = service.validatePreflight([demo], maps, lookups);
+      expect(result.conflicts.length).toBe(1);
+      expect(result.conflicts[0].demoId).toBe('demo-100');
+      expect(result.conflicts[0].mismatches[0].field).toBe('id');
+      expect(result.conflicts[0].mismatches[0].existingBookingValue).toContain('demo-100');
+    });
+
+    it('proves runBackfill halts immediately on conflict and returns HALTED_CONFLICTS status without inserts', async () => {
+      const mockPrisma = {
+        demo: {
+          findMany: jest.fn().mockResolvedValue([demo]),
+        },
+        demoBooking: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'booking-diff-999',
+              legacyDemoId: 'demo-100',
+              businessId: 'DEMO-CONFLICT',
+              studentId: 'student-different',
+              leadId: 'lead-different',
+              scheduledDate: new Date('2026-10-25T14:00:00Z'),
+            },
+          ]),
+          create: jest.fn(),
+        },
+        student: { findMany: jest.fn().mockResolvedValue([mockStudent]) },
+        lead: { findMany: jest.fn().mockResolvedValue([mockLead]) },
+        requirement: { findMany: jest.fn().mockResolvedValue([mockRequirement]) },
+        subject: { findMany: jest.fn().mockResolvedValue([mockSubject]) },
+        curriculum: { findMany: jest.fn().mockResolvedValue([mockCurriculum]) },
+        grade: { findMany: jest.fn().mockResolvedValue([mockGrade]) },
+        user: { findMany: jest.fn().mockResolvedValue([mockUser]) },
+        $transaction: jest.fn(),
+      };
+
+      const backfillWithPrisma = new DemoBackfillService(mockPrisma as any);
+      const report = await backfillWithPrisma.runBackfill({ dryRun: false });
+
+      expect(report.status).toBe('HALTED_CONFLICTS');
+      expect(report.conflicts.length).toBe(1);
+      expect(report.newlyBackfilled).toBe(0);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.demoBooking.create).not.toHaveBeenCalled();
     });
   });
 });
+

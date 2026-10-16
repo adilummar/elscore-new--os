@@ -26,7 +26,7 @@ export interface CompletionGateResult {
   pendingReasons: string[];
 }
 
-export const AUTHORIZED_EXCEPTION_APPROVER_ROLES = ['ACADEMIC_HEAD', 'OPERATIONS_MANAGER', 'CEO'];
+export const AUTHORIZED_EXCEPTION_APPROVER_ROLES = ['ACADEMIC_HEAD', 'OPERATIONS_MANAGER'];
 
 @Injectable()
 export class DemoMultiSessionService {
@@ -281,7 +281,7 @@ export class DemoMultiSessionService {
 
   /**
    * Reviews a session exception with strict authorization.
-   * Only Academic Head, Operations Manager, or CEO may approve or reject.
+   * Only Academic Head or Operations Manager may approve or reject.
    */
   async reviewSessionException(
     tx: PrismaTxClient,

@@ -245,8 +245,19 @@ describe('DemoMultiSessionService', () => {
       resolutionStatus: DemoExceptionStatus.PENDING,
     };
 
-    it('rejects approval attempt by unauthorized roles (Sales Counsellor, Demo Coordinator, Tutor)', async () => {
+    it('rejects approval attempt by unauthorized roles (CEO, Sales Counsellor, Demo Coordinator, Tutor)', async () => {
       const mockTx = { demoSessionException: { findUnique: jest.fn(), update: jest.fn() } };
+
+      // CEO is strictly NOT allowed per approved business rule (only Academic Head & Operations Manager)
+      await expect(
+        service.reviewSessionException(
+          mockTx as any,
+          'exc-1',
+          DemoExceptionStatus.APPROVED,
+          { userId: 'user-ceo', roles: ['CEO'] },
+          'Approve waiver',
+        ),
+      ).rejects.toThrow(ForbiddenException);
 
       await expect(
         service.reviewSessionException(
@@ -264,6 +275,16 @@ describe('DemoMultiSessionService', () => {
           'exc-1',
           DemoExceptionStatus.APPROVED,
           { userId: 'user-coord', roles: ['DEMO_COORDINATOR'] },
+          'Approve waiver',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.reviewSessionException(
+          mockTx as any,
+          'exc-1',
+          DemoExceptionStatus.APPROVED,
+          { userId: 'user-tutor', roles: ['TUTOR'] },
           'Approve waiver',
         ),
       ).rejects.toThrow(ForbiddenException);

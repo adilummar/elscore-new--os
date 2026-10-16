@@ -14,7 +14,8 @@
     "test:watch": "jest --watch",
     "test:ci": "jest --ci --coverage --forceExit",
     "test:e2e": "jest --config jest.e2e.config.ts --forceExit",
-    "clean": "rm -rf dist .tsbuildinfo"
+    "clean": "rm -rf dist .tsbuildinfo",
+    "backfill:demo": "ts-node --require tsconfig-paths/register scripts/demo-multisession-backfill.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "^10.2.1",

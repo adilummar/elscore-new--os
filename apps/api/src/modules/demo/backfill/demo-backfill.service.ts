@@ -131,7 +131,13 @@ export class DemoBackfillService {
    */
   validatePreflight(
     legacyDemos: any[],
-    existingBookingsByLegacyId: Map<string, any>,
+    existingBookingsInput:
+      | Map<string, any>
+      | {
+          byLegacyId: Map<string, any>;
+          byBusinessId?: Map<string, any>;
+          byId?: Map<string, any>;
+        },
     lookupTables: {
       students: Map<string, any>;
       leads: Map<string, any>;
@@ -151,6 +157,17 @@ export class DemoBackfillService {
     const conflicts: ConflictReport[] = [];
     const eligibleDemos: any[] = [];
     const alreadyBackfilledIds = new Set<string>();
+
+    const byLegacyId =
+      existingBookingsInput instanceof Map
+        ? existingBookingsInput
+        : existingBookingsInput.byLegacyId;
+    const byBusinessId =
+      existingBookingsInput instanceof Map
+        ? undefined
+        : existingBookingsInput.byBusinessId;
+    const byId =
+      existingBookingsInput instanceof Map ? undefined : existingBookingsInput.byId;
 
     for (const demo of legacyDemos) {
       let isOrphan = false;
@@ -247,8 +264,48 @@ export class DemoBackfillService {
         continue;
       }
 
-      // 6. Check existing booking mapping consistency
-      const existing = existingBookingsByLegacyId.get(demo.id);
+      // 6a. Check Business ID collision with a booking belonging to another legacy demo or non-legacy booking
+      if (byBusinessId) {
+        const existingByBusinessId = byBusinessId.get(demo.businessId);
+        if (existingByBusinessId && existingByBusinessId.legacyDemoId !== demo.id) {
+          conflicts.push({
+            demoId: demo.id,
+            businessId: demo.businessId,
+            existingBookingId: existingByBusinessId.id,
+            mismatches: [
+              {
+                field: 'businessId',
+                legacyValue: demo.businessId,
+                existingBookingValue: `Already occupied by booking ${existingByBusinessId.id} (legacyDemoId: ${existingByBusinessId.legacyDemoId || 'none'})`,
+              },
+            ],
+          });
+          continue;
+        }
+      }
+
+      // 6b. Check Primary Key collision with a booking belonging to another legacy demo or non-legacy booking
+      if (byId) {
+        const existingById = byId.get(demo.id);
+        if (existingById && existingById.legacyDemoId !== demo.id) {
+          conflicts.push({
+            demoId: demo.id,
+            businessId: demo.businessId,
+            existingBookingId: existingById.id,
+            mismatches: [
+              {
+                field: 'id',
+                legacyValue: demo.id,
+                existingBookingValue: `Already occupied by booking ${existingById.id} (legacyDemoId: ${existingById.legacyDemoId || 'none'})`,
+              },
+            ],
+          });
+          continue;
+        }
+      }
+
+      // 6c. Check existing booking mapping consistency when already mapped
+      const existing = byLegacyId.get(demo.id);
       if (existing) {
         const mismatches: Array<{ field: string; legacyValue: any; existingBookingValue: any }> = [];
         const expectedLeadId = student?.leadId;
@@ -331,13 +388,28 @@ export class DemoBackfillService {
       orderBy: { createdAt: 'asc' },
     });
 
-    // 2. Fetch existing demo bookings mapped to legacy demos
-    const existingBookings = await this.prisma.demoBooking.findMany({
-      where: { legacyDemoId: { not: null } },
-    });
-    const existingBookingsByLegacyId = new Map<string, any>(
-      existingBookings.map((b) => [b.legacyDemoId as string, b]),
-    );
+    // 2. Fetch all existing demo bookings to detect collisions and prior mappings
+    let existingBookings: any[] = [];
+    try {
+      existingBookings = await this.prisma.demoBooking.findMany();
+    } catch (e: any) {
+      if (e?.code === 'P2021') {
+        this.logger.warn('Table demo_bookings does not exist yet; existing bookings treated as empty.');
+      } else {
+        throw e;
+      }
+    }
+    const existingBookingsByLegacyId = new Map<string, any>();
+    const existingBookingsByBusinessId = new Map<string, any>();
+    const existingBookingsById = new Map<string, any>();
+
+    for (const b of existingBookings) {
+      if (b.legacyDemoId) {
+        existingBookingsByLegacyId.set(b.legacyDemoId, b);
+      }
+      existingBookingsByBusinessId.set(b.businessId, b);
+      existingBookingsById.set(b.id, b);
+    }
 
     // 3. Load reference lookup tables for preflight validation
     const [students, leads, requirements, subjects, curricula, grades, users] = await Promise.all([
@@ -363,7 +435,11 @@ export class DemoBackfillService {
     // 4. Run Preflight
     const { eligibleDemos, orphans, conflicts, alreadyBackfilledIds } = this.validatePreflight(
       legacyDemos,
-      existingBookingsByLegacyId,
+      {
+        byLegacyId: existingBookingsByLegacyId,
+        byBusinessId: existingBookingsByBusinessId,
+        byId: existingBookingsById,
+      },
       lookupTables,
     );
 
