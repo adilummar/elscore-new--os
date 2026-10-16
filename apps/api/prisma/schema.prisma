@@ -271,6 +271,21 @@ model User {
   rescheduledDemos  DemoRescheduleHistory[] @relation("RescheduledDemos")
   demoFeedbackGiven DemoFeedback[]          @relation("DemoFeedbackGiven")
 
+  // Revised Multi-Session Demo Module additions
+  coordinatingDemoBookings   DemoBooking[]                  @relation("CoordinatedDemoBookings")
+  bookedDemoBookings         DemoBooking[]                  @relation("BookedDemoBookings")
+  assignedTutorSessions      DemoSessionTutorAssignment[]   @relation("AssignedTutorSessions")
+  tutorSessionsAssignedBy    DemoSessionTutorAssignment[]   @relation("TutorSessionsAssignedBy")
+  tutorSessionsReplacedBy    DemoSessionTutorAssignment[]   @relation("TutorSessionsReplacedBy")
+  userDemoAttendances        DemoAttendance[]               @relation("UserDemoAttendances")
+  markedDemoAttendances      DemoAttendance[]               @relation("MarkedDemoAttendances")
+  correctedDemoAttendances   DemoAttendance[]               @relation("CorrectedDemoAttendances")
+  sessionExceptionsRequested DemoSessionException[]         @relation("SessionExceptionsRequested")
+  sessionExceptionsReviewed  DemoSessionException[]         @relation("SessionExceptionsReviewed")
+  demoFeedbackGivenNew       DemoFeedbackRecord[]           @relation("DemoFeedbackGivenNew")
+  rescheduledDemoBookings    DemoBookingRescheduleHistory[] @relation("RescheduledDemoBookings")
+  roundRobinCoordinatorState RoundRobinCoordinatorState?
+
   // Phase 2E Finance additions
   createdInvoices    Invoice[]            @relation("InvoiceCreator")
   issuedInvoices     Invoice[]            @relation("InvoiceIssuer")
@@ -448,6 +463,7 @@ model Subject {
   tutorSubjects          TutorSubject[]
   requirements           Requirement[]
   demos                  Demo[]
+  demoSessions           DemoSession[]
   TutorSalarySlabSubject TutorSalarySlabSubject[]
   TutorLeadSubject       TutorLeadSubject[]
   ExceptionalSubjectRate ExceptionalSubjectRate?
@@ -470,6 +486,7 @@ model Grade {
   tutorGrades          TutorGrade[]
   requirements         Requirement[]
   demos                Demo[]
+  demoSessions         DemoSession[]
   Student              Student[]
   TutorSalarySlabGrade TutorSalarySlabGrade[]
   TutorLeadGrade       TutorLeadGrade[]
@@ -489,6 +506,7 @@ model Curriculum {
   tutorCurricula TutorCurriculum[]
   requirements   Requirement[]
   demos          Demo[]
+  demoSessions   DemoSession[]
   Student        Student[]
   PricingSlab    PricingSlab[]
 
@@ -902,6 +920,7 @@ model Lead {
   marketingInteractions MarketingInteraction[]
   distributionEvents    LeadDistributionEvent[]
   Quotation             Quotation[]
+  demoBookings          DemoBooking[]
 
   @@index([assignedToUserId])
   @@index([primaryPhone])
@@ -935,6 +954,7 @@ model Student {
   grade              Grade?               @relation(fields: [gradeId], references: [id], onDelete: Restrict)
   requirements       Requirement[]
   demos              Demo[]
+  demoBookings       DemoBooking[]
   invoices           Invoice[]
   targetCreditLedger TargetCreditLedger[]
   StudentAttendance  StudentAttendance[]
@@ -957,11 +977,12 @@ model Requirement {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
-  grade      Grade      @relation(fields: [gradeId], references: [id], onDelete: Restrict)
-  demos      Demo[]
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  curriculum   Curriculum    @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+  grade        Grade         @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  demos        Demo[]
+  demoSessions DemoSession[]
 
   @@index([studentId])
   @@map("requirements")
@@ -1157,6 +1178,19 @@ model RoundRobinCounsellorState {
   @@map("round_robin_counsellor_state")
 }
 
+model RoundRobinCoordinatorState {
+  userId         String               @id @map("user_id")
+  isEligible     Boolean              @default(true) @map("is_eligible")
+  dailyState     RoundRobinDailyState @default(ACTIVE) @map("daily_state")
+  currentLoad    Int                  @default(0) @map("current_load")
+  lastReturnedAt DateTime?            @map("last_returned_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("round_robin_coordinator_state")
+}
+
 // =============================================================================
 // M-008 — DEMO (Slice 2D)
 // =============================================================================
@@ -1236,6 +1270,281 @@ model DemoFeedback {
   submittedByUser User @relation("DemoFeedbackGiven", fields: [submittedByUserId], references: [id])
 
   @@map("demo_feedback")
+}
+
+// =============================================================================
+// REVISED DEMO MODULE — MULTI-SESSION ARCHITECTURE (Phase 1 Additive Schema)
+// =============================================================================
+
+enum DemoBookingStatus {
+  SCHEDULED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum DemoSessionStatus {
+  SCHEDULED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum DemoParticipantType {
+  PARENT
+  COORDINATOR
+  TUTOR
+}
+
+enum DemoAttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+}
+
+enum TutorAssignmentStatus {
+  ACTIVE
+  REPLACED
+  CANCELLED
+}
+
+enum DemoSessionExceptionCategory {
+  WAIVER
+  REPLACEMENT_SCHEDULED
+  PARENT_DECLINED_SUBJECT
+}
+
+enum DemoExceptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model DemoBooking {
+  id               String            @id @default(uuid())
+  businessId       String            @unique @map("business_id")
+  studentId        String            @map("student_id")
+  leadId           String            @map("lead_id")
+  coordinatorId    String?           @map("coordinator_id")
+  bookedByUserId   String            @map("booked_by_user_id")
+  status           DemoBookingStatus @default(SCHEDULED)
+  scheduledDate    DateTime          @map("scheduled_date")
+  totalDurationMin Int               @map("total_duration_minutes")
+
+  legacyDemoId     String?           @unique @map("legacy_demo_id")
+  cancelledAt      DateTime?         @map("cancelled_at")
+  cancelReason     String?           @map("cancel_reason")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  student          Student           @relation(fields: [studentId], references: [id])
+  lead             Lead              @relation(fields: [leadId], references: [id])
+  coordinator      User?             @relation("CoordinatedDemoBookings", fields: [coordinatorId], references: [id])
+  bookedByUser     User              @relation("BookedDemoBookings", fields: [bookedByUserId], references: [id])
+
+  sessions         DemoSession[]
+  attendances      DemoAttendance[]
+  rescheduleHistory DemoBookingRescheduleHistory[]
+  feedbackRecord   DemoFeedbackRecord?
+  roadmap          DemoRoadmap?
+  academicPlan     DemoAcademicPlan?
+
+  @@index([studentId])
+  @@index([leadId])
+  @@index([coordinatorId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("demo_bookings")
+}
+
+model DemoSession {
+  id              String            @id @default(uuid())
+  bookingId       String            @map("booking_id")
+  sessionOrder    Int               @default(1) @map("session_order")
+  requirementId   String            @map("requirement_id")
+  subjectId       String            @map("subject_id")
+  curriculumId    String            @map("curriculum_id")
+  gradeId         String            @map("grade_id")
+  status          DemoSessionStatus @default(SCHEDULED)
+  scheduledStart  DateTime          @map("scheduled_start")
+  scheduledEnd    DateTime          @map("scheduled_end")
+  durationMinutes Int               @map("duration_minutes")
+
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  booking         DemoBooking                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  requirement     Requirement                  @relation(fields: [requirementId], references: [id])
+  subject         Subject                      @relation(fields: [subjectId], references: [id])
+  curriculum      Curriculum                   @relation(fields: [curriculumId], references: [id])
+  grade           Grade                        @relation(fields: [gradeId], references: [id])
+
+  tutorAssignments DemoSessionTutorAssignment[]
+  attendances      DemoAttendance[]
+  exceptions       DemoSessionException[]      @relation("SessionExceptions")
+  replacedByExceptions DemoSessionException[]  @relation("ReplacementSession")
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([scheduledStart])
+  @@map("demo_sessions")
+}
+
+model DemoSessionTutorAssignment {
+  id                 String                @id @default(uuid())
+  sessionId          String                @map("session_id")
+  tutorId            String                @map("tutor_id")
+  assignmentSequence Int                   @default(1) @map("assignment_sequence")
+  status             TutorAssignmentStatus @default(ACTIVE)
+  assignedAt         DateTime              @default(now()) @map("assigned_at")
+  assignedByUserId   String                @map("assigned_by_user_id")
+  replacedAt         DateTime?             @map("replaced_at")
+  replacementReason  String?               @map("replacement_reason") @db.Text
+  replacedByUserId   String?               @map("replaced_by_user_id")
+
+  session            DemoSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tutor              User                  @relation("AssignedTutorSessions", fields: [tutorId], references: [id])
+  assignedByUser     User                  @relation("TutorSessionsAssignedBy", fields: [assignedByUserId], references: [id])
+  replacedByUser     User?                 @relation("TutorSessionsReplacedBy", fields: [replacedByUserId], references: [id])
+  attendances        DemoAttendance[]
+
+  @@index([sessionId])
+  @@index([tutorId])
+  @@index([status])
+  @@map("demo_session_tutor_assignments")
+}
+
+model DemoSessionException {
+  id                   String                       @id @default(uuid())
+  sessionId            String                       @map("session_id")
+  exceptionCategory    DemoSessionExceptionCategory @map("exception_category")
+  resolutionStatus     DemoExceptionStatus          @default(PENDING) @map("resolution_status")
+  reason               String                       @db.Text
+  requestedByUserId    String                       @map("requested_by_user_id")
+  requestedAt          DateTime                     @default(now()) @map("requested_at")
+  reviewedByUserId     String?                      @map("reviewed_by_user_id")
+  reviewedAt           DateTime?                    @map("reviewed_at")
+  reviewNotes          String?                      @map("review_notes") @db.Text
+  replacementSessionId String?                      @map("replacement_session_id")
+
+  session              DemoSession                  @relation("SessionExceptions", fields: [sessionId], references: [id], onDelete: Cascade)
+  requestedByUser      User                         @relation("SessionExceptionsRequested", fields: [requestedByUserId], references: [id])
+  reviewedByUser       User?                        @relation("SessionExceptionsReviewed", fields: [reviewedByUserId], references: [id])
+  replacementSession   DemoSession?                 @relation("ReplacementSession", fields: [replacementSessionId], references: [id])
+
+  @@index([sessionId])
+  @@index([resolutionStatus])
+  @@map("demo_session_exceptions")
+}
+
+model DemoAttendance {
+  id                String               @id @default(uuid())
+  bookingId         String               @map("booking_id")
+  sessionId         String?              @map("session_id")
+  assignmentId      String?              @map("assignment_id")
+  participantType   DemoParticipantType  @map("participant_type")
+  userId            String?              @map("user_id")
+  status            DemoAttendanceStatus @default(PRESENT)
+  isCorrected       Boolean              @default(false) @map("is_corrected")
+  correctionReason  String?              @map("correction_reason") @db.Text
+  correctedByUserId String?              @map("corrected_by_user_id")
+  correctedAt       DateTime?            @map("corrected_at")
+  markedByUserId    String               @map("marked_by_user_id")
+  markedAt          DateTime             @default(now()) @map("marked_at")
+  remarks           String?              @db.Text
+
+  booking           DemoBooking                 @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  session           DemoSession?                @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  assignment        DemoSessionTutorAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  user              User?                       @relation("UserDemoAttendances", fields: [userId], references: [id])
+  markedByUser      User                        @relation("MarkedDemoAttendances", fields: [markedByUserId], references: [id])
+  correctedByUser   User?                       @relation("CorrectedDemoAttendances", fields: [correctedByUserId], references: [id])
+
+  @@index([bookingId])
+  @@index([sessionId])
+  @@index([assignmentId])
+  @@map("demo_attendances")
+}
+
+model DemoFeedbackRecord {
+  id                   String      @id @default(uuid())
+  bookingId            String      @unique @map("booking_id")
+  
+  rating               Int?        @map("rating")
+  comments             String?     @db.Text @map("comments")
+
+  studentPerformance   String?     @db.Text @map("student_performance")
+  strengths            String?     @db.Text
+  weaknesses           String?     @db.Text
+  tutorRecommendations String?     @db.Text @map("tutor_recommendations")
+  tutorRating          Int?        @map("tutor_rating")
+  
+  academicAssessment   String?     @db.Text @map("academic_assessment")
+  engagementLevel      String?     @map("engagement_level")
+  learningBehaviour    String?     @db.Text @map("learning_behaviour")
+  coordinatorRemarks   String?     @db.Text @map("coordinator_remarks")
+
+  parentFeedback       String?     @db.Text @map("parent_feedback")
+  parentConcerns       String?     @db.Text @map("parent_concerns")
+  parentInterestLevel  String?     @map("parent_interest_level")
+
+  submittedByUserId    String      @map("submitted_by_user_id")
+  submittedAt          DateTime    @default(now()) @map("submitted_at")
+
+  booking              DemoBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  submittedByUser      User        @relation("DemoFeedbackGivenNew", fields: [submittedByUserId], references: [id])
+
+  @@map("demo_feedback_records")
+}
+
+model DemoRoadmap {
+  id                   String      @id @default(uuid())
+  bookingId            String      @unique @map("booking_id")
+  recommendationPlan   String      @db.Text @map("recommendation_plan")
+  recommendedClassCount Int        @map("recommended_class_count")
+  recommendedFrequency String      @map("recommended_frequency")
+  preferredDurationMin Int         @map("preferred_duration_minutes")
+  preferredTiming      String      @map("preferred_timing")
+  recommendedSubjects  Json?       @map("recommended_subjects")
+  remarks              String?     @db.Text
+  createdAt            DateTime    @default(now()) @map("created_at")
+
+  booking              DemoBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("demo_roadmaps")
+}
+
+model DemoAcademicPlan {
+  id                   String      @id @default(uuid())
+  bookingId            String      @unique @map("booking_id")
+  learningGoal         String      @db.Text @map("learning_goal")
+  targetChapters       String      @db.Text @map("target_chapters")
+  studyApproach        String      @db.Text @map("study_approach")
+  milestones           String?     @db.Text
+  createdAt            DateTime    @default(now()) @map("created_at")
+
+  booking              DemoBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("demo_academic_plans")
+}
+
+model DemoBookingRescheduleHistory {
+  id                  String      @id @default(uuid())
+  bookingId           String      @map("booking_id")
+  previousDate        DateTime    @map("previous_date")
+  newDate             DateTime    @map("new_date")
+  reason              String      @db.Text
+  rescheduledByUserId String      @map("rescheduled_by_user_id")
+  rescheduledAt       DateTime    @default(now()) @map("rescheduled_at")
+
+  booking             DemoBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  rescheduledByUser   User        @relation("RescheduledDemoBookings", fields: [rescheduledByUserId], references: [id])
+
+  @@map("demo_booking_reschedule_history")
 }
 
 // =============================================================================
