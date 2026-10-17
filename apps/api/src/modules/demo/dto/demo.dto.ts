@@ -37,6 +37,10 @@ export class DemoSessionItemDto {
 
 export class CreateDemoDto {
   @IsString()
+  @IsOptional()
+  leadId?: string;
+
+  @IsString()
   @IsNotEmpty()
   studentId: string;
 
