@@ -365,8 +365,59 @@ export class LeadService {
                 rescheduleHistory: { orderBy: { rescheduledAt: 'desc' } },
               },
               orderBy: { scheduledAt: 'desc' },
-            }
+            },
+            demoBookings: {
+              include: {
+                coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                bookedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                sessions: {
+                  include: {
+                    subject: true,
+                    grade: true,
+                    curriculum: true,
+                    requirement: true,
+                    tutorAssignments: {
+                      include: {
+                        tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                      },
+                      orderBy: { assignmentSequence: 'asc' },
+                    },
+                    exceptions: true,
+                  },
+                  orderBy: { sessionOrder: 'asc' },
+                },
+                feedbackRecord: true,
+                rescheduleHistory: { orderBy: { rescheduledAt: 'desc' } },
+              },
+              orderBy: { scheduledDate: 'desc' },
+            },
           } 
+        },
+        demoBookings: {
+          include: {
+            student: { select: { id: true, firstName: true, lastName: true } },
+            coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+            bookedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+            sessions: {
+              include: {
+                subject: true,
+                grade: true,
+                curriculum: true,
+                requirement: true,
+                tutorAssignments: {
+                  include: {
+                    tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                  },
+                  orderBy: { assignmentSequence: 'asc' },
+                },
+                exceptions: true,
+              },
+              orderBy: { sessionOrder: 'asc' },
+            },
+            feedbackRecord: true,
+            rescheduleHistory: { orderBy: { rescheduledAt: 'desc' } },
+          },
+          orderBy: { scheduledDate: 'desc' },
         },
         invoices: {
           include: {

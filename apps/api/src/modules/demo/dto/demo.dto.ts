@@ -1,4 +1,39 @@
-import { IsString, IsNotEmpty, IsDateString, IsNumber, Min, Max, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsDateString, IsNumber, Min, Max, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class DemoSessionItemDto {
+  @IsNumber()
+  @IsOptional()
+  sessionOrder?: number;
+
+  @IsString()
+  @IsNotEmpty()
+  requirementId: string;
+
+  @IsDateString()
+  scheduledStart: string;
+
+  @IsDateString()
+  @IsOptional()
+  scheduledEnd?: string;
+
+  @IsNumber()
+  @Min(15)
+  @Max(180)
+  durationMinutes: number;
+
+  @IsString()
+  @IsOptional()
+  subjectId?: string;
+
+  @IsString()
+  @IsOptional()
+  curriculumId?: string;
+
+  @IsString()
+  @IsOptional()
+  gradeId?: string;
+}
 
 export class CreateDemoDto {
   @IsString()
@@ -6,16 +41,28 @@ export class CreateDemoDto {
   studentId: string;
 
   @IsString()
-  @IsNotEmpty()
-  requirementId: string;
+  @IsOptional()
+  requirementId?: string;
 
   @IsDateString()
-  scheduledAt: string;
+  @IsOptional()
+  scheduledAt?: string;
 
   @IsNumber()
-  @Min(30)
-  @Max(120)
-  durationMinutes: number;
+  @Min(15)
+  @Max(180)
+  @IsOptional()
+  durationMinutes?: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DemoSessionItemDto)
+  @IsOptional()
+  sessions?: DemoSessionItemDto[];
+
+  @IsString()
+  @IsOptional()
+  idempotencyKey?: string;
 }
 
 export class RescheduleDemoDto {

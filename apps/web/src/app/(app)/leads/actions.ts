@@ -118,12 +118,39 @@ export async function deleteNoteAction(leadId: string, noteId: string) {
 }
 
 // Demos
-export async function bookDemoAction(studentId: string, requirementId: string, scheduledAt: string, durationMinutes: number) {
+export async function bookDemoAction(
+  payloadOrStudentId: any,
+  maybeRequirementId?: string,
+  maybeScheduledAt?: string,
+  maybeDurationMinutes?: number,
+  optionalLeadId?: string
+) {
+  let body: any;
+  let leadId = optionalLeadId;
+
+  if (typeof payloadOrStudentId === 'object' && payloadOrStudentId !== null) {
+    body = payloadOrStudentId;
+    if (body.leadId && !leadId) leadId = body.leadId;
+  } else {
+    body = {
+      studentId: payloadOrStudentId,
+      requirementId: maybeRequirementId,
+      scheduledAt: maybeScheduledAt,
+      durationMinutes: maybeDurationMinutes,
+      leadId: optionalLeadId,
+    };
+  }
+
   const res = await fetchApi<any>(`/demos`, {
     method: 'POST',
-    body: JSON.stringify({ studentId, requirementId, scheduledAt, durationMinutes }),
+    body: JSON.stringify(body),
   });
-  revalidatePath(`/leads`);
+
+  revalidatePath('/leads');
+  if (leadId) {
+    revalidatePath(`/leads/${leadId}`);
+  }
+  revalidatePath('/demos');
   return res;
 }
 

@@ -1,7 +1,8 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, ForbiddenException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
-import { DemoStatus, Prisma } from '@prisma/client';
+import { DemoStatus, DemoBookingStatus, DemoSessionStatus, Prisma } from '@prisma/client';
 import { Queue } from 'bullmq';
+import { v5 as uuidv5 } from 'uuid';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { ValidatedUser } from '../../common/auth/auth.service';
@@ -9,9 +10,10 @@ import { IdGeneratorService } from '../../common/id-generator/id-generator.servi
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { QUEUES } from '../../common/queue/queue.constants';
 import { RbacService } from '../../common/rbac/rbac.service';
+import { DEMO_BACKFILL_NAMESPACE } from './backfill/demo-backfill.service';
+import { DemoMultiSessionService } from './demo-multisession.service';
 
-
-import { CreateDemoDto, RescheduleDemoDto, AssignTutorDto, CompleteDemoDto,  CancelDemoDto, 
+import { CreateDemoDto, RescheduleDemoDto, AssignTutorDto, CompleteDemoDto, CancelDemoDto, 
   NoShowDemoDto,
   EditDemoDto
 } from './dto/demo.dto';
@@ -26,15 +28,15 @@ export class DemoService {
     private readonly idGenerator: IdGeneratorService,
     private readonly rbac: RbacService,
     @InjectQueue(QUEUES.NOTIFICATIONS) private readonly notificationsQueue: Queue,
+    private readonly multiSessionService: DemoMultiSessionService = new DemoMultiSessionService(prisma),
   ) {}
 
-  private async checkOverlap(tx: any, studentId: string, tutorId: string | null, start: Date, end: Date, excludeDemoId?: string) {
+  private async checkOverlap(tx: any, studentId: string, tutorId: string | null, start: Date, end: Date, excludeDemoId?: string, excludeBookingId?: string) {
     // In PostgreSQL, lock the student row to prevent concurrent overlapping bookings
     if (tx.$queryRaw) {
       try {
         await tx.$queryRaw`SELECT 1 FROM "students" WHERE "id" = ${studentId} FOR UPDATE`;
       } catch (e) {
-        console.error('Lock error:', e);
         // Fallback for SQLite which doesn't support FOR UPDATE in the same way, or other DBs
       }
     }
@@ -52,6 +54,26 @@ export class DemoService {
       const dEnd = dStart + d.durationMinutes * 60000;
       if (start.getTime() < dEnd && end.getTime() > dStart) {
         throw new BadRequestException('Student already has an overlapping demo');
+      }
+    }
+
+    if (tx.demoSession) {
+      const existingSessions = await tx.demoSession.findMany({
+        where: {
+          booking: {
+            studentId,
+            id: excludeBookingId ? { not: excludeBookingId } : undefined,
+          },
+          status: { in: [DemoSessionStatus.SCHEDULED, DemoSessionStatus.ASSIGNED, DemoSessionStatus.IN_PROGRESS] },
+        },
+      });
+
+      for (const s of existingSessions) {
+        const sStart = new Date(s.scheduledStart).getTime();
+        const sEnd = new Date(s.scheduledEnd).getTime();
+        if (start.getTime() < sEnd && end.getTime() > sStart) {
+          throw new BadRequestException('Student already has an overlapping demo session');
+        }
       }
     }
 
@@ -75,68 +97,333 @@ export class DemoService {
 
   async bookDemo(dto: CreateDemoDto, user: ValidatedUser) {
     const hasHeadAccess = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
-    
-    const start = new Date(dto.scheduledAt);
-    const end = new Date(start.getTime() + dto.durationMinutes * 60000);
-
-    if (start < new Date() && !hasHeadAccess) {
-      throw new BadRequestException('Cannot book demo in the past');
-    }
+    const canBookAnyLead = hasHeadAccess || await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      // Validate Student & Requirement
-      const requirement = await tx.requirement.findUnique({
-        where: { id: dto.requirementId },
-        include: { student: { include: { lead: true } } }
-      });
+      // 0. Idempotency Check
+      const deterministicBookingId = dto.idempotencyKey
+        ? uuidv5(dto.idempotencyKey, DEMO_BACKFILL_NAMESPACE)
+        : null;
 
-      if (!requirement || requirement.studentId !== dto.studentId) {
-        throw new BadRequestException('Invalid Student or Requirement combination');
+      if (deterministicBookingId) {
+        const existing = await tx.demoBooking.findUnique({
+          where: { id: deterministicBookingId },
+          include: {
+            sessions: {
+              include: { subject: true, grade: true, curriculum: true },
+            },
+          },
+        });
+        if (existing) {
+          return existing;
+        }
       }
 
-      const canBookAnyLead = hasHeadAccess || await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-      if (!canBookAnyLead && requirement.student.lead?.assignedToUserId !== user.id) {
+      // 1. Lock student to prevent concurrent duplicate/overlapping bookings
+      if ((tx as any).$queryRaw) {
+        try {
+          await (tx as any).$queryRaw`SELECT 1 FROM "students" WHERE "id" = ${dto.studentId} FOR UPDATE`;
+        } catch (e) {
+          // Fallback if not supported
+        }
+      }
+
+      // 2. Fetch Student with Lead and Requirements
+      let student = tx.student ? await tx.student.findUnique({
+        where: { id: dto.studentId },
+        include: {
+          lead: true,
+          requirements: {
+            include: { subject: true, grade: true, curriculum: true },
+          },
+        },
+      }) : null;
+
+      // Backward compatibility fallback: if student.findUnique returned null, attempt finding via requirement
+      if (!student && dto.requirementId && tx.requirement) {
+        const req = await tx.requirement.findUnique({
+          where: { id: dto.requirementId },
+          include: {
+            subject: true,
+            grade: true,
+            curriculum: true,
+            student: {
+              include: { lead: true },
+            },
+          },
+        });
+        if (req?.student) {
+          student = {
+            ...req.student,
+            id: req.studentId || (req.student as any).id || dto.studentId,
+            firstName: req.student.firstName || 'Student',
+            lastName: req.student.lastName || '',
+            lead: req.student.lead,
+            requirements: [
+              {
+                id: req.id || dto.requirementId || 'req-1',
+                studentId: req.studentId || dto.studentId,
+                subjectId: req.subjectId,
+                curriculumId: req.curriculumId,
+                gradeId: req.gradeId,
+                subject: req.subject,
+                grade: req.grade,
+                curriculum: req.curriculum,
+              },
+            ],
+          } as any;
+        }
+      }
+
+      if (!student) {
+        throw new NotFoundException('Student not found');
+      }
+      if (!student.lead) {
+        throw new NotFoundException('Student lead not found');
+      }
+
+      const lead = student.lead;
+
+      // 3. Status eligibility check
+      if (lead.status && ['LOST', 'NOT_INTERESTED', 'JUNK'].includes(lead.status)) {
+        throw new BadRequestException(
+          `Cannot book demo for a lead with status ${lead.status}. Please reopen the lead first.`,
+        );
+      }
+
+      // 4. Ownership verification
+      if (!canBookAnyLead && lead.assignedToUserId && lead.assignedToUserId !== user.id) {
         throw new ForbiddenException('You can only book demos for your assigned leads');
       }
 
-      // Overlap check
-      await this.checkOverlap(tx, dto.studentId, null, start, end);
+      // 5. Normalize sessions
+      const rawSessions: Array<{
+        requirementId: string;
+        scheduledStart: Date;
+        durationMinutes: number;
+      }> = [];
 
+      if (dto.sessions && dto.sessions.length > 0) {
+        for (const s of dto.sessions) {
+          rawSessions.push({
+            requirementId: s.requirementId,
+            scheduledStart: new Date(s.scheduledStart),
+            durationMinutes: s.durationMinutes,
+          });
+        }
+      } else if (dto.requirementId && dto.scheduledAt && dto.durationMinutes) {
+        rawSessions.push({
+          requirementId: dto.requirementId,
+          scheduledStart: new Date(dto.scheduledAt),
+          durationMinutes: dto.durationMinutes,
+        });
+      } else {
+        throw new BadRequestException(
+          'Either sessions array or requirementId, scheduledAt, and durationMinutes must be provided',
+        );
+      }
+
+      // Validate each session requirement belongs to the student
+      const reqMap = new Map((student.requirements || []).map((r: any) => [r.id, r]));
+      const multiSessionInputs = [];
+
+      for (let i = 0; i < rawSessions.length; i++) {
+        const item = rawSessions[i];
+        const req = reqMap.get(item.requirementId);
+        if (!req) {
+          throw new BadRequestException(
+            `Requirement ${item.requirementId} not found or does not belong to student ${dto.studentId}`,
+          );
+        }
+
+        const start = new Date(item.scheduledStart);
+        const end = new Date(start.getTime() + item.durationMinutes * 60000);
+
+        if (start < new Date() && !hasHeadAccess) {
+          throw new BadRequestException(`Cannot book demo session in the past (session ${i + 1})`);
+        }
+
+        multiSessionInputs.push({
+          requirementId: req.id,
+          subjectId: req.subjectId,
+          curriculumId: req.curriculumId,
+          gradeId: req.gradeId,
+          scheduledStart: start,
+          scheduledEnd: end,
+          durationMinutes: item.durationMinutes,
+        });
+      }
+
+      // Validate session structure and non-overlapping sequence within the booking
+      const { totalDurationMinutes, orderedSessions } =
+        this.multiSessionService.validateMultiSessionStructure(multiSessionInputs);
+
+      // Check external overlaps against existing bookings/demos for this student
+      for (const s of orderedSessions) {
+        await this.checkOverlap(tx, dto.studentId, null, s.scheduledStart, s.scheduledEnd);
+      }
+
+      // 6. Generate Business ID
       const businessId = await this.idGenerator.nextIdInTx(tx, 'DMO');
 
-      const demo = await tx.demo.create({
-        data: {
-          businessId,
-          studentId: dto.studentId,
-          requirementId: dto.requirementId,
-          status: DemoStatus.SCHEDULED,
-          scheduledAt: start,
-          durationMinutes: dto.durationMinutes,
-          subjectId: requirement.subjectId,
-          curriculumId: requirement.curriculumId,
-          gradeId: requirement.gradeId,
-          bookedByUserId: user.id,
+      // 7. Round-robin coordinator
+      let coordinatorId: string | null = null;
+      try {
+        if (tx.roundRobinCoordinatorState) {
+          const nextCoordinator = await this.multiSessionService.getRoundRobinNextCoordinator(tx);
+          if (nextCoordinator) {
+            coordinatorId = nextCoordinator.userId;
+            await tx.roundRobinCoordinatorState.update({
+              where: { userId: nextCoordinator.userId },
+              data: {
+                currentLoad: nextCoordinator.currentLoad + 1,
+                lastReturnedAt: new Date(),
+              },
+            });
+          }
         }
+      } catch (e) {
+        // Coordinator round-robin is optional / graceful fallback
+      }
+
+      // 8. Create Parent DemoBooking (if table available)
+      let booking: any = null;
+      if (tx.demoBooking) {
+        booking = await tx.demoBooking.create({
+          data: {
+            id: deterministicBookingId || undefined,
+            businessId,
+            studentId: student.id,
+            leadId: lead.id,
+            coordinatorId,
+            bookedByUserId: user.id,
+            status: DemoBookingStatus.SCHEDULED,
+            scheduledDate: orderedSessions[0].scheduledStart,
+            totalDurationMin: totalDurationMinutes,
+          },
+        });
+      }
+
+      // 9. Create Child DemoSessions
+      const createdSessions = [];
+      if (tx.demoSession && booking) {
+        for (const s of orderedSessions) {
+          const createdSession = await tx.demoSession.create({
+            data: {
+              bookingId: booking.id,
+              sessionOrder: s.sessionOrder,
+              requirementId: s.requirementId,
+              subjectId: s.subjectId,
+              curriculumId: s.curriculumId,
+              gradeId: s.gradeId,
+              status: DemoSessionStatus.SCHEDULED,
+              scheduledStart: s.scheduledStart,
+              scheduledEnd: s.scheduledEnd,
+              durationMinutes: s.durationMinutes,
+            },
+            include: {
+              subject: true,
+              grade: true,
+              curriculum: true,
+            },
+          });
+          createdSessions.push(createdSession);
+        }
+      }
+
+      // 10. Dual-write primary session to legacy demos table for backward compatibility
+      const primarySession = orderedSessions[0];
+      const legacyDemo = await tx.demo.create({
+        data: {
+          id: booking ? booking.id : undefined,
+          businessId,
+          studentId: student.id,
+          requirementId: primarySession.requirementId,
+          status: DemoStatus.SCHEDULED,
+          scheduledAt: primarySession.scheduledStart,
+          durationMinutes: primarySession.durationMinutes,
+          subjectId: primarySession.subjectId,
+          curriculumId: primarySession.curriculumId,
+          gradeId: primarySession.gradeId,
+          bookedByUserId: user.id,
+        },
       });
 
+      if (tx.demoBooking && booking) {
+        await tx.demoBooking.update({
+          where: { id: booking.id },
+          data: { legacyDemoId: legacyDemo.id },
+        });
+      }
+
+      // 11. LEAD STATUS TRANSITION:
+      // "A successful save persists the booking and sessions and changes the lead to DEMO_BOOKED according to the existing canonical status model."
+      // "Do not regress NEGOTIATION, ENROLLED, or PAID leads."
+      const isProtectedStatus = lead.status && ['NEGOTIATION', 'ENROLLED', 'PAID'].includes(lead.status);
+      const shouldTransition = !isProtectedStatus && lead.status !== 'DEMO_BOOKED';
+
+      if (tx.lead && shouldTransition && lead.id) {
+        const oldStatus = lead.status;
+        const newStatus = 'DEMO_BOOKED';
+
+        await tx.lead.update({
+          where: { id: lead.id },
+          data: { status: newStatus as any },
+        });
+
+        if (tx.leadStatusHistory) {
+          await tx.leadStatusHistory.create({
+            data: {
+              leadId: lead.id,
+              oldStatus,
+              newStatus,
+              reason: `Demo booked for student ${student.firstName || ''}`,
+              note: `Booking ${businessId} (${orderedSessions.length} session(s))`,
+              changedByUserId: user.id,
+            },
+          });
+        }
+
+        await this.audit.recordInTx(tx, {
+          entityType: 'Lead',
+          entityId: lead.id,
+          action: 'STATUS_CHANGE',
+          actorUserId: user.id,
+          oldValue: { status: oldStatus },
+          newValue: { status: newStatus },
+        });
+      }
+
+      // 12. Record audit log for demo booking
       await this.audit.recordInTx(tx, {
         entityType: 'demo',
-        entityId: demo.id,
+        entityId: booking ? booking.id : legacyDemo.id,
         action: 'DEMO_BOOKED',
         actorUserId: user.id,
-        newValue: demo,
+        newValue: {
+          bookingId: booking ? booking.id : undefined,
+          businessId,
+          studentId: student.id,
+          leadId: lead.id,
+          sessionsCount: orderedSessions.length,
+          legacyDemoId: legacyDemo.id,
+        },
       });
 
-      // Notification
+      // 13. Queue Notification for coordinator
       await this.notificationsQueue.add('send', {
         recipientRole: 'DEMO_COORDINATOR',
         type: 'DEMO_BOOKED',
-        entityType: 'demo',
-        entityId: demo.id,
-        message: `New Demo Booked: ${businessId}`,
+        entityType: booking ? 'demo_booking' : 'demo',
+        entityId: booking ? booking.id : legacyDemo.id,
+        message: `New Demo Booked: ${businessId} (${orderedSessions.length} session(s))`,
       });
 
-      return demo;
+      return {
+        ...legacyDemo,
+        bookingId: booking ? booking.id : undefined,
+        sessions: createdSessions,
+      };
     });
   }
 

@@ -19,7 +19,7 @@ import {
 
 
 @Controller('demos')
-@UseGuards(JwtAuthGuard, RbacGuard)
+@UseGuards(RbacGuard)
 export class DemoController {
   constructor(private readonly demoService: DemoService) {}
 
