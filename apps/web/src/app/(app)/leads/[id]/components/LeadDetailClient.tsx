@@ -6,7 +6,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { usePermissions, useAuth } from '@/components/providers/AuthProvider';
-import { User, Phone, Clock, FileText, CheckCircle, Calendar, Users, DollarSign, Activity, AlertCircle, MessageSquare } from 'lucide-react';
+import Link from 'next/link';
+import { User, Phone, Clock, FileText, CheckCircle, Calendar, Users, DollarSign, Activity, AlertCircle, MessageSquare, RefreshCw, ArrowLeft } from 'lucide-react';
 import { LeadStatusChangeDialog } from './LeadStatusChangeDialog';
 import { ReassignDialog } from './ReassignDialog';
 import { BookDemoDialog } from './BookDemoDialog';
@@ -22,10 +23,16 @@ import { LeadStatusHistory } from './LeadStatusHistory';
 
 type TabId = 'students' | 'followups' | 'demos' | 'finance' | 'notes' | 'history' | 'assignments';
 
-export function LeadDetailClient({ leadId }: { leadId: string }) {
-  const [lead, setLead] = React.useState<any>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+interface LeadDetailClientProps {
+  leadId: string;
+  initialLead?: any;
+  initialError?: string | null;
+}
+
+export function LeadDetailClient({ leadId, initialLead = null, initialError = null }: LeadDetailClientProps) {
+  const [lead, setLead] = React.useState<any>(initialLead);
+  const [loading, setLoading] = React.useState(!initialLead && !initialError);
+  const [error, setError] = React.useState<string | null>(initialError);
   const [activeTab, setActiveTab] = React.useState<TabId>('students');
   
   const [isStatusOpen, setIsStatusOpen] = React.useState(false);
@@ -38,23 +45,88 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
 
   const loadLead = React.useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await getLeadAction(leadId);
       setLead(res);
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || 'Failed to load lead details');
     } finally {
       setLoading(false);
     }
   }, [leadId]);
 
   React.useEffect(() => {
-    loadLead();
-  }, [loadLead]);
+    if (!initialLead && !initialError) {
+      loadLead();
+    }
+  }, [initialLead, initialError, loadLead]);
 
-  if (loading) return <div className="p-8 text-center">Loading lead details...</div>;
-  if (error) return <div className="p-8 text-center text-red-500 bg-red-50 rounded-md">{error}</div>;
-  if (!lead) return <div className="p-8 text-center text-slate-500">Lead not found.</div>;
+  if (loading && !lead) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-48 bg-slate-200 rounded"></div>
+            <div className="h-6 w-24 bg-slate-200 rounded-full"></div>
+          </div>
+          <div className="h-4 w-64 bg-slate-200 rounded"></div>
+        </div>
+        <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex items-center justify-center py-16 text-slate-500">
+          <RefreshCw className="w-5 h-5 animate-spin mr-2 text-brand-600" />
+          <span>Loading lead details...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !lead) {
+    return (
+      <Card className="border-red-200 bg-red-50/50">
+        <CardContent className="p-8 text-center flex flex-col items-center">
+          <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 mb-4">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">Unable to Load Lead Details</h2>
+          <p className="text-sm text-red-600 max-w-md mb-6">{error}</p>
+          <div className="flex items-center gap-3">
+            <Button variant="primary" onClick={() => loadLead()} className="gap-2">
+              <RefreshCw className="w-4 h-4" />
+              Try Again
+            </Button>
+            <Link href="/leads">
+              <Button variant="outline" className="gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Back to Leads
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!lead) {
+    return (
+      <Card className="border-slate-200">
+        <CardContent className="p-8 text-center flex flex-col items-center">
+          <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 mb-4">
+            <User className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">Lead Not Found</h2>
+          <p className="text-sm text-slate-500 max-w-md mb-6">
+            The requested lead could not be found or you may not have permission to view it.
+          </p>
+          <Link href="/leads">
+            <Button variant="outline" className="gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Back to Leads
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
 
   let tabs: { id: TabId | 'assignments'; label: string; icon: any }[] = [
     { id: 'students', label: 'Students', icon: Users },
