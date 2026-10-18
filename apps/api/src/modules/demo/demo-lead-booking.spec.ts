@@ -4,6 +4,7 @@ import { v5 as uuidv5 } from 'uuid';
 
 import { DemoService } from './demo.service';
 import { LeadService } from '../lead/lead.service';
+import { StudentService } from '../student/student.service';
 import { DEMO_BACKFILL_NAMESPACE } from './backfill/demo-backfill.service';
 import { DemoController } from './demo.controller';
 
@@ -59,6 +60,9 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
           });
         }),
         findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.data?.id || 'req-1', ...args.data })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       student: {
         findUnique: jest.fn().mockImplementation(({ where }: any) => {
@@ -67,6 +71,8 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
             id: where?.id || 'student-1',
           });
         }),
+        create: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.data?.id || 'student-1', ...args.data })),
+        update: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.where?.id || 'student-1', ...args.data })),
       },
       lead: {
         findUnique: jest.fn().mockResolvedValue({
@@ -82,13 +88,13 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
       demo: {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'demo-legacy-1', ...args.data })),
+        create: jest.fn().mockImplementation((args) => Promise.resolve({ ...args.data, id: args.data?.id || 'demo-legacy-1' })),
       },
       demoBooking: {
         findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.data.id || 'booking-1', ...args.data })),
-        update: jest.fn().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data })),
+        create: jest.fn().mockImplementation((args) => Promise.resolve({ ...args.data, id: args.data?.id || 'booking-1' })),
+        update: jest.fn().mockImplementation((args) => Promise.resolve({ ...args.data, id: args.where?.id || 'booking-1' })),
       },
       demoSession: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -117,7 +123,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       lead: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: 'lead-1', assignedToUserId: 'counsellor-1', status: LeadStatus.INTERESTED }),
       },
     };
 
@@ -159,7 +165,138 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     };
   }
 
-  describe('Scenario 1: Successful booking changes INTERESTED to DEMO_BOOKED', () => {
+  describe('Scenario 1: An INTERESTED lead with 0 students books a demo (inline auto-provisioning)', () => {
+    it('creates student and requirements atomically via saveBundle then completes multi-session demo booking', async () => {
+      const { demoService, mockPrisma, mockTx, mockAudit, mockIdGen, mockRbac } = buildMockContext(['demo.book', 'lead.view_all']);
+
+      const studentService = new StudentService(
+        mockPrisma as any,
+        mockAudit as any,
+        mockIdGen as any,
+      );
+
+      // Lead with 0 students
+      mockPrisma.lead.findUnique.mockResolvedValue({
+        id: 'lead-empty-1',
+        status: LeadStatus.INTERESTED,
+        assignedToUserId: 'counsellor-1',
+      });
+      mockTx.lead.findUnique.mockResolvedValue({
+        id: 'lead-empty-1',
+        status: LeadStatus.INTERESTED,
+        assignedToUserId: 'counsellor-1',
+        students: [],
+      });
+
+      const createdStudentId = 'student-new-1';
+      const createdReqs = [
+        {
+          id: 'req-math-new',
+          studentId: createdStudentId,
+          subjectId: 'sub-math-id',
+          curriculumId: 'cur-cbse-id',
+          gradeId: 'grd-10-id',
+          subject: { id: 'sub-math-id', name: 'Mathematics' },
+          curriculum: { id: 'cur-cbse-id', name: 'CBSE' },
+          grade: { id: 'grd-10-id', name: 'Grade 10' },
+        },
+        {
+          id: 'req-phys-new',
+          studentId: createdStudentId,
+          subjectId: 'sub-phys-id',
+          curriculumId: 'cur-cbse-id',
+          gradeId: 'grd-10-id',
+          subject: { id: 'sub-phys-id', name: 'Physics' },
+          curriculum: { id: 'cur-cbse-id', name: 'CBSE' },
+          grade: { id: 'grd-10-id', name: 'Grade 10' },
+        },
+      ];
+
+      mockTx.student.create.mockResolvedValue({
+        id: createdStudentId,
+        businessId: 'STU-0010',
+        firstName: 'Arjun',
+        lastName: 'Kumar',
+        leadId: 'lead-empty-1',
+        curriculumId: 'cur-cbse-id',
+        gradeId: 'grd-10-id',
+      });
+
+      mockTx.student.findUnique.mockResolvedValue({
+        id: createdStudentId,
+        businessId: 'STU-0010',
+        firstName: 'Arjun',
+        lastName: 'Kumar',
+        leadId: 'lead-empty-1',
+        curriculumId: 'cur-cbse-id',
+        gradeId: 'grd-10-id',
+        lead: {
+          id: 'lead-empty-1',
+          status: LeadStatus.INTERESTED,
+          assignedToUserId: 'counsellor-1',
+        },
+        requirements: createdReqs,
+      });
+
+      // 1. Auto-provision student bundle
+      const bundle = await studentService.saveBundle(
+        'lead-empty-1',
+        null,
+        {
+          firstName: 'Arjun',
+          lastName: 'Kumar',
+          curriculumId: 'cur-cbse-id',
+          gradeId: 'grd-10-id',
+          subjectIds: ['sub-math-id', 'sub-phys-id'],
+        },
+        'counsellor-1',
+        true,
+      );
+
+      expect(bundle).toBeDefined();
+      expect(bundle!.id).toBe(createdStudentId);
+      expect(bundle!.requirements).toHaveLength(2);
+
+      // 2. Book multi-session demo using newly provisioned student & requirements
+      const bookingResult = await demoService.bookDemo(
+        {
+          studentId: bundle!.id,
+          sessions: [
+            {
+              sessionOrder: 1,
+              requirementId: 'req-math-new',
+              subjectId: 'sub-math-id',
+              curriculumId: 'cur-cbse-id',
+              gradeId: 'grd-10-id',
+              scheduledStart: futureIso,
+              scheduledEnd: new Date(new Date(futureIso).getTime() + 60 * 60000).toISOString(),
+              durationMinutes: 60,
+            },
+            {
+              sessionOrder: 2,
+              requirementId: 'req-phys-new',
+              subjectId: 'sub-phys-id',
+              curriculumId: 'cur-cbse-id',
+              gradeId: 'grd-10-id',
+              scheduledStart: new Date(new Date(futureIso).getTime() + 75 * 60000).toISOString(),
+              scheduledEnd: new Date(new Date(futureIso).getTime() + 135 * 60000).toISOString(),
+              durationMinutes: 60,
+            },
+          ],
+        },
+        { id: 'counsellor-1', email: 'c@example.com' } as any,
+      );
+
+      expect(bookingResult).toBeDefined();
+      expect(mockTx.lead.update).toHaveBeenCalledWith({
+        where: { id: 'lead-empty-1' },
+        data: { status: LeadStatus.DEMO_BOOKED },
+      });
+      expect(mockTx.demoSession.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Scenario 2: Successful booking changes INTERESTED to DEMO_BOOKED', () => {
     it('transitions lead status from INTERESTED to DEMO_BOOKED and logs history and audit record', async () => {
       const { demoService, mockTx, mockAudit } = buildMockContext(['demo.book', 'lead.view_all']);
 
@@ -199,7 +336,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 2: Booking failure leaves lead status unchanged', () => {
+  describe('Scenario 3: Booking failure leaves lead status unchanged', () => {
     it('does not modify lead status when validation throws an overlapping error', async () => {
       const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
 
@@ -231,7 +368,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 3: Multiple subject sessions saved and displayed correctly', () => {
+  describe('Scenario 4: Multiple subject sessions saved and displayed correctly', () => {
     it('creates parent DemoBooking and multiple DemoSession records with sequence and duration', async () => {
       const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
 
@@ -303,7 +440,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 4: Duplicate/retried requests do not create duplicate records', () => {
+  describe('Scenario 5: Duplicate/retried requests do not create duplicate records', () => {
     it('returns existing booking when idempotencyKey matches without creating duplicate rows', async () => {
       const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
       const idempotencyKey = 'retry-key-unique-123';
@@ -339,7 +476,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 5: Protected lead statuses do not regress', () => {
+  describe('Scenario 6: Protected lead statuses do not regress', () => {
     it.each([LeadStatus.NEGOTIATION, LeadStatus.ENROLLED, LeadStatus.PAID])(
       'preserves protected status %s without regressing to DEMO_BOOKED',
       async (protectedStatus) => {
@@ -445,7 +582,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     );
   });
 
-  describe('Scenario 6: Unauthorized users cannot book demos outside permitted lead scope', () => {
+  describe('Scenario 7: Unauthorized users cannot book demos outside permitted lead scope', () => {
     it('throws ForbiddenException when counsellor attempts booking for another user’s lead', async () => {
       // Counsellor only has demo.book, NOT lead.view_all, NOT demo.manage_team
       const { demoService, mockTx } = buildMockContext(['demo.book']);
@@ -498,7 +635,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 7: CEO God View uses target user scope correctly', () => {
+  describe('Scenario 8: CEO God View uses target user scope correctly', () => {
     it('ensures DemoController does not declare JwtAuthGuard at class level overriding GodViewGuard', () => {
       const guards = Reflect.getMetadata('__guards__', DemoController) || [];
       const guardNames = guards.map((g: any) => g.name || g.constructor?.name);
@@ -506,7 +643,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 8: Lead Demos tab data bridge returns newly saved booking', () => {
+  describe('Scenario 9: Lead Demos tab data bridge returns newly saved booking', () => {
     it('queries demoBookings with sessions, requirements, and tutor assignments in LeadService.findOne', async () => {
       const mockPrisma: any = {
         lead: {
@@ -585,6 +722,101 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
       expect(findOneCallArgs).toBeDefined();
       expect(findOneCallArgs[0].include.demoBookings).toBeDefined();
       expect(findOneCallArgs[0].include.students.include.demoBookings).toBeDefined();
+    });
+  });
+
+  describe('Scenario 10: Existing legacy Demo data and workflows remain compatible', () => {
+    it('dual-writes primary session to legacy demos table and links legacyDemoId on booking', async () => {
+      const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
+
+      const result = await demoService.bookDemo(
+        {
+          studentId: 'student-1',
+          requirementId: 'req-1',
+          scheduledAt: futureIso,
+          durationMinutes: 45,
+        },
+        { id: 'counsellor-1', email: 'c@example.com' } as any,
+      );
+
+      expect(result).toBeDefined();
+      expect(mockTx.demo.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          studentId: 'student-1',
+          requirementId: 'req-1',
+          status: DemoStatus.SCHEDULED,
+          durationMinutes: 45,
+        }),
+      });
+      expect(mockTx.demoBooking.update).toHaveBeenCalledWith({
+        where: { id: expect.any(String) },
+        data: { legacyDemoId: expect.any(String) },
+      });
+    });
+
+    it('returns both legacy demos and modern bookings in lead detail query for backwards compatibility', async () => {
+      const mockPrisma: any = {
+        lead: {
+          findUnique: jest.fn().mockImplementation(({ select }: any) => {
+            if (select) return Promise.resolve({ assignedToUserId: 'user-1' });
+            return Promise.resolve({
+              id: 'lead-compat-1',
+              assignedToUserId: 'user-1',
+              status: LeadStatus.DEMO_BOOKED,
+              students: [
+                {
+                  id: 'student-1',
+                  demos: [
+                    {
+                      id: 'legacy-demo-1',
+                      businessId: 'DMO-LEGACY',
+                      status: DemoStatus.COMPLETED,
+                      scheduledAt: new Date(Date.now() - 7 * 24 * 3600 * 1000),
+                      durationMinutes: 60,
+                      subject: { name: 'Chemistry' },
+                      grade: { name: 'Grade 9' },
+                    },
+                  ],
+                  demoBookings: [
+                    {
+                      id: 'booking-modern-1',
+                      businessId: 'DMO-0099',
+                      legacyDemoId: 'legacy-demo-linked',
+                      status: DemoBookingStatus.SCHEDULED,
+                      scheduledDate: new Date(),
+                      sessions: [
+                        {
+                          id: 'sess-1',
+                          sessionOrder: 1,
+                          subject: { name: 'Math' },
+                          grade: { name: 'Grade 10' },
+                          curriculum: { name: 'CBSE' },
+                          durationMinutes: 60,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+              demoBookings: [],
+            });
+          }),
+        },
+      };
+
+      const leadService = new LeadService(
+        mockPrisma as any,
+        { recordInTx: jest.fn() } as any,
+        { nextIdInTx: jest.fn() } as any,
+        {} as any,
+      );
+
+      const lead = await leadService.findOne('lead-compat-1', 'user-1', true);
+      expect(lead).toBeDefined();
+      expect(lead?.students[0].demos).toHaveLength(1);
+      expect(lead?.students[0].demos[0].id).toBe('legacy-demo-1');
+      expect(lead?.students[0].demoBookings).toHaveLength(1);
+      expect(lead?.students[0].demoBookings[0].id).toBe('booking-modern-1');
     });
   });
 });

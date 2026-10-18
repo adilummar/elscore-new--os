@@ -206,7 +206,14 @@ export class StudentService {
         }
       }
 
-      return student;
+      return tx.student.findUnique({
+        where: { id: student.id },
+        include: {
+          requirements: {
+            include: { subject: true, grade: true, curriculum: true },
+          },
+        },
+      });
     });
   }
 

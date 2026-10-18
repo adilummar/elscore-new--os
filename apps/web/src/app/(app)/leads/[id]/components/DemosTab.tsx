@@ -5,12 +5,21 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { usePermissions } from '@/components/providers/AuthProvider';
+import { Calendar, Video, Plus } from 'lucide-react';
 
 import { RescheduleDemoModal } from '../../../demos/components/RescheduleDemoModal';
 import { CancelDemoModal } from '../../../demos/components/CancelDemoModal';
 import { EditDemoModal } from '../../../demos/components/EditDemoModal';
 
-export function DemosTab({ lead, onUpdate }: { lead: any; onUpdate?: () => void }) {
+export function DemosTab({
+  lead,
+  onUpdate,
+  onBookDemo,
+}: {
+  lead: any;
+  onUpdate?: () => void;
+  onBookDemo?: () => void;
+}) {
   const { hasPermission } = usePermissions();
   const [activeDemo, setActiveDemo] = React.useState<any>(null);
   const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'cancel' | 'edit'>('none');
@@ -130,9 +139,31 @@ export function DemosTab({ lead, onUpdate }: { lead: any; onUpdate?: () => void 
   if (allDemos.length === 0) {
     return (
       <Card>
-        <CardHeader><CardTitle>Demos</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle>Demos</CardTitle>
+          {onBookDemo && hasPermission('demo.book') && (
+            <Button size="sm" onClick={onBookDemo} className="flex items-center gap-1.5">
+              <Video className="w-4 h-4" />
+              Book Demo
+            </Button>
+          )}
+        </CardHeader>
         <CardContent>
-          <div className="text-slate-500 italic p-4 text-center">No demos scheduled for this lead.</div>
+          <div className="text-center py-10 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+            <div className="w-12 h-12 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Calendar className="w-6 h-6 text-brand-600" />
+            </div>
+            <p className="text-slate-800 font-semibold text-base mb-1">No demos scheduled for this lead</p>
+            <p className="text-slate-500 text-sm max-w-sm mx-auto mb-5">
+              Schedule a single-session or multi-session demo trial for this lead&apos;s student.
+            </p>
+            {onBookDemo && hasPermission('demo.book') && (
+              <Button onClick={onBookDemo} className="inline-flex items-center gap-2">
+                <Video className="w-4 h-4" />
+                Book Demo Now
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     );
@@ -140,7 +171,15 @@ export function DemosTab({ lead, onUpdate }: { lead: any; onUpdate?: () => void 
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-bold">Demos</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold">Demos</h3>
+        {onBookDemo && hasPermission('demo.book') && (
+          <Button size="sm" onClick={onBookDemo} variant="outline" className="flex items-center gap-1.5">
+            <Plus className="w-4 h-4" />
+            Book Another Demo
+          </Button>
+        )}
+      </div>
       <div className="grid gap-4">
         {allDemos.map((demo: any) => {
           const isTerminal = ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(demo.status);

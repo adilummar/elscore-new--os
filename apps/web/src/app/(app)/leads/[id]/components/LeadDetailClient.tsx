@@ -236,7 +236,7 @@ export function LeadDetailClient({ leadId, initialLead = null, initialError = nu
             <FollowUpManager lead={lead} onUpdate={loadLead} />
           )}
           {activeTab === 'demos' && (
-            <DemosTab lead={lead} onUpdate={loadLead} />
+            <DemosTab lead={lead} onUpdate={loadLead} onBookDemo={() => setIsDemoOpen(true)} />
           )}
           {activeTab === 'finance' && (
             <FinanceTab lead={lead} />
@@ -257,7 +257,17 @@ export function LeadDetailClient({ leadId, initialLead = null, initialError = nu
       </div>
 
       {isStatusOpen && <LeadStatusChangeDialog leadId={leadId} currentStatus={lead.status} isOpen={isStatusOpen} onClose={() => setIsStatusOpen(false)} onSuccess={loadLead} />}
-      {isDemoOpen && <BookDemoDialog lead={lead} isOpen={isDemoOpen} onClose={() => setIsDemoOpen(false)} onSuccess={loadLead} />}
+      {isDemoOpen && (
+        <BookDemoDialog
+          lead={lead}
+          isOpen={isDemoOpen}
+          onClose={() => setIsDemoOpen(false)}
+          onSuccess={() => {
+            loadLead();
+            setActiveTab('demos');
+          }}
+        />
+      )}
       {isReassignOpen && <ReassignDialog leadId={leadId} isOpen={isReassignOpen} onClose={() => setIsReassignOpen(false)} onSuccess={loadLead} />}
       {isEditOpen && <EditLeadDialog lead={lead} isOpen={isEditOpen} onClose={() => setIsEditOpen(false)} onSuccess={loadLead} />}
     </div>
