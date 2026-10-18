@@ -819,4 +819,263 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
       expect(lead?.students[0].demoBookings[0].id).toBe('booking-modern-1');
     });
   });
+
+  describe('Demo Module — Source of Truth Specification Requirements', () => {
+    it('returns scored and ranked tutor suggestions matching subject, grade, curriculum, and availability', async () => {
+      const demoDate = new Date(Date.now() + 48 * 3600 * 1000);
+      const dayOfWeek = demoDate.getDay();
+
+      const mockPrisma: any = {
+        demo: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'demo-sugg-1',
+            scheduledAt: demoDate,
+            durationMinutes: 60,
+            subjectId: 'sub-math',
+            gradeId: 'grd-10',
+            curriculumId: 'cur-cbse',
+          }),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        user: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'tutor-perfect',
+              email: 'perfect@example.com',
+              employee: {
+                firstName: 'Alice',
+                lastName: 'Smith',
+                tutorProfile: {
+                  teachingExperience: 5,
+                  subjects: [{ subjectId: 'sub-math', isActive: true }],
+                  grades: [{ gradeId: 'grd-10', isActive: true }],
+                  curricula: [{ curriculumId: 'cur-cbse', isActive: true }],
+                  availability: [{ dayOfWeek, startTime: '10:00', endTime: '18:00' }],
+                },
+              },
+            },
+            {
+              id: 'tutor-partial',
+              email: 'partial@example.com',
+              employee: {
+                firstName: 'Bob',
+                lastName: 'Jones',
+                tutorProfile: {
+                  teachingExperience: 2,
+                  subjects: [{ subjectId: 'sub-math', isActive: true }],
+                  grades: [],
+                  curricula: [],
+                  availability: [],
+                },
+              },
+            },
+          ]),
+        },
+      };
+
+      const demoService = new DemoService(
+        mockPrisma as any,
+        { recordInTx: jest.fn() } as any,
+        { nextIdInTx: jest.fn() } as any,
+        { hasPermissions: jest.fn().mockResolvedValue(true) } as any,
+        { add: jest.fn() } as any,
+      );
+
+      const suggestions = await demoService.getTutorSuggestions('demo-sugg-1', { id: 'coord-1' } as any);
+      expect(suggestions).toHaveLength(2);
+      expect(suggestions[0].id).toBe('tutor-perfect');
+      expect(suggestions[0].score).toBe(100); // 40 + 30 + 20 + 10
+      expect(suggestions[1].id).toBe('tutor-partial');
+      expect(suggestions[1].score).toBe(40); // 40
+    });
+
+    it('dual-writes tutor assignment to DemoBooking and DemoSessionTutorAssignment', async () => {
+      const mockTx: any = {
+        demo: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'demo-assign-1',
+            status: DemoStatus.SCHEDULED,
+            scheduledAt: new Date(Date.now() + 24 * 3600 * 1000),
+            durationMinutes: 60,
+            studentId: 'student-1',
+            tutorId: null,
+          }),
+          findMany: jest.fn().mockResolvedValue([]),
+          update: jest.fn().mockImplementation((args) => Promise.resolve({ ...args.data, id: 'demo-assign-1' })),
+        },
+        demoBooking: {
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        demoSession: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'session-1', bookingId: 'demo-assign-1', status: DemoSessionStatus.SCHEDULED },
+          ]),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'session-1',
+            status: DemoSessionStatus.SCHEDULED,
+            tutorAssignments: [],
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'session-1', status: DemoSessionStatus.ASSIGNED }),
+        },
+        demoSessionTutorAssignment: {
+          create: jest.fn().mockResolvedValue({ id: 'ta-1', sessionId: 'session-1', tutorId: 'tutor-1' }),
+        },
+      };
+
+      const mockPrisma: any = {
+        $transaction: jest.fn().mockImplementation((cb) => cb(mockTx)),
+      };
+
+      const demoService = new DemoService(
+        mockPrisma as any,
+        { recordInTx: jest.fn() } as any,
+        { nextIdInTx: jest.fn() } as any,
+        { hasPermissions: jest.fn().mockResolvedValue(true) } as any,
+        { add: jest.fn() } as any,
+      );
+
+      await demoService.assignTutor('demo-assign-1', { tutorId: 'tutor-1' }, { id: 'coord-1' } as any);
+
+      expect(mockTx.demo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'demo-assign-1' },
+          data: expect.objectContaining({ tutorId: 'tutor-1', status: DemoStatus.ASSIGNED }),
+        })
+      );
+      expect(mockTx.demoBooking.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'demo-assign-1' },
+          data: { status: DemoBookingStatus.ASSIGNED },
+        })
+      );
+      expect(mockTx.demoSessionTutorAssignment.create).toHaveBeenCalled();
+    });
+
+    it('enforces completion gate, persists multi-role feedback, roadmap, academic plan, and transitions Lead to DEMO_COMPLETED', async () => {
+      const mockTx: any = {
+        demo: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'demo-comp-1',
+            status: DemoStatus.ASSIGNED,
+            tutorId: 'tutor-1',
+            bookedByUserId: 'counsellor-1',
+            student: {
+              firstName: 'TestStudent',
+              lead: {
+                id: 'lead-comp-1',
+                status: LeadStatus.DEMO_BOOKED,
+              },
+            },
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'demo-comp-1', status: DemoStatus.COMPLETED }),
+        },
+        demoFeedback: {
+          create: jest.fn().mockResolvedValue({ id: 'fb-legacy-1' }),
+        },
+        demoAttendance: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue({ id: 'att-1' }),
+        },
+        demoFeedbackRecord: {
+          upsert: jest.fn().mockResolvedValue({ id: 'dfr-1' }),
+        },
+        demoRoadmap: {
+          upsert: jest.fn().mockResolvedValue({ id: 'drm-1' }),
+        },
+        demoAcademicPlan: {
+          upsert: jest.fn().mockResolvedValue({ id: 'dap-1' }),
+        },
+        demoSession: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'sess-1',
+              tutorAssignments: [{ id: 'ta-1', tutorId: 'tutor-1', status: 'ACTIVE' }],
+            },
+          ]),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        demoBooking: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'demo-comp-1',
+            attendances: [
+              { participantType: 'PARENT', status: 'PRESENT' },
+              { participantType: 'COORDINATOR', status: 'PRESENT' },
+            ],
+            sessions: [
+              {
+                id: 'sess-1',
+                sessionOrder: 1,
+                status: DemoSessionStatus.COMPLETED,
+                attendances: [{ participantType: 'TUTOR', status: 'PRESENT' }],
+                exceptions: [],
+              },
+            ],
+            feedbackRecord: { id: 'dfr-1' },
+            roadmap: { id: 'drm-1' },
+            academicPlan: { id: 'dap-1' },
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'demo-comp-1', status: DemoBookingStatus.COMPLETED }),
+        },
+        lead: {
+          update: jest.fn().mockResolvedValue({ id: 'lead-comp-1', status: LeadStatus.DEMO_COMPLETED }),
+        },
+        leadStatusHistory: {
+          create: jest.fn().mockResolvedValue({ id: 'lsh-1' }),
+        },
+      };
+
+      const mockPrisma: any = {
+        $transaction: jest.fn().mockImplementation((cb) => cb(mockTx)),
+      };
+
+      const demoService = new DemoService(
+        mockPrisma as any,
+        { recordInTx: jest.fn() } as any,
+        { nextIdInTx: jest.fn() } as any,
+        { hasPermissions: jest.fn().mockResolvedValue(true) } as any,
+        { add: jest.fn() } as any,
+      );
+
+      await demoService.completeDemo(
+        'demo-comp-1',
+        {
+          rating: 5,
+          comments: 'Exceptional student performance and engagement',
+          recommendationPlan: '4-week acceleration plan',
+          recommendedClassCount: 8,
+          recommendedFrequency: '2 classes/week',
+          learningGoal: 'Master algebra',
+          targetChapters: 'Chapters 1-3',
+          studyApproach: 'Concept walkthrough',
+          milestones: 'Week 4 test',
+        },
+        { id: 'tutor-1' } as any
+      );
+
+      // Verify gate and post-demo updates
+      expect(mockTx.demoFeedbackRecord.upsert).toHaveBeenCalled();
+      expect(mockTx.demoRoadmap.upsert).toHaveBeenCalled();
+      expect(mockTx.demoAcademicPlan.upsert).toHaveBeenCalled();
+      expect(mockTx.demoBooking.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'demo-comp-1' },
+          data: { status: DemoBookingStatus.COMPLETED },
+        })
+      );
+      // Verify atomic lead status transition
+      expect(mockTx.lead.update).toHaveBeenCalledWith({
+        where: { id: 'lead-comp-1' },
+        data: { status: LeadStatus.DEMO_COMPLETED },
+      });
+      expect(mockTx.leadStatusHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            leadId: 'lead-comp-1',
+            oldStatus: LeadStatus.DEMO_BOOKED,
+            newStatus: LeadStatus.DEMO_COMPLETED,
+          }),
+        })
+      );
+    });
+  });
 });

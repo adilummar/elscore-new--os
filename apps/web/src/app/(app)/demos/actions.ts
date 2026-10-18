@@ -4,7 +4,7 @@ import { fetchApi } from '@/lib/api/client';
 import { revalidatePath } from 'next/cache';
 
 export async function getDemos(params: {
-  view?: 'today' | 'upcoming' | 'completed' | 'all';
+  view?: 'today' | 'upcoming' | 'completed' | 'all' | 'pending';
   state?: string;
   cursor?: string;
   limit?: number;
@@ -16,6 +16,10 @@ export async function getDemos(params: {
   if (params.limit) query.set('limit', params.limit.toString());
 
   return fetchApi<any>(`/demos?${query.toString()}`);
+}
+
+export async function getTutorSuggestions(demoId: string) {
+  return fetchApi<any>(`/demos/${demoId}/tutor-suggestions`);
 }
 
 export async function getDemosSummary() {
@@ -97,7 +101,7 @@ export async function completeDemo(id: string, data: any) {
 }
 
 export async function searchTutors(query: string) {
-  return fetchApi<any>(`/tutors?search=${encodeURIComponent(query)}&limit=5`);
+  return fetchApi<any>(`/demos/tutors/search?search=${encodeURIComponent(query)}`);
 }
 
 export async function searchLeads(query: string) {

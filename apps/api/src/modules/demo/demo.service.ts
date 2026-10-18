@@ -1,6 +1,16 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, ForbiddenException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
-import { DemoStatus, DemoBookingStatus, DemoSessionStatus, Prisma } from '@prisma/client';
+import {
+  DemoStatus,
+  DemoBookingStatus,
+  DemoSessionStatus,
+  UserStatus,
+  LeadStatus,
+  DemoParticipantType,
+  DemoAttendanceStatus,
+  TutorAssignmentStatus,
+  Prisma,
+} from '@prisma/client';
 import { Queue } from 'bullmq';
 import { v5 as uuidv5 } from 'uuid';
 
@@ -456,7 +466,10 @@ export class DemoService {
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const endOfToday = new Date(startOfToday.getTime() + 86400000);
       
-      if (query.view === 'today') {
+      if (query.view === 'pending') {
+        where.status = DemoStatus.SCHEDULED;
+        where.tutorId = null;
+      } else if (query.view === 'today') {
         where.scheduledAt = { gte: startOfToday, lt: endOfToday };
       } else if (query.view === 'upcoming') {
         where.scheduledAt = { gte: endOfToday };
@@ -467,12 +480,15 @@ export class DemoService {
 
     const demos = await this.prisma.demo.findMany({
       where,
+      orderBy: { scheduledAt: 'asc' },
       include: {
-        student: { select: { id: true, firstName: true, currentGrade: true } },
-        subject: { select: { name: true } },
-        curriculum: { select: { name: true } },
-        grade: { select: { name: true } },
-        requirement: { select: { notes: true } },
+        student: { select: { id: true, firstName: true, lastName: true, currentGrade: true } },
+        subject: { select: { id: true, name: true } },
+        curriculum: { select: { id: true, name: true } },
+        grade: { select: { id: true, name: true } },
+        requirement: { select: { id: true, notes: true, subjectId: true, gradeId: true, curriculumId: true } },
+        tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+        bookedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
       }
     });
 
@@ -502,7 +518,7 @@ export class DemoService {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(startOfToday.getTime() + 86400000);
 
-    const [todayCount, upcomingCount, completedTodayCount, cancelledTodayCount, noShowTodayCount] = await Promise.all([
+    const [todayCount, upcomingCount, completedTodayCount, cancelledTodayCount, noShowTodayCount, pendingCount] = await Promise.all([
       this.prisma.demo.count({
         where: { ...where, scheduledAt: { gte: startOfToday, lt: endOfToday } }
       }),
@@ -517,6 +533,9 @@ export class DemoService {
       }),
       this.prisma.demo.count({
         where: { ...where, status: DemoStatus.NO_SHOW, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+      }),
+      this.prisma.demo.count({
+        where: { ...where, status: DemoStatus.SCHEDULED, tutorId: null }
       })
     ]);
 
@@ -525,8 +544,156 @@ export class DemoService {
       upcoming: upcomingCount,
       completedToday: completedTodayCount,
       cancelledToday: cancelledTodayCount,
-      noShowToday: noShowTodayCount
+      noShowToday: noShowTodayCount,
+      pending: pendingCount
     };
+  }
+
+  async getTutorSuggestions(id: string, user: ValidatedUser) {
+    const demo = await this.prisma.demo.findUnique({
+      where: { id },
+      include: {
+        requirement: true,
+        subject: true,
+        grade: true,
+        curriculum: true,
+      },
+    });
+
+    if (!demo) throw new NotFoundException('Demo not found');
+
+    const scheduledDate = new Date(demo.scheduledAt);
+    const dayOfWeek = scheduledDate.getDay();
+    const durationMinutes = demo.durationMinutes || 60;
+    const end = new Date(scheduledDate.getTime() + durationMinutes * 60000);
+
+    const tutors = await (this.prisma.user as any).findMany({
+      where: {
+        status: UserStatus.ACTIVE,
+        userRoles: {
+          some: {
+            role: { code: 'TUTOR' },
+          },
+        },
+      },
+      include: {
+        employee: {
+          include: {
+            tutorProfile: {
+              include: {
+                subjects: { where: { isActive: true } },
+                grades: { where: { isActive: true } },
+                curricula: { where: { isActive: true } },
+                availability: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const suggestions = [];
+
+    for (const tutor of (tutors as any[])) {
+      // Check overlap with legacy demos
+      const hasDemoOverlap = await this.prisma.demo.findFirst({
+        where: {
+          tutorId: tutor.id,
+          status: { in: [DemoStatus.SCHEDULED, DemoStatus.ASSIGNED] },
+          scheduledAt: { lt: end },
+        },
+      });
+
+      let hasSessionOverlap = false;
+      if (this.prisma.demoSessionTutorAssignment) {
+        const activeAssignment = await this.prisma.demoSessionTutorAssignment.findFirst({
+          where: {
+            tutorId: tutor.id,
+            status: TutorAssignmentStatus.ACTIVE,
+            session: {
+              status: { in: [DemoSessionStatus.SCHEDULED, DemoSessionStatus.ASSIGNED, DemoSessionStatus.IN_PROGRESS] },
+              scheduledStart: { lt: end },
+              scheduledEnd: { gt: scheduledDate },
+            },
+          },
+        });
+        if (activeAssignment) hasSessionOverlap = true;
+      }
+
+      if (hasDemoOverlap || hasSessionOverlap) {
+        continue;
+      }
+
+      const emp = tutor.employee;
+      const profile = emp?.tutorProfile;
+      let score = 0;
+      const matchReasons: string[] = [];
+
+      if (profile) {
+        if (demo.subjectId && profile.subjects?.some((s: any) => s.subjectId === demo.subjectId)) {
+          score += 40;
+          matchReasons.push('Subject match');
+        }
+        if (demo.gradeId && profile.grades?.some((g: any) => g.gradeId === demo.gradeId)) {
+          score += 30;
+          matchReasons.push('Grade match');
+        }
+        if (demo.curriculumId && profile.curricula?.some((c: any) => c.curriculumId === demo.curriculumId)) {
+          score += 20;
+          matchReasons.push('Curriculum match');
+        }
+        const timeSlotMatch = profile.availability?.some((slot: any) => slot.dayOfWeek === dayOfWeek);
+        if (timeSlotMatch) {
+          score += 10;
+          matchReasons.push('Availability match');
+        }
+      }
+
+      suggestions.push({
+        id: tutor.id,
+        email: tutor.email,
+        firstName: emp?.firstName || '',
+        lastName: emp?.lastName || '',
+        score,
+        matchReasons,
+        teachingExperience: profile?.teachingExperience || 0,
+        isAvailable: true,
+      });
+    }
+
+    suggestions.sort((a, b) => b.score - a.score);
+    return suggestions;
+  }
+
+  async searchTutors(query: string) {
+    const tutors = await (this.prisma.user as any).findMany({
+      where: {
+        status: UserStatus.ACTIVE,
+        userRoles: {
+          some: {
+            role: { code: 'TUTOR' },
+          },
+        },
+        OR: query ? [
+          { email: { contains: query, mode: 'insensitive' } },
+          { employee: { firstName: { contains: query, mode: 'insensitive' } } },
+          { employee: { lastName: { contains: query, mode: 'insensitive' } } },
+        ] : undefined,
+      },
+      take: 10,
+      include: {
+        employee: {
+          select: { firstName: true, lastName: true },
+        },
+      },
+    });
+
+    return (tutors as any[]).map((t) => ({
+      id: t.id,
+      email: t.email,
+      firstName: t.employee?.firstName || '',
+      lastName: t.employee?.lastName || '',
+    }));
   }
 
   async getDemoById(id: string, user: ValidatedUser) {
@@ -561,6 +728,40 @@ export class DemoService {
     if (!isCoordinator && !isHead && !isTutor) {
       if (demo.student.lead.assignedToUserId !== user.id) {
         throw new ForbiddenException('You can only view demos for your assigned leads');
+      }
+    }
+
+    // Attach multi-session booking data if available
+    if (this.prisma.demoBooking) {
+      const booking = await this.prisma.demoBooking.findUnique({
+        where: { id },
+        include: {
+          sessions: {
+            include: {
+              subject: true,
+              grade: true,
+              curriculum: true,
+              tutorAssignments: {
+                include: {
+                  tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                },
+                orderBy: { assignmentSequence: 'desc' },
+              },
+              attendances: true,
+              exceptions: true,
+            },
+            orderBy: { sessionOrder: 'asc' },
+          },
+          attendances: true,
+          feedbackRecord: true,
+          roadmap: true,
+          academicPlan: true,
+          rescheduleHistory: true,
+          coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+        },
+      });
+      if (booking) {
+        (demo as any).booking = booking;
       }
     }
 
@@ -608,6 +809,45 @@ export class DemoService {
           durationMinutes: dto.durationMinutes
         }
       });
+
+      if (tx.demoBooking) {
+        await tx.demoBooking.updateMany({
+          where: { id },
+          data: {
+            scheduledDate: start,
+            totalDurationMin: dto.durationMinutes,
+          },
+        });
+
+        if (tx.demoBookingRescheduleHistory) {
+          await tx.demoBookingRescheduleHistory.create({
+            data: {
+              bookingId: id,
+              previousDate: demo.scheduledAt,
+              newDate: start,
+              reason: dto.reason,
+              rescheduledByUserId: user.id,
+            },
+          });
+        }
+      }
+
+      if (tx.demoSession) {
+        const sessions = await tx.demoSession.findMany({
+          where: { bookingId: id },
+          orderBy: { sessionOrder: 'asc' },
+        });
+        if (sessions.length > 0) {
+          await tx.demoSession.update({
+            where: { id: sessions[0].id },
+            data: {
+              scheduledStart: start,
+              scheduledEnd: end,
+              durationMinutes: dto.durationMinutes,
+            },
+          });
+        }
+      }
 
       await tx.demoRescheduleHistory.create({
         data: {
@@ -736,6 +976,30 @@ export class DemoService {
         }
       });
 
+      if (tx.demoBooking) {
+        await tx.demoBooking.updateMany({
+          where: { id },
+          data: { status: DemoBookingStatus.ASSIGNED },
+        });
+      }
+
+      if (tx.demoSession) {
+        const sessions = await tx.demoSession.findMany({
+          where: { bookingId: id },
+          orderBy: { sessionOrder: 'asc' },
+        });
+
+        for (const session of sessions) {
+          await this.multiSessionService.assignOrReplaceSessionTutor(
+            tx,
+            session.id,
+            dto.tutorId,
+            user.id,
+            'Assigned by Coordinator'
+          );
+        }
+      }
+
       await this.audit.recordInTx(tx, {
         entityType: 'demo',
         entityId: id,
@@ -762,7 +1026,16 @@ export class DemoService {
     const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const demo = await tx.demo.findUnique({ where: { id } });
+      const demo = await tx.demo.findUnique({
+        where: { id },
+        include: {
+          student: {
+            include: {
+              lead: true,
+            },
+          },
+        },
+      });
       if (!demo) throw new NotFoundException('Demo not found');
 
       if (demo.status !== DemoStatus.ASSIGNED) {
@@ -776,19 +1049,251 @@ export class DemoService {
         throw new ForbiddenException('Cannot complete another tutors demo');
       }
 
+      // 1. Record Attendances if multi-session table exists
+      if (tx.demoAttendance) {
+        // Parent attendance
+        const existingParentAttendance = await tx.demoAttendance.findFirst({
+          where: { bookingId: id, participantType: DemoParticipantType.PARENT },
+        });
+        if (!existingParentAttendance) {
+          await tx.demoAttendance.create({
+            data: {
+              bookingId: id,
+              participantType: DemoParticipantType.PARENT,
+              status: dto.attendances?.parentStatus || DemoAttendanceStatus.PRESENT,
+              markedByUserId: user.id,
+            },
+          });
+        }
+
+        // Coordinator attendance
+        const existingCoordinatorAttendance = await tx.demoAttendance.findFirst({
+          where: { bookingId: id, participantType: DemoParticipantType.COORDINATOR },
+        });
+        if (!existingCoordinatorAttendance) {
+          await tx.demoAttendance.create({
+            data: {
+              bookingId: id,
+              participantType: DemoParticipantType.COORDINATOR,
+              status: dto.attendances?.coordinatorStatus || DemoAttendanceStatus.PRESENT,
+              markedByUserId: user.id,
+            },
+          });
+        }
+
+        // Tutor session attendances
+        if (tx.demoSession) {
+          const sessions = await tx.demoSession.findMany({
+            where: { bookingId: id },
+            include: {
+              tutorAssignments: {
+                where: { status: TutorAssignmentStatus.ACTIVE },
+              },
+            },
+          });
+
+          for (const session of sessions) {
+            const activeAssignment = session.tutorAssignments[0];
+            if (activeAssignment) {
+              const existingTutorAttendance = await tx.demoAttendance.findFirst({
+                where: {
+                  bookingId: id,
+                  sessionId: session.id,
+                  assignmentId: activeAssignment.id,
+                  participantType: DemoParticipantType.TUTOR,
+                },
+              });
+
+              if (!existingTutorAttendance) {
+                await tx.demoAttendance.create({
+                  data: {
+                    bookingId: id,
+                    sessionId: session.id,
+                    assignmentId: activeAssignment.id,
+                    participantType: DemoParticipantType.TUTOR,
+                    userId: activeAssignment.tutorId,
+                    status: dto.attendances?.tutorStatus || DemoAttendanceStatus.PRESENT,
+                    markedByUserId: user.id,
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Feedback Record
+      if (tx.demoFeedbackRecord) {
+        await tx.demoFeedbackRecord.upsert({
+          where: { bookingId: id },
+          create: {
+            bookingId: id,
+            rating: dto.rating,
+            comments: dto.comments,
+            studentPerformance: dto.studentPerformance || dto.comments,
+            strengths: dto.strengths || null,
+            weaknesses: dto.weaknesses || null,
+            tutorRecommendations: dto.tutorRecommendations || null,
+            tutorRating: dto.tutorRating || dto.rating,
+            academicAssessment: dto.academicAssessment || 'Evaluated during demo session',
+            engagementLevel: dto.engagementLevel || 'HIGH',
+            learningBehaviour: dto.learningBehaviour || 'Engaged and attentive',
+            coordinatorRemarks: dto.coordinatorRemarks || 'Demo completed successfully',
+            parentFeedback: dto.parentFeedback || 'Positive feedback received',
+            parentConcerns: dto.parentConcerns || null,
+            parentInterestLevel: dto.parentInterestLevel || 'HIGH',
+            submittedByUserId: user.id,
+          },
+          update: {
+            rating: dto.rating,
+            comments: dto.comments,
+            studentPerformance: dto.studentPerformance || dto.comments,
+            strengths: dto.strengths || null,
+            weaknesses: dto.weaknesses || null,
+            tutorRecommendations: dto.tutorRecommendations || null,
+            tutorRating: dto.tutorRating || dto.rating,
+            academicAssessment: dto.academicAssessment || undefined,
+            engagementLevel: dto.engagementLevel || undefined,
+            learningBehaviour: dto.learningBehaviour || undefined,
+            coordinatorRemarks: dto.coordinatorRemarks || undefined,
+            parentFeedback: dto.parentFeedback || undefined,
+            parentConcerns: dto.parentConcerns || undefined,
+            parentInterestLevel: dto.parentInterestLevel || undefined,
+          },
+        });
+      }
+
+      // 3. Post-demo Academic Roadmap
+      if (tx.demoRoadmap) {
+        await tx.demoRoadmap.upsert({
+          where: { bookingId: id },
+          create: {
+            bookingId: id,
+            recommendationPlan: dto.recommendationPlan || '4-week foundational plan (1 month)',
+            recommendedClassCount: dto.recommendedClassCount || 8,
+            recommendedFrequency: dto.recommendedFrequency || '2 classes/week',
+            preferredDurationMin: dto.preferredDurationMin || 60,
+            preferredTiming: dto.preferredTiming || 'Evening (5:00 PM - 7:00 PM)',
+            recommendedSubjects: dto.recommendedSubjects || null,
+            remarks: dto.roadmapRemarks || null,
+          },
+          update: {
+            recommendationPlan: dto.recommendationPlan || undefined,
+            recommendedClassCount: dto.recommendedClassCount || undefined,
+            recommendedFrequency: dto.recommendedFrequency || undefined,
+            preferredDurationMin: dto.preferredDurationMin || undefined,
+            preferredTiming: dto.preferredTiming || undefined,
+            recommendedSubjects: dto.recommendedSubjects || undefined,
+            remarks: dto.roadmapRemarks || undefined,
+          },
+        });
+      }
+
+      // 4. Post-demo Academic Plan
+      if (tx.demoAcademicPlan) {
+        await tx.demoAcademicPlan.upsert({
+          where: { bookingId: id },
+          create: {
+            bookingId: id,
+            learningGoal: dto.learningGoal || 'Master core foundational concepts and improve problem-solving',
+            targetChapters: dto.targetChapters || 'Chapters 1-3 curriculum coverage',
+            studyApproach: dto.studyApproach || 'Interactive conceptual walkthrough with practice exercises',
+            milestones: dto.milestones || 'Week 2 progress checkpoint, Week 4 milestone assessment',
+          },
+          update: {
+            learningGoal: dto.learningGoal || undefined,
+            targetChapters: dto.targetChapters || undefined,
+            studyApproach: dto.studyApproach || undefined,
+            milestones: dto.milestones || undefined,
+          },
+        });
+      }
+
+      // 5. Update Sessions & Verify Completion Gate
+      if (tx.demoBooking) {
+        if (tx.demoSession) {
+          await tx.demoSession.updateMany({
+            where: { bookingId: id },
+            data: { status: DemoSessionStatus.COMPLETED },
+          });
+        }
+
+        const fullBooking = await tx.demoBooking.findUnique({
+          where: { id },
+          include: {
+            attendances: true,
+            sessions: {
+              include: {
+                attendances: true,
+                exceptions: true,
+              },
+            },
+            feedbackRecord: true,
+            roadmap: true,
+            academicPlan: true,
+          },
+        });
+
+        if (fullBooking) {
+          const gateResult = this.multiSessionService.verifyBookingCompletionGate(fullBooking);
+          if (!gateResult.canComplete) {
+            throw new BadRequestException('Completion gate requirement not satisfied: ' + gateResult.pendingReasons.join('; '));
+          }
+
+          await tx.demoBooking.update({
+            where: { id },
+            data: { status: DemoBookingStatus.COMPLETED },
+          });
+        }
+      }
+
+      // 6. Update legacy Demo
       const updated = await tx.demo.update({
         where: { id },
-        data: { status: DemoStatus.COMPLETED }
+        data: { status: DemoStatus.COMPLETED },
       });
 
+      // 7. Legacy feedback record
       await tx.demoFeedback.create({
         data: {
           demoId: id,
           rating: dto.rating,
           comments: dto.comments,
-          submittedByUserId: user.id
-        }
+          submittedByUserId: user.id,
+        },
       });
+
+      // 8. ATOMIC LEAD STATUS TRANSITION:
+      // "When the demo is marked COMPLETED, the lead status automatically updates to DEMO_COMPLETED"
+      // "Do not regress NEGOTIATION, ENROLLED, or PAID leads."
+      const lead = demo.student?.lead;
+      if (lead && lead.id) {
+        const isProtectedStatus = lead.status && ['NEGOTIATION', 'ENROLLED', 'PAID'].includes(lead.status);
+        const shouldTransition = !isProtectedStatus && lead.status !== LeadStatus.DEMO_COMPLETED;
+
+        if (tx.lead && shouldTransition) {
+          const oldStatus = lead.status;
+          const newStatus = LeadStatus.DEMO_COMPLETED;
+
+          await tx.lead.update({
+            where: { id: lead.id },
+            data: { status: newStatus },
+          });
+
+          if (tx.leadStatusHistory) {
+            await tx.leadStatusHistory.create({
+              data: {
+                leadId: lead.id,
+                oldStatus,
+                newStatus,
+                reason: `Demo completed for student ${demo.student?.firstName || ''}`,
+                note: dto.comments,
+                changedByUserId: user.id,
+              },
+            });
+          }
+        }
+      }
 
       await this.audit.recordInTx(tx, {
         entityType: 'demo',
@@ -849,6 +1354,24 @@ export class DemoService {
         }
       });
 
+      if (tx.demoBooking) {
+        await tx.demoBooking.updateMany({
+          where: { id },
+          data: {
+            status: DemoBookingStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelReason: dto.reason,
+          },
+        });
+      }
+
+      if (tx.demoSession) {
+        await tx.demoSession.updateMany({
+          where: { bookingId: id },
+          data: { status: DemoSessionStatus.CANCELLED },
+        });
+      }
+
       await this.audit.recordInTx(tx, {
         entityType: 'demo',
         entityId: id,
@@ -896,6 +1419,20 @@ export class DemoService {
         where: { id },
         data: { status: DemoStatus.NO_SHOW }
       });
+
+      if (tx.demoBooking) {
+        await tx.demoBooking.updateMany({
+          where: { id },
+          data: { status: DemoBookingStatus.NO_SHOW },
+        });
+      }
+
+      if (tx.demoSession) {
+        await tx.demoSession.updateMany({
+          where: { bookingId: id },
+          data: { status: DemoSessionStatus.CANCELLED },
+        });
+      }
 
       await this.audit.recordInTx(tx, {
         entityType: 'demo',

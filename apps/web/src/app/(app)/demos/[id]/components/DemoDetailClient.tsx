@@ -109,7 +109,7 @@ export function DemoDetailClient({ id }: { id: string }) {
 
         {!isTerminal && (
           <div className="flex flex-wrap gap-2">
-            {(hasPermission('demo.reschedule') || true) && (
+            {(hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all')) && (
               <>
                 <Button variant="outline" onClick={() => setModalState('reschedule')}>Reschedule</Button>
                 <Button variant="outline" onClick={() => setModalState('edit')}>Edit</Button>
@@ -121,7 +121,7 @@ export function DemoDetailClient({ id }: { id: string }) {
             {demo.status === 'ASSIGNED' && hasPermission('demo.mark_exceptions') && (
               <Button variant="outline" onClick={() => setModalState('noshow')}>Mark No-Show</Button>
             )}
-            {(hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || true) && (
+            {(hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.cancel_own')) && (
               <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setModalState('cancel')}>
                 Cancel
               </Button>

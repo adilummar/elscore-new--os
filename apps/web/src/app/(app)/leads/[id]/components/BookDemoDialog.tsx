@@ -369,6 +369,20 @@ export function BookDemoDialog({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 p-3 mb-6 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600">
+        <div>
+          <span className="font-semibold text-slate-700">Lead:</span> {lead.firstName} {lead.lastName || ''} {lead.businessId ? `(${lead.businessId})` : ''}
+        </div>
+        {lead.phone && (
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-slate-700">Phone:</span>
+            <span className="font-mono font-medium text-slate-800">
+              {lead.countryCode ? `+${lead.countryCode.replace(/^\+/, '')} ` : ''}{lead.phone}
+            </span>
+          </div>
+        )}
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">

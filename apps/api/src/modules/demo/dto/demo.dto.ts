@@ -98,6 +98,110 @@ export class CompleteDemoDto {
   @IsString()
   @IsNotEmpty()
   comments: string;
+
+  // Tutor feedback
+  @IsString()
+  @IsOptional()
+  studentPerformance?: string;
+
+  @IsString()
+  @IsOptional()
+  strengths?: string;
+
+  @IsString()
+  @IsOptional()
+  weaknesses?: string;
+
+  @IsString()
+  @IsOptional()
+  tutorRecommendations?: string;
+
+  @IsNumber()
+  @IsOptional()
+  tutorRating?: number;
+
+  // Coordinator feedback
+  @IsString()
+  @IsOptional()
+  academicAssessment?: string;
+
+  @IsString()
+  @IsOptional()
+  engagementLevel?: string;
+
+  @IsString()
+  @IsOptional()
+  learningBehaviour?: string;
+
+  @IsString()
+  @IsOptional()
+  coordinatorRemarks?: string;
+
+  // Parent feedback
+  @IsString()
+  @IsOptional()
+  parentFeedback?: string;
+
+  @IsString()
+  @IsOptional()
+  parentConcerns?: string;
+
+  @IsString()
+  @IsOptional()
+  parentInterestLevel?: string;
+
+  // Post-demo Academic Roadmap
+  @IsString()
+  @IsOptional()
+  recommendationPlan?: string;
+
+  @IsNumber()
+  @IsOptional()
+  recommendedClassCount?: number;
+
+  @IsString()
+  @IsOptional()
+  recommendedFrequency?: string;
+
+  @IsNumber()
+  @IsOptional()
+  preferredDurationMin?: number;
+
+  @IsString()
+  @IsOptional()
+  preferredTiming?: string;
+
+  @IsOptional()
+  recommendedSubjects?: any;
+
+  @IsString()
+  @IsOptional()
+  roadmapRemarks?: string;
+
+  // Post-demo Academic Plan
+  @IsString()
+  @IsOptional()
+  learningGoal?: string;
+
+  @IsString()
+  @IsOptional()
+  targetChapters?: string;
+
+  @IsString()
+  @IsOptional()
+  studyApproach?: string;
+
+  @IsString()
+  @IsOptional()
+  milestones?: string;
+
+  // Attendances
+  @IsOptional()
+  attendances?: {
+    parentStatus?: any;
+    coordinatorStatus?: any;
+    tutorStatus?: any;
+  };
 }
 
 export class CancelDemoDto {

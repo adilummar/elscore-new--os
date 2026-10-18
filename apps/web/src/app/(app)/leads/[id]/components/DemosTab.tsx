@@ -68,6 +68,9 @@ export function DemosTab({
           ? `${d.assignedTutor.firstName || ''} ${d.assignedTutor.lastName || ''}`.trim()
           : undefined,
         remarks: d.outcomeRemarks,
+        feedbackRecord: d.feedback ? { rating: d.feedback.rating, comments: d.feedback.comments } : undefined,
+        roadmap: undefined,
+        academicPlan: undefined,
         rawItem: d,
       }))
   );
@@ -111,6 +114,9 @@ export function DemosTab({
       coordinatorName,
       tutorName: undefined,
       remarks: b.cancelReason,
+      feedbackRecord: b.feedbackRecord,
+      roadmap: b.roadmap,
+      academicPlan: b.academicPlan,
       rawItem: b,
     };
   });
@@ -259,11 +265,70 @@ export function DemosTab({
                     <span className="font-medium">Remarks:</span> {demo.remarks}
                   </div>
                 )}
+
+                {demo.status === 'COMPLETED' && (demo.feedbackRecord || demo.roadmap || demo.academicPlan) && (
+                  <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Completed Demo Evaluation
+                      </span>
+                      {demo.feedbackRecord?.rating && (
+                        <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          {demo.feedbackRecord.rating} ⭐ Rating
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2.5 sm:grid-cols-2 text-xs">
+                      {demo.feedbackRecord && (
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 space-y-1">
+                          <p className="font-semibold text-slate-700">Tutor Feedback & Performance</p>
+                          <p className="text-slate-600">{demo.feedbackRecord.comments || demo.feedbackRecord.studentPerformance}</p>
+                          {demo.feedbackRecord.strengths && (
+                            <p className="text-slate-500"><strong className="text-slate-700">Strengths:</strong> {demo.feedbackRecord.strengths}</p>
+                          )}
+                          {demo.feedbackRecord.weaknesses && (
+                            <p className="text-slate-500"><strong className="text-slate-700">Improvement:</strong> {demo.feedbackRecord.weaknesses}</p>
+                          )}
+                          {demo.feedbackRecord.parentInterestLevel && (
+                            <p className="text-slate-500"><strong className="text-slate-700">Parent Interest:</strong> {demo.feedbackRecord.parentInterestLevel}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {demo.roadmap && (
+                        <div className="bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100 space-y-1">
+                          <p className="font-semibold text-indigo-900">Academic Roadmap (4-Week Plan)</p>
+                          <p className="text-indigo-800 font-medium">{demo.roadmap.recommendationPlan}</p>
+                          <p className="text-indigo-700">
+                            {demo.roadmap.recommendedClassCount} classes &bull; {demo.roadmap.recommendedFrequency}
+                          </p>
+                          {demo.roadmap.preferredTiming && (
+                            <p className="text-indigo-600">Timing: {demo.roadmap.preferredTiming}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {demo.academicPlan && (
+                        <div className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100 space-y-1 sm:col-span-2">
+                          <p className="font-semibold text-amber-900">Academic Plan & Milestones</p>
+                          <p className="text-amber-800"><strong className="text-amber-900">Goal:</strong> {demo.academicPlan.learningGoal}</p>
+                          {demo.academicPlan.targetChapters && (
+                            <p className="text-amber-700"><strong className="text-amber-900">Chapters:</strong> {demo.academicPlan.targetChapters}</p>
+                          )}
+                          {demo.academicPlan.milestones && (
+                            <p className="text-amber-700"><strong className="text-amber-900">Milestones:</strong> {demo.academicPlan.milestones}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {!isTerminal && (
                 <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
-                  {(hasPermission('demo.reschedule') || true) && (
+                  {(hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all')) && (
                     <>
                       <Button 
                         variant="outline" 
@@ -281,7 +346,7 @@ export function DemosTab({
                       </Button>
                     </>
                   )}
-                  {(hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || true) && (
+                  {(hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.cancel_own')) && (
                     <Button 
                       variant="outline" 
                       size="sm"

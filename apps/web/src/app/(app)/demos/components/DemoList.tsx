@@ -27,7 +27,7 @@ function formatTime(dateStr: string) {
   }).format(new Date(dateStr));
 }
 
-export function DemoList({ view }: { view: 'today' | 'upcoming' | 'completed' | 'all' }) {
+export function DemoList({ view }: { view: 'pending' | 'today' | 'upcoming' | 'completed' | 'all' }) {
   const { hasPermission } = usePermissions();
   const [data, setData] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -105,11 +105,11 @@ export function DemoList({ view }: { view: 'today' | 'upcoming' | 'completed' | 
               
               const actions = [];
               if (!isTerminal) {
-                if (hasPermission('demo.reschedule') || true) {
+                if (hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all')) {
                    actions.push({ label: 'Reschedule', onClick: () => { setActiveDemo(demo); setModalState('reschedule'); } });
                    actions.push({ label: 'Edit', onClick: () => { setActiveDemo(demo); setModalState('edit'); } });
                 }
-                if (hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || true) {
+                if (hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.cancel_own')) {
                    actions.push({ label: 'Cancel Demo', onClick: () => { setActiveDemo(demo); setModalState('cancel'); } });
                 }
                 if (demo.status === 'ASSIGNED') {

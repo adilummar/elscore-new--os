@@ -10,7 +10,7 @@ import { BookDemoModal } from './BookDemoModal';
 
 export function DemoDashboardClient() {
   const { hasPermission } = usePermissions();
-  const [view, setView] = React.useState<'today' | 'upcoming' | 'completed' | 'all'>('today');
+  const [view, setView] = React.useState<'pending' | 'today' | 'upcoming' | 'completed' | 'all'>('pending');
   const [summary, setSummary] = React.useState<any>(null);
   const [isBookModalOpen, setIsBookModalOpen] = React.useState(false);
 
@@ -27,6 +27,7 @@ export function DemoDashboardClient() {
   }, []);
 
   const tabs = [
+    { id: 'pending', label: 'Pending Bookings' },
     { id: 'today', label: 'Today' },
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'completed', label: 'Completed' },
@@ -38,12 +39,13 @@ export function DemoDashboardClient() {
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {[
+          { label: 'Pending Bookings', value: summary?.pending, color: 'text-amber-600', bg: 'bg-amber-50' },
           { label: "Today's Demos", value: summary?.today, color: 'text-indigo-600', bg: 'bg-indigo-50' },
           { label: 'Upcoming', value: summary?.upcoming, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: 'Completed Today', value: summary?.completedToday, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'No-Shows Today', value: summary?.noShowToday, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: 'No-Shows Today', value: summary?.noShowToday, color: 'text-rose-600', bg: 'bg-rose-50' },
         ].map((stat, i) => (
           <div key={i} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <p className="text-sm font-medium text-slate-500">{stat.label}</p>

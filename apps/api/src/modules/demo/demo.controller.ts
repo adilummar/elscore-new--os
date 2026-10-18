@@ -46,6 +46,15 @@ export class DemoController {
     return this.demoService.getDemos(user, { view, status });
   }
 
+  @Get('tutors/search')
+  @RequirePermissions('demo.assign_tutor')
+  async searchTutors(
+    @Query('search') search: string,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.searchTutors(search);
+  }
+
   @Get(':id')
   async getDemoById(
     @Param('id') id: string,
@@ -70,6 +79,15 @@ export class DemoController {
     @CurrentUser() user: ValidatedUser,
   ) {
     return this.demoService.editDemo(id, dto, user);
+  }
+
+  @Get(':id/tutor-suggestions')
+  @RequirePermissions('demo.assign_tutor')
+  async getTutorSuggestions(
+    @Param('id') id: string,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.getTutorSuggestions(id, user);
   }
 
   @Patch(':id/assign')
