@@ -32,7 +32,7 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
       setSelectedLead(initialLead);
       if (initialLead.students?.length === 1) {
         setSelectedStudent(initialLead.students[0].id);
-        if (initialLead.students[0].requirements?.length === 1) {
+        if (initialLead.students[0].requirements?.length > 0) {
           setSelectedRequirement(initialLead.students[0].requirements[0].id);
         }
       }
@@ -163,6 +163,17 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
                           onClick={() => {
                             if (!isEligible) return;
                             setSelectedLead(lead);
+                            if (lead.students?.length === 1) {
+                              setSelectedStudent(lead.students[0].id);
+                              if (lead.students[0].requirements?.length > 0) {
+                                setSelectedRequirement(lead.students[0].requirements[0].id);
+                              } else {
+                                setSelectedRequirement('');
+                              }
+                            } else {
+                              setSelectedStudent('');
+                              setSelectedRequirement('');
+                            }
                           }}
                         >
                           <div>
@@ -223,8 +234,14 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
                 <select 
                   value={selectedStudent}
                   onChange={(e) => {
-                    setSelectedStudent(e.target.value);
-                    setSelectedRequirement('');
+                    const newStudentId = e.target.value;
+                    setSelectedStudent(newStudentId);
+                    const stu = selectedLead?.students?.find((s: any) => s.id === newStudentId);
+                    if (stu?.requirements?.length > 0) {
+                      setSelectedRequirement(stu.requirements[0].id);
+                    } else {
+                      setSelectedRequirement('');
+                    }
                   }}
                   className="flex h-10 w-full items-center justify-between rounded-md border border-slate-300 bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   required

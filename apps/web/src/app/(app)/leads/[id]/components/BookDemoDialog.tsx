@@ -33,6 +33,46 @@ interface SubjectOption {
   isExisting: boolean;
 }
 
+/**
+ * Builds default non-overlapping session rows from student requirements.
+ * Deduplicates requirements by subjectId so only distinct subjects are populated by default.
+ * If requirements are empty, returns a single unpopulated session row.
+ */
+export function buildDefaultSessionRows(requirements: any[] = []): SessionRow[] {
+  if (!requirements || requirements.length === 0) {
+    return [{ subjectId: '', requirementId: '', startTime: '10:00', endTime: '11:00' }];
+  }
+
+  const seenSubjects = new Set<string>();
+  const uniqueReqs: any[] = [];
+  for (const req of requirements) {
+    const sId = req.subjectId || req.subject?.id;
+    if (sId && !seenSubjects.has(sId)) {
+      seenSubjects.add(sId);
+      uniqueReqs.push(req);
+    }
+  }
+
+  if (uniqueReqs.length === 0) {
+    return [{ subjectId: '', requirementId: '', startTime: '10:00', endTime: '11:00' }];
+  }
+
+  const baseStartHour = 10;
+  return uniqueReqs.map((req, idx) => {
+    const startH = Math.min(baseStartHour + idx, 22);
+    const endH = Math.min(startH + 1, 23);
+    const startStr = `${startH.toString().padStart(2, '0')}:00`;
+    const endStr = `${endH.toString().padStart(2, '0')}:00`;
+
+    return {
+      subjectId: req.subjectId || req.subject?.id || '',
+      requirementId: req.id || '',
+      startTime: startStr,
+      endTime: endStr,
+    };
+  });
+}
+
 export function BookDemoDialog({
   lead,
   isOpen,
@@ -44,13 +84,14 @@ export function BookDemoDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const students = React.useMemo(() => lead.students || [], [lead.students]);
+  const students = React.useMemo(() => lead?.students || [], [lead?.students]);
   const hasExistingStudents = students.length > 0;
+  const initialStudentId = students.length === 1 ? students[0].id : '';
 
   // Student selection or inline creation state
-  const [studentId, setStudentId] = React.useState(students.length === 1 ? students[0].id : '');
-  const [newStudentFirstName, setNewStudentFirstName] = React.useState(lead.firstName || '');
-  const [newStudentLastName, setNewStudentLastName] = React.useState(lead.lastName || '');
+  const [studentId, setStudentId] = React.useState(initialStudentId);
+  const [newStudentFirstName, setNewStudentFirstName] = React.useState(lead?.firstName || '');
+  const [newStudentLastName, setNewStudentLastName] = React.useState(lead?.lastName || '');
   const [newCurriculumId, setNewCurriculumId] = React.useState('');
   const [newGradeId, setNewGradeId] = React.useState('');
 
@@ -61,12 +102,22 @@ export function BookDemoDialog({
 
   // Schedule & session rows
   const [date, setDate] = React.useState('');
-  const [sessionRows, setSessionRows] = React.useState<SessionRow[]>([
-    { subjectId: '', requirementId: '', startTime: '10:00', endTime: '11:00' },
-  ]);
+  const [sessionRows, setSessionRows] = React.useState<SessionRow[]>(() => {
+    if (initialStudentId) {
+      const initialStudent = students.find((s: any) => s.id === initialStudentId);
+      if (initialStudent?.requirements?.length > 0) {
+        return buildDefaultSessionRows(initialStudent.requirements);
+      }
+    }
+    return [{ subjectId: '', requirementId: '', startTime: '10:00', endTime: '11:00' }];
+  });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [isAddSubjectOpen, setIsAddSubjectOpen] = React.useState(false);
+
+  const lastPopulatedStudentIdRef = React.useRef<string | null>(
+    initialStudentId || null,
+  );
 
   React.useEffect(() => {
     if (isOpen) {
@@ -80,13 +131,25 @@ export function BookDemoDialog({
         .then(res => setCurriculaRef(res?.data || []))
         .catch(() => {});
 
+      const effectiveStudentId = studentId || (students.length === 1 ? students[0].id : '');
       if (!studentId && students.length === 1) {
         setStudentId(students[0].id);
       }
-      setNewStudentFirstName(lead.firstName || '');
-      setNewStudentLastName(lead.lastName || '');
+      setNewStudentFirstName(lead?.firstName || '');
+      setNewStudentLastName(lead?.lastName || '');
+
+      // Populate sessions if student is selected and not yet populated for this student
+      if (effectiveStudentId && lastPopulatedStudentIdRef.current !== effectiveStudentId) {
+        const student = students.find((s: any) => s.id === effectiveStudentId);
+        if (student) {
+          setSessionRows(buildDefaultSessionRows(student.requirements || []));
+          lastPopulatedStudentIdRef.current = effectiveStudentId;
+        }
+      }
+    } else {
+      lastPopulatedStudentIdRef.current = null;
     }
-  }, [isOpen, students, studentId, lead.firstName, lead.lastName]);
+  }, [isOpen, students, studentId, lead?.firstName, lead?.lastName]);
 
   const selectedStudent = students.find((s: any) => s.id === studentId);
   const studentRequirements = React.useMemo(
@@ -102,7 +165,7 @@ export function BookDemoDialog({
   // Build selectable subjects list
   const availableSubjectOptions: SubjectOption[] = React.useMemo(() => {
     if (subjectsRef.length > 0) {
-      return subjectsRef.map((s: any) => {
+      const options: SubjectOption[] = subjectsRef.map((s: any) => {
         const req = studentRequirements.find((r: any) => r.subjectId === s.id);
         return {
           id: s.id,
@@ -111,7 +174,23 @@ export function BookDemoDialog({
           isExisting: Boolean(req),
         };
       });
+
+      // Ensure any requirement subject not present in subjectsRef is also included
+      for (const req of studentRequirements) {
+        const sId = req.subjectId || req.subject?.id;
+        if (sId && !options.some(o => o.id === sId)) {
+          options.unshift({
+            id: sId,
+            name: req.subject?.name || 'Subject',
+            requirementId: req.id,
+            isExisting: true,
+          });
+        }
+      }
+
+      return options;
     }
+
     return studentRequirements.map((r: any) => ({
       id: r.subjectId || r.subject?.id,
       name: r.subject?.name || 'Subject',
@@ -151,7 +230,7 @@ export function BookDemoDialog({
       nextStart = lastSession.endTime;
       const [h, m] = nextStart.split(':').map(Number);
       const endH = Math.min(h + 1, 23);
-      nextEnd = `${endH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      nextEnd = `${endH.toString().padStart(2, '0')}:${(m || 0).toString().padStart(2, '0')}`;
     }
     setSessionRows(prev => [
       ...prev,
@@ -166,9 +245,10 @@ export function BookDemoDialog({
 
   // Validation calculations
   const sessionDurations = sessionRows.map(row => {
-    if (!date || !row.startTime || !row.endTime) return 0;
-    const s = new Date(`${date}T${row.startTime}`).getTime();
-    const e = new Date(`${date}T${row.endTime}`).getTime();
+    if (!row.startTime || !row.endTime) return 0;
+    const refDate = date || '2000-01-01';
+    const s = new Date(`${refDate}T${row.startTime}`).getTime();
+    const e = new Date(`${refDate}T${row.endTime}`).getTime();
     return Math.round((e - s) / 60000);
   });
 
@@ -184,16 +264,16 @@ export function BookDemoDialog({
     }
     for (let j = i + 1; j < sessionRows.length; j++) {
       if (
-        date &&
         sessionRows[i].startTime &&
         sessionRows[i].endTime &&
         sessionRows[j].startTime &&
         sessionRows[j].endTime
       ) {
-        const s1 = new Date(`${date}T${sessionRows[i].startTime}`).getTime();
-        const e1 = new Date(`${date}T${sessionRows[i].endTime}`).getTime();
-        const s2 = new Date(`${date}T${sessionRows[j].startTime}`).getTime();
-        const e2 = new Date(`${date}T${sessionRows[j].endTime}`).getTime();
+        const refDate = date || '2000-01-01';
+        const s1 = new Date(`${refDate}T${sessionRows[i].startTime}`).getTime();
+        const e1 = new Date(`${refDate}T${sessionRows[i].endTime}`).getTime();
+        const s2 = new Date(`${refDate}T${sessionRows[j].startTime}`).getTime();
+        const e2 = new Date(`${refDate}T${sessionRows[j].endTime}`).getTime();
         if (s1 < e2 && s2 < e1) {
           hasOverlap = true;
         }
@@ -257,6 +337,13 @@ export function BookDemoDialog({
         setError(`Session ${i + 1} duration cannot exceed 180 minutes.`);
         return;
       }
+    }
+
+    const selectedSubjects = sessionRows.map(r => r.subjectId).filter(Boolean);
+    const uniqueSubjects = new Set(selectedSubjects);
+    if (uniqueSubjects.size < selectedSubjects.length) {
+      setError('Each session must be for a different subject.');
+      return;
     }
 
     if (hasOverlap) {
@@ -480,7 +567,11 @@ export function BookDemoDialog({
                   required
                   value={studentId}
                   onChange={e => {
-                    setStudentId(e.target.value);
+                    const newId = e.target.value;
+                    setStudentId(newId);
+                    const newStudent = students.find((s: any) => s.id === newId);
+                    setSessionRows(buildDefaultSessionRows(newStudent?.requirements || []));
+                    lastPopulatedStudentIdRef.current = newId;
                   }}
                 >
                   <option value="">Select Student...</option>
@@ -589,11 +680,22 @@ export function BookDemoDialog({
                         onChange={e => handleSessionChange(index, 'subjectId', e.target.value)}
                       >
                         <option value="">Select Subject...</option>
-                        {availableSubjectOptions.map((opt: SubjectOption) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}{opt.isExisting ? ' (Existing)' : ''}
-                          </option>
-                        ))}
+                        {availableSubjectOptions.map((opt: SubjectOption) => {
+                          const isSelectedInOtherRow = sessionRows.some(
+                            (r, i) => i !== index && r.subjectId === opt.id,
+                          );
+                          return (
+                            <option
+                              key={opt.id}
+                              value={opt.id}
+                              disabled={isSelectedInOtherRow}
+                            >
+                              {opt.name}
+                              {opt.isExisting ? ' (Existing)' : ''}
+                              {isSelectedInOtherRow ? ' (Already selected)' : ''}
+                            </option>
+                          );
+                        })}
                       </Select>
                     </div>
 
@@ -673,7 +775,7 @@ export function BookDemoDialog({
           </Button>
           <Button
             type="submit"
-            disabled={loading || totalDuration <= 0 || hasOverlap || hasInvalidDuration || lead?.status !== 'INTERESTED'}
+            disabled={loading || !date || totalDuration <= 0 || hasOverlap || hasInvalidDuration || lead?.status !== 'INTERESTED'}
             className="w-36"
           >
             {loading ? 'Booking...' : 'Book Demo'}
