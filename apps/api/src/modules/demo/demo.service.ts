@@ -9,6 +9,7 @@ import {
   DemoParticipantType,
   DemoAttendanceStatus,
   TutorAssignmentStatus,
+  DemoExceptionStatus,
   Prisma,
 } from '@prisma/client';
 import { Queue } from 'bullmq';
@@ -437,25 +438,160 @@ export class DemoService {
     });
   }
 
-  async getDemos(user: ValidatedUser, query?: { view?: string, status?: string }) {
-    const isTutor = await this.rbac.hasPermissions(user.id, ['demo.read_assigned']);
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
-
-    const where: any = {};
-    
-    if (isCoordinator || isHead) {
-      // can see all or team
-    } else if (isTutor) {
-      where.tutorId = user.id;
-    } else {
-      // Standard Sales access is tied to Lead ownership, not who booked it
-      where.student = {
-        lead: {
-          assignedToUserId: user.id
+  async getDemoActorContext(userId: string) {
+    let userPerms = new Set<string>();
+    if (this.rbac) {
+      if (typeof (this.rbac as any).getPermissionsForUser === 'function') {
+        userPerms = await this.rbac.getPermissionsForUser(userId);
+      } else if (typeof this.rbac.hasPermissions === 'function') {
+        const testCodes = [
+          'demo.manage_all',
+          'demo.manage_team',
+          'demo.manage_operations',
+          'demo.read_all',
+          'demo.read',
+          'demo.read_own',
+          'demo.read_assigned',
+          'demo.book',
+          'demo.assign_tutor',
+          'demo.reschedule',
+          'demo.reschedule_own',
+          'demo.cancel',
+          'demo.cancel_own',
+          'demo.complete',
+          'demo.mark_exceptions',
+          'demo.approve_exception',
+          'demo.coordinate',
+          'demo.reports.company',
+          'demo.reports.operational',
+        ];
+        for (const code of testCodes) {
+          if (await this.rbac.hasPermissions(userId, [code])) {
+            userPerms.add(code);
+          }
         }
-      };
+      }
     }
+
+    let roles = new Set<string>();
+    if (this.prisma?.userRole?.findMany) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId },
+        include: { role: true },
+      });
+      roles = new Set(userRoles.map((ur: any) => ur.role?.code).filter(Boolean));
+    }
+
+    const isCeo = roles.has('CEO');
+    const isDemoHead = roles.has('DEMO_HEAD');
+    const isDemoAdmin = roles.has('DEMO_ADMIN');
+    const isAcademicHead = roles.has('ACADEMIC_HEAD');
+    const isOperationsManager = roles.has('OPERATIONS_MANAGER');
+    const isSalesHead = roles.has('SALES_HEAD') || userPerms.has('demo.manage_team');
+    const isCoordinator = roles.has('DEMO_COORDINATOR') || userPerms.has('demo.coordinate');
+    const isTutor = roles.has('TUTOR') || userPerms.has('demo.read_assigned');
+    const isSalesCounsellor = roles.has('SALES_COUNSELLOR') || userPerms.has('demo.read_own');
+
+    // Company-wide demo access: CEO, DEMO_HEAD, DEMO_ADMIN, ACADEMIC_HEAD, OPERATIONS_MANAGER,
+    // or holding demo.manage_all / demo.read_all
+    const isCompanyWide = (
+      isCeo ||
+      isDemoHead ||
+      isDemoAdmin ||
+      isAcademicHead ||
+      isOperationsManager ||
+      userPerms.has('demo.manage_all') ||
+      userPerms.has('demo.read_all')
+    );
+
+    return {
+      perms: userPerms,
+      roles,
+      isCeo,
+      isDemoHead,
+      isDemoAdmin,
+      isAcademicHead,
+      isOperationsManager,
+      isSalesHead,
+      isCoordinator,
+      isTutor,
+      isSalesCounsellor,
+      isCompanyWide,
+    };
+  }
+
+  async buildDemoVisibilityWhere(actor: Awaited<ReturnType<typeof this.getDemoActorContext>>, userId: string) {
+    const where: any = {};
+
+    if (actor.isCompanyWide || actor.isSalesHead) {
+      // Company-wide / Sales Head: no scoping restrictions on demos
+      return where;
+    }
+
+    if (actor.isCoordinator) {
+      // Demo Coordinator: restricted to bookings within their coordinator assignment scope
+      let coordinatedDemoIds: string[] = [];
+      if (this.prisma?.demoBooking?.findMany) {
+        const coordinatedBookings = await this.prisma.demoBooking.findMany({
+          where: { coordinatorId: userId },
+          select: { id: true, legacyDemoId: true },
+        });
+        coordinatedDemoIds = coordinatedBookings
+          .flatMap((b: any) => [b.id, b.legacyDemoId])
+          .filter((id: any): id is string => Boolean(id));
+      }
+      where.id = { in: coordinatedDemoIds };
+      return where;
+    }
+
+    if (actor.isTutor) {
+      // Tutor: restricted to sessions where they are assigned as tutor
+      let multiSessionDemoIds: string[] = [];
+      if (this.prisma?.demoSessionTutorAssignment?.findMany) {
+        const tutorAssignments = await this.prisma.demoSessionTutorAssignment.findMany({
+          where: {
+            tutorId: userId,
+            status: TutorAssignmentStatus.ACTIVE,
+          },
+          select: {
+            session: {
+              select: {
+                booking: {
+                  select: { id: true, legacyDemoId: true },
+                },
+              },
+            },
+          },
+        });
+        multiSessionDemoIds = tutorAssignments
+          .flatMap((a: any) => [a.session?.booking?.id, a.session?.booking?.legacyDemoId])
+          .filter((id: any): id is string => Boolean(id));
+      }
+
+      if (multiSessionDemoIds.length > 0) {
+        where.OR = [
+          { tutorId: userId },
+          { id: { in: multiSessionDemoIds } },
+        ];
+      } else {
+        where.tutorId = userId;
+      }
+      return where;
+    }
+
+    // Default (e.g. Sales Counsellor): restricted to own assigned leads
+    where.student = {
+      lead: {
+        assignedToUserId: userId,
+      },
+    };
+
+    return where;
+  }
+
+  async getDemos(user: ValidatedUser, query?: { view?: string, status?: string }) {
+    const actor = await this.getDemoActorContext(user.id);
+    const where = await this.buildDemoVisibilityWhere(actor, user.id);
 
     if (query?.status) {
       where.status = query.status;
@@ -496,23 +632,8 @@ export class DemoService {
   }
 
   async getSummary(user: ValidatedUser) {
-    const isTutor = await this.rbac.hasPermissions(user.id, ['demo.read_assigned']);
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
-
-    const where: any = {};
-    if (isCoordinator || isHead) {
-      // see all
-    } else if (isTutor) {
-      where.tutorId = user.id;
-    } else {
-      // Standard Sales access is tied to Lead ownership, not who booked it
-      where.student = {
-        lead: {
-          assignedToUserId: user.id
-        }
-      };
-    }
+    const actor = await this.getDemoActorContext(user.id);
+    const where = await this.buildDemoVisibilityWhere(actor, user.id);
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -697,13 +818,13 @@ export class DemoService {
   }
 
   async getDemoById(id: string, user: ValidatedUser) {
-    const demo = await this.prisma.demo.findUnique({
+    let demo = await this.prisma.demo.findUnique({
       where: { id },
       include: {
         student: { 
           select: { 
             id: true, firstName: true, lastName: true, currentGrade: true, cityLocation: true,
-            lead: { select: { assignedToUserId: true } }
+            lead: { select: { id: true, assignedToUserId: true } }
           } 
         },
         subject: true,
@@ -715,26 +836,17 @@ export class DemoService {
       }
     });
 
-    if (!demo) throw new NotFoundException('Demo not found');
-
-    const isTutor = await this.rbac.hasPermissions(user.id, ['demo.read_assigned']);
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
-
-    if (isTutor && demo.tutorId !== user.id) {
-      throw new ForbiddenException('You can only view your assigned demos');
-    }
-
-    if (!isCoordinator && !isHead && !isTutor) {
-      if (demo.student.lead.assignedToUserId !== user.id) {
-        throw new ForbiddenException('You can only view demos for your assigned leads');
-      }
-    }
-
-    // Attach multi-session booking data if available
+    // Attach or locate multi-session booking data
+    let booking: any = null;
     if (this.prisma.demoBooking) {
-      const booking = await this.prisma.demoBooking.findUnique({
-        where: { id },
+      booking = await this.prisma.demoBooking.findFirst({
+        where: {
+          OR: [
+            { id },
+            { legacyDemoId: id },
+            ...(demo ? [{ id: demo.id }, { legacyDemoId: demo.id }] : []),
+          ],
+        },
         include: {
           sessions: {
             include: {
@@ -760,43 +872,202 @@ export class DemoService {
           coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
         },
       });
-      if (booking) {
-        (demo as any).booking = booking;
+    }
+
+    if (!demo && booking && booking.legacyDemoId) {
+      demo = await this.prisma.demo.findUnique({
+        where: { id: booking.legacyDemoId },
+        include: {
+          student: { 
+            select: { 
+              id: true, firstName: true, lastName: true, currentGrade: true, cityLocation: true,
+              lead: { select: { id: true, assignedToUserId: true } }
+            } 
+          },
+          subject: true,
+          curriculum: true,
+          grade: true,
+          requirement: { select: { notes: true } },
+          tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          feedback: true
+        }
+      });
+    }
+
+    if (!demo && !booking) {
+      throw new NotFoundException('Demo not found');
+    }
+
+    // Role and Scope Authorization
+    const actor = await this.getDemoActorContext(user.id);
+
+    if (!actor.isCompanyWide && !actor.isSalesHead) {
+      // Check if user is the assigned coordinator for this booking
+      const isAssignedCoordinator = Boolean(
+        booking?.coordinatorId && booking.coordinatorId === user.id
+      );
+
+      // Check if user is assigned tutor
+      let isAssignedTutor = false;
+      if (actor.isTutor) {
+        if (demo?.tutorId === user.id) {
+          isAssignedTutor = true;
+        } else if (booking?.sessions) {
+          isAssignedTutor = booking.sessions.some((s: any) =>
+            s.tutorAssignments?.some(
+              (a: any) => a.tutorId === user.id && (a.status === 'ACTIVE' || a.status === TutorAssignmentStatus.ACTIVE)
+            )
+          );
+        }
+      }
+
+      // Check if user is lead owner or booker
+      const isLeadOwner = Boolean(
+        (demo?.student?.lead?.assignedToUserId && demo.student.lead.assignedToUserId === user.id) ||
+        (booking?.lead?.assignedToUserId && booking.lead.assignedToUserId === user.id)
+      );
+      const isBooker = Boolean(
+        (demo?.bookedByUserId && demo.bookedByUserId === user.id) ||
+        (booking?.bookedByUserId && booking.bookedByUserId === user.id)
+      );
+
+      if (!isAssignedCoordinator && !isAssignedTutor && !isLeadOwner && !isBooker) {
+        if (actor.isCoordinator) {
+          throw new ForbiddenException('You can only view demos assigned to you for coordination');
+        }
+        if (actor.isTutor) {
+          throw new ForbiddenException('You can only view your assigned demos');
+        }
+        throw new ForbiddenException('You can only view demos for your assigned leads');
       }
     }
 
-    // Don't send lead info to the frontend to maintain strict boundary
-    const { lead, ...studentWithoutLead } = demo.student as any;
-    demo.student = studentWithoutLead;
+    // Fetch Audit Logs and Reschedule History
+    let auditLogs: any[] = [];
+    if ((this.prisma as any).auditEvent) {
+      const entityIds = Array.from(new Set([id, demo?.id, booking?.id].filter(Boolean))) as string[];
+      const events = await (this.prisma as any).auditEvent.findMany({
+        where: {
+          entityType: { in: ['demo', 'Demo', 'demo_booking', 'DemoBooking'] },
+          entityId: { in: entityIds },
+        },
+        orderBy: { timestamp: 'desc' },
+      });
+      auditLogs = events.map((e: any) => ({
+        ...e,
+        createdAt: e.timestamp || e.createdAt,
+      }));
+    }
 
-    return demo;
+    // Format tutor details defensively
+    const formattedTutor = demo?.tutor ? {
+      id: demo.tutor.id,
+      email: demo.tutor.email,
+      firstName: demo.tutor.employee?.firstName || '',
+      lastName: demo.tutor.employee?.lastName || '',
+      employee: demo.tutor.employee,
+    } : null;
+
+    // Format sessions tutor details defensively
+    if (booking?.sessions) {
+      booking.sessions = booking.sessions.map((s: any) => ({
+        ...s,
+        tutorAssignments: (s.tutorAssignments || []).map((ta: any) => ({
+          ...ta,
+          tutor: ta.tutor ? {
+            id: ta.tutor.id,
+            email: ta.tutor.email,
+            firstName: ta.tutor.employee?.firstName || '',
+            lastName: ta.tutor.employee?.lastName || '',
+            employee: ta.tutor.employee,
+          } : null,
+        })),
+      }));
+    }
+
+    // Build the synthesized or augmented response
+    const baseData = demo || {
+      id: booking.id,
+      businessId: booking.businessId,
+      studentId: booking.studentId,
+      status: booking.status,
+      scheduledAt: booking.scheduledDate,
+      durationMinutes: booking.totalDurationMin,
+      subjectId: booking.sessions?.[0]?.subjectId,
+      subject: booking.sessions?.[0]?.subject,
+      gradeId: booking.sessions?.[0]?.gradeId,
+      grade: booking.sessions?.[0]?.grade,
+      curriculumId: booking.sessions?.[0]?.curriculumId,
+      curriculum: booking.sessions?.[0]?.curriculum,
+      requirement: null,
+      feedback: booking.feedbackRecord ? [booking.feedbackRecord] : [],
+      tutor: null,
+      student: null,
+    };
+
+    const result: any = {
+      ...baseData,
+      tutor: formattedTutor || baseData.tutor,
+      booking: booking || undefined,
+      auditLogs: auditLogs || [],
+    };
+
+    if (result.student && typeof result.student === 'object') {
+      const { lead, ...studentWithoutLead } = result.student;
+      result.student = studentWithoutLead;
+    }
+
+    return result;
   }
 
   async rescheduleDemo(id: string, dto: RescheduleDemoDto, user: ValidatedUser) {
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+    const actor = await this.getDemoActorContext(user.id);
 
     const start = new Date(dto.scheduledAt);
     const end = new Date(start.getTime() + dto.durationMinutes * 60000);
 
-    if (start < new Date() && !isHead) {
+    if (start < new Date() && !actor.isCompanyWide && !actor.isSalesHead) {
       throw new BadRequestException('Cannot book demo in the past');
     }
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const demo = await tx.demo.findUnique({ where: { id }, select: { id: true, status: true, tutorId: true, scheduledAt: true, bookedByUserId: true, studentId: true } });
+      const demo = await tx.demo.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          tutorId: true,
+          scheduledAt: true,
+          bookedByUserId: true,
+          studentId: true,
+          student: { select: { lead: { select: { assignedToUserId: true } } } },
+        },
+      });
       if (!demo) throw new NotFoundException('Demo not found');
+
+      let booking: any = null;
+      if (tx.demoBooking?.findFirst) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
 
       const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
       if (terminalStates.includes(demo.status)) {
         throw new BadRequestException('Cannot reschedule a terminal demo');
       }
 
-      if (demo.status === DemoStatus.ASSIGNED && !isCoordinator && !isHead) {
-        throw new ForbiddenException('Only Coordinator or Sales Head can reschedule an assigned demo');
+      const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
+      const isLeadOwnerOrBooker = Boolean(
+        demo.bookedByUserId === user.id ||
+        (demo.student?.lead?.assignedToUserId && demo.student.lead.assignedToUserId === user.id)
+      );
+
+      if (demo.status === DemoStatus.ASSIGNED && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator) {
+        throw new ForbiddenException('Only Coordinator, Demo Admin, or Sales Head can reschedule an assigned demo');
       }
 
-      if (demo.status === DemoStatus.SCHEDULED && demo.bookedByUserId !== user.id && !isCoordinator && !isHead) {
+      if (demo.status === DemoStatus.SCHEDULED && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && !isLeadOwnerOrBooker) {
         throw new ForbiddenException('Cannot reschedule another users demo');
       }
 
@@ -884,8 +1155,7 @@ export class DemoService {
   }
 
   async editDemo(id: string, dto: EditDemoDto, user: ValidatedUser) {
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+    const actor = await this.getDemoActorContext(user.id);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({
@@ -900,20 +1170,33 @@ export class DemoService {
       });
       if (!demo) throw new NotFoundException('Demo not found');
 
+      let booking: any = null;
+      if (tx.demoBooking?.findFirst) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+
       const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
       if (terminalStates.includes(demo.status)) {
         throw new BadRequestException('Cannot edit a terminal demo');
       }
 
-      if (!isCoordinator && !isHead && demo.student.lead.assignedToUserId !== user.id) {
+      const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
+      const isLeadOwnerOrBooker = Boolean(
+        demo.bookedByUserId === user.id ||
+        (demo.student?.lead?.assignedToUserId && demo.student.lead.assignedToUserId === user.id)
+      );
+
+      if (!actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && !isLeadOwnerOrBooker) {
         throw new ForbiddenException('You can only edit demos for your assigned leads');
       }
 
-      if (demo.status === DemoStatus.ASSIGNED && !isCoordinator && !isHead) {
+      if (demo.status === DemoStatus.ASSIGNED && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator) {
         throw new ForbiddenException('Only Coordinator or Sales Head can edit an assigned demo');
       }
 
-      if (!isCoordinator && !isHead && demo.bookedByUserId !== user.id) {
+      if (!actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && demo.bookedByUserId !== user.id) {
         throw new ForbiddenException('You can only edit your own booked demos');
       }
 
@@ -923,7 +1206,7 @@ export class DemoService {
           where: { id: dto.studentId },
           select: { lead: { select: { assignedToUserId: true } } },
         });
-        if (!isCoordinator && !isHead && nextStudent?.lead.assignedToUserId !== user.id) {
+        if (!actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && nextStudent?.lead?.assignedToUserId !== user.id) {
           throw new ForbiddenException('You can only book demos for your assigned leads');
         }
         updateData.studentId = dto.studentId;
@@ -954,13 +1237,27 @@ export class DemoService {
   }
 
   async assignTutor(id: string, dto: AssignTutorDto, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id } });
       if (!demo) throw new NotFoundException('Demo not found');
 
+      let booking: any = null;
+      if (tx.demoBooking?.findFirst) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+
       const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
       if (terminalStates.includes(demo.status)) {
         throw new BadRequestException('Cannot assign tutor to terminal demo');
+      }
+
+      const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
+      if (!actor.isCompanyWide && !isAssignedCoordinator) {
+        throw new ForbiddenException('Only Demo Admin, Demo Head, or the assigned Coordinator can assign tutors');
       }
 
       const end = new Date(new Date(demo.scheduledAt).getTime() + demo.durationMinutes * 60000);
@@ -1022,8 +1319,7 @@ export class DemoService {
   }
 
   async completeDemo(id: string, dto: CompleteDemoDto, user: ValidatedUser) {
-    const isTutor = await this.rbac.hasPermissions(user.id, ['demo.complete']);
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
+    const actor = await this.getDemoActorContext(user.id);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({
@@ -1038,14 +1334,24 @@ export class DemoService {
       });
       if (!demo) throw new NotFoundException('Demo not found');
 
+      let booking: any = null;
+      if (tx.demoBooking?.findFirst) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+
       if (demo.status !== DemoStatus.ASSIGNED) {
         throw new BadRequestException('Only ASSIGNED demos can be completed');
       }
 
-      if (!isTutor && !isCoordinator) {
+      const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
+      const isAssignedTutor = demo.tutorId === user.id;
+
+      if (!actor.isCompanyWide && !isAssignedCoordinator && !isAssignedTutor) {
         throw new ForbiddenException('You do not have permission to complete demos');
       }
-      if (demo.tutorId !== user.id && !isCoordinator) {
+      if (demo.tutorId !== user.id && !actor.isCompanyWide && !isAssignedCoordinator) {
         throw new ForbiddenException('Cannot complete another tutors demo');
       }
 
@@ -1325,23 +1631,40 @@ export class DemoService {
   }
 
   async cancelDemo(id: string, dto: CancelDemoDto, user: ValidatedUser) {
-    const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-    const isHead = await this.rbac.hasPermissions(user.id, ['demo.manage_team']);
+    const actor = await this.getDemoActorContext(user.id);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const demo = await tx.demo.findUnique({ where: { id } });
+      const demo = await tx.demo.findUnique({
+        where: { id },
+        include: {
+          student: { select: { lead: { select: { assignedToUserId: true } } } },
+        },
+      });
       if (!demo) throw new NotFoundException('Demo not found');
+
+      let booking: any = null;
+      if (tx.demoBooking?.findFirst) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
 
       const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
       if (terminalStates.includes(demo.status)) {
         throw new BadRequestException('Cannot cancel terminal demo');
       }
 
-      if (demo.status === DemoStatus.ASSIGNED && !isCoordinator && !isHead) {
-        throw new ForbiddenException('Only Coordinator or Sales Head can cancel an assigned demo');
+      const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
+      const isLeadOwnerOrBooker = Boolean(
+        demo.bookedByUserId === user.id ||
+        (demo.student?.lead?.assignedToUserId && demo.student.lead.assignedToUserId === user.id)
+      );
+
+      if (demo.status === DemoStatus.ASSIGNED && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator) {
+        throw new ForbiddenException('Only Coordinator, Demo Admin, or Sales Head can cancel an assigned demo');
       }
 
-      if (demo.status === DemoStatus.SCHEDULED && demo.bookedByUserId !== user.id && !isCoordinator && !isHead) {
+      if (demo.status === DemoStatus.SCHEDULED && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && !isLeadOwnerOrBooker) {
         throw new ForbiddenException('Cannot cancel another users demo');
       }
 
@@ -1397,21 +1720,30 @@ export class DemoService {
   }
 
   async markNoShow(id: string, dto: NoShowDemoDto, user: ValidatedUser) {
-    const isTutor = await this.rbac.hasPermissions(user.id, ['demo.mark_exceptions']); 
+    const actor = await this.getDemoActorContext(user.id);
     
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const demo = await tx.demo.findUnique({ where: { id } });
       if (!demo) throw new NotFoundException('Demo not found');
 
+      let booking: any = null;
+      if (tx.demoBooking?.findFirst) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+
       if (demo.status !== DemoStatus.ASSIGNED) {
         throw new BadRequestException('Only ASSIGNED demos can be marked No-Show');
       }
 
-      const isCoordinator = await this.rbac.hasPermissions(user.id, ['demo.manage_all']);
-      if (!isTutor && !isCoordinator) {
+      const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
+      const isAssignedTutor = demo.tutorId === user.id;
+
+      if (!actor.isCompanyWide && !isAssignedCoordinator && !isAssignedTutor) {
         throw new ForbiddenException('You do not have permission to mark demos as No-Show');
       }
-      if (demo.tutorId !== user.id && !isCoordinator) {
+      if (demo.tutorId !== user.id && !actor.isCompanyWide && !isAssignedCoordinator) {
         throw new ForbiddenException('Cannot mark another tutors demo as No-Show');
       }
 
@@ -1453,6 +1785,44 @@ export class DemoService {
       });
 
       return updated;
+    });
+  }
+
+  async reviewSessionException(
+    exceptionId: string,
+    dto: { decision: DemoExceptionStatus; reviewNotes?: string },
+    user: ValidatedUser,
+  ) {
+    let roles: string[] = [];
+    if (this.prisma?.userRole?.findMany) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId: user.id },
+        include: { role: true },
+      });
+      roles = userRoles.map((ur: any) => ur.role?.code).filter(Boolean);
+    }
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const result = await this.multiSessionService.reviewSessionException(
+        tx,
+        exceptionId,
+        dto.decision,
+        { userId: user.id, roles },
+        dto.reviewNotes,
+      );
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'demo_session_exception',
+        entityId: exceptionId,
+        action: 'DEMO_SESSION_EXCEPTION_REVIEWED',
+        actorUserId: user.id,
+        newValue: {
+          resolutionStatus: dto.decision,
+          reviewNotes: dto.reviewNotes,
+        },
+      });
+
+      return result;
     });
   }
 }

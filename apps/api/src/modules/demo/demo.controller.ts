@@ -126,4 +126,13 @@ export class DemoController {
   ) {
     return this.demoService.markNoShow(id, dto, user);
   }
+
+  @Patch('exceptions/:exceptionId/review')
+  async reviewSessionException(
+    @Param('exceptionId') exceptionId: string,
+    @Body() dto: { decision: any; reviewNotes?: string },
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.reviewSessionException(exceptionId, dto, user);
+  }
 }

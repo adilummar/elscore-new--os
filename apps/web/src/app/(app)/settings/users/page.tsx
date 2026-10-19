@@ -122,7 +122,7 @@ export default function UsersPage() {
                   'ADMINISTRATION': ['CEO', 'CO_FOUNDER', 'OPERATIONS_MANAGER'],
                   'MARKETING': ['MARKETING_HEAD', 'PERFORMANCE_MARKETER', 'DESIGNER'],
                   'SALES': ['SALES_HEAD', 'SALES_COUNSELLOR'],
-                  'ACADEMICS': ['ACADEMIC_HEAD', 'MENTOR', 'DEMO_COORDINATOR', 'TUTOR'],
+                  'ACADEMICS': ['ACADEMIC_HEAD', 'DEMO_HEAD', 'DEMO_ADMIN', 'MENTOR', 'DEMO_COORDINATOR', 'TUTOR'],
                   'FINANCE': ['FINANCE_HEAD', 'FINANCE_MANAGER', 'FINANCE_EXECUTIVE', 'ACCOUNTANT'],
                   'HR': ['HR_MANAGER', 'HR_EXECUTIVE', 'HR_ASSISTANT']
                 };
