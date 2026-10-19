@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { useAuth, usePermissions } from '@/components/providers/AuthProvider';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, Calendar, User, ChevronRight, X } from 'lucide-react';
 import { CreateLeadDialog } from './CreateLeadDialog';
 
@@ -82,6 +82,8 @@ export function LeadList() {
   const { effectiveUser } = useAuth();
   const viewerId = effectiveUser?.id ?? '';
   const viewerCache = cachedState?.userId === viewerId ? cachedState : null;
+  const searchParams = useSearchParams();
+  const urlStatus = searchParams?.get('status') ?? null;
 
   const [leads, setLeads] = React.useState<any[]>(viewerCache?.leads || []);
   const [loading, setLoading] = React.useState(!viewerCache?.leads?.length);
@@ -89,7 +91,13 @@ export function LeadList() {
 
   const [search, setSearch] = React.useState(viewerCache?.search || '');
   const [debouncedSearch, setDebouncedSearch] = React.useState(viewerCache?.search || '');
-  const [status, setStatus] = React.useState(viewerCache?.status || '');
+  const [status, setStatus] = React.useState(urlStatus !== null ? urlStatus : (viewerCache?.status || ''));
+
+  React.useEffect(() => {
+    if (urlStatus !== null) {
+      setStatus(urlStatus);
+    }
+  }, [urlStatus]);
   const [source, setSource] = React.useState(viewerCache?.source || '');
   const [classification, setClassification] = React.useState(viewerCache?.classification || '');
   const [ownerId, setOwnerId] = React.useState(viewerCache?.ownerId || '');
