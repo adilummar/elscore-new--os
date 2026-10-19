@@ -65,11 +65,15 @@ export function RescheduleDemoModal({ isOpen, onClose, demo, onSuccess }: Resche
     setIsLoading(true);
     try {
       const dateObj = new Date(`${date}T${startTime}`);
-      await rescheduleDemo(demo.id, {
+      const res = await rescheduleDemo(demo.id, {
         scheduledAt: dateObj.toISOString(),
         durationMinutes: duration,
         reason
       });
+      if (res && res.success === false) {
+        alert(res.error || 'Failed to reschedule demo');
+        return;
+      }
       onSuccess();
     } catch (err: any) {
       alert(err.message || 'Failed to reschedule demo');

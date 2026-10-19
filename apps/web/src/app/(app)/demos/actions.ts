@@ -41,13 +41,17 @@ export async function bookDemo(data: any) {
 }
 
 export async function rescheduleDemo(id: string, data: any) {
-  const result = await fetchApi<any>(`/demos/${id}/reschedule`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/demos');
-  revalidatePath(`/demos/${id}`);
-  return result;
+  try {
+    const result = await fetchApi<any>(`/demos/${id}/reschedule`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/demos');
+    revalidatePath(`/demos/${id}`);
+    return { success: true, data: result };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to reschedule demo' };
+  }
 }
 
 export async function editDemo(id: string, data: any) {
@@ -81,13 +85,17 @@ export async function markNoShowDemo(id: string, data: any) {
 }
 
 export async function assignTutor(id: string, tutorId: string) {
-  const result = await fetchApi<any>(`/demos/${id}/assign`, {
-    method: 'PATCH',
-    body: JSON.stringify({ tutorId }),
-  });
-  revalidatePath('/demos');
-  revalidatePath(`/demos/${id}`);
-  return result;
+  try {
+    const result = await fetchApi<any>(`/demos/${id}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tutorId }),
+    });
+    revalidatePath('/demos');
+    revalidatePath(`/demos/${id}`);
+    return { success: true, data: result };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to assign tutor' };
+  }
 }
 
 export async function completeDemo(id: string, data: any) {

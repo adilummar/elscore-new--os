@@ -52,6 +52,8 @@ export class DemoService {
       }
     }
 
+    const effectiveBookingId = excludeBookingId || excludeDemoId;
+
     const studentDemos = await tx.demo.findMany({
       where: {
         studentId,
@@ -68,12 +70,19 @@ export class DemoService {
       }
     }
 
-    if (tx.demoSession) {
+    if (tx.demoSession?.findMany) {
       const existingSessions = await tx.demoSession.findMany({
         where: {
           booking: {
             studentId,
-            id: excludeBookingId ? { not: excludeBookingId } : undefined,
+            ...(effectiveBookingId
+              ? {
+                  AND: [
+                    { id: { not: effectiveBookingId } },
+                    { legacyDemoId: { not: effectiveBookingId } },
+                  ],
+                }
+              : {}),
           },
           status: { in: [DemoSessionStatus.SCHEDULED, DemoSessionStatus.ASSIGNED, DemoSessionStatus.IN_PROGRESS] },
         },
@@ -101,6 +110,37 @@ export class DemoService {
         const dEnd = dStart + d.durationMinutes * 60000;
         if (start.getTime() < dEnd && end.getTime() > dStart) {
           throw new BadRequestException('Tutor already has an overlapping demo');
+        }
+      }
+
+      if (tx.demoSessionTutorAssignment?.findMany) {
+        const existingTutorAssignments = await tx.demoSessionTutorAssignment.findMany({
+          where: {
+            tutorId,
+            status: TutorAssignmentStatus.ACTIVE,
+            session: {
+              ...(effectiveBookingId
+                ? {
+                    booking: {
+                      AND: [
+                        { id: { not: effectiveBookingId } },
+                        { legacyDemoId: { not: effectiveBookingId } },
+                      ],
+                    },
+                  }
+                : {}),
+              status: { in: [DemoSessionStatus.SCHEDULED, DemoSessionStatus.ASSIGNED, DemoSessionStatus.IN_PROGRESS] },
+            },
+          },
+          include: { session: true },
+        });
+
+        for (const a of existingTutorAssignments) {
+          const sStart = new Date(a.session.scheduledStart).getTime();
+          const sEnd = new Date(a.session.scheduledEnd).getTime();
+          if (start.getTime() < sEnd && end.getTime() > sStart) {
+            throw new BadRequestException('Tutor already has an overlapping demo session');
+          }
         }
       }
     }
@@ -1067,7 +1107,8 @@ export class DemoService {
         throw new ForbiddenException('Cannot reschedule another users demo');
       }
 
-      await this.checkOverlap(tx, demo.studentId, demo.tutorId, start, end, demo.id);
+      const effectiveBookingId = booking?.id || demo.id;
+      await this.checkOverlap(tx, demo.studentId, demo.tutorId, start, end, demo.id, effectiveBookingId);
 
       const updated = await tx.demo.update({
         where: { id },
@@ -1079,7 +1120,7 @@ export class DemoService {
 
       if (tx.demoBooking) {
         await tx.demoBooking.updateMany({
-          where: { id },
+          where: { id: effectiveBookingId },
           data: {
             scheduledDate: start,
             totalDurationMin: dto.durationMinutes,
@@ -1089,7 +1130,7 @@ export class DemoService {
         if (tx.demoBookingRescheduleHistory) {
           await tx.demoBookingRescheduleHistory.create({
             data: {
-              bookingId: id,
+              bookingId: effectiveBookingId,
               previousDate: demo.scheduledAt,
               newDate: start,
               reason: dto.reason,
@@ -1101,7 +1142,7 @@ export class DemoService {
 
       if (tx.demoSession) {
         const sessions = await tx.demoSession.findMany({
-          where: { bookingId: id },
+          where: { bookingId: effectiveBookingId },
           orderBy: { sessionOrder: 'asc' },
         });
         if (sessions.length > 0) {
@@ -1257,7 +1298,8 @@ export class DemoService {
       }
 
       const end = new Date(new Date(demo.scheduledAt).getTime() + demo.durationMinutes * 60000);
-      await this.checkOverlap(tx, demo.studentId, dto.tutorId, demo.scheduledAt, end, demo.id);
+      const effectiveBookingId = booking?.id || demo.id;
+      await this.checkOverlap(tx, demo.studentId, dto.tutorId, demo.scheduledAt, end, demo.id, effectiveBookingId);
 
       const oldTutorId = demo.tutorId;
 
@@ -1271,14 +1313,14 @@ export class DemoService {
 
       if (tx.demoBooking) {
         await tx.demoBooking.updateMany({
-          where: { id },
+          where: { id: effectiveBookingId },
           data: { status: DemoBookingStatus.ASSIGNED },
         });
       }
 
       if (tx.demoSession) {
         const sessions = await tx.demoSession.findMany({
-          where: { bookingId: id },
+          where: { bookingId: effectiveBookingId },
           orderBy: { sessionOrder: 'asc' },
         });
 

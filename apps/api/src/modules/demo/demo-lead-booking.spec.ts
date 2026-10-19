@@ -98,7 +98,16 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
       },
       demoSession: {
         findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+          Promise.resolve({ id: where?.id || 'session-1', tutorAssignments: [] }),
+        ),
+        update: jest.fn().mockImplementation((args: any) => Promise.resolve({ id: args.where?.id || 'session-1', ...args.data })),
         create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'session-1', ...args.data })),
+      },
+      demoSessionTutorAssignment: {
+        create: jest.fn().mockResolvedValue({ id: 'ta-1', sessionId: 'session-1', tutorId: 'tutor-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({ id: 'ta-1' }),
       },
       roundRobinCoordinatorState: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -1182,6 +1191,99 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
           }),
         })
       );
+    });
+  });
+
+  describe('Tutor Assignment & Rescheduling Overlap Safeguards', () => {
+    it('successfully assigns a tutor without self-overlap false-positive against its own session', async () => {
+      const { demoService, mockTx, mockRbac } = buildMockContext(['demo.manage_team']);
+      mockRbac.hasPermissions = jest.fn().mockResolvedValue(true);
+
+      const demoId = 'demo-dmo-14';
+      const scheduledStart = new Date(Date.now() + 86400000);
+      const scheduledEnd = new Date(scheduledStart.getTime() + 60 * 60000);
+
+      mockTx.demo.findUnique = jest.fn().mockResolvedValue({
+        id: demoId,
+        studentId: 'student-1',
+        scheduledAt: scheduledStart,
+        durationMinutes: 60,
+        status: DemoStatus.SCHEDULED,
+        tutorId: null,
+      });
+
+      mockTx.demoBooking.findFirst = jest.fn().mockResolvedValue({
+        id: demoId,
+        studentId: 'student-1',
+        coordinatorId: 'coord-1',
+        status: DemoBookingStatus.SCHEDULED,
+      });
+
+      // The booking's own session is returned by findMany when querying demoSession
+      mockTx.demoSession.findMany = jest.fn().mockImplementation(({ where }: any) => {
+        // If booking id is properly excluded, the query returns 0 sessions (or only other bookings' sessions)
+        if (where?.booking?.id?.not === demoId || where?.booking?.AND) {
+          return Promise.resolve([]);
+        }
+        // If not excluded, it would return the session itself and trigger false-positive
+        return Promise.resolve([
+          {
+            id: 'session-dmo-14',
+            bookingId: demoId,
+            scheduledStart,
+            scheduledEnd,
+            status: DemoSessionStatus.SCHEDULED,
+          },
+        ]);
+      });
+
+      mockTx.demo.update = jest.fn().mockResolvedValue({ id: demoId, status: DemoStatus.ASSIGNED, tutorId: 'tutor-1' });
+      mockTx.demoBooking.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      mockTx.auditLog = { create: jest.fn().mockResolvedValue({}) };
+
+      const result = await demoService.assignTutor(demoId, { tutorId: 'tutor-1' }, { id: 'coord-1' } as any);
+      expect(result).toBeDefined();
+      expect(result.status).toBe(DemoStatus.ASSIGNED);
+    });
+
+    it('rejects tutor assignment if student has an overlapping session in another booking', async () => {
+      const { demoService, mockTx, mockRbac } = buildMockContext(['demo.manage_team']);
+      mockRbac.hasPermissions = jest.fn().mockResolvedValue(true);
+
+      const demoId = 'demo-dmo-14';
+      const scheduledStart = new Date(Date.now() + 86400000);
+      const scheduledEnd = new Date(scheduledStart.getTime() + 60 * 60000);
+
+      mockTx.demo.findUnique = jest.fn().mockResolvedValue({
+        id: demoId,
+        studentId: 'student-1',
+        scheduledAt: scheduledStart,
+        durationMinutes: 60,
+        status: DemoStatus.SCHEDULED,
+        tutorId: null,
+      });
+
+      mockTx.demoBooking.findFirst = jest.fn().mockResolvedValue({
+        id: demoId,
+        studentId: 'student-1',
+        coordinatorId: 'coord-1',
+        status: DemoBookingStatus.SCHEDULED,
+      });
+
+      // Another session for the same student exists from a different booking at the same time
+      mockTx.demoSession.findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'session-other-booking',
+          bookingId: 'other-booking-id',
+          scheduledStart,
+          scheduledEnd,
+          status: DemoSessionStatus.SCHEDULED,
+        },
+      ]);
+
+      await expect(
+        demoService.assignTutor(demoId, { tutorId: 'tutor-1' }, { id: 'coord-1' } as any)
+      ).rejects.toThrow('Student already has an overlapping demo session');
     });
   });
 });

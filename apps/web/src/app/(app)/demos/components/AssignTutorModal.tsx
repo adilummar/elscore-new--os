@@ -63,7 +63,11 @@ export function AssignTutorModal({ isOpen, onClose, demo, onSuccess }: AssignTut
   const handleAssign = async (tutorId: string) => {
     setIsLoading(true);
     try {
-      await assignTutor(demo.id, tutorId);
+      const res = await assignTutor(demo.id, tutorId);
+      if (res && res.success === false) {
+        alert(res.error || 'Failed to assign tutor');
+        return;
+      }
       onSuccess();
     } catch (err: any) {
       alert(err.message || 'Failed to assign tutor');
