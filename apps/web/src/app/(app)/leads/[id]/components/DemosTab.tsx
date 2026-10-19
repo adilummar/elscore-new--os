@@ -147,7 +147,7 @@ export function DemosTab({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle>Demos</CardTitle>
-          {onBookDemo && hasPermission('demo.book') && (
+          {onBookDemo && hasPermission('demo.book') && lead?.status === 'INTERESTED' && (
             <Button size="sm" onClick={onBookDemo} className="flex items-center gap-1.5">
               <Video className="w-4 h-4" />
               Book Demo
@@ -161,9 +161,11 @@ export function DemosTab({
             </div>
             <p className="text-slate-800 font-semibold text-base mb-1">No demos scheduled for this lead</p>
             <p className="text-slate-500 text-sm max-w-sm mx-auto mb-5">
-              Schedule a single-session or multi-session demo trial for this lead&apos;s student.
+              {lead?.status === 'INTERESTED'
+                ? "Schedule a single-session or multi-session demo trial for this lead's student."
+                : "Demos can only be scheduled when the lead is in INTERESTED status."}
             </p>
-            {onBookDemo && hasPermission('demo.book') && (
+            {onBookDemo && hasPermission('demo.book') && lead?.status === 'INTERESTED' && (
               <Button onClick={onBookDemo} className="inline-flex items-center gap-2">
                 <Video className="w-4 h-4" />
                 Book Demo Now
@@ -179,7 +181,7 @@ export function DemosTab({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold">Demos</h3>
-        {onBookDemo && hasPermission('demo.book') && (
+        {onBookDemo && hasPermission('demo.book') && lead?.status === 'INTERESTED' && (
           <Button size="sm" onClick={onBookDemo} variant="outline" className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" />
             Book Another Demo

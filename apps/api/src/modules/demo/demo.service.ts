@@ -195,10 +195,10 @@ export class DemoService {
 
       const lead = student.lead;
 
-      // 3. Status eligibility check
-      if (lead.status && ['LOST', 'NOT_INTERESTED', 'JUNK'].includes(lead.status)) {
+      // 3. Status eligibility check: only leads in INTERESTED status can have demos booked
+      if (lead.status !== LeadStatus.INTERESTED) {
         throw new BadRequestException(
-          `Cannot book demo for a lead with status ${lead.status}. Please reopen the lead first.`,
+          `Cannot book demo for a lead with status ${lead.status || 'UNKNOWN'}. Lead must be in INTERESTED status to book a demo.`,
         );
       }
 
@@ -369,17 +369,13 @@ export class DemoService {
 
       // 11. LEAD STATUS TRANSITION:
       // "A successful save persists the booking and sessions and changes the lead to DEMO_BOOKED according to the existing canonical status model."
-      // "Do not regress NEGOTIATION, ENROLLED, or PAID leads."
-      const isProtectedStatus = lead.status && ['NEGOTIATION', 'ENROLLED', 'PAID'].includes(lead.status);
-      const shouldTransition = !isProtectedStatus && lead.status !== 'DEMO_BOOKED';
-
-      if (tx.lead && shouldTransition && lead.id) {
+      if (tx.lead && lead.id) {
         const oldStatus = lead.status;
-        const newStatus = 'DEMO_BOOKED';
+        const newStatus = LeadStatus.DEMO_BOOKED;
 
         await tx.lead.update({
           where: { id: lead.id },
-          data: { status: newStatus as any },
+          data: { status: newStatus },
         });
 
         if (tx.leadStatusHistory) {

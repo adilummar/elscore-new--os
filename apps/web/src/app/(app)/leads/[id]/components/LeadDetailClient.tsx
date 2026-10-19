@@ -180,7 +180,7 @@ export function LeadDetailClient({ leadId, initialLead = null, initialError = nu
           {hasPermission('lead.status.change') && (
             <Button onClick={() => setIsStatusOpen(true)} variant="outline">Change Status</Button>
           )}
-          {hasPermission('demo.book') && (
+          {hasPermission('demo.book') && lead.status === 'INTERESTED' && (
             <Button onClick={() => setIsDemoOpen(true)} variant="outline">Book Demo</Button>
           )}
           {hasPermission('lead.reassign') && (
@@ -236,7 +236,11 @@ export function LeadDetailClient({ leadId, initialLead = null, initialError = nu
             <FollowUpManager lead={lead} onUpdate={loadLead} />
           )}
           {activeTab === 'demos' && (
-            <DemosTab lead={lead} onUpdate={loadLead} onBookDemo={() => setIsDemoOpen(true)} />
+            <DemosTab
+              lead={lead}
+              onUpdate={loadLead}
+              onBookDemo={lead.status === 'INTERESTED' ? () => setIsDemoOpen(true) : undefined}
+            />
           )}
           {activeTab === 'finance' && (
             <FinanceTab lead={lead} />
@@ -257,7 +261,7 @@ export function LeadDetailClient({ leadId, initialLead = null, initialError = nu
       </div>
 
       {isStatusOpen && <LeadStatusChangeDialog leadId={leadId} currentStatus={lead.status} isOpen={isStatusOpen} onClose={() => setIsStatusOpen(false)} onSuccess={loadLead} />}
-      {isDemoOpen && (
+      {isDemoOpen && lead.status === 'INTERESTED' && (
         <BookDemoDialog
           lead={lead}
           isOpen={isDemoOpen}

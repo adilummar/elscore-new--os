@@ -205,6 +205,11 @@ export function BookDemoDialog({
     e.preventDefault();
     setError(null);
 
+    if (lead?.status !== 'INTERESTED') {
+      setError(`Cannot book demo for a lead with status ${lead?.status || 'UNKNOWN'}. Lead must be in INTERESTED status to book a demo.`);
+      return;
+    }
+
     // Validate student
     if (!hasExistingStudents) {
       if (!newStudentFirstName.trim()) {
@@ -384,6 +389,12 @@ export function BookDemoDialog({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {lead?.status !== 'INTERESTED' && (
+          <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-600" />
+            <span>This lead is currently in <strong>{lead?.status || 'UNKNOWN'}</strong> status. Demos can only be booked for leads in <strong>INTERESTED</strong> status.</span>
+          </div>
+        )}
         {error && (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -662,7 +673,7 @@ export function BookDemoDialog({
           </Button>
           <Button
             type="submit"
-            disabled={loading || totalDuration <= 0 || hasOverlap || hasInvalidDuration}
+            disabled={loading || totalDuration <= 0 || hasOverlap || hasInvalidDuration || lead?.status !== 'INTERESTED'}
             className="w-36"
           >
             {loading ? 'Booking...' : 'Book Demo'}

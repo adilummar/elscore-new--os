@@ -476,44 +476,42 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
     });
   });
 
-  describe('Scenario 6: Protected lead statuses do not regress', () => {
-    it.each([LeadStatus.NEGOTIATION, LeadStatus.ENROLLED, LeadStatus.PAID])(
-      'preserves protected status %s without regressing to DEMO_BOOKED',
-      async (protectedStatus) => {
-        const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
-
-        const studentWithProtectedLead = {
-          id: 'student-1',
-          leadId: 'lead-1',
-          lead: {
-            id: 'lead-1',
-            status: protectedStatus,
-            assignedToUserId: 'counsellor-1',
+  describe('Scenario 6: Lead status guard — only INTERESTED leads can have demos booked', () => {
+    it('rejects booking for lead status NEW with BadRequestException', async () => {
+      const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
+      const studentWithNewLead = {
+        id: 'student-1',
+        leadId: 'lead-1',
+        lead: {
+          id: 'lead-1',
+          status: LeadStatus.NEW,
+          assignedToUserId: 'counsellor-1',
+        },
+        requirements: [
+          {
+            id: 'req-1',
+            studentId: 'student-1',
+            subjectId: 'sub-1',
+            curriculumId: 'cur-1',
+            gradeId: 'grd-1',
+            subject: { id: 'sub-1', name: 'Math' },
+            curriculum: { id: 'cur-1', name: 'CBSE' },
+            grade: { id: 'grd-1', name: 'Grade 10' },
           },
-          requirements: [
-            {
-              id: 'req-1',
-              studentId: 'student-1',
-              subjectId: 'sub-1',
-              curriculumId: 'cur-1',
-              gradeId: 'grd-1',
-              subject: { id: 'sub-1', name: 'Math' },
-              curriculum: { id: 'cur-1', name: 'CBSE' },
-              grade: { id: 'grd-1', name: 'Grade 10' },
-            },
-          ],
-        };
-        mockTx.student.findUnique.mockResolvedValue(studentWithProtectedLead);
-        mockTx.requirement.findUnique.mockResolvedValue({
-          id: 'req-1',
-          studentId: 'student-1',
-          subjectId: 'sub-1',
-          curriculumId: 'cur-1',
-          gradeId: 'grd-1',
-          student: studentWithProtectedLead,
-        });
+        ],
+      };
+      mockTx.student.findUnique.mockResolvedValue(studentWithNewLead);
+      mockTx.requirement.findUnique.mockResolvedValue({
+        id: 'req-1',
+        studentId: 'student-1',
+        subjectId: 'sub-1',
+        curriculumId: 'cur-1',
+        gradeId: 'grd-1',
+        student: studentWithNewLead,
+      });
 
-        await demoService.bookDemo(
+      await expect(
+        demoService.bookDemo(
           {
             studentId: 'student-1',
             requirementId: 'req-1',
@@ -521,27 +519,78 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
             durationMinutes: 60,
           },
           { id: 'counsellor-1', email: 'c@example.com' } as any,
-        );
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
 
-        // Demo should be created
-        expect(mockTx.demoBooking.create).toHaveBeenCalled();
-        // Lead status must NOT be regressed to DEMO_BOOKED
-        expect(mockTx.lead.update).not.toHaveBeenCalled();
-        expect(mockTx.leadStatusHistory.create).not.toHaveBeenCalled();
-      },
-    );
+    it('rejects booking for lead status CONTACTED with BadRequestException', async () => {
+      const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
+      const studentWithContactedLead = {
+        id: 'student-1',
+        leadId: 'lead-1',
+        lead: {
+          id: 'lead-1',
+          status: LeadStatus.CONTACTED,
+          assignedToUserId: 'counsellor-1',
+        },
+        requirements: [
+          {
+            id: 'req-1',
+            studentId: 'student-1',
+            subjectId: 'sub-1',
+            curriculumId: 'cur-1',
+            gradeId: 'grd-1',
+            subject: { id: 'sub-1', name: 'Math' },
+            curriculum: { id: 'cur-1', name: 'CBSE' },
+            grade: { id: 'grd-1', name: 'Grade 10' },
+          },
+        ],
+      };
+      mockTx.student.findUnique.mockResolvedValue(studentWithContactedLead);
+      mockTx.requirement.findUnique.mockResolvedValue({
+        id: 'req-1',
+        studentId: 'student-1',
+        subjectId: 'sub-1',
+        curriculumId: 'cur-1',
+        gradeId: 'grd-1',
+        student: studentWithContactedLead,
+      });
 
-    it.each([LeadStatus.LOST, LeadStatus.NOT_INTERESTED, LeadStatus.JUNK])(
-      'rejects booking for terminal lead status %s until lead is reopened',
-      async (terminalStatus) => {
+      await expect(
+        demoService.bookDemo(
+          {
+            studentId: 'student-1',
+            requirementId: 'req-1',
+            scheduledAt: futureIso,
+            durationMinutes: 60,
+          },
+          { id: 'counsellor-1', email: 'c@example.com' } as any,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it.each([
+      LeadStatus.NEGOTIATION,
+      LeadStatus.ENROLLED,
+      LeadStatus.PAID,
+      LeadStatus.DEMO_BOOKED,
+      LeadStatus.DEMO_COMPLETED,
+      LeadStatus.NURTURE,
+      LeadStatus.NO_RESPONSE,
+      LeadStatus.LOST,
+      LeadStatus.NOT_INTERESTED,
+      LeadStatus.JUNK,
+    ])(
+      'rejects booking for ineligible/protected/terminal lead status %s with BadRequestException',
+      async (ineligibleStatus) => {
         const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
 
-        const studentWithTerminalLead = {
+        const studentWithIneligibleLead = {
           id: 'student-1',
           leadId: 'lead-1',
           lead: {
             id: 'lead-1',
-            status: terminalStatus,
+            status: ineligibleStatus,
             assignedToUserId: 'counsellor-1',
           },
           requirements: [
@@ -557,14 +606,14 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
             },
           ],
         };
-        mockTx.student.findUnique.mockResolvedValue(studentWithTerminalLead);
+        mockTx.student.findUnique.mockResolvedValue(studentWithIneligibleLead);
         mockTx.requirement.findUnique.mockResolvedValue({
           id: 'req-1',
           studentId: 'student-1',
           subjectId: 'sub-1',
           curriculumId: 'cur-1',
           gradeId: 'grd-1',
-          student: studentWithTerminalLead,
+          student: studentWithIneligibleLead,
         });
 
         await expect(
@@ -578,8 +627,65 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
             { id: 'counsellor-1', email: 'c@example.com' } as any,
           ),
         ).rejects.toThrow(BadRequestException);
+
+        expect(mockTx.demoBooking.create).not.toHaveBeenCalled();
+        expect(mockTx.lead.update).not.toHaveBeenCalled();
       },
     );
+
+    it('permits booking when lead status is exactly INTERESTED', async () => {
+      const { demoService, mockTx } = buildMockContext(['demo.book', 'lead.view_all']);
+
+      const studentWithInterestedLead = {
+        id: 'student-1',
+        leadId: 'lead-1',
+        lead: {
+          id: 'lead-1',
+          status: LeadStatus.INTERESTED,
+          assignedToUserId: 'counsellor-1',
+        },
+        requirements: [
+          {
+            id: 'req-1',
+            studentId: 'student-1',
+            subjectId: 'sub-1',
+            curriculumId: 'cur-1',
+            gradeId: 'grd-1',
+            subject: { id: 'sub-1', name: 'Math' },
+            curriculum: { id: 'cur-1', name: 'CBSE' },
+            grade: { id: 'grd-1', name: 'Grade 10' },
+          },
+        ],
+      };
+      mockTx.student.findUnique.mockResolvedValue(studentWithInterestedLead);
+      mockTx.requirement.findUnique.mockResolvedValue({
+        id: 'req-1',
+        studentId: 'student-1',
+        subjectId: 'sub-1',
+        curriculumId: 'cur-1',
+        gradeId: 'grd-1',
+        student: studentWithInterestedLead,
+      });
+
+      const res = await demoService.bookDemo(
+        {
+          studentId: 'student-1',
+          requirementId: 'req-1',
+          scheduledAt: futureIso,
+          durationMinutes: 60,
+        },
+        { id: 'counsellor-1', email: 'c@example.com' } as any,
+      );
+
+      expect(res).toBeDefined();
+      expect(mockTx.demoBooking.create).toHaveBeenCalled();
+      expect(mockTx.lead.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'lead-1' },
+          data: { status: LeadStatus.DEMO_BOOKED },
+        }),
+      );
+    });
   });
 
   describe('Scenario 7: Unauthorized users cannot book demos outside permitted lead scope', () => {

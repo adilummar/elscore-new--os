@@ -39,7 +39,7 @@ describe('Demo lead ownership', () => {
       subjectId: 'math',
       curriculumId: 'cbse',
       gradeId: 'grade-5',
-      student: { lead: { assignedToUserId: 'counsellor-b' } },
+      student: { lead: { assignedToUserId: 'counsellor-b', status: 'INTERESTED' } },
     });
 
     await expect(service.bookDemo({
@@ -59,7 +59,7 @@ describe('Demo lead ownership', () => {
       subjectId: 'math',
       curriculumId: 'cbse',
       gradeId: 'grade-5',
-      student: { lead: { assignedToUserId: 'counsellor-a' } },
+      student: { lead: { assignedToUserId: 'counsellor-a', status: 'INTERESTED' } },
     });
     await own.service.bookDemo({
       studentId: 'student-a',
@@ -75,7 +75,7 @@ describe('Demo lead ownership', () => {
       subjectId: 'math',
       curriculumId: 'cbse',
       gradeId: 'grade-5',
-      student: { lead: { assignedToUserId: 'counsellor-b' } },
+      student: { lead: { assignedToUserId: 'counsellor-b', status: 'INTERESTED' } },
     });
     await head.service.bookDemo({
       studentId: 'student-b',

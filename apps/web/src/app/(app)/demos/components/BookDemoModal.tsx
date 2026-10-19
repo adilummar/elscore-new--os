@@ -75,6 +75,11 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedLead?.status !== 'INTERESTED') {
+      alert(`Cannot book demo. Lead is in status "${selectedLead?.status || 'UNKNOWN'}". Demos can only be booked for leads in INTERESTED status.`);
+      return;
+    }
+
     if (!selectedStudent || !selectedRequirement) {
       alert('Please select a student and requirement');
       return;
@@ -145,24 +150,47 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
                 />
                 {leadResults.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-auto">
-                    {leadResults.map((lead) => (
-                      <button
-                        key={lead.id}
-                        type="button"
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 focus:bg-slate-50"
-                        onClick={() => setSelectedLead(lead)}
-                      >
-                        <div className="font-medium text-slate-900">{lead.firstName} {lead.lastName}</div>
-                        <div className="text-slate-500 text-xs">{lead.email || lead.phone}</div>
-                      </button>
-                    ))}
+                    {leadResults.map((lead) => {
+                      const isEligible = lead.status === 'INTERESTED';
+                      return (
+                        <button
+                          key={lead.id}
+                          type="button"
+                          disabled={!isEligible}
+                          className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between ${
+                            isEligible ? 'hover:bg-slate-50 focus:bg-slate-50 cursor-pointer' : 'opacity-50 cursor-not-allowed bg-slate-50/50'
+                          }`}
+                          onClick={() => {
+                            if (!isEligible) return;
+                            setSelectedLead(lead);
+                          }}
+                        >
+                          <div>
+                            <div className="font-medium text-slate-900">{lead.firstName} {lead.lastName}</div>
+                            <div className="text-slate-500 text-xs">{lead.email || lead.phone}</div>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            isEligible ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {lead.status || 'UNKNOWN'}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             ) : (
               <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md">
                 <div>
-                  <div className="text-sm font-medium text-slate-900">{selectedLead.firstName} {selectedLead.lastName}</div>
+                  <div className="text-sm font-medium text-slate-900 flex items-center gap-2">
+                    {selectedLead.firstName} {selectedLead.lastName}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      selectedLead.status === 'INTERESTED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {selectedLead.status || 'UNKNOWN'}
+                    </span>
+                  </div>
                 </div>
                 <button 
                   type="button" 
@@ -173,6 +201,12 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {selectedLead && selectedLead.status !== 'INTERESTED' && (
+          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm">
+            This lead is currently in <strong>{selectedLead.status || 'UNKNOWN'}</strong> status. Demos can only be booked for leads in <strong>INTERESTED</strong> status.
           </div>
         )}
 
@@ -300,7 +334,7 @@ export function BookDemoModal({ isOpen, onClose, onSuccess, initialLead }: BookD
           <Button 
             type="submit" 
             isLoading={isLoading} 
-            disabled={!selectedRequirement || !date || !startTime || !endTime || duration <= 0}
+            disabled={!selectedRequirement || !date || !startTime || !endTime || duration <= 0 || selectedLead?.status !== 'INTERESTED'}
             className="w-32"
           >
             {isLoading ? 'Booking...' : 'Book Demo'}
