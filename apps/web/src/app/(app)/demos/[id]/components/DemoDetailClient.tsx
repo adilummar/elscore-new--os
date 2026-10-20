@@ -406,7 +406,7 @@ export function DemoDetailClient({
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold text-slate-900">Class Preparation</h3>
-                    <p className="text-[11px] text-slate-500">"How to take the class" instructions</p>
+                    <p className="text-[11px] text-slate-500">&ldquo;How to take the class&rdquo; instructions</p>
                   </div>
                 </div>
                 {demo.preparationNotes ? (
@@ -558,7 +558,7 @@ export function DemoDetailClient({
                     </div>
                     {(demo.confirmationNotes || demo.parentConfirmationNotes) && (
                       <p className="text-slate-600 text-[11px] italic">
-                        "{demo.confirmationNotes || demo.parentConfirmationNotes}"
+                        &ldquo;{demo.confirmationNotes || demo.parentConfirmationNotes}&rdquo;
                       </p>
                     )}
                   </div>

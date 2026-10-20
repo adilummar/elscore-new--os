@@ -61,7 +61,7 @@ export function PreparationModal({ isOpen, onClose, demo, onSuccess }: Preparati
               Demo Preparation Guidelines
             </h3>
             <p className="text-xs text-slate-500">
-              Provide "How to take the class" instructions for the tutor and student
+              Provide &ldquo;How to take the class&rdquo; instructions for the tutor and student
             </p>
           </div>
         </div>
