@@ -543,11 +543,11 @@ export class DemoService {
     }
 
     const isCeo = roles.has('CEO');
-    const isDemoHead = roles.has('DEMO_HEAD');
+    const isDemoHead = roles.has('DEMO_HEAD') || userPerms.has('demo.manage_team');
     const isDemoAdmin = roles.has('DEMO_ADMIN');
     const isAcademicHead = roles.has('ACADEMIC_HEAD');
     const isOperationsManager = roles.has('OPERATIONS_MANAGER');
-    const isSalesHead = roles.has('SALES_HEAD') || userPerms.has('demo.manage_team');
+    const isSalesHead = roles.has('SALES_HEAD') || roles.has('SALES_MANAGER') || userPerms.has('lead.manage_team');
     const isCoordinator = roles.has('DEMO_COORDINATOR') || userPerms.has('demo.coordinate');
     const isTutor = roles.has('TUTOR') || userPerms.has('demo.read_assigned');
     const isSalesCounsellor = roles.has('SALES_COUNSELLOR') || userPerms.has('demo.read_own');
@@ -709,6 +709,7 @@ export class DemoService {
         },
         include: {
           coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          parentConfirmedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
           lead: { select: { id: true, assignedToUserId: true, primaryPhone: true, whatsappNumber: true } },
           sessions: {
             include: {
@@ -737,13 +738,21 @@ export class DemoService {
       return {
         ...d,
         booking: booking || null,
-        operationalStage: booking?.operationalStage || (d.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO),
+        operationalStage: booking?.operationalStage || (
+          d.status === DemoStatus.COMPLETED
+            ? DemoOperationalStage.COMPLETED
+            : d.meetingLink
+            ? DemoOperationalStage.LINK_SHARED
+            : DemoOperationalStage.VALID_DEMO
+        ),
         isRescheduled: booking?.isRescheduled || false,
         coordinator: booking?.coordinator || null,
         preparationNotes: booking?.preparationNotes || null,
         meetingLink: booking?.meetingLink || null,
         meetingPlatform: booking?.meetingPlatform || null,
         parentConfirmedAt: booking?.parentConfirmedAt || null,
+        parentConfirmedByUserId: booking?.parentConfirmedByUserId || null,
+        parentConfirmedByUser: booking?.parentConfirmedByUser || null,
         salesWhatsAppSharedAt: booking?.salesWhatsAppSharedAt || null,
       };
     });
@@ -2578,10 +2587,13 @@ export class DemoService {
     if (!booking && !demo) throw new NotFoundException('Demo not found');
 
     const lead = booking?.lead || demo?.student?.lead;
-    const isLeadOwner = Boolean(lead?.assignedToUserId && lead.assignedToUserId === user.id);
+    const leadOwnerId = lead?.assignedToUserId;
+    const isLeadOwner = Boolean(leadOwnerId && leadOwnerId === user.id);
     const isBooker = Boolean(
-      (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
-      (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+      !leadOwnerId && (
+        (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
+        (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+      )
     );
     const canManageSales = Boolean(actor.isCeo || actor.isSalesHead || actor.perms?.has('lead.manage_all'));
 
@@ -2594,7 +2606,13 @@ export class DemoService {
       throw new BadRequestException('Cannot initiate parent outreach for completed or cancelled demo');
     }
 
-    const stage = booking?.operationalStage || (demo?.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO);
+    const stage = booking?.operationalStage || (
+      demo?.status === DemoStatus.COMPLETED
+        ? DemoOperationalStage.COMPLETED
+        : demo?.meetingLink
+        ? DemoOperationalStage.LINK_SHARED
+        : DemoOperationalStage.VALID_DEMO
+    );
     if (stage !== DemoOperationalStage.LINK_SHARED && stage !== DemoOperationalStage.PARENT_CONFIRMATION) {
       throw new BadRequestException('Demo is not ready for parent outreach. Meeting link and internal handoff (LINK_SHARED) must be completed first.');
     }
@@ -2713,10 +2731,13 @@ export class DemoService {
       if (!booking && !demo) throw new NotFoundException('Demo not found');
 
       const lead = booking?.lead || demo?.student?.lead;
-      const isLeadOwner = Boolean(lead?.assignedToUserId && lead.assignedToUserId === user.id);
+      const leadOwnerId = lead?.assignedToUserId;
+      const isLeadOwner = Boolean(leadOwnerId && leadOwnerId === user.id);
       const isBooker = Boolean(
-        (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
-        (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+        !leadOwnerId && (
+          (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
+          (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+        )
       );
       const canManageSales = Boolean(actor.isCeo || actor.isSalesHead || actor.perms?.has('lead.manage_all'));
 
@@ -2729,7 +2750,13 @@ export class DemoService {
         throw new BadRequestException('Cannot initiate parent outreach for completed or cancelled demo');
       }
 
-      const stage = booking?.operationalStage || (demo?.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO);
+      const stage = booking?.operationalStage || (
+        demo?.status === DemoStatus.COMPLETED
+          ? DemoOperationalStage.COMPLETED
+          : demo?.meetingLink
+          ? DemoOperationalStage.LINK_SHARED
+          : DemoOperationalStage.VALID_DEMO
+      );
       if (stage !== DemoOperationalStage.LINK_SHARED && stage !== DemoOperationalStage.PARENT_CONFIRMATION) {
         throw new BadRequestException('Demo is not ready for parent outreach. Meeting link and internal handoff (LINK_SHARED) must be completed first.');
       }
@@ -2848,10 +2875,13 @@ export class DemoService {
       if (!booking && !demo) throw new NotFoundException('Demo booking not found');
 
       const lead = booking?.lead || demo?.student?.lead;
-      const isLeadOwner = Boolean(lead?.assignedToUserId && lead.assignedToUserId === user.id);
+      const leadOwnerId = lead?.assignedToUserId;
+      const isLeadOwner = Boolean(leadOwnerId && leadOwnerId === user.id);
       const isBooker = Boolean(
-        (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
-        (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+        !leadOwnerId && (
+          (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
+          (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+        )
       );
       const canManageSales = Boolean(actor.isCeo || actor.isSalesHead || actor.perms?.has('lead.manage_all'));
 
@@ -2864,7 +2894,13 @@ export class DemoService {
         throw new BadRequestException('Cannot confirm a completed or cancelled demo');
       }
 
-      const currentStage = booking?.operationalStage || (demo?.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO);
+      const currentStage = booking?.operationalStage || (
+        demo?.status === DemoStatus.COMPLETED
+          ? DemoOperationalStage.COMPLETED
+          : demo?.meetingLink
+          ? DemoOperationalStage.LINK_SHARED
+          : DemoOperationalStage.VALID_DEMO
+      );
       if (currentStage !== DemoOperationalStage.LINK_SHARED && currentStage !== DemoOperationalStage.PARENT_CONFIRMATION) {
         throw new BadRequestException('Demo is not ready for parent confirmation. Meeting link and internal handoff (LINK_SHARED) must be completed first.');
       }

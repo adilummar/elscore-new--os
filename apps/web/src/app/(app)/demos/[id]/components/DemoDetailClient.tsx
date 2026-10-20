@@ -168,7 +168,7 @@ export function DemoDetailClient({
   const bookerId = demo.bookedByUserId || demo.booking?.bookedByUserId;
 
   const isLeadOwner = Boolean(currentUserId && leadOwnerId && currentUserId === leadOwnerId);
-  const isBooker = Boolean(currentUserId && bookerId && currentUserId === bookerId);
+  const isBooker = Boolean(!leadOwnerId && currentUserId && bookerId && currentUserId === bookerId);
   const isSalesHead = hasPermission('demo.manage_team') || (effectiveUser?.roles?.includes('SALES_HEAD') ?? false);
   const isCeo = hasPermission('analytics.ceo.read') || (effectiveUser?.roles?.includes('CEO') ?? false);
   const canManageSales = Boolean(isCeo || isSalesHead || hasPermission('lead.manage_all') || hasPermission('demo.manage_all'));
@@ -549,11 +549,11 @@ export function DemoDetailClient({
                 </div>
                 {demo.parentConfirmedAt ? (
                   <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" /> Confirmed
+                    <CheckCircle className="w-3 h-3" /> Parent Confirmed
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                    Awaiting RSVP
+                    Awaiting Sales Confirmation
                   </span>
                 )}
               </div>
@@ -584,6 +584,11 @@ export function DemoDetailClient({
                       <span>Channel: {demo.confirmationChannel || demo.parentConfirmationChannel || 'WhatsApp'}</span>
                       <span className="text-[10px] text-teal-700">{formatDate(demo.parentConfirmedAt)}</span>
                     </div>
+                    {(demo.parentConfirmedByUser || demo.parentConfirmedByUserId) && (
+                      <p className="text-[11px] text-teal-800">
+                        Confirmed by: <span className="font-medium">{demo.parentConfirmedByUser?.employee?.firstName ? `${demo.parentConfirmedByUser.employee.firstName} ${demo.parentConfirmedByUser.employee.lastName || ''}`.trim() : (demo.parentConfirmedByUser?.email || demo.parentConfirmedByUserId)}</span>
+                      </p>
+                    )}
                     {(demo.confirmationNotes || demo.parentConfirmationNotes) && (
                       <p className="text-slate-600 text-[11px] italic">
                         &ldquo;{demo.confirmationNotes || demo.parentConfirmationNotes}&rdquo;

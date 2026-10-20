@@ -3,8 +3,8 @@
 **Module:** Demo Operations  
 **Branch:** `feat/demo-multisession-schema`  
 **Target Environment:** Local Verified / Staging (`200.234.39.163`)  
-**Document Version:** 1.1.0 (Implementation Verified Baseline)  
-**Status:** Pre-Deployment Audit & Gap Closure Complete — Verified Locally
+**Document Version:** 1.2.0 (Sales Handoff, Dynamic WhatsApp & Parent Confirmation Complete)  
+**Status:** Implementation & Verification Complete Locally — Ready for Staging Review
 
 ---
 
@@ -470,35 +470,72 @@ Because all new columns are nullable or have defaults, any code rollback immedia
 
 ---
 
-## 14. Open Business Questions & Material Ambiguities (Action Required)
+---
 
-Before proceeding with code changes, the following business policy questions require stakeholder alignment:
+## 14. Confirmed Business Policy Resolutions & Workflow Details
 
-1. **WhatsApp Messaging Template:**
-   *What is the exact approved copy for the WhatsApp confirmation message?*  
-   *Current Plan:* We will configure a flexible template string with placeholders (`{ParentName}`, `{StudentName}`, `{Subject}`, `{DateTime}`, `{MeetingLink}`) so it can be updated in settings without code deployment.
-2. **Multi-Session Meeting Links:**
-   *If a student has two sessions booked on different dates or with different tutors, can each session have a separate meeting link, or does one link always cover the entire booking?*  
-   *Current Plan:* Primary link at the booking level with optional session-level link overrides.
-3. **Reschedule Resume Stage Policy:**
-   *When a demo is rescheduled, if the previously assigned tutor remains available with no schedule conflict, should the workflow resume at `LINK_SHARED` (keeping the tutor) or restart at `PREPARATION`?*  
-   *Current Plan:* Keep the tutor if no conflict occurs, require new/confirmed meeting link, and reset parent confirmation to unconfirmed.
-4. **No-Show Follow-Up Lifecycle:**
-   *When a demo is marked `NOT_SHOW`, does it stay permanently in `NOT_SHOW`, or should the Sales Counsellor be able to click "Reschedule No-Show" directly to give the student a second chance?*
-5. **Coordinator Reassignment Authority:**
-   *Can a Sales Head reassign a Demo Coordinator, or is coordinator assignment strictly managed by Demo Head and Demo Admin?*  
-   *Current Plan:* Restrict coordinator reassignment to Demo Head, Demo Admin, and CEO to prevent inter-departmental conflicts.
+The following business requirements were confirmed and implemented with full verification:
+
+1. **Approved Dynamic WhatsApp Message Template:**
+   ```
+   Hello [Parent Name | sir],
+
+   Greetings from Elscore Academy!
+
+   A demo class has been scheduled for *[student's name]*
+
+   📚 Subject: [subject]
+   👩‍🏫 Tutor: [tutor name]
+   📅 Date: [date in Asia/Kolkata]
+   ⏰ Time: [time in Asia/Kolkata IST]
+
+   🔗 Meet Link: [meeting link]
+
+   See you there!
+
+   Regards,
+   [coordinator name], Coordinator
+   Elscore Academy
+   ```
+   - **Parent Name Fallback:** If parent name is unavailable, uses `Hello sir,` with no blank spaces.
+   - **Multi-Session Formatting:** Dynamically lists all session subjects and tutor pairings (e.g., `Mathematics (Dr. Tariq), Physics (Ms. Priya)`) or deduplicates single tutor across subjects.
+   - **Phone Validation:** Requires minimum 10 digits; prepends `91` country code for Indian numbers if absent.
+   - **Non-Confirmation Invariant:** Opening WhatsApp generates an audit record (`DEMO_WHATSAPP_OPENED`) but strictly does NOT set `parentConfirmedAt` and does NOT advance stage.
+
+2. **Sales Counsellor Permission & Ownership Priority:**
+   - Determined strictly from persisted lead assignment (`lead.assignedToUserId`), prioritizing lead owner over any booking creator.
+   - Non-owning Sales Counsellors are blocked on backend with `403 Forbidden`.
+   - Demo Coordinators are blocked on backend from executing Sales actions (`confirmParentMeeting`, `recordWhatsAppOutreach`, `getWhatsAppPreview`).
+   - Demo Head and CEO maintain full visibility according to RBAC but Demo Head cannot silently impersonate the Sales owner.
+
+3. **Coordinator View Synchronization:**
+   - When a demo reaches `LINK_SHARED` (or `TUTOR_ASSIGNED`), Coordinator views (`DemoList`, `DemoDetailClient`, and lead page `DemosTab`) display the confirmation state as **Awaiting Sales Confirmation**.
+   - After the Sales Counsellor records confirmation, status immediately synchronizes to **Parent Confirmed** including the actor name (`parentConfirmedByUser`) and timestamp.
+
+4. **Reschedule Invalidation:**
+   - Rescheduling any demo invalidates stale `parentConfirmedAt`, `parentConfirmedByUserId`, `confirmationNotes`, `confirmationChannel`, `linkSharedAt`, and `linkSharedByUserId`.
+   - The demo enters `RESCHEDULED` and requires a new meeting link and fresh parent confirmation.
+
+5. **Lead Page Integration (`DemosTab.tsx`):**
+   - Renders the operational stage badge (`OperationalStageBadge`).
+   - Renders synchronized confirmation banner (**Parent Confirmed** with actor/timestamp vs **Awaiting Sales Confirmation**).
+   - Provides **Share on WhatsApp** and **Confirm Parent** actions solely to the authorized owning Sales Counsellor or Sales Head / CEO.
+   - Synchronized with Demo detail page (`/demos/[id]`) and coordinator queues.
 
 ---
 
-## 15. Phased Implementation Plan
+## 15. Implementation Verification Matrix
 
-| Phase | Description | Deliverables |
-| :--- | :--- | :--- |
-| **Phase 1: Architecture & Planning** *(Current)* | Deep inspection, inventory, specification, and safety bounds. | `DEMO_OPERATIONS_WORKFLOW_SPEC.md` |
-| **Phase 2: Additive Schema & Migration** | Add `DemoOperationalStage`, operational fields, meeting link history, and backfill script. | Prisma schema migration, backfill script, schema tests. |
-| **Phase 3: Service Layer & State Transitions** | Implement preparation, link recording, WhatsApp outreach, parent confirmation, and coordinator round-robin in `demo.service.ts`. | Backend methods, DTOs, unit & integration tests. |
-| **Phase 4: Sales-Owned Confirmation Queue** | Implement "Ready for Sales" queue and WhatsApp click-to-open workflow. | API route, sales queue client, test cases. |
-| **Phase 5: Operations UI & Stage Ribbon** | Build the enhanced Demo Operations workspace with 9-stage ribbon and detail modals. | Web components, drawer modals, stage filters. |
-| **Phase 6: Reporting & Demo Head Dashboard** | Stage turnaround metrics, ageing indicators, and outcome KPIs. | Analytics service endpoints, CEO/Demo Head view. |
-| **Phase 7: Verification & Staging Deployment** | Comprehensive test execution, build, migration dry-run, and deployment to `200.234.39.163`. | Deployment report & live acceptance. |
+| Area | Component Reference | Status | Verification Evidence |
+| :--- | :--- | :---: | :--- |
+| **Backend Service** | `apps/api/src/modules/demo/demo.service.ts` | **PASS** | 38/38 unit/integration tests passed in `demo-operations-workflow.spec.ts` |
+| **Backend Controller** | `apps/api/src/modules/demo/demo.controller.ts` | **PASS** | `@Get(':id/whatsapp-preview')`, `@Post(':id/whatsapp-outreach')`, `@Post(':id/confirm-parent')` |
+| **Lead Module** | `apps/api/src/modules/lead/lead.service.ts` | **PASS** | `parentConfirmedByUser` relation included in `findOne` demoBookings queries |
+| **WhatsApp Preview Modal** | `apps/web/src/app/(app)/demos/components/WhatsAppPreviewModal.tsx` | **PASS** | Interactive preview, copy-to-clipboard, phone validation, dynamic template |
+| **Parent Confirmation Modal** | `apps/web/src/app/(app)/demos/components/ParentConfirmationModal.tsx` | **PASS** | Channel selection (`WHATSAPP_CHAT`, `PHONE_CALL`, etc.), notes, contextual demo recap |
+| **Demo Detail View** | `apps/web/src/app/(app)/demos/[id]/components/DemoDetailClient.tsx` | **PASS** | Scoped `canSalesOutreach`, `Awaiting Sales Confirmation`, `Parent Confirmed` audit details |
+| **Demo List / Dashboard** | `apps/web/src/app/(app)/demos/components/DemoList.tsx` | **PASS** | Scoped actions, `Awaiting Sales Confirmation`, `Parent Confirmed` tooltip |
+| **Lead Detail Demos Tab** | `apps/web/src/app/(app)/leads/[id]/components/DemosTab.tsx` | **PASS** | Operational stage badge, confirmation status banner, role-scoped actions |
+| **Automated Tests** | `demo-operations-workflow.spec.ts` + all 9 demo suites | **PASS** | 166/166 passing tests across all demo test suites |
+| **Type Checking** | API & Web | **PASS** | Zero TypeScript compiler diagnostics (`tsc --noEmit`) |
+| **Production Build** | Next.js Web App | **PASS** | `pnpm --filter web build` completed successfully (exit code 0) |

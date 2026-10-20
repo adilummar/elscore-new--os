@@ -755,6 +755,25 @@ describe('Demo Operations Workflow Specification & Stage Lifecycle Tests', () =>
           }),
         });
       });
+
+      it('proves opening WhatsApp does NOT record parent confirmation and does NOT advance stage', async () => {
+        const outreach = await demoService.recordWhatsAppOutreach('booking-1', salesUser);
+        expect(outreach.success).toBe(true);
+        expect(mockPrisma.demoBooking.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              parentConfirmedAt: expect.anything(),
+            }),
+          }),
+        );
+        expect(mockPrisma.demoBooking.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              operationalStage: DemoOperationalStage.PARENT_CONFIRMATION,
+            }),
+          }),
+        );
+      });
     });
 
     describe('Parent Confirmation Authorization & Transitions', () => {
@@ -1225,6 +1244,117 @@ describe('Demo Operations Workflow Specification & Stage Lifecycle Tests', () =>
           foreignCoordinator,
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects cross-counsellor WhatsApp preview and outreach attempt', async () => {
+      mockPrisma.demoBooking.findFirst.mockResolvedValue({
+        id: 'booking-1',
+        meetingLink: 'https://meet.google.com/abc-xyz',
+        operationalStage: DemoOperationalStage.LINK_SHARED,
+        status: DemoBookingStatus.SCHEDULED,
+        lead: { assignedToUserId: 'sales-owner-id', primaryPhone: '9876543210' },
+        bookedByUserId: 'sales-owner-id',
+      });
+
+      mockRbac.getPermissionsForUser.mockResolvedValue(new Set(['demo.read_own']));
+      mockRbac.hasPermissions.mockResolvedValue(false);
+      mockPrisma.userRole.findMany.mockResolvedValue([
+        { role: { code: 'SALES_COUNSELLOR' } },
+      ]);
+
+      const intruderSalesUser: ValidatedUser = {
+        id: 'intruder-sales-id',
+        email: 'intruder@elscore.com',
+        mustChangePassword: false,
+      };
+
+      await expect(
+        demoService.getWhatsAppPreview('booking-1', intruderSalesUser),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        demoService.recordWhatsAppOutreach('booking-1', intruderSalesUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects Demo Head from confirming parent meeting (cannot silently impersonate Sales owner)', async () => {
+      mockPrisma.demoBooking.findFirst.mockResolvedValue({
+        id: 'booking-1',
+        meetingLink: 'https://meet.google.com/abc-xyz',
+        operationalStage: DemoOperationalStage.LINK_SHARED,
+        status: DemoBookingStatus.SCHEDULED,
+        lead: { assignedToUserId: 'sales-owner-id' },
+      });
+
+      const demoHeadUser: ValidatedUser = {
+        id: 'demo-head-id',
+        email: 'demohead@elscore.com',
+        mustChangePassword: false,
+      };
+
+      mockRbac.getPermissionsForUser.mockResolvedValue(new Set(['demo.manage_team', 'demo.manage_all', 'demo.manage_operations']));
+      mockRbac.hasPermissions.mockResolvedValue(false);
+      mockPrisma.userRole.findMany.mockResolvedValue([
+        { role: { code: 'DEMO_HEAD' } },
+      ]);
+
+      await expect(
+        demoService.confirmParentMeeting(
+          'booking-1',
+          { confirmationChannel: 'WHATSAPP_CHAT' },
+          demoHeadUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('11. Legacy Demo Record Handoff Accessibility', () => {
+    it('allows owning Sales Counsellor to preview WhatsApp and confirm parent on legacy Demo records', async () => {
+      // No DemoBooking record exists; legacy Demo record only
+      mockPrisma.demoBooking.findFirst.mockResolvedValue(null);
+      mockPrisma.demo.findUnique.mockResolvedValue({
+        id: 'legacy-demo-1',
+        meetingLink: 'https://meet.google.com/legacy-link',
+        status: DemoStatus.SCHEDULED,
+        scheduledAt: new Date('2026-10-22T10:00:00Z'),
+        student: {
+          firstName: 'Rohan',
+          lastName: 'Mehta',
+          lead: {
+            assignedToUserId: salesUser.id,
+            parentName: 'Sanjay Mehta',
+            whatsappNumber: '9876543210',
+          },
+        },
+        subject: { name: 'Mathematics' },
+        tutor: {
+          employee: { firstName: 'Kavita', lastName: 'Nair' },
+        },
+      });
+
+      mockPrisma.demo.update.mockResolvedValue({
+        id: 'legacy-demo-1',
+        status: DemoStatus.SCHEDULED,
+      });
+
+      mockRbac.getPermissionsForUser.mockResolvedValue(new Set(['demo.read_own']));
+      mockRbac.hasPermissions.mockResolvedValue(false);
+      mockPrisma.userRole.findMany.mockResolvedValue([
+        { role: { code: 'SALES_COUNSELLOR' } },
+      ]);
+
+      const preview = await demoService.getWhatsAppPreview('legacy-demo-1', salesUser);
+      expect(preview.success).toBe(true);
+      expect(preview.message).toContain('Hello Sanjay Mehta,');
+      expect(preview.message).toContain('Mathematics');
+      expect(preview.message).toContain('Kavita Nair');
+
+      const confirmation = await demoService.confirmParentMeeting(
+        'legacy-demo-1',
+        { confirmationChannel: 'WHATSAPP_CHAT', confirmationNotes: 'Confirmed with Sanjay' },
+        salesUser,
+      );
+      expect(confirmation.id).toBe('legacy-demo-1');
     });
   });
 });

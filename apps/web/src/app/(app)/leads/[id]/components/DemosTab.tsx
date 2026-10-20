@@ -1,15 +1,19 @@
 "use client";
 
 import * as React from 'react';
+import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { usePermissions } from '@/components/providers/AuthProvider';
-import { Calendar, Video, Plus } from 'lucide-react';
+import { usePermissions, useAuth } from '@/components/providers/AuthProvider';
+import { Calendar, Video, Plus, Share2, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 
 import { RescheduleDemoModal } from '../../../demos/components/RescheduleDemoModal';
 import { CancelDemoModal } from '../../../demos/components/CancelDemoModal';
 import { EditDemoModal } from '../../../demos/components/EditDemoModal';
+import { WhatsAppPreviewModal } from '../../../demos/components/WhatsAppPreviewModal';
+import { ParentConfirmationModal } from '../../../demos/components/ParentConfirmationModal';
+import { OperationalStageBadge } from '../../../demos/components/DemoList';
 
 export function DemosTab({
   lead,
@@ -21,8 +25,18 @@ export function DemosTab({
   onBookDemo?: () => void;
 }) {
   const { hasPermission } = usePermissions();
+  const { user, effectiveUser } = useAuth();
+  const currentUserId = effectiveUser?.id || user?.id;
+
+  const leadOwnerId = lead?.assignedToUserId;
+  const isSalesHead = hasPermission('demo.manage_team') || (effectiveUser?.roles?.includes('SALES_HEAD') ?? false);
+  const isCeo = hasPermission('analytics.ceo.read') || (effectiveUser?.roles?.includes('CEO') ?? false);
+  const canManageSales = Boolean(isCeo || isSalesHead || hasPermission('lead.manage_all') || hasPermission('demo.manage_all'));
+
   const [activeDemo, setActiveDemo] = React.useState<any>(null);
-  const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'cancel' | 'edit'>('none');
+  const [modalState, setModalState] = React.useState<
+    'none' | 'reschedule' | 'cancel' | 'edit' | 'whatsappPreview' | 'parentConfirm'
+  >('none');
 
   // Collect all bookings from lead and students, deduping by id
   const bookingMap = new Map<string, any>();
@@ -59,6 +73,13 @@ export function DemosTab({
         businessId: d.businessId || d.id,
         title: `${d.requirement?.subject?.name || d.subject?.name || 'Subject'} - ${d.requirement?.grade?.name || d.grade?.name || 'Grade'}`,
         status: d.status,
+        stage: d.operationalStage || (d.status === 'COMPLETED' ? 'COMPLETED' : 'VALID_DEMO'),
+        isRescheduled: d.isRescheduled || false,
+        parentConfirmedAt: d.parentConfirmedAt,
+        parentConfirmedByUser: d.parentConfirmedByUser,
+        bookedByUserId: d.bookedByUserId,
+        meetingLink: d.meetingLink,
+        whatsappOpenedAt: d.whatsappOpenedAt,
         studentName: `${s.firstName || ''} ${s.lastName || ''}`.trim(),
         scheduledAt: d.scheduledAt,
         totalDurationMin: d.durationMinutes || 60,
@@ -107,6 +128,13 @@ export function DemosTab({
       businessId: b.businessId,
       title,
       status: b.status,
+      stage: b.operationalStage || b.stage || 'VALID_DEMO',
+      isRescheduled: b.isRescheduled || false,
+      parentConfirmedAt: b.parentConfirmedAt,
+      parentConfirmedByUser: b.parentConfirmedByUser,
+      bookedByUserId: b.bookedByUserId,
+      meetingLink: b.meetingLink,
+      whatsappOpenedAt: b.whatsappOpenedAt,
       studentName: student ? `${student.firstName || ''} ${student.lastName || ''}`.trim() : 'Student',
       scheduledAt,
       totalDurationMin: b.totalDurationMin || (sessions.length ? sessions.reduce((acc: number, s: any) => acc + (s.durationMinutes || 0), 0) : 60),
@@ -131,11 +159,13 @@ export function DemosTab({
     if (onUpdate) onUpdate();
   };
 
-  const handleOpenAction = (item: any, action: 'reschedule' | 'cancel' | 'edit') => {
+  const handleOpenAction = (item: any, action: 'reschedule' | 'cancel' | 'edit' | 'whatsappPreview' | 'parentConfirm') => {
     const modalPayload = {
       id: item.legacyDemoId || item.id,
+      booking: item.isBooking ? item.rawItem : undefined,
       scheduledAt: item.scheduledAt,
       durationMinutes: item.totalDurationMin,
+      lead,
       ...item.rawItem,
     };
     setActiveDemo(modalPayload);
@@ -190,22 +220,20 @@ export function DemosTab({
       </div>
       <div className="grid gap-4">
         {allDemos.map((demo: any) => {
-          const isTerminal = ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(demo.status);
+          const isTerminal = ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(demo.status) || demo.stage === 'COMPLETED' || demo.stage === 'CANCELLED';
           const hasMultipleSessions = demo.sessions && demo.sessions.length > 1;
+
+          const isLeadOwner = Boolean(currentUserId && leadOwnerId && currentUserId === leadOwnerId);
+          const isBooker = Boolean(!leadOwnerId && currentUserId && demo.bookedByUserId && currentUserId === demo.bookedByUserId);
+          const canSalesOutreach = Boolean(isLeadOwner || isBooker || canManageSales);
+          const stage = demo.stage || 'VALID_DEMO';
 
           return (
             <Card key={demo.id} className="p-4 flex flex-col sm:flex-row justify-between sm:items-start gap-4">
               <div className="space-y-2 flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h4 className="font-semibold text-slate-900">{demo.title}</h4>
-                  <Badge variant={
-                    demo.status === 'SCHEDULED' ? 'info' :
-                    demo.status === 'COMPLETED' ? 'success' :
-                    demo.status === 'CANCELLED' ? 'danger' :
-                    demo.status === 'NO_SHOW' ? 'warning' : 'default'
-                  }>
-                    {demo.status}
-                  </Badge>
+                  <OperationalStageBadge stage={stage} isRescheduled={demo.isRescheduled} />
                   {demo.businessId && (
                     <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">
                       {demo.businessId}
@@ -231,6 +259,19 @@ export function DemosTab({
                     </p>
                   )}
                 </div>
+
+                {/* Parent Confirmation Status Banner */}
+                {demo.parentConfirmedAt ? (
+                  <div className="text-xs text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md font-medium flex items-center gap-1.5 w-fit mt-1">
+                    <CheckCircle className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Parent Confirmed {demo.parentConfirmedByUser?.employee?.firstName ? `by ${demo.parentConfirmedByUser.employee.firstName}` : ''} ({new Date(demo.parentConfirmedAt).toLocaleDateString()})</span>
+                  </div>
+                ) : (stage === 'LINK_SHARED' || stage === 'TUTOR_ASSIGNED') ? (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md font-medium flex items-center gap-1.5 w-fit mt-1">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Awaiting Sales Confirmation</span>
+                  </div>
+                ) : null}
 
                 {hasMultipleSessions && (
                   <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
@@ -329,7 +370,38 @@ export function DemosTab({
               </div>
 
               {!isTerminal && (
-                <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                <div className="flex flex-wrap gap-2 mt-2 sm:mt-0 items-center">
+                  {/* Sales Outreach Actions for LINK_SHARED */}
+                  {stage === 'LINK_SHARED' && canSalesOutreach && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => handleOpenAction(demo, 'whatsappPreview')}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
+                        title="Open WhatsApp message preview"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>WhatsApp</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenAction(demo, 'parentConfirm')}
+                        className="text-teal-700 border-teal-300 hover:bg-teal-50 flex items-center gap-1.5"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Confirm Parent</span>
+                      </Button>
+                    </>
+                  )}
+
+                  <Link href={`/demos/${demo.legacyDemoId || demo.id}`}>
+                    <Button variant="outline" size="sm" className="flex items-center gap-1 text-slate-700">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Details</span>
+                    </Button>
+                  </Link>
+
                   {(hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all')) && (
                     <>
                       <Button 
@@ -367,6 +439,18 @@ export function DemosTab({
 
       {activeDemo && (
         <>
+          <WhatsAppPreviewModal
+            isOpen={modalState === 'whatsappPreview'}
+            onClose={() => { setModalState('none'); setActiveDemo(null); }}
+            demo={activeDemo}
+            onSuccess={handleActionSuccess}
+          />
+          <ParentConfirmationModal
+            isOpen={modalState === 'parentConfirm'}
+            onClose={() => { setModalState('none'); setActiveDemo(null); }}
+            demo={activeDemo}
+            onSuccess={handleActionSuccess}
+          />
           <RescheduleDemoModal 
             isOpen={modalState === 'reschedule'} 
             onClose={() => setModalState('none')} 

@@ -218,7 +218,7 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
               const leadOwnerId = lead?.assignedToUserId;
               const bookerId = demo.bookedByUserId || demo.booking?.bookedByUserId;
               const isLeadOwner = Boolean(currentUserId && leadOwnerId && currentUserId === leadOwnerId);
-              const isBooker = Boolean(currentUserId && bookerId && currentUserId === bookerId);
+              const isBooker = Boolean(!leadOwnerId && currentUserId && bookerId && currentUserId === bookerId);
               const canSalesOutreach = Boolean(isLeadOwner || isBooker || canManageSales);
 
               return (
@@ -246,11 +246,18 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
                   {/* Operational Stage */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <OperationalStageBadge stage={stage} isRescheduled={demo.isRescheduled} />
-                    {demo.parentConfirmedAt && (
-                      <div className="text-[11px] text-teal-600 font-medium mt-1 flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3" /> Confirmed
+                    {demo.parentConfirmedAt ? (
+                      <div 
+                        className="text-[11px] text-teal-600 font-medium mt-1 flex items-center gap-1"
+                        title={demo.parentConfirmedByUser ? `Confirmed by ${demo.parentConfirmedByUser.employee?.firstName || demo.parentConfirmedByUser.email} on ${formatDate(demo.parentConfirmedAt)}` : undefined}
+                      >
+                        <CheckCircle className="w-3 h-3" /> Parent Confirmed
                       </div>
-                    )}
+                    ) : (stage === 'LINK_SHARED' || stage === 'TUTOR_ASSIGNED') ? (
+                      <div className="text-[11px] text-amber-600 font-medium mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> Awaiting Sales Confirmation
+                      </div>
+                    ) : null}
                   </td>
 
                   {/* Coordinator */}

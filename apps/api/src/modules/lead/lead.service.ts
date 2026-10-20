@@ -370,6 +370,7 @@ export class LeadService {
               include: {
                 coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
                 bookedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+                parentConfirmedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
                 sessions: {
                   include: {
                     subject: true,
@@ -398,6 +399,7 @@ export class LeadService {
             student: { select: { id: true, firstName: true, lastName: true } },
             coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
             bookedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+            parentConfirmedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
             sessions: {
               include: {
                 subject: true,
