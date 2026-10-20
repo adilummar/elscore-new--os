@@ -10,6 +10,8 @@ import {
   DemoAttendanceStatus,
   TutorAssignmentStatus,
   DemoExceptionStatus,
+  DemoOperationalStage,
+  ParentConfirmationChannel,
   Prisma,
 } from '@prisma/client';
 import { Queue } from 'bullmq';
@@ -24,9 +26,18 @@ import { RbacService } from '../../common/rbac/rbac.service';
 import { DEMO_BACKFILL_NAMESPACE } from './backfill/demo-backfill.service';
 import { DemoMultiSessionService } from './demo-multisession.service';
 
-import { CreateDemoDto, RescheduleDemoDto, AssignTutorDto, CompleteDemoDto, CancelDemoDto, 
+import {
+  CreateDemoDto,
+  RescheduleDemoDto,
+  AssignTutorDto,
+  CompleteDemoDto,
+  CancelDemoDto,
   NoShowDemoDto,
-  EditDemoDto
+  EditDemoDto,
+  SavePreparationDto,
+  RecordMeetingLinkDto,
+  ConfirmParentMeetingDto,
+  ReassignCoordinatorDto,
 } from './dto/demo.dto';
 
 @Injectable()
@@ -349,10 +360,23 @@ export class DemoService {
             coordinatorId,
             bookedByUserId: user.id,
             status: DemoBookingStatus.SCHEDULED,
+            operationalStage: DemoOperationalStage.VALID_DEMO,
             scheduledDate: orderedSessions[0].scheduledStart,
             totalDurationMin: totalDurationMinutes,
           },
         });
+
+        if (tx.demoOperationalStageHistory) {
+          await tx.demoOperationalStageHistory.create({
+            data: {
+              bookingId: booking.id,
+              previousStage: null,
+              newStage: DemoOperationalStage.VALID_DEMO,
+              changedByUserId: user.id,
+              reason: 'Initial demo booking',
+            },
+          });
+        }
       }
 
       // 9. Create Child DemoSessions
@@ -625,7 +649,7 @@ export class DemoService {
     return where;
   }
 
-  async getDemos(user: ValidatedUser, query?: { view?: string, status?: string }) {
+  async getDemos(user: ValidatedUser, query?: { view?: string; status?: string; stage?: string }) {
     const actor = await this.getDemoActorContext(user.id);
     const where = await this.buildDemoVisibilityWhere(actor, user.id);
 
@@ -633,11 +657,11 @@ export class DemoService {
       where.status = query.status;
     }
 
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday.getTime() + 86400000);
+
     if (query?.view) {
-      const now = new Date();
-      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const endOfToday = new Date(startOfToday.getTime() + 86400000);
-      
       if (query.view === 'pending') {
         where.status = DemoStatus.SCHEDULED;
         where.tutorId = null;
@@ -654,17 +678,108 @@ export class DemoService {
       where,
       orderBy: { scheduledAt: 'asc' },
       include: {
-        student: { select: { id: true, firstName: true, lastName: true, currentGrade: true } },
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            currentGrade: true,
+            lead: { select: { id: true, assignedToUserId: true, primaryPhone: true, whatsappNumber: true } },
+          },
+        },
         subject: { select: { id: true, name: true } },
         curriculum: { select: { id: true, name: true } },
         grade: { select: { id: true, name: true } },
         requirement: { select: { id: true, notes: true, subjectId: true, gradeId: true, curriculumId: true } },
         tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
         bookedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
-      }
+      },
     });
 
-    return demos;
+    // Hydrate demoBooking data for operational stage and workflow details
+    let demoBookings: any[] = [];
+    if (this.prisma.demoBooking && demos.length > 0) {
+      const demoIds = demos.map((d: any) => d.id);
+      demoBookings = await this.prisma.demoBooking.findMany({
+        where: {
+          OR: [
+            { id: { in: demoIds } },
+            { legacyDemoId: { in: demoIds } },
+          ],
+        },
+        include: {
+          coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          lead: { select: { id: true, assignedToUserId: true, primaryPhone: true, whatsappNumber: true } },
+          sessions: {
+            include: {
+              subject: true,
+              grade: true,
+              curriculum: true,
+              tutorAssignments: {
+                where: { status: TutorAssignmentStatus.ACTIVE },
+                include: { tutor: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } } },
+              },
+            },
+            orderBy: { sessionOrder: 'asc' },
+          },
+        },
+      });
+    }
+
+    const bookingMap = new Map();
+    for (const b of demoBookings) {
+      bookingMap.set(b.id, b);
+      if (b.legacyDemoId) bookingMap.set(b.legacyDemoId, b);
+    }
+
+    let enrichedDemos = demos.map((d: any) => {
+      const booking = bookingMap.get(d.id);
+      return {
+        ...d,
+        booking: booking || null,
+        operationalStage: booking?.operationalStage || (d.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO),
+        isRescheduled: booking?.isRescheduled || false,
+        coordinator: booking?.coordinator || null,
+        preparationNotes: booking?.preparationNotes || null,
+        meetingLink: booking?.meetingLink || null,
+        meetingPlatform: booking?.meetingPlatform || null,
+        parentConfirmedAt: booking?.parentConfirmedAt || null,
+        salesWhatsAppSharedAt: booking?.salesWhatsAppSharedAt || null,
+      };
+    });
+
+    // Filter by operational stage if requested
+    if (query?.stage) {
+      enrichedDemos = enrichedDemos.filter((d: any) => d.operationalStage === query.stage);
+    }
+
+    // Filter by specific operational views
+    if (query?.view === 'ready_for_sales') {
+      enrichedDemos = enrichedDemos.filter(
+        (d: any) => d.operationalStage === DemoOperationalStage.LINK_SHARED && !d.parentConfirmedAt,
+      );
+    } else if (query?.view === 'unassigned') {
+      enrichedDemos = enrichedDemos.filter(
+        (d: any) => !d.coordinator && d.status !== DemoStatus.COMPLETED && d.status !== DemoStatus.CANCELLED,
+      );
+    } else if (query?.view === 'my_queue') {
+      enrichedDemos = enrichedDemos.filter(
+        (d: any) =>
+          (d.coordinator && d.coordinator.id === user.id) ||
+          (d.student?.lead?.assignedToUserId === user.id) ||
+          (d.bookedByUser?.id === user.id),
+      );
+    } else if (query?.view === 'overdue') {
+      enrichedDemos = enrichedDemos.filter(
+        (d: any) =>
+          new Date(d.scheduledAt).getTime() < now.getTime() &&
+          d.status !== DemoStatus.COMPLETED &&
+          d.status !== DemoStatus.CANCELLED &&
+          d.status !== DemoStatus.NO_SHOW,
+      );
+    }
+
+    return enrichedDemos;
   }
 
   async getSummary(user: ValidatedUser) {
@@ -677,24 +792,83 @@ export class DemoService {
 
     const [todayCount, upcomingCount, completedTodayCount, cancelledTodayCount, noShowTodayCount, pendingCount] = await Promise.all([
       this.prisma.demo.count({
-        where: { ...where, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+        where: { ...where, scheduledAt: { gte: startOfToday, lt: endOfToday } },
       }),
       this.prisma.demo.count({
-        where: { ...where, scheduledAt: { gte: endOfToday } }
+        where: { ...where, scheduledAt: { gte: endOfToday } },
       }),
       this.prisma.demo.count({
-        where: { ...where, status: DemoStatus.COMPLETED, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+        where: { ...where, status: DemoStatus.COMPLETED, scheduledAt: { gte: startOfToday, lt: endOfToday } },
       }),
       this.prisma.demo.count({
-        where: { ...where, status: DemoStatus.CANCELLED, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+        where: { ...where, status: DemoStatus.CANCELLED, scheduledAt: { gte: startOfToday, lt: endOfToday } },
       }),
       this.prisma.demo.count({
-        where: { ...where, status: DemoStatus.NO_SHOW, scheduledAt: { gte: startOfToday, lt: endOfToday } }
+        where: { ...where, status: DemoStatus.NO_SHOW, scheduledAt: { gte: startOfToday, lt: endOfToday } },
       }),
       this.prisma.demo.count({
-        where: { ...where, status: DemoStatus.SCHEDULED, tutorId: null }
-      })
+        where: { ...where, status: DemoStatus.SCHEDULED, tutorId: null },
+      }),
     ]);
+
+    // Operational stages counts from DemoBooking
+    const stageCounts: Record<string, number> = {
+      VALID_DEMO: 0,
+      PREPARATION: 0,
+      TUTOR_ASSIGNED: 0,
+      LINK_SHARED: 0,
+      PARENT_CONFIRMATION: 0,
+      COMPLETED: 0,
+      NOT_SHOW: 0,
+      CANCELLED: 0,
+      RESCHEDULED: 0,
+    };
+    let readyForSalesCount = 0;
+    let unassignedCount = 0;
+    let myQueueCount = 0;
+    let overdueCount = 0;
+
+    if (this.prisma.demoBooking) {
+      const activeBookings = await this.prisma.demoBooking.findMany({
+        select: {
+          id: true,
+          operationalStage: true,
+          status: true,
+          coordinatorId: true,
+          parentConfirmedAt: true,
+          scheduledDate: true,
+          bookedByUserId: true,
+          lead: { select: { assignedToUserId: true } },
+        },
+      });
+
+      for (const b of activeBookings) {
+        if (b.operationalStage && stageCounts[b.operationalStage] !== undefined) {
+          stageCounts[b.operationalStage]++;
+        }
+        if (b.operationalStage === DemoOperationalStage.LINK_SHARED && !b.parentConfirmedAt) {
+          readyForSalesCount++;
+        }
+        if (!b.coordinatorId && b.status !== DemoBookingStatus.COMPLETED && b.status !== DemoBookingStatus.CANCELLED) {
+          unassignedCount++;
+        }
+        if (
+          (b.coordinatorId === user.id) ||
+          (b.lead?.assignedToUserId === user.id) ||
+          (b.bookedByUserId === user.id)
+        ) {
+          myQueueCount++;
+        }
+        if (
+          new Date(b.scheduledDate).getTime() < now.getTime() &&
+          b.status !== DemoBookingStatus.COMPLETED &&
+          b.status !== DemoBookingStatus.CANCELLED &&
+          b.status !== DemoBookingStatus.NO_SHOW
+        ) {
+          overdueCount++;
+        }
+      }
+    }
 
     return {
       today: todayCount,
@@ -702,7 +876,12 @@ export class DemoService {
       completedToday: completedTodayCount,
       cancelledToday: cancelledTodayCount,
       noShowToday: noShowTodayCount,
-      pending: pendingCount
+      pending: pendingCount,
+      readyForSales: readyForSalesCount,
+      unassigned: unassignedCount,
+      myQueue: myQueueCount,
+      overdue: overdueCount,
+      stages: stageCounts,
     };
   }
 
@@ -906,6 +1085,34 @@ export class DemoService {
           academicPlan: true,
           rescheduleHistory: true,
           coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          stageHistory: {
+            include: {
+              changedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+            },
+            orderBy: { changedAt: 'desc' },
+          },
+          meetingLinkHistory: {
+            include: {
+              sharedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
+          preparedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          linkSharedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          parentConfirmedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          whatsappOpenedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+          lead: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              primaryPhone: true,
+              whatsappNumber: true,
+              status: true,
+              assignedToUserId: true,
+              assignedToUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
+            },
+          },
         },
       });
     }
@@ -1045,6 +1252,26 @@ export class DemoService {
       ...baseData,
       tutor: formattedTutor || baseData.tutor,
       booking: booking || undefined,
+      operationalStage: booking?.operationalStage || (baseData.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO),
+      isRescheduled: booking?.isRescheduled || false,
+      coordinator: booking?.coordinator || null,
+      preparationNotes: booking?.preparationNotes || null,
+      preparedByUserId: booking?.preparedByUserId || null,
+      preparedByUser: booking?.preparedByUser || null,
+      meetingLink: booking?.meetingLink || null,
+      meetingPlatform: booking?.meetingPlatform || null,
+      linkSharedAt: booking?.linkSharedAt || null,
+      linkSharedByUser: booking?.linkSharedByUser || null,
+      parentConfirmedAt: booking?.parentConfirmedAt || null,
+      confirmationChannel: booking?.confirmationChannel || null,
+      parentConfirmationChannel: booking?.confirmationChannel || null,
+      confirmationNotes: booking?.confirmationNotes || null,
+      parentConfirmationNotes: booking?.confirmationNotes || null,
+      parentConfirmedByUser: booking?.parentConfirmedByUser || null,
+      whatsappOpenedAt: booking?.whatsappOpenedAt || null,
+      whatsappOpenedByUser: booking?.whatsappOpenedByUser || null,
+      stageHistory: booking?.stageHistory || [],
+      meetingLinkHistory: booking?.meetingLinkHistory || [],
       auditLogs: auditLogs || [],
     };
 
@@ -1088,7 +1315,7 @@ export class DemoService {
         });
       }
 
-      const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.NO_SHOW, DemoStatus.CANCELLED];
+      const terminalStates: DemoStatus[] = [DemoStatus.COMPLETED, DemoStatus.CANCELLED];
       if (terminalStates.includes(demo.status)) {
         throw new BadRequestException('Cannot reschedule a terminal demo');
       }
@@ -1103,7 +1330,7 @@ export class DemoService {
         throw new ForbiddenException('Only Coordinator, Demo Admin, or Sales Head can reschedule an assigned demo');
       }
 
-      if (demo.status === DemoStatus.SCHEDULED && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && !isLeadOwnerOrBooker) {
+      if ((demo.status === DemoStatus.SCHEDULED || demo.status === DemoStatus.NO_SHOW) && !actor.isCompanyWide && !actor.isSalesHead && !isAssignedCoordinator && !isLeadOwnerOrBooker) {
         throw new ForbiddenException('Cannot reschedule another users demo');
       }
 
@@ -1114,16 +1341,25 @@ export class DemoService {
         where: { id },
         data: {
           scheduledAt: start,
-          durationMinutes: dto.durationMinutes
+          durationMinutes: dto.durationMinutes,
+          status: demo.status === DemoStatus.NO_SHOW ? (demo.tutorId ? DemoStatus.ASSIGNED : DemoStatus.SCHEDULED) : undefined,
         }
       });
 
       if (tx.demoBooking) {
+        const oldStage = booking?.operationalStage;
         await tx.demoBooking.updateMany({
           where: { id: effectiveBookingId },
           data: {
             scheduledDate: start,
             totalDurationMin: dto.durationMinutes,
+            isRescheduled: true,
+            operationalStage: DemoOperationalStage.RESCHEDULED,
+            parentConfirmedAt: null,
+            parentConfirmedByUserId: null,
+            confirmationNotes: null,
+            confirmationChannel: null,
+            status: DemoBookingStatus.SCHEDULED,
           },
         });
 
@@ -1138,20 +1374,44 @@ export class DemoService {
             },
           });
         }
+
+        if (tx.demoOperationalStageHistory) {
+          await tx.demoOperationalStageHistory.create({
+            data: {
+              bookingId: effectiveBookingId,
+              previousStage: oldStage,
+              newStage: DemoOperationalStage.RESCHEDULED,
+              changedByUserId: user.id,
+              reason: dto.reason,
+            },
+          });
+        }
       }
 
       if (tx.demoSession) {
+        const targetSessionId = dto.sessionId;
         const sessions = await tx.demoSession.findMany({
-          where: { bookingId: effectiveBookingId },
+          where: {
+            bookingId: effectiveBookingId,
+            ...(targetSessionId ? { id: targetSessionId } : {}),
+          },
+          include: {
+            tutorAssignments: {
+              where: { status: TutorAssignmentStatus.ACTIVE },
+            },
+          },
           orderBy: { sessionOrder: 'asc' },
         });
-        if (sessions.length > 0) {
+        for (const session of sessions) {
+          const hasActiveTutor = session.tutorAssignments && session.tutorAssignments.length > 0;
           await tx.demoSession.update({
-            where: { id: sessions[0].id },
+            where: { id: session.id },
             data: {
               scheduledStart: start,
               scheduledEnd: end,
               durationMinutes: dto.durationMinutes,
+              isRescheduled: true,
+              status: hasActiveTutor ? DemoSessionStatus.ASSIGNED : DemoSessionStatus.SCHEDULED,
             },
           });
         }
@@ -1292,6 +1552,14 @@ export class DemoService {
         throw new BadRequestException('Cannot assign tutor to terminal demo');
       }
 
+      // Preparation Prerequisite Gate:
+      // Preparation instructions ("How to take the class", min 15 chars) must be completed before assigning tutor
+      if (!booking?.preparationNotes || booking.preparationNotes.trim().length < 15) {
+        throw new BadRequestException(
+          'Preparation instructions ("How to take the class", minimum 15 characters) must be completed before assigning a tutor'
+        );
+      }
+
       const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
       if (!actor.isCompanyWide && !isAssignedCoordinator) {
         throw new ForbiddenException('Only Demo Admin, Demo Head, or the assigned Coordinator can assign tutors');
@@ -1320,7 +1588,10 @@ export class DemoService {
 
       if (tx.demoSession) {
         const sessions = await tx.demoSession.findMany({
-          where: { bookingId: effectiveBookingId },
+          where: {
+            bookingId: effectiveBookingId,
+            ...(dto.sessionId ? { id: dto.sessionId } : {}),
+          },
           orderBy: { sessionOrder: 'asc' },
         });
 
@@ -1332,6 +1603,47 @@ export class DemoService {
             user.id,
             'Assigned by Coordinator'
           );
+        }
+
+        // Check if all sessions in the booking now have an active tutor
+        const allSessions = await tx.demoSession.findMany({
+          where: { bookingId: effectiveBookingId },
+          include: {
+            tutorAssignments: {
+              where: { status: TutorAssignmentStatus.ACTIVE },
+            },
+          },
+        });
+
+        const allAssigned = allSessions.length > 0 && allSessions.every((s) => (s.tutorAssignments?.length ?? 0) > 0);
+        if (allAssigned && typeof tx.demoBooking?.findUnique === 'function') {
+          const currentBooking = await tx.demoBooking.findUnique({
+            where: { id: effectiveBookingId },
+          });
+
+          if (currentBooking && currentBooking.operationalStage !== DemoOperationalStage.COMPLETED) {
+            const oldStage = currentBooking.operationalStage;
+            const newStage = DemoOperationalStage.TUTOR_ASSIGNED;
+
+            if (oldStage !== newStage) {
+              await tx.demoBooking.update({
+                where: { id: effectiveBookingId },
+                data: { operationalStage: newStage },
+              });
+
+              if (tx.demoOperationalStageHistory) {
+                await tx.demoOperationalStageHistory.create({
+                  data: {
+                    bookingId: effectiveBookingId,
+                    previousStage: oldStage,
+                    newStage: newStage,
+                    changedByUserId: user.id,
+                    reason: 'All active sessions assigned to tutors',
+                  },
+                });
+              }
+            }
+          }
         }
       }
 
@@ -1584,10 +1896,26 @@ export class DemoService {
             throw new BadRequestException('Completion gate requirement not satisfied: ' + gateResult.pendingReasons.join('; '));
           }
 
+          const oldStage = fullBooking.operationalStage;
           await tx.demoBooking.update({
             where: { id },
-            data: { status: DemoBookingStatus.COMPLETED },
+            data: {
+              status: DemoBookingStatus.COMPLETED,
+              operationalStage: DemoOperationalStage.COMPLETED,
+            },
           });
+
+          if (tx.demoOperationalStageHistory) {
+            await tx.demoOperationalStageHistory.create({
+              data: {
+                bookingId: id,
+                previousStage: oldStage,
+                newStage: DemoOperationalStage.COMPLETED,
+                changedByUserId: user.id,
+                reason: 'Authoritative completion gate satisfied',
+              },
+            });
+          }
         }
       }
 
@@ -1716,19 +2044,33 @@ export class DemoService {
       });
 
       if (tx.demoBooking) {
+        const oldStage = booking?.operationalStage;
         await tx.demoBooking.updateMany({
-          where: { id },
+          where: { id: booking?.id || id },
           data: {
             status: DemoBookingStatus.CANCELLED,
+            operationalStage: DemoOperationalStage.CANCELLED,
             cancelledAt: new Date(),
             cancelReason: dto.reason,
           },
         });
+
+        if (tx.demoOperationalStageHistory) {
+          await tx.demoOperationalStageHistory.create({
+            data: {
+              bookingId: booking?.id || id,
+              previousStage: oldStage,
+              newStage: DemoOperationalStage.CANCELLED,
+              changedByUserId: user.id,
+              reason: dto.reason,
+            },
+          });
+        }
       }
 
       if (tx.demoSession) {
         await tx.demoSession.updateMany({
-          where: { bookingId: id },
+          where: { bookingId: booking?.id || id },
           data: { status: DemoSessionStatus.CANCELLED },
         });
       }
@@ -1771,8 +2113,8 @@ export class DemoService {
         });
       }
 
-      if (demo.status !== DemoStatus.ASSIGNED) {
-        throw new BadRequestException('Only ASSIGNED demos can be marked No-Show');
+      if (demo.status !== DemoStatus.ASSIGNED && demo.status !== DemoStatus.SCHEDULED) {
+        throw new BadRequestException('Only SCHEDULED or ASSIGNED demos can be marked No-Show');
       }
 
       const isAssignedCoordinator = Boolean(booking?.coordinatorId && booking.coordinatorId === user.id);
@@ -1781,46 +2123,98 @@ export class DemoService {
       if (!actor.isCompanyWide && !isAssignedCoordinator && !isAssignedTutor) {
         throw new ForbiddenException('You do not have permission to mark demos as No-Show');
       }
-      if (demo.tutorId !== user.id && !actor.isCompanyWide && !isAssignedCoordinator) {
+      if (demo.tutorId && demo.tutorId !== user.id && !actor.isCompanyWide && !isAssignedCoordinator) {
         throw new ForbiddenException('Cannot mark another tutors demo as No-Show');
       }
 
-      const updated = await tx.demo.update({
-        where: { id },
-        data: { status: DemoStatus.NO_SHOW }
-      });
+      const isSessionLevel = Boolean(dto.sessionId);
+      let shouldUpdateBookingToNoShow = !isSessionLevel;
 
-      if (tx.demoBooking) {
-        await tx.demoBooking.updateMany({
-          where: { id },
-          data: { status: DemoBookingStatus.NO_SHOW },
+      if (tx.demoSession && isSessionLevel) {
+        // Update ONLY target session to NO_SHOW; sibling sessions untouched
+        await tx.demoSession.updateMany({
+          where: {
+            bookingId: booking?.id || id,
+            id: dto.sessionId,
+          },
+          data: { status: DemoSessionStatus.NO_SHOW },
         });
+
+        if (tx.demoSession.findMany) {
+          const allSessions = await tx.demoSession.findMany({
+            where: { bookingId: booking?.id || id },
+          });
+          const hasActiveSibling = allSessions.some(
+            (s: any) => s.id !== dto.sessionId && (
+              s.status === DemoSessionStatus.SCHEDULED ||
+              s.status === DemoSessionStatus.ASSIGNED ||
+              s.status === DemoSessionStatus.IN_PROGRESS
+            ),
+          );
+          shouldUpdateBookingToNoShow = !hasActiveSibling;
+        }
+      } else if (tx.demoSession && !isSessionLevel) {
+        // Explicit booking-level action: mark all sessions as NO_SHOW
+        await tx.demoSession.updateMany({
+          where: { bookingId: booking?.id || id },
+          data: { status: DemoSessionStatus.NO_SHOW },
+        });
+        shouldUpdateBookingToNoShow = true;
       }
 
-      if (tx.demoSession) {
-        await tx.demoSession.updateMany({
-          where: { bookingId: id },
-          data: { status: DemoSessionStatus.CANCELLED },
+      let updated = demo;
+      if (shouldUpdateBookingToNoShow) {
+        updated = await tx.demo.update({
+          where: { id },
+          data: { status: DemoStatus.NO_SHOW },
         });
+
+        if (tx.demoBooking) {
+          const oldStage = booking?.operationalStage;
+          await tx.demoBooking.updateMany({
+            where: { id: booking?.id || id },
+            data: {
+              status: DemoBookingStatus.NO_SHOW,
+              operationalStage: DemoOperationalStage.NOT_SHOW,
+            },
+          });
+
+          if (tx.demoOperationalStageHistory) {
+            await tx.demoOperationalStageHistory.create({
+              data: {
+                bookingId: booking?.id || id,
+                previousStage: oldStage,
+                newStage: DemoOperationalStage.NOT_SHOW,
+                changedByUserId: user.id,
+                reason: dto.reason,
+              },
+            });
+          }
+        }
       }
 
       await this.audit.recordInTx(tx, {
         entityType: 'demo',
         entityId: id,
-        action: 'DEMO_STATUS_CHANGED',
+        action: isSessionLevel && !shouldUpdateBookingToNoShow ? 'DEMO_SESSION_NO_SHOW' : 'DEMO_STATUS_CHANGED',
         actorUserId: user.id,
         oldValue: { status: demo.status },
-        newValue: { status: DemoStatus.NO_SHOW },
-        reason: dto.reason
+        newValue: {
+          status: shouldUpdateBookingToNoShow ? DemoStatus.NO_SHOW : demo.status,
+          ...(dto.sessionId ? { sessionId: dto.sessionId } : {}),
+        },
+        reason: dto.reason,
       });
 
-      await this.notificationsQueue.add('send', {
-        recipientUserId: demo.bookedByUserId,
-        type: 'DEMO_NO_SHOW',
-        entityType: 'demo',
-        entityId: id,
-        message: 'A Demo has been marked No-Show',
-      });
+      if (demo.bookedByUserId) {
+        await this.notificationsQueue.add('send', {
+          recipientUserId: demo.bookedByUserId,
+          type: 'DEMO_NO_SHOW',
+          entityType: 'demo',
+          entityId: id,
+          message: isSessionLevel ? 'A Demo session has been marked No-Show' : 'A Demo has been marked No-Show',
+        });
+      }
 
       return updated;
     });
@@ -1861,6 +2255,410 @@ export class DemoService {
       });
 
       return result;
+    });
+  }
+
+  async savePreparation(id: string, dto: SavePreparationDto, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      let booking: any = null;
+      if (tx.demoBooking) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+      if (!booking) throw new NotFoundException('Demo booking not found');
+
+      if (booking.status === DemoBookingStatus.CANCELLED || booking.status === DemoBookingStatus.COMPLETED) {
+        throw new BadRequestException('Cannot add preparation instructions to completed or cancelled demo');
+      }
+
+      const isAssignedCoordinator = Boolean(booking.coordinatorId && booking.coordinatorId === user.id);
+      if (!actor.isCompanyWide && !isAssignedCoordinator) {
+        throw new ForbiddenException('Only Demo Admin, Demo Head, or the assigned Coordinator can manage preparation');
+      }
+
+      const oldStage = booking.operationalStage;
+      let newStage = oldStage;
+      if (oldStage === DemoOperationalStage.VALID_DEMO) {
+        newStage = DemoOperationalStage.PREPARATION;
+      }
+
+      const updated = await tx.demoBooking.update({
+        where: { id: booking.id },
+        data: {
+          preparationNotes: dto.preparationNotes,
+          preparationCompletedAt: new Date(),
+          preparedByUserId: user.id,
+          operationalStage: newStage,
+        },
+      });
+
+      if (oldStage !== newStage && tx.demoOperationalStageHistory) {
+        await tx.demoOperationalStageHistory.create({
+          data: {
+            bookingId: booking.id,
+            previousStage: oldStage,
+            newStage: newStage,
+            changedByUserId: user.id,
+            reason: 'Preparation instructions saved',
+          },
+        });
+      }
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'DemoBooking',
+        entityId: booking.id,
+        action: 'DEMO_PREPARATION_SAVED',
+        actorUserId: user.id,
+        newValue: {
+          preparationNotes: dto.preparationNotes,
+          operationalStage: newStage,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async recordMeetingLink(id: string, dto: RecordMeetingLinkDto, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      let booking: any = null;
+      if (tx.demoBooking) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+      if (!booking) throw new NotFoundException('Demo booking not found');
+
+      if (booking.status === DemoBookingStatus.CANCELLED || booking.status === DemoBookingStatus.COMPLETED) {
+        throw new BadRequestException('Cannot record meeting link for completed or cancelled demo');
+      }
+
+      const isAssignedCoordinator = Boolean(booking.coordinatorId && booking.coordinatorId === user.id);
+      if (!actor.isCompanyWide && !isAssignedCoordinator) {
+        throw new ForbiddenException('Only Demo Admin, Demo Head, or assigned Coordinator can record meeting link');
+      }
+
+      let platform = dto.meetingPlatform || 'GOOGLE_MEET';
+      if (dto.meetingLink.includes('meet.google.com')) {
+        platform = 'GOOGLE_MEET';
+      } else if (dto.meetingLink.includes('zoom.us')) {
+        platform = 'ZOOM';
+      } else if (dto.meetingLink.includes('teams.microsoft.com')) {
+        platform = 'TEAMS';
+      }
+
+      const now = new Date();
+      const oldStage = booking.operationalStage;
+      let newStage = oldStage;
+      if (
+        oldStage === DemoOperationalStage.VALID_DEMO ||
+        oldStage === DemoOperationalStage.PREPARATION ||
+        oldStage === DemoOperationalStage.TUTOR_ASSIGNED ||
+        oldStage === DemoOperationalStage.RESCHEDULED
+      ) {
+        newStage = DemoOperationalStage.LINK_SHARED;
+      }
+
+      const updated = await tx.demoBooking.update({
+        where: { id: booking.id },
+        data: {
+          meetingLink: dto.meetingLink,
+          meetingPlatform: platform,
+          linkSharedAt: now,
+          linkSharedByUserId: user.id,
+          operationalStage: newStage,
+        },
+      });
+
+      if (dto.sessionId && tx.demoSession) {
+        await tx.demoSession.update({
+          where: { id: dto.sessionId },
+          data: {
+            meetingLink: dto.meetingLink,
+            meetingPlatform: platform,
+            linkSharedAt: now,
+            linkSharedByUserId: user.id,
+          },
+        });
+      }
+
+      if (tx.demoMeetingLinkHistory) {
+        await tx.demoMeetingLinkHistory.create({
+          data: {
+            bookingId: booking.id,
+            sessionId: dto.sessionId || null,
+            meetingLink: dto.meetingLink,
+            meetingPlatform: platform,
+            sharedByUserId: user.id,
+            reason: dto.changeReason || 'Meeting link provided',
+          },
+        });
+      }
+
+      if (oldStage !== newStage && tx.demoOperationalStageHistory) {
+        await tx.demoOperationalStageHistory.create({
+          data: {
+            bookingId: booking.id,
+            previousStage: oldStage,
+            newStage: newStage,
+            changedByUserId: user.id,
+            reason: 'Meeting link recorded and shared internally',
+          },
+        });
+      }
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'DemoBooking',
+        entityId: booking.id,
+        action: 'DEMO_MEETING_LINK_RECORDED',
+        actorUserId: user.id,
+        newValue: {
+          meetingLink: dto.meetingLink,
+          meetingPlatform: platform,
+          operationalStage: newStage,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async recordWhatsAppOutreach(id: string, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      let booking: any = null;
+      if (tx.demoBooking) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+          include: {
+            student: true,
+            lead: true,
+            coordinator: { select: { id: true, email: true, employee: true } },
+            sessions: {
+              include: { subject: true },
+              orderBy: { sessionOrder: 'asc' },
+            },
+          },
+        });
+      }
+      if (!booking) throw new NotFoundException('Demo booking not found');
+
+      const isLeadOwner = booking.lead?.assignedToUserId === user.id;
+      const isBooker = booking.bookedByUserId === user.id;
+      if (!actor.isCompanyWide && !actor.isSalesHead && !isLeadOwner && !isBooker) {
+        throw new ForbiddenException('Only the assigned Sales Counsellor, Sales Head, or Admin can perform parent outreach');
+      }
+
+      const now = new Date();
+      await tx.demoBooking.update({
+        where: { id: booking.id },
+        data: {
+          whatsappOpenedAt: now,
+          whatsappOpenedByUserId: user.id,
+        },
+      });
+
+      const studentName = [booking.student?.firstName, booking.student?.lastName].filter(Boolean).join(' ') || 'Student';
+      const scheduledTime = new Date(booking.scheduledDate).toLocaleString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const link = booking.meetingLink || 'Meeting link will be shared shortly';
+      const guidelines = booking.preparationNotes ? `\n\nClass Guidelines:\n${booking.preparationNotes}` : '';
+
+      const message = `Hello! This is regarding the Demo class for ${studentName} scheduled on ${scheduledTime}.\n\nMeeting Link: ${link}${guidelines}\n\nPlease let us know if you have any questions. Looking forward to having you!`;
+
+      const rawPhone = booking.lead?.primaryPhone || booking.lead?.whatsappNumber || '';
+      const cleanPhone = rawPhone.replace(/\D/g, '');
+      const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'DemoBooking',
+        entityId: booking.id,
+        action: 'DEMO_WHATSAPP_SHARED',
+        actorUserId: user.id,
+        newValue: {
+          phone: cleanPhone,
+          whatsappOpenedAt: now,
+        },
+      });
+
+      return {
+        success: true,
+        waUrl,
+        message,
+        phone: cleanPhone,
+      };
+    });
+  }
+
+  async confirmParentMeeting(id: string, dto: ConfirmParentMeetingDto, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      let booking: any = null;
+      if (tx.demoBooking) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+          include: { lead: true },
+        });
+      }
+      if (!booking) throw new NotFoundException('Demo booking not found');
+
+      if (booking.status === DemoBookingStatus.CANCELLED || booking.status === DemoBookingStatus.COMPLETED) {
+        throw new BadRequestException('Cannot confirm a completed or cancelled demo');
+      }
+
+      if (!booking.meetingLink) {
+        throw new BadRequestException('Meeting link must be recorded before parent confirmation can be submitted');
+      }
+
+      const isLeadOwner = booking.lead?.assignedToUserId === user.id;
+      const isBooker = booking.bookedByUserId === user.id;
+      if (!actor.isCompanyWide && !actor.isSalesHead && !isLeadOwner && !isBooker) {
+        throw new ForbiddenException('Only the assigned Sales Counsellor, Sales Head, or Admin can confirm parent attendance');
+      }
+
+      const oldStage = booking.operationalStage;
+      const newStage = DemoOperationalStage.PARENT_CONFIRMATION;
+
+      const updated = await tx.demoBooking.update({
+        where: { id: booking.id },
+        data: {
+          confirmationChannel: dto.confirmationChannel,
+          parentConfirmedAt: new Date(),
+          parentConfirmedByUserId: user.id,
+          confirmationNotes: dto.confirmationNotes || null,
+          operationalStage: newStage,
+        },
+      });
+
+      if (oldStage !== newStage && tx.demoOperationalStageHistory) {
+        await tx.demoOperationalStageHistory.create({
+          data: {
+            bookingId: booking.id,
+            previousStage: oldStage,
+            newStage: newStage,
+            changedByUserId: user.id,
+            reason: `Parent confirmed via ${dto.confirmationChannel}`,
+          },
+        });
+      }
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'DemoBooking',
+        entityId: booking.id,
+        action: 'DEMO_PARENT_CONFIRMED',
+        actorUserId: user.id,
+        newValue: {
+          channel: dto.confirmationChannel,
+          notes: dto.confirmationNotes,
+          operationalStage: newStage,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async reassignCoordinator(id: string, dto: ReassignCoordinatorDto, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+
+    if (!actor.isCompanyWide && !actor.isSalesHead && !actor.isCoordinator) {
+      throw new ForbiddenException('Only Demo Coordinator, Demo Head, or Admin can reassign coordinator');
+    }
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      let booking: any = null;
+      if (tx.demoBooking) {
+        booking = await tx.demoBooking.findFirst({
+          where: { OR: [{ id }, { legacyDemoId: id }] },
+        });
+      }
+      if (!booking) throw new NotFoundException('Demo booking not found');
+
+      const oldCoordinatorId = booking.coordinatorId;
+
+      const newCoordinator = await tx.user.findUnique({
+        where: { id: dto.coordinatorId },
+        include: { employee: true },
+      });
+      if (!newCoordinator || newCoordinator.status !== UserStatus.ACTIVE) {
+        throw new BadRequestException('Selected coordinator is not an active user');
+      }
+
+      const updated = await tx.demoBooking.update({
+        where: { id: booking.id },
+        data: { coordinatorId: dto.coordinatorId },
+      });
+
+      if (tx.roundRobinCoordinatorState) {
+        if (oldCoordinatorId) {
+          const oldState = await tx.roundRobinCoordinatorState.findUnique({
+            where: { userId: oldCoordinatorId },
+          });
+          if (oldState && oldState.currentLoad > 0) {
+            await tx.roundRobinCoordinatorState.update({
+              where: { userId: oldCoordinatorId },
+              data: { currentLoad: oldState.currentLoad - 1 },
+            });
+          }
+        }
+
+        const newState = await tx.roundRobinCoordinatorState.findUnique({
+          where: { userId: dto.coordinatorId },
+        });
+        if (newState) {
+          await tx.roundRobinCoordinatorState.update({
+            where: { userId: dto.coordinatorId },
+            data: { currentLoad: newState.currentLoad + 1 },
+          });
+        }
+      }
+
+      await this.audit.recordInTx(tx, {
+        entityType: 'DemoBooking',
+        entityId: booking.id,
+        action: 'DEMO_COORDINATOR_REASSIGNED',
+        actorUserId: user.id,
+        oldValue: { coordinatorId: oldCoordinatorId },
+        newValue: { coordinatorId: dto.coordinatorId, reason: dto.reason },
+      });
+
+      return updated;
+    });
+  }
+
+  async getCoordinators() {
+    return this.prisma.user.findMany({
+      where: {
+        status: UserStatus.ACTIVE,
+        userRoles: {
+          some: {
+            role: { code: { in: ['DEMO_COORDINATOR', 'DEMO_HEAD', 'DEMO_ADMIN'] } },
+          },
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+        employee: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { email: 'asc' },
     });
   }
 }

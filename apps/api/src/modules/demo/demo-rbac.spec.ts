@@ -225,7 +225,11 @@ describe('Demo RBAC Verification (20 Business Scenarios)', () => {
       durationMinutes: 60,
       studentId: 'student-100',
     });
-    tx.demoBooking.findFirst.mockResolvedValueOnce({ id: 'demo-100', coordinatorId: 'coord-other' });
+    tx.demoBooking.findFirst.mockResolvedValueOnce({
+      id: 'demo-100',
+      coordinatorId: 'coord-other',
+      preparationNotes: 'Mandatory preparation notes with at least 15 characters',
+    });
     const assignResult = await service.assignTutor('demo-100', { tutorId: 'new-tutor-2' }, { id: 'admin-1', email: 'admin@test.com' } as any);
     expect(assignResult).toBeDefined();
 

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { DemoStatus, DemoBookingStatus, DemoSessionStatus, LeadStatus } from '@prisma/client';
+import { DemoStatus, DemoBookingStatus, DemoSessionStatus, LeadStatus, DemoOperationalStage } from '@prisma/client';
 import { v5 as uuidv5 } from 'uuid';
 
 import { DemoService } from './demo.service';
@@ -1019,11 +1019,20 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
           update: jest.fn().mockImplementation((args) => Promise.resolve({ ...args.data, id: 'demo-assign-1' })),
         },
         demoBooking: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'demo-assign-1',
+            preparationNotes: 'Preparation notes for testing tutor assignment gate',
+          }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'demo-assign-1',
+            operationalStage: DemoOperationalStage.PREPARATION,
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'demo-assign-1' }),
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         demoSession: {
           findMany: jest.fn().mockResolvedValue([
-            { id: 'session-1', bookingId: 'demo-assign-1', status: DemoSessionStatus.SCHEDULED },
+            { id: 'session-1', bookingId: 'demo-assign-1', status: DemoSessionStatus.SCHEDULED, tutorAssignments: [{ id: 'ta-1', status: 'ACTIVE' }] },
           ]),
           findUnique: jest.fn().mockResolvedValue({
             id: 'session-1',
@@ -1174,7 +1183,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
       expect(mockTx.demoBooking.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'demo-comp-1' },
-          data: { status: DemoBookingStatus.COMPLETED },
+          data: expect.objectContaining({ status: DemoBookingStatus.COMPLETED }),
         })
       );
       // Verify atomic lead status transition
@@ -1216,11 +1225,25 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
         id: demoId,
         studentId: 'student-1',
         coordinatorId: 'coord-1',
+        preparationNotes: 'Instructions for demo class exceeding 15 chars',
         status: DemoBookingStatus.SCHEDULED,
       });
 
       // The booking's own session is returned by findMany when querying demoSession
       mockTx.demoSession.findMany = jest.fn().mockImplementation(({ where }: any) => {
+        // When checking allSessions for booking stage transition
+        if (where?.bookingId === demoId) {
+          return Promise.resolve([
+            {
+              id: 'session-dmo-14',
+              bookingId: demoId,
+              scheduledStart,
+              scheduledEnd,
+              status: DemoSessionStatus.SCHEDULED,
+              tutorAssignments: [{ id: 'ta-1', status: 'ACTIVE' }],
+            },
+          ]);
+        }
         // If booking id is properly excluded, the query returns 0 sessions (or only other bookings' sessions)
         if (where?.booking?.id?.not === demoId || where?.booking?.AND) {
           return Promise.resolve([]);
@@ -1233,6 +1256,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
             scheduledStart,
             scheduledEnd,
             status: DemoSessionStatus.SCHEDULED,
+            tutorAssignments: [],
           },
         ]);
       });
@@ -1267,6 +1291,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
         id: demoId,
         studentId: 'student-1',
         coordinatorId: 'coord-1',
+        preparationNotes: 'Instructions for demo class exceeding 15 chars',
         status: DemoBookingStatus.SCHEDULED,
       });
 

@@ -436,12 +436,26 @@ export class DemoMultiSessionService {
 
   /**
    * Retrieves the next eligible Demo Coordinator in round-robin order.
+   * Atomic concurrency, skips leave/inactive coordinators,
+   * leaves unassigned if empty pool, and NEVER falls back to CEO.
    */
   async getRoundRobinNextCoordinator(tx: PrismaTxClient) {
     const eligibleCoordinators = await tx.roundRobinCoordinatorState.findMany({
       where: {
         isEligible: true,
         dailyState: 'ACTIVE',
+        user: {
+          status: 'ACTIVE',
+        },
+      },
+      include: {
+        user: {
+          include: {
+            userRoles: {
+              include: { role: true },
+            },
+          },
+        },
       },
       orderBy: [
         { currentLoad: 'asc' },
@@ -453,6 +467,12 @@ export class DemoMultiSessionService {
       return null;
     }
 
-    return eligibleCoordinators[0];
+    // Safety guard: Never assign a coordinator with the CEO role
+    const candidate = eligibleCoordinators.find((c) => {
+      const roles = c.user?.userRoles?.map((ur: any) => ur.role?.code) || [];
+      return !roles.includes('CEO');
+    });
+
+    return candidate || null;
   }
 }

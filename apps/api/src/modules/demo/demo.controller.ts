@@ -14,7 +14,11 @@ import {
   CompleteDemoDto, 
   CancelDemoDto, 
   NoShowDemoDto,
-  EditDemoDto
+  EditDemoDto,
+  SavePreparationDto,
+  RecordMeetingLinkDto,
+  ConfirmParentMeetingDto,
+  ReassignCoordinatorDto,
 } from './dto/demo.dto';
 
 
@@ -37,13 +41,19 @@ export class DemoController {
     return this.demoService.getSummary(user);
   }
 
+  @Get('coordinators/list')
+  async getCoordinators() {
+    return this.demoService.getCoordinators();
+  }
+
   @Get()
   async getDemos(
     @Query('view') view: string,
     @Query('status') status: string,
-    @CurrentUser() user: ValidatedUser
+    @Query('stage') stage: string,
+    @CurrentUser() user: ValidatedUser,
   ) {
-    return this.demoService.getDemos(user, { view, status });
+    return this.demoService.getDemos(user, { view, status, stage });
   }
 
   @Get('tutors/search')
@@ -61,6 +71,50 @@ export class DemoController {
     @CurrentUser() user: ValidatedUser,
   ) {
     return this.demoService.getDemoById(id, user);
+  }
+
+  @Patch(':id/preparation')
+  async savePreparation(
+    @Param('id') id: string,
+    @Body() dto: SavePreparationDto,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.savePreparation(id, dto, user);
+  }
+
+  @Patch(':id/meeting-link')
+  async recordMeetingLink(
+    @Param('id') id: string,
+    @Body() dto: RecordMeetingLinkDto,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.recordMeetingLink(id, dto, user);
+  }
+
+  @Post(':id/whatsapp-share')
+  async recordWhatsAppOutreach(
+    @Param('id') id: string,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.recordWhatsAppOutreach(id, user);
+  }
+
+  @Patch(':id/parent-confirmation')
+  async confirmParentMeeting(
+    @Param('id') id: string,
+    @Body() dto: ConfirmParentMeetingDto,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.confirmParentMeeting(id, dto, user);
+  }
+
+  @Patch(':id/reassign-coordinator')
+  async reassignCoordinator(
+    @Param('id') id: string,
+    @Body() dto: ReassignCoordinatorDto,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.reassignCoordinator(id, dto, user);
   }
 
   @Patch(':id/reschedule')

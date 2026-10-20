@@ -286,6 +286,15 @@ model User {
   rescheduledDemoBookings    DemoBookingRescheduleHistory[] @relation("RescheduledDemoBookings")
   roundRobinCoordinatorState RoundRobinCoordinatorState?
 
+  // Demo Operations Workflow Additions
+  preparedDemoBookings         DemoBooking[]                  @relation("PreparedDemoBookings")
+  linkSharedDemoBookings       DemoBooking[]                  @relation("LinkSharedDemoBookings")
+  parentConfirmedDemoBookings   DemoBooking[]                  @relation("ParentConfirmedDemoBookings")
+  whatsappOutreachDemoBookings DemoBooking[]                  @relation("WhatsappOutreachDemoBookings")
+  linkSharedDemoSessions       DemoSession[]                  @relation("SessionLinkSharedDemos")
+  demoMeetingLinksShared       DemoMeetingLinkHistory[]       @relation("DemoMeetingLinksShared")
+  demoOperationalStagesChanged DemoOperationalStageHistory[]  @relation("DemoOperationalStagesChanged")
+
   // Phase 2E Finance additions
   createdInvoices    Invoice[]            @relation("InvoiceCreator")
   issuedInvoices     Invoice[]            @relation("InvoiceIssuer")
@@ -1294,6 +1303,25 @@ enum DemoSessionStatus {
   CANCELLED
 }
 
+enum DemoOperationalStage {
+  VALID_DEMO
+  PREPARATION
+  TUTOR_ASSIGNED
+  LINK_SHARED
+  PARENT_CONFIRMATION
+  COMPLETED
+  NOT_SHOW
+  CANCELLED
+  RESCHEDULED
+}
+
+enum ParentConfirmationChannel {
+  WHATSAPP_CHAT
+  PHONE_CALL
+  EMAIL
+  OTHER
+}
+
 enum DemoParticipantType {
   PARENT
   COORDINATOR
@@ -1335,6 +1363,36 @@ model DemoBooking {
   scheduledDate    DateTime          @map("scheduled_date")
   totalDurationMin Int               @map("total_duration_minutes")
 
+  // Operational Workflow Additions
+  operationalStage        DemoOperationalStage      @default(VALID_DEMO) @map("operational_stage")
+  isRescheduled           Boolean                   @default(false) @map("is_rescheduled")
+
+  // Preparation Tracking
+  preparationNotes        String?                   @db.Text @map("preparation_notes")
+  preparationCompletedAt  DateTime?                 @map("preparation_completed_at")
+  preparedByUserId        String?                   @map("prepared_by_user_id")
+  preparedByUser          User?                     @relation("PreparedDemoBookings", fields: [preparedByUserId], references: [id])
+
+  // Meeting Link Tracking
+  meetingLink             String?                   @map("meeting_link")
+  meetingPlatform         String?                   @map("meeting_platform")
+  meetingPasscode         String?                   @map("meeting_passcode")
+  linkSharedAt            DateTime?                 @map("link_shared_at")
+  linkSharedByUserId      String?                   @map("link_shared_by_user_id")
+  linkSharedByUser        User?                     @relation("LinkSharedDemoBookings", fields: [linkSharedByUserId], references: [id])
+
+  // Parent Confirmation Tracking
+  parentConfirmedAt       DateTime?                 @map("parent_confirmed_at")
+  parentConfirmedByUserId String?                   @map("parent_confirmed_by_user_id")
+  parentConfirmedByUser   User?                     @relation("ParentConfirmedDemoBookings", fields: [parentConfirmedByUserId], references: [id])
+  confirmationChannel     ParentConfirmationChannel? @map("confirmation_channel")
+  confirmationNotes       String?                   @db.Text @map("confirmation_notes")
+
+  // WhatsApp Outreach Tracking (Click-to-Open)
+  whatsappOpenedAt        DateTime?                 @map("whatsapp_opened_at")
+  whatsappOpenedByUserId  String?                   @map("whatsapp_opened_by_user_id")
+  whatsappOpenedByUser    User?                     @relation("WhatsappOutreachDemoBookings", fields: [whatsappOpenedByUserId], references: [id])
+
   legacyDemoId     String?           @unique @map("legacy_demo_id")
   cancelledAt      DateTime?         @map("cancelled_at")
   cancelReason     String?           @map("cancel_reason")
@@ -1352,11 +1410,16 @@ model DemoBooking {
   feedbackRecord   DemoFeedbackRecord?
   roadmap          DemoRoadmap?
   academicPlan     DemoAcademicPlan?
+  meetingLinkHistory DemoMeetingLinkHistory[]
+  stageHistory     DemoOperationalStageHistory[]
 
   @@index([studentId])
   @@index([leadId])
   @@index([coordinatorId])
   @@index([status])
+  @@index([operationalStage])
+  @@index([coordinatorId, operationalStage])
+  @@index([bookedByUserId, operationalStage])
   @@index([scheduledDate])
   @@map("demo_bookings")
 }
@@ -1374,6 +1437,14 @@ model DemoSession {
   scheduledEnd    DateTime          @map("scheduled_end")
   durationMinutes Int               @map("duration_minutes")
 
+  // Session-Level Link & Reschedule Additions
+  isRescheduled      Boolean                   @default(false) @map("is_rescheduled")
+  meetingLink        String?                   @map("meeting_link")
+  meetingPlatform    String?                   @map("meeting_platform")
+  linkSharedAt       DateTime?                 @map("link_shared_at")
+  linkSharedByUserId String?                   @map("link_shared_by_user_id")
+  linkSharedByUser   User?                     @relation("SessionLinkSharedDemos", fields: [linkSharedByUserId], references: [id])
+
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
 
@@ -1387,11 +1458,53 @@ model DemoSession {
   attendances      DemoAttendance[]
   exceptions       DemoSessionException[]      @relation("SessionExceptions")
   replacedByExceptions DemoSessionException[]  @relation("ReplacementSession")
+  meetingLinkHistory DemoMeetingLinkHistory[]
+  stageHistory     DemoOperationalStageHistory[]
 
   @@index([bookingId])
   @@index([status])
   @@index([scheduledStart])
   @@map("demo_sessions")
+}
+
+model DemoMeetingLinkHistory {
+  id              String       @id @default(uuid())
+  bookingId       String       @map("booking_id")
+  sessionId       String?      @map("session_id")
+  meetingLink     String       @map("meeting_link")
+  meetingPlatform String?      @map("meeting_platform")
+  versionNumber   Int          @default(1) @map("version_number")
+  reason          String?      @db.Text
+  sharedByUserId  String       @map("shared_by_user_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  booking         DemoBooking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  session         DemoSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sharedByUser    User         @relation("DemoMeetingLinksShared", fields: [sharedByUserId], references: [id])
+
+  @@index([bookingId])
+  @@index([sessionId])
+  @@map("demo_meeting_link_history")
+}
+
+model DemoOperationalStageHistory {
+  id              String                @id @default(uuid())
+  bookingId       String                @map("booking_id")
+  sessionId       String?               @map("session_id")
+  previousStage   DemoOperationalStage? @map("previous_stage")
+  newStage        DemoOperationalStage  @map("new_stage")
+  changedByUserId String                @map("changed_by_user_id")
+  reason          String?               @db.Text
+  changedAt       DateTime              @default(now()) @map("changed_at")
+
+  booking         DemoBooking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  session         DemoSession?          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  changedByUser   User                  @relation("DemoOperationalStagesChanged", fields: [changedByUserId], references: [id])
+
+  @@index([bookingId])
+  @@index([sessionId])
+  @@index([newStage])
+  @@map("demo_operational_stage_history")
 }
 
 model DemoSessionTutorAssignment {

@@ -2,13 +2,13 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { getDemoById } from '../../actions';
+import { getDemoById, recordWhatsAppOutreach } from '../../actions';
 import { usePermissions } from '@/components/providers/AuthProvider';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { Timeline } from '@/components/ui/Timeline';
+import { OperationalStageBadge } from '../../components/DemoList';
 
 // Modals
 import { RescheduleDemoModal } from '../../components/RescheduleDemoModal';
@@ -17,18 +17,53 @@ import { CompleteDemoModal } from '../../components/CompleteDemoModal';
 import { CancelDemoModal } from '../../components/CancelDemoModal';
 import { NoShowDemoModal } from '../../components/NoShowDemoModal';
 import { EditDemoModal } from '../../components/EditDemoModal';
+import { PreparationModal } from '../../components/PreparationModal';
+import { MeetingLinkModal } from '../../components/MeetingLinkModal';
+import { ParentConfirmationModal } from '../../components/ParentConfirmationModal';
+import { ReassignCoordinatorModal } from '../../components/ReassignCoordinatorModal';
+
+import {
+  CheckCircle2,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  RotateCcw,
+  BookOpen,
+  Link2,
+  Share2,
+  UserCheck,
+  ExternalLink,
+  Video,
+  Phone,
+  Mail,
+  MoreHorizontal,
+  ChevronRight,
+  Sparkles,
+  FileText
+} from 'lucide-react';
 
 function formatDate(dateStr: string) {
+  if (!dateStr) return 'Pending';
   return new Intl.DateTimeFormat('en-IN', { 
     month: 'long', day: 'numeric', year: 'numeric' 
   }).format(new Date(dateStr));
 }
 
 function formatTime(dateStr: string) {
+  if (!dateStr) return '';
   return new Intl.DateTimeFormat('en-IN', { 
     hour: 'numeric', minute: '2-digit', hour12: true 
   }).format(new Date(dateStr));
 }
+
+const PIPELINE_STAGES = [
+  { id: 'VALID_DEMO', label: '1. Valid Demo' },
+  { id: 'PREPARATION', label: '2. Preparation' },
+  { id: 'TUTOR_ASSIGNED', label: '3. Tutor Assigned' },
+  { id: 'LINK_SHARED', label: '4. Link Shared' },
+  { id: 'PARENT_CONFIRMATION', label: '5. Parent Confirmed' },
+  { id: 'COMPLETED', label: '6. Completed' },
+];
 
 export function DemoDetailClient({
   id,
@@ -43,8 +78,11 @@ export function DemoDetailClient({
   const [demo, setDemo] = React.useState<any>(initialDemo);
   const [isLoading, setIsLoading] = React.useState(!initialDemo && !initialError);
   const [error, setError] = React.useState<string | null>(initialError);
+  const [isWhatsAppLoading, setIsWhatsAppLoading] = React.useState(false);
   
-  const [modalState, setModalState] = React.useState<'none' | 'reschedule' | 'edit' | 'assign' | 'complete' | 'cancel' | 'noshow'>('none');
+  const [modalState, setModalState] = React.useState<
+    'none' | 'reschedule' | 'edit' | 'assign' | 'complete' | 'cancel' | 'noshow' | 'preparation' | 'meetingLink' | 'parentConfirm' | 'reassignCoord'
+  >('none');
 
   const loadDemo = React.useCallback(async () => {
     setIsLoading(true);
@@ -64,6 +102,30 @@ export function DemoDetailClient({
       loadDemo();
     }
   }, [loadDemo, initialDemo, initialError]);
+
+  const handleActionSuccess = () => {
+    setModalState('none');
+    loadDemo();
+  };
+
+  const handleWhatsAppOutreach = async () => {
+    if (!demo) return;
+    const demoId = demo.booking?.id || demo.id;
+    setIsWhatsAppLoading(true);
+    try {
+      const res = await recordWhatsAppOutreach(demoId);
+      if (res.success && res.data?.whatsappUrl) {
+        window.open(res.data.whatsappUrl, '_blank');
+        loadDemo();
+      } else {
+        alert(res.error || 'Failed to generate WhatsApp outreach link');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error triggering WhatsApp outreach');
+    } finally {
+      setIsWhatsAppLoading(false);
+    }
+  };
 
   if (isLoading && !demo) {
     return (
@@ -92,84 +154,483 @@ export function DemoDetailClient({
 
   if (!demo) return null;
 
-  const isTerminal = ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(demo.status);
-  
-  // Transform audit logs and reschedule history into Timeline format
+  const currentStage = demo.operationalStage || 'VALID_DEMO';
+  const isTerminal = ['COMPLETED', 'CANCELLED'].includes(demo.status) || currentStage === 'COMPLETED' || currentStage === 'CANCELLED';
+  const isNoShow = demo.status === 'NO_SHOW' || currentStage === 'NOT_SHOW';
+
+  // Permissions
+  const canReschedule = hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
+  const canEdit = hasPermission('demo.reschedule') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
+  const canCancel = hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.cancel_own') || hasPermission('demo.cancel') || hasPermission('demo.manage_operations');
+  const canAssign = hasPermission('demo.assign_tutor') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
+  const canComplete = hasPermission('demo.complete') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
+  const canMarkExceptions = hasPermission('demo.mark_exceptions') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
+  const canManageCoord = hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.manage_operations') || hasPermission('demo.coordinate');
+
+  // Multi-session & booking info
+  const sessions = demo.booking?.sessions || [];
+  const coordinator = demo.coordinator || demo.booking?.coordinator;
+  const coordinatorName = coordinator?.employee?.firstName
+    ? `${coordinator.employee.firstName} ${coordinator.employee.lastName || ''}`.trim()
+    : coordinator?.email || null;
+
+  // Pipeline stepper state
+  const stageOrder = ['VALID_DEMO', 'PREPARATION', 'TUTOR_ASSIGNED', 'LINK_SHARED', 'PARENT_CONFIRMATION', 'COMPLETED'];
+  const currentStageIndex = stageOrder.indexOf(currentStage);
+
+  // History timeline mapping
   const auditLogs = demo.auditLogs || [];
   const reschedules = demo.booking?.rescheduleHistory || demo.rescheduleHistory || [];
-  
+  const stageHistory = demo.stageHistory || demo.booking?.stageHistory || [];
+  const linkHistory = demo.meetingLinkHistory || demo.booking?.meetingLinkHistory || [];
+
   const timelineItems = [
+    ...stageHistory.map((s: any) => ({
+      id: s.id || `stage-${Math.random()}`,
+      title: `Stage: ${s.newStage.replace(/_/g, ' ')}`,
+      description: s.reason ? `Reason: ${s.reason}` : (s.changedByUser?.employee?.firstName ? `Updated by ${s.changedByUser.employee.firstName}` : 'Stage transition'),
+      date: s.changedAt || new Date().toISOString(),
+      type: 'stage',
+    })),
+    ...linkHistory.map((l: any) => ({
+      id: l.id || `link-${Math.random()}`,
+      title: `Meeting Link Recorded (${l.meetingPlatform || 'Link'})`,
+      description: l.reason ? `Update: ${l.reason}` : `Link: ${l.meetingLink}`,
+      date: l.createdAt || new Date().toISOString(),
+      type: 'link',
+    })),
+    ...reschedules.map((r: any) => ({
+      id: r.id || `resched-${Math.random()}`,
+      title: 'Demo Rescheduled',
+      description: r.reason ? `Reason: ${r.reason}` : 'Rescheduled to new date/time',
+      date: r.createdAt || r.newScheduledAt || r.newDate || new Date().toISOString(),
+      type: 'reschedule',
+    })),
     ...auditLogs.map((log: any) => ({
       id: log.id || `audit-${Math.random()}`,
       title: (log.action || 'ACTION').replace(/_/g, ' '),
       description: log.reason || (log.actorUserId ? `Action by user ${log.actorUserId}` : 'System update'),
-      date: log.createdAt || new Date().toISOString(),
-      status: 'completed',
-    })),
-    ...reschedules.map((r: any) => ({
-      id: r.id || `resched-${Math.random()}`,
-      title: 'Rescheduled',
-      description: r.reason ? `Reason: ${r.reason}` : 'Demo rescheduled',
-      date: r.createdAt || r.newScheduledAt || r.newDate || new Date().toISOString(),
-      status: 'completed',
+      date: log.createdAt || log.timestamp || new Date().toISOString(),
+      type: 'audit',
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const handleActionSuccess = () => {
-    setModalState('none');
-    loadDemo();
-  };
-
-  const sessions = demo.booking?.sessions || [];
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center space-x-2 text-sm text-slate-500 mb-6">
-        <Link href="/demos" className="hover:text-slate-900">Demos</Link>
+      {/* Top Breadcrumb Navigation */}
+      <div className="flex items-center space-x-2 text-sm text-slate-500">
+        <Link href="/demos" className="hover:text-slate-900 transition-colors">Demos</Link>
         <span>/</span>
-        <span className="text-slate-900 font-medium">{demo.businessId}</span>
+        <span className="text-slate-900 font-medium">{demo.businessId || demo.id}</span>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-            {demo.businessId}
-            <StatusBadge status={demo.status} />
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            {formatDate(demo.scheduledAt)} at {formatTime(demo.scheduledAt)} • {demo.durationMinutes} mins
-          </p>
-        </div>
+      {/* Main Header & Stage Actions Bar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                {demo.businessId || 'Demo Details'}
+              </h1>
+              <OperationalStageBadge stage={currentStage} isRescheduled={demo.isRescheduled} />
+            </div>
+            <p className="text-slate-500 text-sm mt-1 flex items-center gap-2">
+              <span>{formatDate(demo.scheduledAt)} at {formatTime(demo.scheduledAt)}</span>
+              <span>•</span>
+              <span>{demo.durationMinutes || 60} mins</span>
+              {demo.booking?.businessId && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                    Booking: {demo.booking.businessId}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
 
-        {!isTerminal && (
-          <div className="flex flex-wrap gap-2">
-            {(hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations')) && (
-              <>
-                <Button variant="outline" onClick={() => setModalState('reschedule')}>Reschedule</Button>
-                <Button variant="outline" onClick={() => setModalState('edit')}>Edit</Button>
-              </>
-            )}
-            {hasPermission('demo.assign_tutor') && (
-              <Button variant="outline" onClick={() => setModalState('assign')}>Assign Tutor</Button>
-            )}
-            {demo.status === 'ASSIGNED' && (hasPermission('demo.mark_exceptions') || hasPermission('demo.manage_operations') || hasPermission('demo.manage_all')) && (
-              <Button variant="outline" onClick={() => setModalState('noshow')}>Mark No-Show</Button>
-            )}
-            {(hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.cancel_own') || hasPermission('demo.cancel') || hasPermission('demo.manage_operations')) && (
-              <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setModalState('cancel')}>
-                Cancel
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Contextual / Stage-Driven Primary Actions */}
+            {currentStage === 'VALID_DEMO' && (
+              <Button onClick={() => setModalState('preparation')} className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5">
+                <BookOpen className="w-4 h-4" />
+                <span>Prepare Class Guidelines</span>
               </Button>
             )}
-            {demo.status === 'ASSIGNED' && (hasPermission('demo.complete') || hasPermission('demo.manage_operations') || hasPermission('demo.manage_all')) && (
-              <Button onClick={() => setModalState('complete')}>Complete Demo</Button>
+
+            {currentStage === 'PREPARATION' && canAssign && (
+              <Button onClick={() => setModalState('assign')} className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5">
+                <span>Assign Tutor</span>
+              </Button>
+            )}
+
+            {currentStage === 'TUTOR_ASSIGNED' && (
+              <Button onClick={() => setModalState('meetingLink')} className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5">
+                <Link2 className="w-4 h-4" />
+                <span>Add Meeting Link</span>
+              </Button>
+            )}
+
+            {currentStage === 'LINK_SHARED' && (
+              <>
+                <Button 
+                  onClick={handleWhatsAppOutreach}
+                  disabled={isWhatsAppLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>Share on WhatsApp</span>
+                </Button>
+                <Button onClick={() => setModalState('parentConfirm')} variant="outline" className="text-teal-700 border-teal-300 hover:bg-teal-50 gap-1.5">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Confirm Parent</span>
+                </Button>
+              </>
+            )}
+
+            {currentStage === 'PARENT_CONFIRMATION' && (
+              <>
+                {canComplete && (
+                  <Button onClick={() => setModalState('complete')} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+                    Complete Demo
+                  </Button>
+                )}
+                {canMarkExceptions && (
+                  <Button variant="outline" onClick={() => setModalState('noshow')} className="text-rose-600 border-rose-200 hover:bg-rose-50">
+                    Mark No-Show
+                  </Button>
+                )}
+              </>
+            )}
+
+            {/* No-Show Recovery Reschedule Action */}
+            {isNoShow && canReschedule && (
+              <Button onClick={() => setModalState('reschedule')} className="bg-orange-600 hover:bg-orange-700 text-white gap-1.5">
+                <RotateCcw className="w-4 h-4" />
+                <span>Reschedule Demo</span>
+              </Button>
+            )}
+
+            {/* General Actions for Non-Terminal Demos */}
+            {!isTerminal && !isNoShow && (
+              <>
+                {canReschedule && (
+                  <Button variant="outline" onClick={() => setModalState('reschedule')}>Reschedule</Button>
+                )}
+                {canEdit && (
+                  <Button variant="outline" onClick={() => setModalState('edit')}>Edit</Button>
+                )}
+                {canCancel && (
+                  <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setModalState('cancel')}>
+                    Cancel
+                  </Button>
+                )}
+              </>
             )}
           </div>
-        )}
+        </div>
+
+        {/* 6-Stage Operational Stepper */}
+        <div className="pt-3 border-t border-slate-100">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2.5">
+            Operational Progression
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {PIPELINE_STAGES.map((step, idx) => {
+              const isPast = currentStageIndex > idx;
+              const isCurrent = currentStageIndex === idx;
+              return (
+                <div
+                  key={step.id}
+                  className={`p-2.5 rounded-lg border text-xs font-medium transition-all ${
+                    isCurrent
+                      ? 'bg-blue-50/80 border-blue-400 text-blue-900 shadow-sm ring-1 ring-blue-300'
+                      : isPast
+                      ? 'bg-emerald-50/60 border-emerald-200 text-emerald-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>{step.label}</span>
+                    {isPast && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                    {isCurrent && <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Exception Alerts */}
+          {isNoShow && (
+            <div className="mt-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span><strong>No-Show Encountered:</strong> This demo was marked as no-show. You can recover it by rescheduling to a new slot.</span>
+              </div>
+              {canReschedule && (
+                <button
+                  onClick={() => setModalState('reschedule')}
+                  className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs shrink-0"
+                >
+                  Reschedule Now
+                </button>
+              )}
+            </div>
+          )}
+
+          {demo.isRescheduled && currentStage !== 'NOT_SHOW' && (
+            <div className="mt-3 p-3 rounded-lg bg-orange-50 border border-orange-200 text-orange-800 text-xs flex items-center gap-2">
+              <RotateCcw className="w-4 h-4 text-orange-600 shrink-0" />
+              <span><strong>Rescheduled Demo:</strong> This booking has been rescheduled. Previous session records are preserved in audit history.</span>
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Main 2-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Left Column (Span 2): Operational Cards, Sessions, Student & Tutor Details */}
         <div className="lg:col-span-2 space-y-6">
-          
+
+          {/* 1. Operational Workflow Control Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* Preparation Guidelines Card */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Class Preparation</h3>
+                    <p className="text-[11px] text-slate-500">"How to take the class" instructions</p>
+                  </div>
+                </div>
+                {demo.preparationNotes ? (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Saved
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                    Required
+                  </span>
+                )}
+              </div>
+
+              {demo.preparationNotes ? (
+                <div className="bg-amber-50/40 border border-amber-100 rounded-lg p-3 text-xs text-slate-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                  {demo.preparationNotes}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-100">
+                  No preparation instructions saved yet. Tutor assignment is gated until instructions (min 15 characters) are recorded.
+                </p>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-400">
+                  {demo.preparedByUser?.employee?.firstName 
+                    ? `Prepared by ${demo.preparedByUser.employee.firstName}` 
+                    : demo.preparedByUser?.email || 'Coordinator Gate'}
+                </span>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => setModalState('preparation')}
+                  className="text-xs"
+                >
+                  {demo.preparationNotes ? 'Edit Instructions' : 'Draft Instructions'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Meeting Link & Platform Card */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <Video className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Meeting Link</h3>
+                    <p className="text-[11px] text-slate-500">Video conference coordinates</p>
+                  </div>
+                </div>
+                {demo.meetingLink ? (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Ready
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600">
+                    Pending
+                  </span>
+                )}
+              </div>
+
+              {demo.meetingLink ? (
+                <div className="bg-indigo-50/40 border border-indigo-100 rounded-lg p-3 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-indigo-900 uppercase text-[10px] tracking-wider">
+                      {demo.meetingPlatform || 'Video Meeting'}
+                    </span>
+                    <a
+                      href={demo.meetingLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center gap-1 text-[11px] hover:underline"
+                    >
+                      <span>Join Call</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <p className="font-mono text-slate-700 truncate">{demo.meetingLink}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-slate-100">
+                  Meeting link has not been recorded yet. Sales outreach is gated until internal link sharing.
+                </p>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-400">
+                  {linkHistory.length > 0 ? `${linkHistory.length} revisions` : 'Internal share'}
+                </span>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => setModalState('meetingLink')}
+                  className="text-xs"
+                >
+                  {demo.meetingLink ? 'Update Link' : 'Add Link'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Sales Outreach & Parent Confirmation Card */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
+                    <Share2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Parent Confirmation</h3>
+                    <p className="text-[11px] text-slate-500">Sales outreach & attendance RSVP</p>
+                  </div>
+                </div>
+                {demo.parentConfirmedAt ? (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> Confirmed
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                    Awaiting RSVP
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-slate-600">WhatsApp Share:</span>
+                  {demo.whatsappOpenedAt ? (
+                    <span className="text-emerald-700 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Sent ({formatDate(demo.whatsappOpenedAt)})
+                    </span>
+                  ) : (
+                    <button
+                      disabled={isWhatsAppLoading || !demo.meetingLink}
+                      onClick={handleWhatsAppOutreach}
+                      className="text-blue-600 hover:text-blue-800 font-medium hover:underline disabled:text-slate-400"
+                    >
+                      Open WhatsApp Now
+                    </button>
+                  )}
+                </div>
+
+                {demo.parentConfirmedAt && (
+                  <div className="bg-teal-50/40 border border-teal-100 p-2.5 rounded-lg space-y-1">
+                    <div className="flex items-center justify-between text-teal-900 font-medium">
+                      <span>Channel: {demo.confirmationChannel || demo.parentConfirmationChannel || 'WhatsApp'}</span>
+                      <span className="text-[10px] text-teal-700">{formatDate(demo.parentConfirmedAt)}</span>
+                    </div>
+                    {(demo.confirmationNotes || demo.parentConfirmationNotes) && (
+                      <p className="text-slate-600 text-[11px] italic">
+                        "{demo.confirmationNotes || demo.parentConfirmationNotes}"
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end pt-1">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => setModalState('parentConfirm')}
+                  className="text-xs"
+                >
+                  {demo.parentConfirmedAt ? 'Update RSVP' : 'Record Confirmation'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Coordinator Round-Robin & Ownership Card */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <UserCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Coordinator</h3>
+                    <p className="text-[11px] text-slate-500">Round-robin operations manager</p>
+                  </div>
+                </div>
+                {coordinatorName ? (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    Assigned
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                    Unassigned
+                  </span>
+                )}
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+                {coordinatorName ? (
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-slate-900">{coordinatorName}</p>
+                    <p className="text-slate-500 text-[11px]">{coordinator?.email}</p>
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic">
+                    No coordinator currently assigned to this demo booking.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-400">Atomic allocation</span>
+                {canManageCoord && (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => setModalState('reassignCoord')}
+                    className="text-xs"
+                  >
+                    {coordinatorName ? 'Reassign' : 'Assign Coordinator'}
+                  </Button>
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          {/* 2. Subject Sessions Section */}
           {sessions.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
@@ -182,7 +643,7 @@ export function DemoDetailClient({
                   </span>
                 )}
               </div>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {sessions.map((session: any) => {
                   const assignedTutor = session.tutorAssignments?.[0]?.tutor;
                   const tutorName = assignedTutor 
@@ -216,7 +677,9 @@ export function DemoDetailClient({
                           <p className="text-slate-500">Tutor</p>
                           <p className="font-medium text-slate-800">{tutorName}</p>
                         </div>
-                        <StatusBadge status={session.status} />
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                          {session.status}
+                        </span>
                       </div>
                     </div>
                   );
@@ -225,24 +688,25 @@ export function DemoDetailClient({
             </div>
           )}
 
+          {/* 3. Student & Requirement */}
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Student & Requirement</h3>
             <div className="grid grid-cols-2 gap-y-4">
               <div>
                 <p className="text-sm font-medium text-slate-500">Student</p>
-                <p className="text-slate-900 mt-1">{demo.student?.firstName || 'Student'} {demo.student?.lastName || ''}</p>
+                <p className="text-slate-900 mt-1 font-medium">{demo.student?.firstName || 'Student'} {demo.student?.lastName || ''}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-500">Subject</p>
-                <p className="text-slate-900 mt-1">{demo.subject?.name || 'N/A'}</p>
+                <p className="text-slate-900 mt-1">{demo.subject?.name || demo.booking?.sessions?.[0]?.subject?.name || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-500">Grade</p>
-                <p className="text-slate-900 mt-1">{demo.grade?.name || 'N/A'}</p>
+                <p className="text-slate-900 mt-1">{demo.grade?.name || demo.booking?.sessions?.[0]?.grade?.name || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-500">Curriculum</p>
-                <p className="text-slate-900 mt-1">{demo.curriculum?.name || 'N/A'}</p>
+                <p className="text-slate-900 mt-1">{demo.curriculum?.name || demo.booking?.sessions?.[0]?.curriculum?.name || 'N/A'}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-sm font-medium text-slate-500">Requirement Notes</p>
@@ -253,6 +717,7 @@ export function DemoDetailClient({
             </div>
           </div>
 
+          {/* 4. Tutor Details */}
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Tutor Details</h3>
             {demo.tutor ? (
@@ -271,11 +736,12 @@ export function DemoDetailClient({
               </div>
             ) : (
               <div className="text-slate-500 text-sm italic">
-                No Tutor assigned yet.
+                No primary tutor assigned yet.
               </div>
             )}
           </div>
 
+          {/* 5. Outcome & Feedback */}
           {demo.feedback && demo.feedback.length > 0 && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-emerald-900 mb-4">Outcome & Feedback</h3>
@@ -295,12 +761,13 @@ export function DemoDetailClient({
               ))}
             </div>
           )}
-          
+
         </div>
 
+        {/* Right Column (Span 1): Demo History & Timeline */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Demo History</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Workflow & History</h3>
             {timelineItems.length > 0 ? (
               <Timeline>
                 {timelineItems.map((item: any) => (
@@ -308,9 +775,15 @@ export function DemoDetailClient({
                     <span className="absolute flex items-center justify-center w-3 h-3 bg-blue-500 rounded-full -left-1.5 ring-4 ring-white" />
                     <h4 className="font-medium text-slate-900 text-sm">{item.title}</h4>
                     <time className="block mb-1 text-xs font-normal leading-none text-slate-400">
-                      {new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(item.date))}
+                      {new Intl.DateTimeFormat('en-IN', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric', 
+                        hour: 'numeric', 
+                        minute: '2-digit' 
+                      }).format(new Date(item.date))}
                     </time>
-                    <p className="text-sm font-normal text-slate-500 mt-1">{item.description}</p>
+                    <p className="text-xs font-normal text-slate-500 mt-1">{item.description}</p>
                   </div>
                 ))}
               </Timeline>
@@ -319,14 +792,71 @@ export function DemoDetailClient({
             )}
           </div>
         </div>
+
       </div>
 
-      <RescheduleDemoModal isOpen={modalState === 'reschedule'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
-      <EditDemoModal isOpen={modalState === 'edit'} onClose={() => setModalState('none')} demo={demo} lead={demo?.student?.lead} onSuccess={handleActionSuccess} />
-      <AssignTutorModal isOpen={modalState === 'assign'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
-      <CompleteDemoModal isOpen={modalState === 'complete'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
-      <CancelDemoModal isOpen={modalState === 'cancel'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
-      <NoShowDemoModal isOpen={modalState === 'noshow'} onClose={() => setModalState('none')} demo={demo} onSuccess={handleActionSuccess} />
+      {/* Workflow Modals */}
+      <PreparationModal 
+        isOpen={modalState === 'preparation'}
+        onClose={() => setModalState('none')}
+        demo={demo}
+        onSuccess={handleActionSuccess}
+      />
+      <MeetingLinkModal
+        isOpen={modalState === 'meetingLink'}
+        onClose={() => setModalState('none')}
+        demo={demo}
+        onSuccess={handleActionSuccess}
+      />
+      <ParentConfirmationModal
+        isOpen={modalState === 'parentConfirm'}
+        onClose={() => setModalState('none')}
+        demo={demo}
+        onSuccess={handleActionSuccess}
+      />
+      <ReassignCoordinatorModal
+        isOpen={modalState === 'reassignCoord'}
+        onClose={() => setModalState('none')}
+        demo={demo}
+        onSuccess={handleActionSuccess}
+      />
+      <RescheduleDemoModal 
+        isOpen={modalState === 'reschedule'} 
+        onClose={() => setModalState('none')} 
+        demo={demo} 
+        onSuccess={handleActionSuccess} 
+      />
+      <EditDemoModal 
+        isOpen={modalState === 'edit'} 
+        onClose={() => setModalState('none')} 
+        demo={demo} 
+        lead={demo?.student?.lead || demo?.booking?.lead} 
+        onSuccess={handleActionSuccess} 
+      />
+      <AssignTutorModal 
+        isOpen={modalState === 'assign'} 
+        onClose={() => setModalState('none')} 
+        demo={demo} 
+        onSuccess={handleActionSuccess} 
+      />
+      <CompleteDemoModal 
+        isOpen={modalState === 'complete'} 
+        onClose={() => setModalState('none')} 
+        demo={demo} 
+        onSuccess={handleActionSuccess} 
+      />
+      <CancelDemoModal 
+        isOpen={modalState === 'cancel'} 
+        onClose={() => setModalState('none')} 
+        demo={demo} 
+        onSuccess={handleActionSuccess} 
+      />
+      <NoShowDemoModal 
+        isOpen={modalState === 'noshow'} 
+        onClose={() => setModalState('none')} 
+        demo={demo} 
+        onSuccess={handleActionSuccess} 
+      />
     </div>
   );
 }
