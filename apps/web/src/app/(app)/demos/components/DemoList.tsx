@@ -29,7 +29,8 @@ import {
   CheckCircle2, 
   AlertCircle, 
   RotateCcw,
-  ExternalLink
+  ExternalLink,
+  Award
 } from 'lucide-react';
 
 function formatDate(dateStr: string) {
@@ -386,6 +387,16 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
                             </button>
                           )}
                         </>
+                      )}
+
+                      {stage === 'COMPLETED' && canComplete && (
+                        <button
+                          onClick={() => { setActiveDemo(demo); setModalState('complete'); }}
+                          className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-medium text-xs flex items-center gap-1 shadow-2xs"
+                        >
+                          <Award className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Evaluation</span>
+                        </button>
                       )}
 
                       {/* No-Show Recovery Reschedule Action */}

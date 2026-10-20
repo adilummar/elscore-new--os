@@ -711,6 +711,10 @@ export class DemoService {
           coordinator: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
           parentConfirmedByUser: { select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } } },
           lead: { select: { id: true, assignedToUserId: true, primaryPhone: true, whatsappNumber: true } },
+          attendances: true,
+          feedbackRecord: true,
+          roadmap: true,
+          academicPlan: true,
           sessions: {
             include: {
               subject: true,
@@ -754,6 +758,10 @@ export class DemoService {
         parentConfirmedByUserId: booking?.parentConfirmedByUserId || null,
         parentConfirmedByUser: booking?.parentConfirmedByUser || null,
         salesWhatsAppSharedAt: booking?.salesWhatsAppSharedAt || null,
+        feedbackRecord: booking?.feedbackRecord || null,
+        roadmap: booking?.roadmap || null,
+        academicPlan: booking?.academicPlan || null,
+        attendances: booking?.attendances || [],
       };
     });
 
@@ -1282,6 +1290,10 @@ export class DemoService {
       stageHistory: booking?.stageHistory || [],
       meetingLinkHistory: booking?.meetingLinkHistory || [],
       auditLogs: auditLogs || [],
+      feedbackRecord: booking?.feedbackRecord ?? (Array.isArray(demo?.feedback) ? (demo.feedback[0] ?? null) : (demo?.feedback ?? null)),
+      roadmap: booking?.roadmap || null,
+      academicPlan: booking?.academicPlan || null,
+      attendances: booking?.attendances || [],
     };
 
     if (result.student && typeof result.student === 'object') {
@@ -1702,7 +1714,9 @@ export class DemoService {
         });
       }
 
-      if (demo.status !== DemoStatus.ASSIGNED) {
+      const targetBookingId = booking ? booking.id : id;
+
+      if (demo.status !== DemoStatus.ASSIGNED && demo.status !== DemoStatus.COMPLETED) {
         throw new BadRequestException('Only ASSIGNED demos can be completed');
       }
 
@@ -1720,12 +1734,12 @@ export class DemoService {
       if (tx.demoAttendance) {
         // Parent attendance
         const existingParentAttendance = await tx.demoAttendance.findFirst({
-          where: { bookingId: id, participantType: DemoParticipantType.PARENT },
+          where: { bookingId: targetBookingId, participantType: DemoParticipantType.PARENT },
         });
         if (!existingParentAttendance) {
           await tx.demoAttendance.create({
             data: {
-              bookingId: id,
+              bookingId: targetBookingId,
               participantType: DemoParticipantType.PARENT,
               status: dto.attendances?.parentStatus || DemoAttendanceStatus.PRESENT,
               markedByUserId: user.id,
@@ -1735,12 +1749,12 @@ export class DemoService {
 
         // Coordinator attendance
         const existingCoordinatorAttendance = await tx.demoAttendance.findFirst({
-          where: { bookingId: id, participantType: DemoParticipantType.COORDINATOR },
+          where: { bookingId: targetBookingId, participantType: DemoParticipantType.COORDINATOR },
         });
         if (!existingCoordinatorAttendance) {
           await tx.demoAttendance.create({
             data: {
-              bookingId: id,
+              bookingId: targetBookingId,
               participantType: DemoParticipantType.COORDINATOR,
               status: dto.attendances?.coordinatorStatus || DemoAttendanceStatus.PRESENT,
               markedByUserId: user.id,
@@ -1751,7 +1765,7 @@ export class DemoService {
         // Tutor session attendances
         if (tx.demoSession) {
           const sessions = await tx.demoSession.findMany({
-            where: { bookingId: id },
+            where: { bookingId: targetBookingId },
             include: {
               tutorAssignments: {
                 where: { status: TutorAssignmentStatus.ACTIVE },
@@ -1764,7 +1778,7 @@ export class DemoService {
             if (activeAssignment) {
               const existingTutorAttendance = await tx.demoAttendance.findFirst({
                 where: {
-                  bookingId: id,
+                  bookingId: targetBookingId,
                   sessionId: session.id,
                   assignmentId: activeAssignment.id,
                   participantType: DemoParticipantType.TUTOR,
@@ -1774,7 +1788,7 @@ export class DemoService {
               if (!existingTutorAttendance) {
                 await tx.demoAttendance.create({
                   data: {
-                    bookingId: id,
+                    bookingId: targetBookingId,
                     sessionId: session.id,
                     assignmentId: activeAssignment.id,
                     participantType: DemoParticipantType.TUTOR,
@@ -1789,12 +1803,12 @@ export class DemoService {
         }
       }
 
-      // 2. Feedback Record
+      // 2. Feedback Record (no fabricated sample sentences or pre-selected default ratings)
       if (tx.demoFeedbackRecord) {
         await tx.demoFeedbackRecord.upsert({
-          where: { bookingId: id },
+          where: { bookingId: targetBookingId },
           create: {
-            bookingId: id,
+            bookingId: targetBookingId,
             rating: dto.rating,
             comments: dto.comments,
             studentPerformance: dto.studentPerformance || dto.comments,
@@ -1802,30 +1816,30 @@ export class DemoService {
             weaknesses: dto.weaknesses || null,
             tutorRecommendations: dto.tutorRecommendations || null,
             tutorRating: dto.tutorRating || dto.rating,
-            academicAssessment: dto.academicAssessment || 'Evaluated during demo session',
-            engagementLevel: dto.engagementLevel || 'HIGH',
-            learningBehaviour: dto.learningBehaviour || 'Engaged and attentive',
-            coordinatorRemarks: dto.coordinatorRemarks || 'Demo completed successfully',
-            parentFeedback: dto.parentFeedback || 'Positive feedback received',
+            academicAssessment: dto.academicAssessment || null,
+            engagementLevel: dto.engagementLevel || null,
+            learningBehaviour: dto.learningBehaviour || null,
+            coordinatorRemarks: dto.coordinatorRemarks || null,
+            parentFeedback: dto.parentFeedback || null,
             parentConcerns: dto.parentConcerns || null,
-            parentInterestLevel: dto.parentInterestLevel || 'HIGH',
+            parentInterestLevel: dto.parentInterestLevel || null,
             submittedByUserId: user.id,
           },
           update: {
-            rating: dto.rating,
-            comments: dto.comments,
-            studentPerformance: dto.studentPerformance || dto.comments,
-            strengths: dto.strengths || null,
-            weaknesses: dto.weaknesses || null,
-            tutorRecommendations: dto.tutorRecommendations || null,
-            tutorRating: dto.tutorRating || dto.rating,
-            academicAssessment: dto.academicAssessment || undefined,
-            engagementLevel: dto.engagementLevel || undefined,
-            learningBehaviour: dto.learningBehaviour || undefined,
-            coordinatorRemarks: dto.coordinatorRemarks || undefined,
-            parentFeedback: dto.parentFeedback || undefined,
-            parentConcerns: dto.parentConcerns || undefined,
-            parentInterestLevel: dto.parentInterestLevel || undefined,
+            rating: dto.rating !== undefined ? dto.rating : undefined,
+            comments: dto.comments !== undefined ? dto.comments : undefined,
+            studentPerformance: dto.studentPerformance !== undefined ? dto.studentPerformance : (dto.comments !== undefined ? dto.comments : undefined),
+            strengths: dto.strengths !== undefined ? (dto.strengths || null) : undefined,
+            weaknesses: dto.weaknesses !== undefined ? (dto.weaknesses || null) : undefined,
+            tutorRecommendations: dto.tutorRecommendations !== undefined ? (dto.tutorRecommendations || null) : undefined,
+            tutorRating: dto.tutorRating !== undefined ? dto.tutorRating : (dto.rating !== undefined ? dto.rating : undefined),
+            academicAssessment: dto.academicAssessment !== undefined ? (dto.academicAssessment || null) : undefined,
+            engagementLevel: dto.engagementLevel !== undefined ? (dto.engagementLevel || null) : undefined,
+            learningBehaviour: dto.learningBehaviour !== undefined ? (dto.learningBehaviour || null) : undefined,
+            coordinatorRemarks: dto.coordinatorRemarks !== undefined ? (dto.coordinatorRemarks || null) : undefined,
+            parentFeedback: dto.parentFeedback !== undefined ? (dto.parentFeedback || null) : undefined,
+            parentConcerns: dto.parentConcerns !== undefined ? (dto.parentConcerns || null) : undefined,
+            parentInterestLevel: dto.parentInterestLevel !== undefined ? (dto.parentInterestLevel || null) : undefined,
           },
         });
       }
@@ -1833,9 +1847,9 @@ export class DemoService {
       // 3. Post-demo Academic Roadmap
       if (tx.demoRoadmap) {
         await tx.demoRoadmap.upsert({
-          where: { bookingId: id },
+          where: { bookingId: targetBookingId },
           create: {
-            bookingId: id,
+            bookingId: targetBookingId,
             recommendationPlan: dto.recommendationPlan || '4-week foundational plan (1 month)',
             recommendedClassCount: dto.recommendedClassCount || 8,
             recommendedFrequency: dto.recommendedFrequency || '2 classes/week',
@@ -1845,13 +1859,13 @@ export class DemoService {
             remarks: dto.roadmapRemarks || null,
           },
           update: {
-            recommendationPlan: dto.recommendationPlan || undefined,
-            recommendedClassCount: dto.recommendedClassCount || undefined,
-            recommendedFrequency: dto.recommendedFrequency || undefined,
-            preferredDurationMin: dto.preferredDurationMin || undefined,
-            preferredTiming: dto.preferredTiming || undefined,
-            recommendedSubjects: dto.recommendedSubjects || undefined,
-            remarks: dto.roadmapRemarks || undefined,
+            recommendationPlan: dto.recommendationPlan !== undefined ? dto.recommendationPlan : undefined,
+            recommendedClassCount: dto.recommendedClassCount !== undefined ? dto.recommendedClassCount : undefined,
+            recommendedFrequency: dto.recommendedFrequency !== undefined ? dto.recommendedFrequency : undefined,
+            preferredDurationMin: dto.preferredDurationMin !== undefined ? dto.preferredDurationMin : undefined,
+            preferredTiming: dto.preferredTiming !== undefined ? dto.preferredTiming : undefined,
+            recommendedSubjects: dto.recommendedSubjects !== undefined ? dto.recommendedSubjects : undefined,
+            remarks: dto.roadmapRemarks !== undefined ? dto.roadmapRemarks : undefined,
           },
         });
       }
@@ -1859,19 +1873,19 @@ export class DemoService {
       // 4. Post-demo Academic Plan
       if (tx.demoAcademicPlan) {
         await tx.demoAcademicPlan.upsert({
-          where: { bookingId: id },
+          where: { bookingId: targetBookingId },
           create: {
-            bookingId: id,
+            bookingId: targetBookingId,
             learningGoal: dto.learningGoal || 'Master core foundational concepts and improve problem-solving',
             targetChapters: dto.targetChapters || 'Chapters 1-3 curriculum coverage',
             studyApproach: dto.studyApproach || 'Interactive conceptual walkthrough with practice exercises',
             milestones: dto.milestones || 'Week 2 progress checkpoint, Week 4 milestone assessment',
           },
           update: {
-            learningGoal: dto.learningGoal || undefined,
-            targetChapters: dto.targetChapters || undefined,
-            studyApproach: dto.studyApproach || undefined,
-            milestones: dto.milestones || undefined,
+            learningGoal: dto.learningGoal !== undefined ? dto.learningGoal : undefined,
+            targetChapters: dto.targetChapters !== undefined ? dto.targetChapters : undefined,
+            studyApproach: dto.studyApproach !== undefined ? dto.studyApproach : undefined,
+            milestones: dto.milestones !== undefined ? dto.milestones : undefined,
           },
         });
       }
@@ -1880,13 +1894,13 @@ export class DemoService {
       if (tx.demoBooking) {
         if (tx.demoSession) {
           await tx.demoSession.updateMany({
-            where: { bookingId: id },
+            where: { bookingId: targetBookingId },
             data: { status: DemoSessionStatus.COMPLETED },
           });
         }
 
         const fullBooking = await tx.demoBooking.findUnique({
-          where: { id },
+          where: { id: targetBookingId },
           include: {
             attendances: true,
             sessions: {
@@ -1902,30 +1916,32 @@ export class DemoService {
         });
 
         if (fullBooking) {
-          const gateResult = this.multiSessionService.verifyBookingCompletionGate(fullBooking);
-          if (!gateResult.canComplete) {
-            throw new BadRequestException('Completion gate requirement not satisfied: ' + gateResult.pendingReasons.join('; '));
-          }
-
           const oldStage = fullBooking.operationalStage;
-          await tx.demoBooking.update({
-            where: { id },
-            data: {
-              status: DemoBookingStatus.COMPLETED,
-              operationalStage: DemoOperationalStage.COMPLETED,
-            },
-          });
+          if (oldStage !== DemoOperationalStage.COMPLETED) {
+            const gateResult = this.multiSessionService.verifyBookingCompletionGate(fullBooking);
+            if (!gateResult.canComplete) {
+              throw new BadRequestException('Completion gate requirement not satisfied: ' + gateResult.pendingReasons.join('; '));
+            }
 
-          if (tx.demoOperationalStageHistory) {
-            await tx.demoOperationalStageHistory.create({
+            await tx.demoBooking.update({
+              where: { id: targetBookingId },
               data: {
-                bookingId: id,
-                previousStage: oldStage,
-                newStage: DemoOperationalStage.COMPLETED,
-                changedByUserId: user.id,
-                reason: 'Authoritative completion gate satisfied',
+                status: DemoBookingStatus.COMPLETED,
+                operationalStage: DemoOperationalStage.COMPLETED,
               },
             });
+
+            if (tx.demoOperationalStageHistory) {
+              await tx.demoOperationalStageHistory.create({
+                data: {
+                  bookingId: targetBookingId,
+                  previousStage: oldStage,
+                  newStage: DemoOperationalStage.COMPLETED,
+                  changedByUserId: user.id,
+                  reason: 'Authoritative completion gate satisfied',
+                },
+              });
+            }
           }
         }
       }
@@ -1936,15 +1952,32 @@ export class DemoService {
         data: { status: DemoStatus.COMPLETED },
       });
 
-      // 7. Legacy feedback record
-      await tx.demoFeedback.create({
-        data: {
-          demoId: id,
-          rating: dto.rating,
-          comments: dto.comments,
-          submittedByUserId: user.id,
-        },
-      });
+      // 7. Legacy feedback record (upsert to allow reopening/updating saved evaluations)
+      if (tx.demoFeedback?.upsert) {
+        await tx.demoFeedback.upsert({
+          where: { demoId: id },
+          create: {
+            demoId: id,
+            rating: dto.rating,
+            comments: dto.comments,
+            submittedByUserId: user.id,
+          },
+          update: {
+            rating: dto.rating,
+            comments: dto.comments,
+            submittedByUserId: user.id,
+          },
+        });
+      } else if (tx.demoFeedback?.create) {
+        await tx.demoFeedback.create({
+          data: {
+            demoId: id,
+            rating: dto.rating,
+            comments: dto.comments,
+            submittedByUserId: user.id,
+          },
+        });
+      }
 
       // 8. ATOMIC LEAD STATUS TRANSITION:
       // "When the demo is marked COMPLETED, the lead status automatically updates to DEMO_COMPLETED"

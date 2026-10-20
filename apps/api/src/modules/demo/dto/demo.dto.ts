@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsDateString, IsNumber, Min, Max, IsOptional, IsArray, ValidateNested, MinLength, IsUrl, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsDateString, IsNumber, Min, Max, IsOptional, IsArray, ValidateNested, MinLength, IsUrl, IsEnum, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ParentConfirmationChannel } from '@prisma/client';
 
@@ -181,6 +181,7 @@ export class CompleteDemoDto {
 
   @IsString()
   @IsOptional()
+  @IsIn(['HIGH', 'MEDIUM', 'LOW'])
   engagementLevel?: string;
 
   @IsString()
@@ -202,6 +203,7 @@ export class CompleteDemoDto {
 
   @IsString()
   @IsOptional()
+  @IsIn(['HIGH', 'MEDIUM', 'LOW'])
   parentInterestLevel?: string;
 
   // Post-demo Academic Roadmap

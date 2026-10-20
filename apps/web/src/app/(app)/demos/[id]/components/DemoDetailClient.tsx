@@ -40,7 +40,8 @@ import {
   MoreHorizontal,
   ChevronRight,
   Sparkles,
-  FileText
+  FileText,
+  Award
 } from 'lucide-react';
 
 function formatDate(dateStr: string) {
@@ -328,6 +329,18 @@ export function DemoDetailClient({
                   </Button>
                 )}
               </>
+            )}
+
+            {/* Completed Demo Evaluation Review / Edit */}
+            {currentStage === 'COMPLETED' && canComplete && (
+              <Button
+                variant="outline"
+                onClick={() => setModalState('complete')}
+                className="text-emerald-700 border-emerald-300 hover:bg-emerald-50 gap-1.5 font-medium shadow-2xs"
+              >
+                <Award className="w-4 h-4 text-emerald-600" />
+                <span>Evaluation & Roadmap</span>
+              </Button>
             )}
 
             {/* No-Show Recovery Reschedule Action */}
@@ -776,26 +789,130 @@ export function DemoDetailClient({
             )}
           </div>
 
-          {/* 5. Outcome & Feedback */}
-          {demo.feedback && demo.feedback.length > 0 && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-emerald-900 mb-4">Outcome & Feedback</h3>
-              {demo.feedback.map((fb: any) => (
-                <div key={fb.id || Math.random()} className="space-y-3">
+          {/* 5. Outcome & Evaluation */}
+          {(demo.feedbackRecord || demo.booking?.feedbackRecord || (demo.feedback && demo.feedback.length > 0)) && (() => {
+            const fb = demo.feedbackRecord || demo.booking?.feedbackRecord || (Array.isArray(demo.feedback) ? demo.feedback[0] : demo.feedback);
+            const rm = demo.roadmap || demo.booking?.roadmap;
+            const ap = demo.academicPlan || demo.booking?.academicPlan;
+
+            return (
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-6 shadow-sm space-y-5">
+                <div className="flex items-center justify-between pb-3 border-b border-emerald-200/60">
+                  <h3 className="text-base font-bold text-emerald-950 flex items-center gap-2">
+                    <Award className="w-5 h-5 text-emerald-700" />
+                    Demo Outcome & Multi-Role Evaluation
+                  </h3>
+                  {fb?.rating && (
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-900 rounded-full font-bold text-sm shadow-2xs">
+                      {fb.rating} ⭐ Overall Rating
+                    </span>
+                  )}
+                </div>
+
+                {/* Tutor Evaluation */}
+                <div className="space-y-3">
                   <div>
-                    <p className="text-sm font-medium text-emerald-800">Rating</p>
-                    <p className="text-emerald-900 mt-1 font-bold text-lg">{fb.rating || 5} ⭐</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-emerald-800">Feedback Notes</p>
-                    <p className="text-emerald-900 mt-1 bg-white/60 p-3 rounded-lg text-sm border border-emerald-100">
-                      {fb.comments || 'No feedback comments recorded.'}
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800">Student Performance & Tutor Feedback</p>
+                    <p className="text-slate-800 mt-1 bg-white p-3.5 rounded-lg text-sm border border-emerald-100 shadow-2xs leading-relaxed">
+                      {fb?.comments || fb?.studentPerformance || 'No feedback comments recorded.'}
                     </p>
                   </div>
+
+                  {(fb?.strengths || fb?.weaknesses || fb?.tutorRecommendations) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      {fb?.strengths && (
+                        <div className="bg-white/80 p-3 rounded-lg border border-emerald-100 text-xs">
+                          <span className="font-semibold text-emerald-900 block mb-0.5">Strengths</span>
+                          <span className="text-slate-700">{fb.strengths}</span>
+                        </div>
+                      )}
+                      {fb?.weaknesses && (
+                        <div className="bg-white/80 p-3 rounded-lg border border-emerald-100 text-xs">
+                          <span className="font-semibold text-amber-900 block mb-0.5">Areas for Improvement</span>
+                          <span className="text-slate-700">{fb.weaknesses}</span>
+                        </div>
+                      )}
+                      {fb?.tutorRecommendations && (
+                        <div className="bg-white/80 p-3 rounded-lg border border-emerald-100 text-xs sm:col-span-1">
+                          <span className="font-semibold text-indigo-900 block mb-0.5">Recommendations</span>
+                          <span className="text-slate-700">{fb.tutorRecommendations}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* Coordinator & Parent Evaluation */}
+                {(fb?.academicAssessment || fb?.engagementLevel || fb?.parentFeedback || fb?.parentInterestLevel) && (
+                  <div className="pt-3 border-t border-emerald-200/60">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-indigo-900 mb-3 flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-indigo-600" />
+                      Coordinator & Parent Observations
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {fb?.academicAssessment && (
+                        <div className="bg-white p-3.5 rounded-lg border border-indigo-100 text-xs shadow-2xs">
+                          <span className="font-bold text-slate-700 block mb-1">Academic Assessment (Coordinator)</span>
+                          <p className="text-slate-800 leading-relaxed">{fb.academicAssessment}</p>
+                        </div>
+                      )}
+                      {fb?.engagementLevel && (
+                        <div className="bg-white p-3.5 rounded-lg border border-indigo-100 text-xs shadow-2xs">
+                          <span className="font-bold text-slate-700 block mb-1">Student Engagement Level</span>
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {fb.engagementLevel}
+                          </span>
+                        </div>
+                      )}
+                      {fb?.parentFeedback && (
+                        <div className="bg-white p-3.5 rounded-lg border border-indigo-100 text-xs shadow-2xs">
+                          <span className="font-bold text-slate-700 block mb-1">Parent Feedback</span>
+                          <p className="text-slate-800 leading-relaxed">{fb.parentFeedback}</p>
+                        </div>
+                      )}
+                      {fb?.parentInterestLevel && (
+                        <div className="bg-white p-3.5 rounded-lg border border-indigo-100 text-xs shadow-2xs">
+                          <span className="font-bold text-slate-700 block mb-1">Parent Interest Level</span>
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            {fb.parentInterestLevel}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Academic Roadmap Summary */}
+                {(rm || ap) && (
+                  <div className="pt-3 border-t border-emerald-200/60">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-900 mb-3 flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-brand-600" />
+                      4-Week Academic Acceleration Plan
+                    </p>
+                    <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-3 text-xs shadow-2xs">
+                      {rm?.recommendationPlan && (
+                        <div>
+                          <strong className="text-slate-800">Plan Title: </strong>
+                          <span className="text-slate-700">{rm.recommendationPlan}</span>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-4 text-slate-600">
+                        {rm?.recommendedClassCount && <span><strong>Classes:</strong> {rm.recommendedClassCount}</span>}
+                        {rm?.recommendedFrequency && <span><strong>Frequency:</strong> {rm.recommendedFrequency}</span>}
+                        {rm?.preferredTiming && <span><strong>Timing:</strong> {rm.preferredTiming}</span>}
+                      </div>
+                      {ap?.learningGoal && (
+                        <div className="pt-2 border-t border-slate-100">
+                          <strong className="text-slate-800">Learning Goal: </strong>
+                          <span className="text-slate-700">{ap.learningGoal}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
         </div>
 
