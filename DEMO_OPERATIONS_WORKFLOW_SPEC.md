@@ -157,12 +157,12 @@ The table defines permissions across all participating system roles. Backend end
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Book Demo** | `demo.book` | ✅ (Own leads) | ❌ | ✅ | ✅ | ✅ (Team leads) | ✅ | ❌ |
 | **View Demos (Scope)** | `demo.read` / `demo.read_all` | Own Leads | Assigned Demos | Company-Wide | Company-Wide | Team Leads | Company-Wide | Company-Wide |
-| **View Ready for Sales Queue** | `demo.sales_queue.read` | ✅ (Own leads) | ❌ | ✅ | ✅ | ✅ (Team leads) | ✅ | ❌ |
+| **View Ready for Sales Queue** | `demo.sales_queue.read` | ✅ (Own leads) | ❌ | ❌ | ❌ | ✅ (Team leads) | ✅ | ❌ |
 | **Start/Save Preparation** | `demo.prepare` | ❌ | ✅ (Assigned) | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Assign / Reassign Tutor** | `demo.assign_tutor` | ❌ | ✅ (Assigned) | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Record / Update Meeting Link**| `demo.share_link` | ❌ | ✅ (Assigned) | ✅ | ✅ | ❌ | ✅ | ❌ |
-| **Open WhatsApp Outreach** | `demo.whatsapp.open` | ✅ (Own leads) | ❌ | ✅ | ✅ | ✅ (Team leads) | ✅ | ❌ |
-| **Confirm Meeting with Parent** | `demo.confirm_parent` | ✅ (Own leads) | ❌ | ✅ | ✅ | ✅ (Team leads) | ✅ | ❌ |
+| **Open WhatsApp Outreach** | `demo.whatsapp.open` | ✅ (Own leads) | ❌ | ❌ | ❌ | ✅ (Team leads) | ✅ | ❌ |
+| **Confirm Meeting with Parent** | `demo.confirm_parent` | ✅ (Own leads) | ❌ | ❌ | ❌ | ✅ (Team leads) | ✅ | ❌ |
 | **Reassign Coordinator** | `demo.reassign_coordinator`| ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Reschedule Demo** | `demo.reschedule` | ✅ (If SCHEDULED) | ✅ (Assigned) | ✅ | ✅ | ✅ | ✅ | ❌ |
 | **Cancel Demo** | `demo.cancel` | ✅ (If SCHEDULED) | ✅ (Assigned) | ✅ | ✅ | ✅ | ✅ | ❌ |
@@ -171,6 +171,61 @@ The table defines permissions across all participating system roles. Backend end
 | **Complete Demo** | `demo.complete` | ❌ | ✅ (Assigned) | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **Company-Wide Reports** | `demo.reports.company` | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | **Operational Reports** | `demo.reports.operational`| ❌ | ❌ | ✅ | ✅ | ✅ (Sales metrics)| ✅ | ❌ |
+
+### 6.1 Dynamic WhatsApp Outreach & Parent Confirmation Specification
+
+#### A. Strict Role Separation & Queue Routing
+1. **Demo Coordinator Responsibilities:**
+   - Prepare class guidelines (`PREPARATION`).
+   - Assign verified tutors to all sessions (`TUTOR_ASSIGNED`).
+   - Record and update meeting links (`LINK_SHARED`).
+   - Demo Coordinators are **strictly prohibited** from performing parent WhatsApp outreach and submitting parent attendance confirmation.
+2. **Sales Counsellor Responsibilities:**
+   - At `LINK_SHARED`, the demo automatically surfaces in the owning Sales Counsellor's **Ready for Sales** queue.
+   - The owning Sales Counsellor inspects the pre-send WhatsApp modal, initiates click-to-open WhatsApp, and records explicit confirmation (`PARENT_CONFIRMATION`).
+   - Sales Head and CEO maintain company-wide authority to outreach and confirm.
+
+#### B. Dynamic WhatsApp Message Template
+The authoritative backend message template generator (`buildWhatsAppMessage`) constructs the exact message string:
+```text
+Hello <Parent Name>,
+
+Greetings from Elscore Academy!
+
+A demo class has been scheduled for *<Student Name>*
+
+📚 Subject: <Subject List>
+👩‍🏫 Tutor: <Tutor Assignment List>
+📅 Date: <Day, Date Month Year>
+⏰ Time: <Time> IST
+
+🔗 Meet Link: <Meeting Link>
+
+See you there!
+
+Regards,
+<Coordinator Name>, Coordinator
+Elscore Academy
+```
+
+**Formatting Invariants:**
+- **Parent Greeting Fallback:** If `parentName` is missing, blank, or whitespace, the greeting renders strictly as `Hello sir,` with no placeholders, brackets, or undefined values.
+- **Student Name:** Emphasized in WhatsApp bold markup: `*<Student Name>*`.
+- **Single-Session:** `📚 Subject: Mathematics` / `👩‍🏫 Tutor: Priya Sharma`.
+- **Multi-Session with Different Tutors:** `📚 Subject: Mathematics, Physics` / `👩‍🏫 Tutor: Priya Sharma (Mathematics), Rahul Verma (Physics)`.
+- **Multi-Session with Same Tutor:** `📚 Subject: Mathematics, Physics` / `👩‍🏫 Tutor: Priya Sharma`.
+- **Date & Time:** Always formatted in Indian Standard Time (`Asia/Kolkata`) with explicit `IST` designation: e.g., `📅 Date: Wed, 21 Oct 2026` / `⏰ Time: 4:30 PM IST`.
+- **Coordinator Sign-Off:** `<Coordinator Name>, Coordinator\nElscore Academy` (fallback to `Academic Operations, Coordinator`).
+
+#### C. Phone Number Validation Rules
+- Strips non-digit characters (`cleanPhone = rawPhone.replace(/\D/g, '')`).
+- **Length Gate:** If `cleanPhone.length < 10`, `isValidPhone = false` and `waUrl = null`. No broken `wa.me` links are ever generated.
+- **Country Prefix:** If `cleanPhone.length === 10`, automatically prefixes with `91` (`919876543210`). Numbers already including country prefix are preserved.
+
+#### D. Procedural Invariants
+- **Pre-Send Preview Modal:** Counsellors review formatted details, session breakdown, date/time in IST, meeting link, and phone validation before launching WhatsApp.
+- **Separation of Outreach vs. Confirmation:** Opening WhatsApp merely records outreach tracking (`whatsappOpenedAt`) in audit logs; it does **not** confirm attendance. Parent confirmation requires an explicit, auditable submission.
+- **Rescheduling Invalidation:** Any reschedule resets `linkSharedAt = null`, `linkSharedByUserId = null`, `parentConfirmedAt = null`, and `parentConfirmedByUserId = null`, requiring fresh coordinator link entry to resume the workflow.
 
 ---
 

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { getDemos, recordWhatsAppOutreach } from '../actions';
-import { usePermissions } from '@/components/providers/AuthProvider';
+import { usePermissions, useAuth } from '@/components/providers/AuthProvider';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -17,6 +17,7 @@ import { PreparationModal } from './PreparationModal';
 import { MeetingLinkModal } from './MeetingLinkModal';
 import { ParentConfirmationModal } from './ParentConfirmationModal';
 import { ReassignCoordinatorModal } from './ReassignCoordinatorModal';
+import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 import { 
   Share2, 
   CheckCircle, 
@@ -84,6 +85,14 @@ export interface DemoListProps {
 
 export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
   const { hasPermission } = usePermissions();
+  const { user, effectiveUser } = useAuth();
+  const currentUserId = effectiveUser?.id || user?.id;
+
+  const isSalesHead = hasPermission('demo.manage_team') || (effectiveUser?.roles?.includes('SALES_HEAD') ?? false);
+  const isCeo = hasPermission('analytics.ceo.read') || (effectiveUser?.roles?.includes('CEO') ?? false);
+  const canManageSales = Boolean(isCeo || isSalesHead || hasPermission('lead.manage_all') || hasPermission('demo.manage_all'));
+  const canRecordMeetingLink = hasPermission('demo.manage_operations') || hasPermission('demo.assign_tutor') || hasPermission('demo.coordinate') || hasPermission('demo.manage_all');
+
   const [data, setData] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -92,7 +101,7 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
   // Modals state
   const [activeDemo, setActiveDemo] = React.useState<any>(null);
   const [modalState, setModalState] = React.useState<
-    'none' | 'reschedule' | 'edit' | 'complete' | 'assign' | 'cancel' | 'noshow' | 'preparation' | 'meetingLink' | 'parentConfirm' | 'reassignCoord'
+    'none' | 'reschedule' | 'edit' | 'complete' | 'assign' | 'cancel' | 'noshow' | 'preparation' | 'meetingLink' | 'parentConfirm' | 'reassignCoord' | 'whatsappPreview'
   >('none');
 
   const loadDemos = React.useCallback(async () => {
@@ -205,6 +214,13 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
                 ? `${tutor.firstName} ${tutor.lastName || ''}`.trim()
                 : tutor?.email || null;
 
+              const lead = demo.lead || demo.booking?.lead || demo.student?.lead;
+              const leadOwnerId = lead?.assignedToUserId;
+              const bookerId = demo.bookedByUserId || demo.booking?.bookedByUserId;
+              const isLeadOwner = Boolean(currentUserId && leadOwnerId && currentUserId === leadOwnerId);
+              const isBooker = Boolean(currentUserId && bookerId && currentUserId === bookerId);
+              const canSalesOutreach = Boolean(isLeadOwner || isBooker || canManageSales);
+
               return (
                 <tr key={demo.id} className="hover:bg-slate-50/60 transition-colors">
                   {/* Student & Requirement */}
@@ -312,22 +328,35 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
 
                       {stage === 'LINK_SHARED' && (
                         <>
-                          <button
-                            disabled={actionLoadingId === (demo.booking?.id || demo.id)}
-                            onClick={() => handleWhatsAppOutreach(demo)}
-                            className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-medium flex items-center gap-1"
-                            title="Open WhatsApp message with parent"
-                          >
-                            <Share2 className="w-3 h-3" />
-                            <span>WhatsApp</span>
-                          </button>
-                          <button
-                            onClick={() => { setActiveDemo(demo); setModalState('parentConfirm'); }}
-                            className="px-2.5 py-1 rounded-md bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 font-medium flex items-center gap-1"
-                          >
-                            <CheckCircle className="w-3 h-3" />
-                            <span>Confirm</span>
-                          </button>
+                          {canSalesOutreach && (
+                            <>
+                              <button
+                                onClick={() => { setActiveDemo(demo); setModalState('whatsappPreview'); }}
+                                className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-medium flex items-center gap-1"
+                                title="Open WhatsApp message preview"
+                              >
+                                <Share2 className="w-3 h-3" />
+                                <span>WhatsApp</span>
+                              </button>
+                              <button
+                                onClick={() => { setActiveDemo(demo); setModalState('parentConfirm'); }}
+                                className="px-2.5 py-1 rounded-md bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 font-medium flex items-center gap-1"
+                              >
+                                <CheckCircle className="w-3 h-3" />
+                                <span>Confirm</span>
+                              </button>
+                            </>
+                          )}
+                          {canRecordMeetingLink && (
+                            <button
+                              onClick={() => { setActiveDemo(demo); setModalState('meetingLink'); }}
+                              className="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-medium flex items-center gap-1"
+                              title="Update meeting link"
+                            >
+                              <Link2 className="w-3 h-3" />
+                              <span>Update Link</span>
+                            </button>
+                          )}
                         </>
                       )}
 
@@ -419,6 +448,12 @@ export function DemoList({ view = 'all', stage = '' }: DemoListProps) {
           <ParentConfirmationModal
             isOpen={modalState === 'parentConfirm'}
             onClose={() => setModalState('none')}
+            demo={activeDemo}
+            onSuccess={handleActionSuccess}
+          />
+          <WhatsAppPreviewModal
+            isOpen={modalState === 'whatsappPreview'}
+            onClose={() => { setModalState('none'); setActiveDemo(null); }}
             demo={activeDemo}
             onSuccess={handleActionSuccess}
           />

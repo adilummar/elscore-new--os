@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { confirmParentMeeting } from '../actions';
-import { CheckCircle, AlertCircle, MessageCircle, Phone, Mail, MoreHorizontal } from 'lucide-react';
+import { CheckCircle, AlertCircle, MessageCircle, Phone, Mail, MoreHorizontal, Calendar, User, Link as LinkIcon } from 'lucide-react';
 
 interface ParentConfirmationModalProps {
   isOpen: boolean;
@@ -53,6 +53,14 @@ export function ParentConfirmationModal({ isOpen, onClose, demo, onSuccess }: Pa
     { id: 'OTHER', label: 'Other Channel', icon: MoreHorizontal },
   ] as const;
 
+  const studentName = demo?.student
+    ? `${demo.student.firstName} ${demo.student.lastName || ''}`.trim()
+    : demo?.studentName || 'Student';
+  const parentName = demo?.parentName || demo?.lead?.parentName || demo?.student?.lead?.parentName || null;
+  const scheduledTime = demo?.scheduledAt || demo?.booking?.scheduledDate;
+  const meetingLink = demo?.meetingLink || demo?.booking?.meetingLink;
+  const subjectName = demo?.subject?.name || demo?.booking?.sessions?.[0]?.subject?.name || 'General';
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">
       <div className="space-y-5">
@@ -68,6 +76,42 @@ export function ParentConfirmationModal({ isOpen, onClose, demo, onSuccess }: Pa
               Record that the parent acknowledged and confirmed attendance for the demo
             </p>
           </div>
+        </div>
+
+        {/* Demo Context Summary */}
+        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-900 flex items-center gap-1">
+              <User className="w-3.5 h-3.5 text-slate-500" />
+              {studentName} {parentName ? `(Parent: ${parentName})` : ''}
+            </span>
+            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium text-[11px]">
+              {subjectName}
+            </span>
+          </div>
+          {scheduledTime && (
+            <div className="flex items-center gap-1.5 text-slate-600">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span>
+                {new Intl.DateTimeFormat('en-IN', {
+                  timeZone: 'Asia/Kolkata',
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                }).format(new Date(scheduledTime))} IST
+              </span>
+            </div>
+          )}
+          {meetingLink && (
+            <div className="flex items-center gap-1.5 text-indigo-700 font-mono text-[11px] truncate">
+              <LinkIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="truncate">{meetingLink}</span>
+            </div>
+          )}
         </div>
 
         {error && (

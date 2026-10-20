@@ -148,6 +148,15 @@ export async function recordMeetingLink(id: string, data: { meetingLink: string;
   }
 }
 
+export async function getWhatsAppPreview(id: string) {
+  try {
+    const result = await fetchApi<any>(`/demos/${id}/whatsapp-preview`);
+    return { success: true, data: result };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to fetch WhatsApp preview' };
+  }
+}
+
 export async function recordWhatsAppOutreach(id: string) {
   try {
     const result = await fetchApi<any>(`/demos/${id}/whatsapp-share`, {

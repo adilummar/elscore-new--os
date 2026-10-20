@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { getDemoById, recordWhatsAppOutreach } from '../../actions';
-import { usePermissions } from '@/components/providers/AuthProvider';
+import { usePermissions, useAuth } from '@/components/providers/AuthProvider';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +21,7 @@ import { PreparationModal } from '../../components/PreparationModal';
 import { MeetingLinkModal } from '../../components/MeetingLinkModal';
 import { ParentConfirmationModal } from '../../components/ParentConfirmationModal';
 import { ReassignCoordinatorModal } from '../../components/ReassignCoordinatorModal';
+import { WhatsAppPreviewModal } from '../../components/WhatsAppPreviewModal';
 
 import {
   CheckCircle2,
@@ -75,13 +76,14 @@ export function DemoDetailClient({
   initialError?: string | null;
 }) {
   const { hasPermission } = usePermissions();
+  const { user, effectiveUser } = useAuth();
   const [demo, setDemo] = React.useState<any>(initialDemo);
   const [isLoading, setIsLoading] = React.useState(!initialDemo && !initialError);
   const [error, setError] = React.useState<string | null>(initialError);
   const [isWhatsAppLoading, setIsWhatsAppLoading] = React.useState(false);
   
   const [modalState, setModalState] = React.useState<
-    'none' | 'reschedule' | 'edit' | 'assign' | 'complete' | 'cancel' | 'noshow' | 'preparation' | 'meetingLink' | 'parentConfirm' | 'reassignCoord'
+    'none' | 'reschedule' | 'edit' | 'assign' | 'complete' | 'cancel' | 'noshow' | 'preparation' | 'meetingLink' | 'parentConfirm' | 'reassignCoord' | 'whatsappPreview'
   >('none');
 
   const loadDemo = React.useCallback(async () => {
@@ -158,6 +160,20 @@ export function DemoDetailClient({
   const isTerminal = ['COMPLETED', 'CANCELLED'].includes(demo.status) || currentStage === 'COMPLETED' || currentStage === 'CANCELLED';
   const isNoShow = demo.status === 'NO_SHOW' || currentStage === 'NOT_SHOW';
 
+  // User & Ownership Context
+  const currentUserId = effectiveUser?.id || user?.id;
+
+  const lead = demo.lead || demo.booking?.lead || demo.student?.lead;
+  const leadOwnerId = lead?.assignedToUserId;
+  const bookerId = demo.bookedByUserId || demo.booking?.bookedByUserId;
+
+  const isLeadOwner = Boolean(currentUserId && leadOwnerId && currentUserId === leadOwnerId);
+  const isBooker = Boolean(currentUserId && bookerId && currentUserId === bookerId);
+  const isSalesHead = hasPermission('demo.manage_team') || (effectiveUser?.roles?.includes('SALES_HEAD') ?? false);
+  const isCeo = hasPermission('analytics.ceo.read') || (effectiveUser?.roles?.includes('CEO') ?? false);
+  const canManageSales = Boolean(isCeo || isSalesHead || hasPermission('lead.manage_all') || hasPermission('demo.manage_all'));
+  const canSalesOutreach = Boolean(isLeadOwner || isBooker || canManageSales);
+
   // Permissions
   const canReschedule = hasPermission('demo.reschedule') || hasPermission('demo.reschedule_own') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
   const canEdit = hasPermission('demo.reschedule') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
@@ -166,6 +182,7 @@ export function DemoDetailClient({
   const canComplete = hasPermission('demo.complete') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
   const canMarkExceptions = hasPermission('demo.mark_exceptions') || hasPermission('demo.manage_team') || hasPermission('demo.manage_all') || hasPermission('demo.manage_operations');
   const canManageCoord = hasPermission('demo.manage_all') || hasPermission('demo.manage_team') || hasPermission('demo.manage_operations') || hasPermission('demo.coordinate');
+  const canRecordMeetingLink = hasPermission('demo.manage_operations') || hasPermission('demo.assign_tutor') || hasPermission('demo.coordinate') || hasPermission('demo.manage_all');
 
   // Multi-session & booking info
   const sessions = demo.booking?.sessions || [];
@@ -274,18 +291,27 @@ export function DemoDetailClient({
 
             {currentStage === 'LINK_SHARED' && (
               <>
-                <Button 
-                  onClick={handleWhatsAppOutreach}
-                  disabled={isWhatsAppLoading}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
-                >
-                  <Share2 className="w-4 h-4" />
-                  <span>Share on WhatsApp</span>
-                </Button>
-                <Button onClick={() => setModalState('parentConfirm')} variant="outline" className="text-teal-700 border-teal-300 hover:bg-teal-50 gap-1.5">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>Confirm Parent</span>
-                </Button>
+                {canSalesOutreach && (
+                  <>
+                    <Button 
+                      onClick={() => setModalState('whatsappPreview')}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      <span>Share on WhatsApp</span>
+                    </Button>
+                    <Button onClick={() => setModalState('parentConfirm')} variant="outline" className="text-teal-700 border-teal-300 hover:bg-teal-50 gap-1.5">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Confirm Parent</span>
+                    </Button>
+                  </>
+                )}
+                {canRecordMeetingLink && (
+                  <Button onClick={() => setModalState('meetingLink')} variant="outline" className="text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1.5">
+                    <Link2 className="w-4 h-4" />
+                    <span>{demo.meetingLink ? 'Update Meeting Link' : 'Add Meeting Link'}</span>
+                  </Button>
+                )}
               </>
             )}
 
@@ -537,16 +563,18 @@ export function DemoDetailClient({
                   <span className="text-slate-600">WhatsApp Share:</span>
                   {demo.whatsappOpenedAt ? (
                     <span className="text-emerald-700 font-medium flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" /> Sent ({formatDate(demo.whatsappOpenedAt)})
+                      <CheckCircle className="w-3 h-3" /> Shared ({formatDate(demo.whatsappOpenedAt)})
                     </span>
-                  ) : (
+                  ) : canSalesOutreach ? (
                     <button
-                      disabled={isWhatsAppLoading || !demo.meetingLink}
-                      onClick={handleWhatsAppOutreach}
+                      disabled={!demo.meetingLink}
+                      onClick={() => setModalState('whatsappPreview')}
                       className="text-blue-600 hover:text-blue-800 font-medium hover:underline disabled:text-slate-400"
                     >
-                      Open WhatsApp Now
+                      Preview & Share WhatsApp
                     </button>
+                  ) : (
+                    <span className="text-slate-400 italic">Pending Sales Outreach</span>
                   )}
                 </div>
 
@@ -565,16 +593,18 @@ export function DemoDetailClient({
                 )}
               </div>
 
-              <div className="flex items-center justify-end pt-1">
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => setModalState('parentConfirm')}
-                  className="text-xs"
-                >
-                  {demo.parentConfirmedAt ? 'Update RSVP' : 'Record Confirmation'}
-                </Button>
-              </div>
+              {canSalesOutreach && (!isTerminal || demo.parentConfirmedAt) && (
+                <div className="flex items-center justify-end pt-1">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => setModalState('parentConfirm')}
+                    className="text-xs"
+                  >
+                    {demo.parentConfirmedAt ? 'Update RSVP' : 'Record Confirmation'}
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Coordinator Round-Robin & Ownership Card */}
@@ -810,6 +840,12 @@ export function DemoDetailClient({
       />
       <ParentConfirmationModal
         isOpen={modalState === 'parentConfirm'}
+        onClose={() => setModalState('none')}
+        demo={demo}
+        onSuccess={handleActionSuccess}
+      />
+      <WhatsAppPreviewModal
+        isOpen={modalState === 'whatsappPreview'}
         onClose={() => setModalState('none')}
         demo={demo}
         onSuccess={handleActionSuccess}

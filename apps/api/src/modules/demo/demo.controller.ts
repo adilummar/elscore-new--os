@@ -91,6 +91,14 @@ export class DemoController {
     return this.demoService.recordMeetingLink(id, dto, user);
   }
 
+  @Get(':id/whatsapp-preview')
+  async getWhatsAppPreview(
+    @Param('id') id: string,
+    @CurrentUser() user: ValidatedUser,
+  ) {
+    return this.demoService.getWhatsAppPreview(id, user);
+  }
+
   @Post(':id/whatsapp-share')
   async recordWhatsAppOutreach(
     @Param('id') id: string,

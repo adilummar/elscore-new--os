@@ -38,6 +38,18 @@ describe('Demo Operations Workflow Specification & Stage Lifecycle Tests', () =>
     mustChangePassword: false,
   };
 
+  const salesHeadUser: ValidatedUser = {
+    id: 'user-sales-head-1',
+    email: 'saleshead@elscore.com',
+    mustChangePassword: false,
+  };
+
+  const ceoUser: ValidatedUser = {
+    id: 'user-ceo-1',
+    email: 'ceo@elscore.com',
+    mustChangePassword: false,
+  };
+
   const adminUser: ValidatedUser = {
     id: 'user-admin-1',
     email: 'admin@elscore.com',
@@ -502,79 +514,355 @@ describe('Demo Operations Workflow Specification & Stage Lifecycle Tests', () =>
     });
   });
 
-  describe('6. Sales Handoff & WhatsApp Outreach: PARENT_CONFIRMATION Stage', () => {
-    it('generates WhatsApp outreach template with prefilled wa.me link and records outreach', async () => {
-      mockPrisma.demoBooking.findFirst.mockResolvedValue({
-        id: 'booking-1',
-        scheduledDate: futureDate,
-        meetingLink: 'https://meet.google.com/abc-defg-hij',
-        preparationNotes: 'Laptop recommended',
-        bookedByUserId: salesUser.id,
-        student: { firstName: 'Alice', lastName: 'Smith' },
-        lead: {
-          id: 'lead-1',
-          primaryPhone: '+1-555-234-5678',
-          assignedToUserId: salesUser.id,
-        },
+  describe('6. Sales Handoff, WhatsApp Outreach & Dynamic Template Verification', () => {
+    describe('Dynamic Template Generation (buildWhatsAppMessage)', () => {
+      it('generates greeting with parent name when provided ("Hello Mrs. Sharma,")', () => {
+        const msg = demoService.buildWhatsAppMessage({
+          parentName: 'Mrs. Sharma',
+          studentName: 'Aarav',
+          sessions: [{ subjectName: 'Mathematics', tutorName: 'Priya Sharma' }],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/abc-xyz',
+          coordinatorName: 'Aman Gupta',
+        });
+        expect(msg).toContain('Hello Mrs. Sharma,');
+        expect(msg).not.toContain('Hello sir,');
+        expect(msg).toContain('*Aarav*');
       });
 
-      const outreach = await demoService.recordWhatsAppOutreach('booking-1', salesUser);
+      it('uses neutral fallback greeting ("Hello sir,") when parent name is null or blank', () => {
+        const msgNull = demoService.buildWhatsAppMessage({
+          parentName: null,
+          studentName: 'Aarav',
+          sessions: [{ subjectName: 'Mathematics', tutorName: 'Priya Sharma' }],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/abc-xyz',
+          coordinatorName: 'Aman Gupta',
+        });
+        expect(msgNull).toContain('Hello sir,');
+        expect(msgNull).not.toContain('Hello null,');
 
-      expect(outreach.success).toBe(true);
-      expect(outreach.waUrl).toContain('https://wa.me/15552345678');
-      expect(outreach.waUrl).toContain('Alice%20Smith');
-      expect(outreach.waUrl).toContain('https%3A%2F%2Fmeet.google.com%2Fabc-defg-hij');
+        const msgBlank = demoService.buildWhatsAppMessage({
+          parentName: '   ',
+          studentName: 'Aarav',
+          sessions: [{ subjectName: 'Mathematics', tutorName: 'Priya Sharma' }],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/abc-xyz',
+        });
+        expect(msgBlank).toContain('Hello sir,');
+      });
 
-      expect(mockPrisma.demoBooking.update).toHaveBeenCalledWith({
-        where: { id: 'booking-1' },
-        data: expect.objectContaining({
-          whatsappOpenedByUserId: salesUser.id,
-        }),
+      it('formats single-session demo with subject and tutor', () => {
+        const msg = demoService.buildWhatsAppMessage({
+          parentName: 'Rajesh',
+          studentName: 'Aarav',
+          sessions: [{ subjectName: 'Mathematics', tutorName: 'Priya Sharma' }],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/abc-xyz',
+        });
+        expect(msg).toContain('📚 Subject: Mathematics');
+        expect(msg).toContain('👩‍🏫 Tutor: Priya Sharma');
+      });
+
+      it('formats multi-session demo with different tutors ("Mathematics (Priya Sharma), Physics (Rahul Verma)")', () => {
+        const msg = demoService.buildWhatsAppMessage({
+          parentName: 'Rajesh',
+          studentName: 'Aarav',
+          sessions: [
+            { subjectName: 'Mathematics', tutorName: 'Priya Sharma' },
+            { subjectName: 'Physics', tutorName: 'Rahul Verma' },
+          ],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/abc-xyz',
+        });
+        expect(msg).toContain('📚 Subject: Mathematics, Physics');
+        expect(msg).toContain('👩‍🏫 Tutor: Priya Sharma (Mathematics), Rahul Verma (Physics)');
+      });
+
+      it('formats multi-session demo with same tutor without repeating name ("Mathematics, Physics" and single tutor)', () => {
+        const msg = demoService.buildWhatsAppMessage({
+          parentName: 'Rajesh',
+          studentName: 'Aarav',
+          sessions: [
+            { subjectName: 'Mathematics', tutorName: 'Priya Sharma' },
+            { subjectName: 'Physics', tutorName: 'Priya Sharma' },
+          ],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/abc-xyz',
+        });
+        expect(msg).toContain('📚 Subject: Mathematics, Physics');
+        expect(msg).toContain('👩‍🏫 Tutor: Priya Sharma');
+      });
+
+      it('formats scheduled date and time in IST (Asia/Kolkata) with "IST" suffix', () => {
+        // 2026-10-21T11:00:00.000Z is 4:30 PM IST (+5:30) on Wed, 21 Oct 2026
+        const msg = demoService.buildWhatsAppMessage({
+          studentName: 'Aarav',
+          sessions: [{ subjectName: 'Mathematics', tutorName: 'Priya Sharma' }],
+          scheduledDate: new Date('2026-10-21T11:00:00.000Z'),
+          meetingLink: 'https://meet.google.com/abc-xyz',
+        });
+        expect(msg).toContain('📅 Date: Wed, 21 Oct 2026');
+        expect(msg).toContain('⏰ Time: 4:30 PM IST');
+      });
+
+      it('accurately includes meeting link and coordinator sign-off', () => {
+        const msg = demoService.buildWhatsAppMessage({
+          studentName: 'Aarav',
+          sessions: [{ subjectName: 'Mathematics', tutorName: 'Priya Sharma' }],
+          scheduledDate: '2026-10-21T11:00:00.000Z',
+          meetingLink: 'https://meet.google.com/custom-session-link',
+          coordinatorName: 'Aman Gupta',
+        });
+        expect(msg).toContain('🔗 Meet Link: https://meet.google.com/custom-session-link');
+        expect(msg).toContain('Aman Gupta, Coordinator');
+        expect(msg).toContain('Elscore Academy');
       });
     });
 
-    it('confirms parent meeting, advances stage to PARENT_CONFIRMATION, and records history', async () => {
-      mockPrisma.demoBooking.findFirst.mockResolvedValue({
-        id: 'booking-1',
-        meetingLink: 'https://meet.google.com/abc-defg-hij',
-        operationalStage: DemoOperationalStage.LINK_SHARED,
-        status: DemoBookingStatus.SCHEDULED,
-        bookedByUserId: salesUser.id,
-        lead: { assignedToUserId: salesUser.id },
+    describe('Phone Validation (validateAndFormatPhone)', () => {
+      it('rejects numbers with fewer than 10 digits and sets waNumber to null', () => {
+        const short = demoService.validateAndFormatPhone('98765');
+        expect(short.isValidPhone).toBe(false);
+        expect(short.waNumber).toBeNull();
+        expect(short.phoneError).toContain('minimum 10 digits');
+
+        const empty = demoService.validateAndFormatPhone(null);
+        expect(empty.isValidPhone).toBe(false);
+        expect(empty.waNumber).toBeNull();
       });
 
-      mockPrisma.demoBooking.update.mockResolvedValue({
-        id: 'booking-1',
-        operationalStage: DemoOperationalStage.PARENT_CONFIRMATION,
+      it('formats 10-digit Indian phone numbers with "91" country prefix', () => {
+        const phone = demoService.validateAndFormatPhone('9876543210');
+        expect(phone.isValidPhone).toBe(true);
+        expect(phone.waNumber).toBe('919876543210');
+        expect(phone.cleanPhone).toBe('9876543210');
       });
 
-      await demoService.confirmParentMeeting(
-        'booking-1',
-        {
-          confirmationChannel: ParentConfirmationChannel.WHATSAPP_CHAT,
-          confirmationNotes: 'Mother confirmed via WhatsApp chat at 11:30 AM',
-        },
-        salesUser,
-      );
+      it('preserves numbers already having country code', () => {
+        const phone = demoService.validateAndFormatPhone('+91 9876543210');
+        expect(phone.isValidPhone).toBe(true);
+        expect(phone.waNumber).toBe('919876543210');
+      });
+    });
 
-      expect(mockPrisma.demoBooking.update).toHaveBeenCalledWith({
-        where: { id: 'booking-1' },
-        data: expect.objectContaining({
-          confirmationChannel: ParentConfirmationChannel.WHATSAPP_CHAT,
-          confirmationNotes: 'Mother confirmed via WhatsApp chat at 11:30 AM',
-          parentConfirmedByUserId: salesUser.id,
+    describe('WhatsApp Preview Endpoint (getWhatsAppPreview)', () => {
+      beforeEach(() => {
+        mockPrisma.demoBooking.findFirst.mockResolvedValue({
+          id: 'booking-1',
+          scheduledDate: new Date('2026-10-21T11:00:00.000Z'),
+          meetingLink: 'https://meet.google.com/abc-defg-hij',
+          operationalStage: DemoOperationalStage.LINK_SHARED,
+          status: DemoBookingStatus.SCHEDULED,
+          bookedByUserId: salesUser.id,
+          student: { firstName: 'Alice', lastName: 'Smith' },
+          lead: {
+            id: 'lead-1',
+            parentName: 'Mrs. Smith',
+            primaryPhone: '9876543210',
+            assignedToUserId: salesUser.id,
+          },
+          coordinator: {
+            id: coordinatorUser.id,
+            employee: { firstName: 'Aman', lastName: 'Gupta' },
+          },
+          sessions: [
+            {
+              sessionOrder: 1,
+              subject: { name: 'Mathematics' },
+              tutorAssignments: [
+                {
+                  status: TutorAssignmentStatus.ACTIVE,
+                  tutor: { employee: { firstName: 'Priya', lastName: 'Sharma' } },
+                },
+              ],
+            },
+          ],
+        });
+
+        mockPrisma.userRole.findMany.mockImplementation((args: any) => {
+          if (args?.where?.userId === salesUser.id) return [{ role: { code: 'SALES_COUNSELLOR' } }];
+          if (args?.where?.userId === coordinatorUser.id) return [{ role: { code: 'DEMO_COORDINATOR' } }];
+          return [];
+        });
+
+        mockRbac.getPermissionsForUser.mockImplementation((userId: string) => {
+          if (userId === coordinatorUser.id) return Promise.resolve(new Set(['demo.coordinate']));
+          if (userId === salesUser.id) return Promise.resolve(new Set(['demo.read_own']));
+          return Promise.resolve(new Set());
+        });
+      });
+
+      it('returns structured preview data and valid wa.me URL for owning Sales Counsellor', async () => {
+        const preview = await demoService.getWhatsAppPreview('booking-1', salesUser);
+        expect(preview.isValidPhone).toBe(true);
+        expect(preview.parentName).toBe('Mrs. Smith');
+        expect(preview.studentName).toBe('Alice Smith');
+        expect(preview.coordinatorName).toBe('Aman Gupta');
+        expect(preview.message).toContain('Hello Mrs. Smith,');
+        expect(preview.message).toContain('📚 Subject: Mathematics');
+        expect(preview.message).toContain('👩‍🏫 Tutor: Priya Sharma');
+        expect(preview.waUrl).toContain('https://wa.me/919876543210?text=');
+      });
+
+      it('rejects Demo Coordinator from previewing sales outreach', async () => {
+        await expect(
+          demoService.getWhatsAppPreview('booking-1', coordinatorUser),
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('WhatsApp Outreach Recording & Authorization', () => {
+      beforeEach(() => {
+        mockPrisma.demoBooking.findFirst.mockResolvedValue({
+          id: 'booking-1',
+          scheduledDate: futureDate,
+          meetingLink: 'https://meet.google.com/abc-defg-hij',
+          preparationNotes: 'Laptop recommended',
+          bookedByUserId: salesUser.id,
+          operationalStage: DemoOperationalStage.LINK_SHARED,
+          status: DemoBookingStatus.SCHEDULED,
+          student: { firstName: 'Alice', lastName: 'Smith' },
+          lead: {
+            id: 'lead-1',
+            parentName: 'Mrs. Smith',
+            primaryPhone: '9876543210',
+            assignedToUserId: salesUser.id,
+          },
+        });
+
+        mockPrisma.userRole.findMany.mockImplementation((args: any) => {
+          if (args?.where?.userId === salesUser.id) return [{ role: { code: 'SALES_COUNSELLOR' } }];
+          if (args?.where?.userId === coordinatorUser.id) return [{ role: { code: 'DEMO_COORDINATOR' } }];
+          return [];
+        });
+      });
+
+      it('rejects Demo Coordinator from initiating WhatsApp outreach', async () => {
+        await expect(
+          demoService.recordWhatsAppOutreach('booking-1', coordinatorUser),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('permits owning Sales Counsellor, updates whatsappOpenedAt, and audits outreach', async () => {
+        const outreach = await demoService.recordWhatsAppOutreach('booking-1', salesUser);
+        expect(outreach.success).toBe(true);
+        expect(outreach.waUrl).toContain('https://wa.me/919876543210');
+        expect(mockPrisma.demoBooking.update).toHaveBeenCalledWith({
+          where: { id: 'booking-1' },
+          data: expect.objectContaining({
+            whatsappOpenedByUserId: salesUser.id,
+          }),
+        });
+      });
+    });
+
+    describe('Parent Confirmation Authorization & Transitions', () => {
+      beforeEach(() => {
+        mockPrisma.demoBooking.findFirst.mockResolvedValue({
+          id: 'booking-1',
+          meetingLink: 'https://meet.google.com/abc-defg-hij',
+          operationalStage: DemoOperationalStage.LINK_SHARED,
+          status: DemoBookingStatus.SCHEDULED,
+          bookedByUserId: salesUser.id,
+          lead: { assignedToUserId: salesUser.id },
+        });
+
+        mockPrisma.demoBooking.update.mockResolvedValue({
+          id: 'booking-1',
           operationalStage: DemoOperationalStage.PARENT_CONFIRMATION,
-        }),
+        });
+
+        mockPrisma.userRole.findMany.mockImplementation((args: any) => {
+          if (args?.where?.userId === salesUser.id) return [{ role: { code: 'SALES_COUNSELLOR' } }];
+          if (args?.where?.userId === coordinatorUser.id) return [{ role: { code: 'DEMO_COORDINATOR' } }];
+          if (args?.where?.userId === salesHeadUser.id) return [{ role: { code: 'SALES_HEAD' } }];
+          if (args?.where?.userId === ceoUser.id) return [{ role: { code: 'CEO' } }];
+          return [];
+        });
+
+        mockRbac.getPermissionsForUser.mockImplementation((userId: string) => {
+          if (userId === coordinatorUser.id) return Promise.resolve(new Set(['demo.coordinate']));
+          if (userId === salesUser.id) return Promise.resolve(new Set(['demo.read_own']));
+          if (userId === salesHeadUser.id) return Promise.resolve(new Set(['demo.manage_team']));
+          if (userId === ceoUser.id) return Promise.resolve(new Set(['demo.manage_all', 'analytics.ceo.read']));
+          return Promise.resolve(new Set());
+        });
       });
 
-      expect(mockPrisma.demoOperationalStageHistory.create).toHaveBeenCalledWith({
-        data: {
-          bookingId: 'booking-1',
-          previousStage: DemoOperationalStage.LINK_SHARED,
-          newStage: DemoOperationalStage.PARENT_CONFIRMATION,
-          changedByUserId: salesUser.id,
-          reason: 'Parent confirmed via WHATSAPP_CHAT',
-        },
+      it('rejects Demo Coordinator from confirming parent meeting', async () => {
+        await expect(
+          demoService.confirmParentMeeting(
+            'booking-1',
+            { confirmationChannel: ParentConfirmationChannel.WHATSAPP_CHAT },
+            coordinatorUser,
+          ),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('permits owning Sales Counsellor, advances stage to PARENT_CONFIRMATION, and records history', async () => {
+        await demoService.confirmParentMeeting(
+          'booking-1',
+          {
+            confirmationChannel: ParentConfirmationChannel.WHATSAPP_CHAT,
+            confirmationNotes: 'Mother confirmed via WhatsApp chat at 11:30 AM',
+          },
+          salesUser,
+        );
+
+        expect(mockPrisma.demoBooking.update).toHaveBeenCalledWith({
+          where: { id: 'booking-1' },
+          data: expect.objectContaining({
+            confirmationChannel: ParentConfirmationChannel.WHATSAPP_CHAT,
+            confirmationNotes: 'Mother confirmed via WhatsApp chat at 11:30 AM',
+            parentConfirmedByUserId: salesUser.id,
+            operationalStage: DemoOperationalStage.PARENT_CONFIRMATION,
+          }),
+        });
+
+        expect(mockPrisma.demoOperationalStageHistory.create).toHaveBeenCalledWith({
+          data: {
+            bookingId: 'booking-1',
+            previousStage: DemoOperationalStage.LINK_SHARED,
+            newStage: DemoOperationalStage.PARENT_CONFIRMATION,
+            changedByUserId: salesUser.id,
+            reason: 'Parent confirmed via WHATSAPP_CHAT',
+          },
+        });
+      });
+
+      it('permits Sales Head to confirm parent meeting even if not assigned to lead', async () => {
+        await demoService.confirmParentMeeting(
+          'booking-1',
+          { confirmationChannel: ParentConfirmationChannel.PHONE_CALL },
+          salesHeadUser,
+        );
+
+        expect(mockPrisma.demoBooking.update).toHaveBeenCalledWith({
+          where: { id: 'booking-1' },
+          data: expect.objectContaining({
+            confirmationChannel: ParentConfirmationChannel.PHONE_CALL,
+            parentConfirmedByUserId: salesHeadUser.id,
+            operationalStage: DemoOperationalStage.PARENT_CONFIRMATION,
+          }),
+        });
+      });
+
+      it('permits CEO to confirm parent meeting even if not assigned to lead', async () => {
+        await demoService.confirmParentMeeting(
+          'booking-1',
+          { confirmationChannel: ParentConfirmationChannel.EMAIL },
+          ceoUser,
+        );
+
+        expect(mockPrisma.demoBooking.update).toHaveBeenCalledWith({
+          where: { id: 'booking-1' },
+          data: expect.objectContaining({
+            confirmationChannel: ParentConfirmationChannel.EMAIL,
+            parentConfirmedByUserId: ceoUser.id,
+            operationalStage: DemoOperationalStage.PARENT_CONFIRMATION,
+          }),
+        });
       });
     });
   });
@@ -729,6 +1017,8 @@ describe('Demo Operations Workflow Specification & Stage Lifecycle Tests', () =>
           totalDurationMin: 45,
           isRescheduled: true,
           operationalStage: DemoOperationalStage.RESCHEDULED,
+          linkSharedAt: null,
+          linkSharedByUserId: null,
           parentConfirmedAt: null,
           parentConfirmedByUserId: null,
           confirmationNotes: null,

@@ -1359,6 +1359,8 @@ export class DemoService {
             parentConfirmedByUserId: null,
             confirmationNotes: null,
             confirmationChannel: null,
+            linkSharedAt: null,
+            linkSharedByUserId: null,
             status: DemoBookingStatus.SCHEDULED,
           },
         });
@@ -2428,11 +2430,254 @@ export class DemoService {
     });
   }
 
+  buildWhatsAppMessage(payload: {
+    parentName?: string | null;
+    studentName: string;
+    sessions: Array<{
+      subjectName: string;
+      tutorName?: string | null;
+    }>;
+    scheduledDate: Date | string;
+    meetingLink: string;
+    coordinatorName?: string | null;
+  }): string {
+    const trimmedParent = (payload.parentName || '').trim();
+    const greeting = trimmedParent ? `Hello ${trimmedParent},` : 'Hello sir,';
+    const studentName = (payload.studentName || 'Student').trim();
+
+    let subjectText = 'General';
+    let tutorText = 'To be assigned';
+
+    if (payload.sessions && payload.sessions.length > 0) {
+      if (payload.sessions.length === 1) {
+        subjectText = payload.sessions[0].subjectName || 'General';
+        tutorText = payload.sessions[0].tutorName || 'To be assigned';
+      } else {
+        subjectText = payload.sessions.map((s) => s.subjectName || 'General').join(', ');
+        const allSameTutor = payload.sessions.every(
+          (s) => (s.tutorName || '').trim() === (payload.sessions[0].tutorName || '').trim(),
+        );
+        if (allSameTutor && payload.sessions[0].tutorName) {
+          tutorText = payload.sessions[0].tutorName;
+        } else {
+          tutorText = payload.sessions
+            .map((s) => `${s.tutorName || 'To be assigned'} (${s.subjectName || 'General'})`)
+            .join(', ');
+        }
+      }
+    }
+
+    const dateObj = new Date(payload.scheduledDate);
+    const rawDateText = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(dateObj);
+    const dateText = rawDateText.replace(/,\s*(\d{4})/, ' $1');
+
+    const rawTimeText = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(dateObj);
+    const timeText = rawTimeText.toUpperCase() + ' IST';
+
+    const linkText = (payload.meetingLink || '').trim();
+    const coordinatorName = (payload.coordinatorName || '').trim() || 'Academic Operations';
+
+    return [
+      greeting,
+      '',
+      'Greetings from Elscore Academy!',
+      '',
+      `A demo class has been scheduled for *${studentName}*`,
+      '',
+      `📚 Subject: ${subjectText}`,
+      `👩‍🏫 Tutor: ${tutorText}`,
+      `📅 Date: ${dateText}`,
+      `⏰ Time: ${timeText}`,
+      '',
+      `🔗 Meet Link: ${linkText}`,
+      '',
+      'See you there!',
+      '',
+      'Regards,',
+      `${coordinatorName}, Coordinator`,
+      'Elscore Academy',
+    ].join('\n');
+  }
+
+  validateAndFormatPhone(rawPhone?: string | null): {
+    rawPhone: string;
+    cleanPhone: string;
+    isValidPhone: boolean;
+    phoneError: string | null;
+    waNumber: string | null;
+  } {
+    const raw = (rawPhone || '').trim();
+    const clean = raw.replace(/\D/g, '');
+    if (!clean || clean.length < 10) {
+      return {
+        rawPhone: raw,
+        cleanPhone: clean,
+        isValidPhone: false,
+        phoneError: 'Parent phone number is missing or invalid (minimum 10 digits required).',
+        waNumber: null,
+      };
+    }
+    const waNumber = clean.length === 10 ? `91${clean}` : clean;
+    return {
+      rawPhone: raw,
+      cleanPhone: clean,
+      isValidPhone: true,
+      phoneError: null,
+      waNumber,
+    };
+  }
+
+  async getWhatsAppPreview(id: string, user: ValidatedUser) {
+    const actor = await this.getDemoActorContext(user.id);
+    let booking: any = null;
+    let demo: any = null;
+
+    if (this.prisma.demoBooking) {
+      booking = await this.prisma.demoBooking.findFirst({
+        where: { OR: [{ id }, { legacyDemoId: id }] },
+        include: {
+          student: true,
+          lead: true,
+          coordinator: { select: { id: true, email: true, employee: true } },
+          sessions: {
+            include: {
+              subject: true,
+              tutorAssignments: {
+                where: { status: TutorAssignmentStatus.ACTIVE },
+                include: { tutor: { include: { employee: true } } },
+              },
+            },
+            orderBy: { sessionOrder: 'asc' },
+          },
+        },
+      });
+    }
+
+    if (!booking) {
+      demo = await this.prisma.demo.findUnique({
+        where: { id },
+        include: {
+          student: { include: { lead: true } },
+          subject: true,
+          tutor: { include: { employee: true } },
+        },
+      });
+    }
+
+    if (!booking && !demo) throw new NotFoundException('Demo not found');
+
+    const lead = booking?.lead || demo?.student?.lead;
+    const isLeadOwner = Boolean(lead?.assignedToUserId && lead.assignedToUserId === user.id);
+    const isBooker = Boolean(
+      (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
+      (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+    );
+    const canManageSales = Boolean(actor.isCeo || actor.isSalesHead || actor.perms?.has('lead.manage_all'));
+
+    if (!isLeadOwner && !isBooker && !canManageSales) {
+      throw new ForbiddenException('Only the assigned Sales Counsellor, Sales Head, or Admin can view and send parent outreach');
+    }
+
+    const currentStatus = booking?.status || demo?.status;
+    if (currentStatus === DemoBookingStatus.CANCELLED || currentStatus === DemoBookingStatus.COMPLETED) {
+      throw new BadRequestException('Cannot initiate parent outreach for completed or cancelled demo');
+    }
+
+    const stage = booking?.operationalStage || (demo?.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO);
+    if (stage !== DemoOperationalStage.LINK_SHARED && stage !== DemoOperationalStage.PARENT_CONFIRMATION) {
+      throw new BadRequestException('Demo is not ready for parent outreach. Meeting link and internal handoff (LINK_SHARED) must be completed first.');
+    }
+
+    const meetingLink = booking?.meetingLink || demo?.meetingLink;
+    if (!meetingLink) {
+      throw new BadRequestException('Meeting link must be recorded before parent outreach can be initiated');
+    }
+
+    const parentName = (lead?.parentName || [lead?.firstName, lead?.lastName].filter(Boolean).join(' ')).trim() || null;
+    const studentName = [booking?.student?.firstName || demo?.student?.firstName, booking?.student?.lastName || demo?.student?.lastName].filter(Boolean).join(' ').trim() || 'Student';
+
+    let sessionsList: Array<{ subjectName: string; tutorName?: string | null }> = [];
+    if (booking?.sessions && booking.sessions.length > 0) {
+      sessionsList = booking.sessions.map((s: any) => {
+        const activeAssignment = (s.tutorAssignments || []).find((ta: any) => ta.status === TutorAssignmentStatus.ACTIVE || ta.status === 'ACTIVE');
+        const tutor = activeAssignment?.tutor;
+        const tutorName = tutor
+          ? [tutor.employee?.firstName, tutor.employee?.lastName].filter(Boolean).join(' ').trim() || tutor.email?.split('@')[0]
+          : null;
+        return {
+          subjectName: s.subject?.name || 'General',
+          tutorName,
+        };
+      });
+    } else {
+      const legacyTutor = demo?.tutor;
+      const tutorName = legacyTutor
+        ? [legacyTutor.employee?.firstName, legacyTutor.employee?.lastName].filter(Boolean).join(' ').trim() || legacyTutor.email?.split('@')[0]
+        : null;
+      sessionsList = [{
+        subjectName: demo?.subject?.name || 'General',
+        tutorName,
+      }];
+    }
+
+    const coordinator = booking?.coordinator;
+    const coordinatorName = coordinator
+      ? [coordinator.employee?.firstName, coordinator.employee?.lastName].filter(Boolean).join(' ').trim() || coordinator.email?.split('@')[0]
+      : 'Academic Operations';
+
+    const scheduledDate = booking?.scheduledDate || demo?.scheduledAt;
+    const message = this.buildWhatsAppMessage({
+      parentName,
+      studentName,
+      sessions: sessionsList,
+      scheduledDate,
+      meetingLink,
+      coordinatorName,
+    });
+
+    const phoneInfo = this.validateAndFormatPhone(lead?.whatsappNumber || lead?.primaryPhone);
+    const waUrl = phoneInfo.isValidPhone ? `https://wa.me/${phoneInfo.waNumber}?text=${encodeURIComponent(message)}` : null;
+
+    return {
+      success: true,
+      demoId: booking?.id || demo?.id,
+      parentName,
+      studentName,
+      sessions: sessionsList,
+      scheduledDate,
+      meetingLink,
+      coordinatorName,
+      rawPhone: phoneInfo.rawPhone,
+      cleanPhone: phoneInfo.cleanPhone,
+      isValidPhone: phoneInfo.isValidPhone,
+      phoneError: phoneInfo.phoneError,
+      waNumber: phoneInfo.waNumber,
+      message,
+      waUrl,
+      whatsappUrl: waUrl,
+      whatsappOpenedAt: booking?.whatsappOpenedAt || null,
+      parentConfirmedAt: booking?.parentConfirmedAt || null,
+    };
+  }
+
   async recordWhatsAppOutreach(id: string, user: ValidatedUser) {
     const actor = await this.getDemoActorContext(user.id);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       let booking: any = null;
+      let demo: any = null;
+
       if (tx.demoBooking) {
         booking = await tx.demoBooking.findFirst({
           where: { OR: [{ id }, { legacyDemoId: id }] },
@@ -2441,53 +2686,122 @@ export class DemoService {
             lead: true,
             coordinator: { select: { id: true, email: true, employee: true } },
             sessions: {
-              include: { subject: true },
+              include: {
+                subject: true,
+                tutorAssignments: {
+                  where: { status: TutorAssignmentStatus.ACTIVE },
+                  include: { tutor: { include: { employee: true } } },
+                },
+              },
               orderBy: { sessionOrder: 'asc' },
             },
           },
         });
       }
-      if (!booking) throw new NotFoundException('Demo booking not found');
 
-      const isLeadOwner = booking.lead?.assignedToUserId === user.id;
-      const isBooker = booking.bookedByUserId === user.id;
-      if (!actor.isCompanyWide && !actor.isSalesHead && !isLeadOwner && !isBooker) {
+      if (!booking) {
+        demo = await tx.demo.findUnique({
+          where: { id },
+          include: {
+            student: { include: { lead: true } },
+            subject: true,
+            tutor: { include: { employee: true } },
+          },
+        });
+      }
+
+      if (!booking && !demo) throw new NotFoundException('Demo not found');
+
+      const lead = booking?.lead || demo?.student?.lead;
+      const isLeadOwner = Boolean(lead?.assignedToUserId && lead.assignedToUserId === user.id);
+      const isBooker = Boolean(
+        (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
+        (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+      );
+      const canManageSales = Boolean(actor.isCeo || actor.isSalesHead || actor.perms?.has('lead.manage_all'));
+
+      if (!isLeadOwner && !isBooker && !canManageSales) {
         throw new ForbiddenException('Only the assigned Sales Counsellor, Sales Head, or Admin can perform parent outreach');
       }
 
+      const currentStatus = booking?.status || demo?.status;
+      if (currentStatus === DemoBookingStatus.CANCELLED || currentStatus === DemoBookingStatus.COMPLETED) {
+        throw new BadRequestException('Cannot initiate parent outreach for completed or cancelled demo');
+      }
+
+      const stage = booking?.operationalStage || (demo?.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO);
+      if (stage !== DemoOperationalStage.LINK_SHARED && stage !== DemoOperationalStage.PARENT_CONFIRMATION) {
+        throw new BadRequestException('Demo is not ready for parent outreach. Meeting link and internal handoff (LINK_SHARED) must be completed first.');
+      }
+
+      const meetingLink = booking?.meetingLink || demo?.meetingLink;
+      if (!meetingLink) {
+        throw new BadRequestException('Meeting link must be recorded before parent outreach can be initiated');
+      }
+
+      const parentName = (lead?.parentName || [lead?.firstName, lead?.lastName].filter(Boolean).join(' ')).trim() || null;
+      const studentName = [booking?.student?.firstName || demo?.student?.firstName, booking?.student?.lastName || demo?.student?.lastName].filter(Boolean).join(' ').trim() || 'Student';
+
+      let sessionsList: Array<{ subjectName: string; tutorName?: string | null }> = [];
+      if (booking?.sessions && booking.sessions.length > 0) {
+        sessionsList = booking.sessions.map((s: any) => {
+          const activeAssignment = (s.tutorAssignments || []).find((ta: any) => ta.status === TutorAssignmentStatus.ACTIVE || ta.status === 'ACTIVE');
+          const tutor = activeAssignment?.tutor;
+          const tutorName = tutor
+            ? [tutor.employee?.firstName, tutor.employee?.lastName].filter(Boolean).join(' ').trim() || tutor.email?.split('@')[0]
+            : null;
+          return {
+            subjectName: s.subject?.name || 'General',
+            tutorName,
+          };
+        });
+      } else {
+        const legacyTutor = demo?.tutor;
+        const tutorName = legacyTutor
+          ? [legacyTutor.employee?.firstName, legacyTutor.employee?.lastName].filter(Boolean).join(' ').trim() || legacyTutor.email?.split('@')[0]
+          : null;
+        sessionsList = [{
+          subjectName: demo?.subject?.name || 'General',
+          tutorName,
+        }];
+      }
+
+      const coordinator = booking?.coordinator;
+      const coordinatorName = coordinator
+        ? [coordinator.employee?.firstName, coordinator.employee?.lastName].filter(Boolean).join(' ').trim() || coordinator.email?.split('@')[0]
+        : 'Academic Operations';
+
+      const scheduledDate = booking?.scheduledDate || demo?.scheduledAt;
+      const message = this.buildWhatsAppMessage({
+        parentName,
+        studentName,
+        sessions: sessionsList,
+        scheduledDate,
+        meetingLink,
+        coordinatorName,
+      });
+
+      const phoneInfo = this.validateAndFormatPhone(lead?.whatsappNumber || lead?.primaryPhone);
+      const waUrl = phoneInfo.isValidPhone ? `https://wa.me/${phoneInfo.waNumber}?text=${encodeURIComponent(message)}` : null;
+
       const now = new Date();
-      await tx.demoBooking.update({
-        where: { id: booking.id },
-        data: {
-          whatsappOpenedAt: now,
-          whatsappOpenedByUserId: user.id,
-        },
-      });
-
-      const studentName = [booking.student?.firstName, booking.student?.lastName].filter(Boolean).join(' ') || 'Student';
-      const scheduledTime = new Date(booking.scheduledDate).toLocaleString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      const link = booking.meetingLink || 'Meeting link will be shared shortly';
-      const guidelines = booking.preparationNotes ? `\n\nClass Guidelines:\n${booking.preparationNotes}` : '';
-
-      const message = `Hello! This is regarding the Demo class for ${studentName} scheduled on ${scheduledTime}.\n\nMeeting Link: ${link}${guidelines}\n\nPlease let us know if you have any questions. Looking forward to having you!`;
-
-      const rawPhone = booking.lead?.primaryPhone || booking.lead?.whatsappNumber || '';
-      const cleanPhone = rawPhone.replace(/\D/g, '');
-      const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
+      if (booking && tx.demoBooking) {
+        await tx.demoBooking.update({
+          where: { id: booking.id },
+          data: {
+            whatsappOpenedAt: now,
+            whatsappOpenedByUserId: user.id,
+          },
+        });
+      }
 
       await this.audit.recordInTx(tx, {
         entityType: 'DemoBooking',
-        entityId: booking.id,
+        entityId: booking?.id || demo?.id,
         action: 'DEMO_WHATSAPP_SHARED',
         actorUserId: user.id,
         newValue: {
-          phone: cleanPhone,
+          phone: phoneInfo.cleanPhone,
           whatsappOpenedAt: now,
         },
       });
@@ -2495,8 +2809,17 @@ export class DemoService {
       return {
         success: true,
         waUrl,
+        whatsappUrl: waUrl,
         message,
-        phone: cleanPhone,
+        phone: phoneInfo.cleanPhone,
+        isValidPhone: phoneInfo.isValidPhone,
+        phoneError: phoneInfo.phoneError,
+        parentName,
+        studentName,
+        sessions: sessionsList,
+        scheduledDate,
+        meetingLink,
+        coordinatorName,
       };
     });
   }
@@ -2506,57 +2829,85 @@ export class DemoService {
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       let booking: any = null;
+      let demo: any = null;
+
       if (tx.demoBooking) {
         booking = await tx.demoBooking.findFirst({
           where: { OR: [{ id }, { legacyDemoId: id }] },
           include: { lead: true },
         });
       }
-      if (!booking) throw new NotFoundException('Demo booking not found');
 
-      if (booking.status === DemoBookingStatus.CANCELLED || booking.status === DemoBookingStatus.COMPLETED) {
+      if (!booking) {
+        demo = await tx.demo.findUnique({
+          where: { id },
+          include: { student: { include: { lead: true } } },
+        });
+      }
+
+      if (!booking && !demo) throw new NotFoundException('Demo booking not found');
+
+      const lead = booking?.lead || demo?.student?.lead;
+      const isLeadOwner = Boolean(lead?.assignedToUserId && lead.assignedToUserId === user.id);
+      const isBooker = Boolean(
+        (booking?.bookedByUserId && booking.bookedByUserId === user.id) ||
+        (demo?.bookedByUserId && demo.bookedByUserId === user.id)
+      );
+      const canManageSales = Boolean(actor.isCeo || actor.isSalesHead || actor.perms?.has('lead.manage_all'));
+
+      if (!isLeadOwner && !isBooker && !canManageSales) {
+        throw new ForbiddenException('Only the assigned Sales Counsellor or Sales Head can confirm parent attendance');
+      }
+
+      const currentStatus = booking?.status || demo?.status;
+      if (currentStatus === DemoBookingStatus.CANCELLED || currentStatus === DemoBookingStatus.COMPLETED) {
         throw new BadRequestException('Cannot confirm a completed or cancelled demo');
       }
 
-      if (!booking.meetingLink) {
+      const currentStage = booking?.operationalStage || (demo?.status === DemoStatus.COMPLETED ? DemoOperationalStage.COMPLETED : DemoOperationalStage.VALID_DEMO);
+      if (currentStage !== DemoOperationalStage.LINK_SHARED && currentStage !== DemoOperationalStage.PARENT_CONFIRMATION) {
+        throw new BadRequestException('Demo is not ready for parent confirmation. Meeting link and internal handoff (LINK_SHARED) must be completed first.');
+      }
+
+      const meetingLink = booking?.meetingLink || demo?.meetingLink;
+      if (!meetingLink) {
         throw new BadRequestException('Meeting link must be recorded before parent confirmation can be submitted');
       }
 
-      const isLeadOwner = booking.lead?.assignedToUserId === user.id;
-      const isBooker = booking.bookedByUserId === user.id;
-      if (!actor.isCompanyWide && !actor.isSalesHead && !isLeadOwner && !isBooker) {
-        throw new ForbiddenException('Only the assigned Sales Counsellor, Sales Head, or Admin can confirm parent attendance');
-      }
-
-      const oldStage = booking.operationalStage;
+      const oldStage = booking?.operationalStage || DemoOperationalStage.LINK_SHARED;
       const newStage = DemoOperationalStage.PARENT_CONFIRMATION;
 
-      const updated = await tx.demoBooking.update({
-        where: { id: booking.id },
-        data: {
-          confirmationChannel: dto.confirmationChannel,
-          parentConfirmedAt: new Date(),
-          parentConfirmedByUserId: user.id,
-          confirmationNotes: dto.confirmationNotes || null,
-          operationalStage: newStage,
-        },
-      });
-
-      if (oldStage !== newStage && tx.demoOperationalStageHistory) {
-        await tx.demoOperationalStageHistory.create({
+      let updated: any = null;
+      if (booking && tx.demoBooking) {
+        updated = await tx.demoBooking.update({
+          where: { id: booking.id },
           data: {
-            bookingId: booking.id,
-            previousStage: oldStage,
-            newStage: newStage,
-            changedByUserId: user.id,
-            reason: `Parent confirmed via ${dto.confirmationChannel}`,
+            confirmationChannel: dto.confirmationChannel,
+            parentConfirmedAt: new Date(),
+            parentConfirmedByUserId: user.id,
+            confirmationNotes: dto.confirmationNotes || null,
+            operationalStage: newStage,
           },
         });
+
+        if (oldStage !== newStage && tx.demoOperationalStageHistory) {
+          await tx.demoOperationalStageHistory.create({
+            data: {
+              bookingId: booking.id,
+              previousStage: oldStage,
+              newStage: newStage,
+              changedByUserId: user.id,
+              reason: `Parent confirmed via ${dto.confirmationChannel}`,
+            },
+          });
+        }
+      } else {
+        updated = demo;
       }
 
       await this.audit.recordInTx(tx, {
         entityType: 'DemoBooking',
-        entityId: booking.id,
+        entityId: booking?.id || demo?.id,
         action: 'DEMO_PARENT_CONFIRMED',
         actorUserId: user.id,
         newValue: {
