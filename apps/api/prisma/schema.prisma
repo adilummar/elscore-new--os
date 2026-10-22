@@ -252,6 +252,8 @@ model User {
   delegatedPermissions UserPermission[] @relation("PermissionDelegator")
 
   attendanceCorrections    EmployeeAttendanceCorrection[]
+  leaveReviews             EmployeeLeaveRequest[]         @relation("LeaveRequestReviewer")
+  leaveUnlocksGranted      EmployeeAttendanceLeaveUnlock[] @relation("AttendanceLeaveUnlockGranter")
   addedTutorSubjects       TutorSubject[]                 @relation("TutorSubjectAddedBy")
   addedTutorGrades         TutorGrade[]                   @relation("TutorGradeAddedBy")
   addedTutorCurricula      TutorCurriculum[]              @relation("TutorCurriculumAddedBy")
@@ -408,6 +410,8 @@ model Employee {
   tutorProfile TutorProfile? @relation("EmployeeTutorProfile")
 
   attendanceSessions EmployeeAttendanceSession[]
+  leaveRequests      EmployeeLeaveRequest[]
+  leaveUnlocks       EmployeeAttendanceLeaveUnlock[]
 
   @@index([departmentId])
   @@index([employmentStatus])
@@ -2522,3 +2526,63 @@ model QuotationLineItem {
   @@index([quotationId])
   @@map("quotation_line_items")
 }
+
+// =============================================================================
+// HR — EMPLOYEE LEAVE & ATTENDANCE UNLOCK
+// =============================================================================
+
+enum LeaveType {
+  CASUAL
+  SICK
+  UNPAID
+  OTHER
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model EmployeeLeaveRequest {
+  id               String             @id @default(uuid())
+  employeeId       String             @map("employee_id")
+  leaveType        LeaveType          @map("leave_type")
+  startDate        String             @map("start_date") // YYYY-MM-DD in Asia/Kolkata
+  endDate          String             @map("end_date") // YYYY-MM-DD in Asia/Kolkata
+  reason           String
+  status           LeaveRequestStatus @default(PENDING)
+  reviewedByUserId String?            @map("reviewed_by_user_id")
+  reviewedAt       DateTime?          @map("reviewed_at")
+  reviewNote       String?            @map("review_note")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  employee       Employee                        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewedByUser User?                           @relation("LeaveRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  leaveUnlocks   EmployeeAttendanceLeaveUnlock[]
+
+  @@index([employeeId, status])
+  @@index([status, startDate, endDate])
+  @@map("employee_leave_requests")
+}
+
+model EmployeeAttendanceLeaveUnlock {
+  id               String   @id @default(uuid())
+  employeeId       String   @map("employee_id")
+  leaveRequestId   String   @map("leave_request_id")
+  calendarDate     String   @map("calendar_date") // YYYY-MM-DD in Asia/Kolkata
+  unlockedByUserId String   @map("unlocked_by_user_id")
+  reason           String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  employee       Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveRequest   EmployeeLeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  unlockedByUser User                 @relation("AttendanceLeaveUnlockGranter", fields: [unlockedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, calendarDate, leaveRequestId])
+  @@index([leaveRequestId])
+  @@map("employee_attendance_leave_unlocks")
+}
+

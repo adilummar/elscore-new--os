@@ -63,8 +63,11 @@ export class EmployeeAttendanceController {
    */
   @Get('staffs/:employeeId')
   @RequirePermissions('attendance.read.team')
-  async getStaffDetail(@Param('employeeId') employeeId: string) {
-    return this.attendanceService.getStaffDetail(employeeId);
+  async getStaffDetail(
+    @CurrentUser() user: RequestUser,
+    @Param('employeeId') employeeId: string,
+  ) {
+    return this.attendanceService.getStaffDetail(employeeId, user.id);
   }
 
   @Patch('event/:eventId/correct')
@@ -81,5 +84,18 @@ export class EmployeeAttendanceController {
       new Date(dto.newTimestamp),
       dto.reason
     );
+  }
+
+  /**
+   * POST /attendance/unlock-leave
+   * HR date-specific check-in unlock for an employee on approved leave.
+   */
+  @Post('unlock-leave')
+  @RequirePermissions('attendance.unlock.leave')
+  async unlockLeave(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: { employeeId: string; calendarDate?: string; reason: string; leaveRequestId?: string },
+  ) {
+    return this.attendanceService.unlockAttendanceForLeave(user.id, dto);
   }
 }

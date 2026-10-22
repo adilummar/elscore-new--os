@@ -4,6 +4,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { format, differenceInMinutes, parse, startOfDay, endOfDay } from 'date-fns';
 import { formatInTimeZone, toZonedTime, getTimezoneOffset } from 'date-fns-tz';
+import { isValidCalendarDate } from '../../common/utils/calendar-date.util';
 
 const TIMEZONE = 'Asia/Kolkata';
 
@@ -84,6 +85,32 @@ export class EmployeeAttendanceService {
 
       const checkInTime = requestedDate || new Date();
       const today = this.getTodayStr(checkInTime);
+
+      // Check for approved leave blocking this calendar date
+      const activeLeave = await tx.employeeLeaveRequest.findFirst({
+        where: {
+          employeeId: employee.id,
+          status: 'APPROVED',
+          startDate: { lte: today },
+          endDate: { gte: today },
+        },
+      });
+
+      if (activeLeave) {
+        const unlock = await tx.employeeAttendanceLeaveUnlock.findFirst({
+          where: {
+            employeeId: employee.id,
+            calendarDate: today,
+            leaveRequestId: activeLeave.id,
+          },
+        });
+
+        if (!unlock) {
+          throw new ForbiddenException(
+            `Cannot check in: Employee is on approved leave from ${activeLeave.startDate} to ${activeLeave.endDate}. An HR unlock is required for ${today}.`,
+          );
+        }
+      }
 
       const existingActive = await tx.employeeAttendanceSession.findFirst({
         where: { employeeId: employee.id, status: { in: ['ACTIVE', 'ON_BREAK'] } },
@@ -396,6 +423,128 @@ export class EmployeeAttendanceService {
      });
   }
 
+  /**
+   * Unlock check-in for an employee on approved leave for a specific calendar date.
+   */
+  async unlockAttendanceForLeave(
+    hrUserId: string,
+    dto: { employeeId: string; calendarDate?: string; reason: string; leaveRequestId?: string },
+  ) {
+    const reason = dto.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException('A mandatory reason is required to unlock check-in during approved leave');
+    }
+
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: dto.employeeId },
+    });
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+
+    // Prevent self-unlock (separation of duties)
+    if (employee.userId === hrUserId) {
+      throw new ForbiddenException(
+        'Self-unlock is not permitted: another authorized HR user or CEO must grant the unlock',
+      );
+    }
+
+    const calendarDate = dto.calendarDate || this.getTodayStr();
+    if (!isValidCalendarDate(calendarDate)) {
+      throw new BadRequestException('calendarDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      let targetLeaveId: string;
+
+      if (dto.leaveRequestId) {
+        const leave = await tx.employeeLeaveRequest.findUnique({
+          where: { id: dto.leaveRequestId },
+        });
+        if (!leave || leave.employeeId !== employee.id || leave.status !== 'APPROVED') {
+          throw new BadRequestException('Invalid or non-approved leave request specified for unlock');
+        }
+        if (leave.startDate > calendarDate || leave.endDate < calendarDate) {
+          throw new BadRequestException(`Specified leave request does not cover calendar date ${calendarDate}`);
+        }
+        targetLeaveId = leave.id;
+      } else {
+        const activeLeave = await tx.employeeLeaveRequest.findFirst({
+          where: {
+            employeeId: employee.id,
+            status: 'APPROVED',
+            startDate: { lte: calendarDate },
+            endDate: { gte: calendarDate },
+          },
+        });
+
+        if (!activeLeave) {
+          throw new BadRequestException(
+            `Cannot unlock check-in: No approved leave request found for employee on ${calendarDate}`,
+          );
+        }
+        targetLeaveId = activeLeave.id;
+      }
+
+      const existing = await tx.employeeAttendanceLeaveUnlock.findUnique({
+        where: {
+          employeeId_calendarDate_leaveRequestId: {
+            employeeId: employee.id,
+            calendarDate,
+            leaveRequestId: targetLeaveId,
+          },
+        },
+      });
+
+      if (existing) {
+        return existing;
+      }
+
+      const unlock = await tx.employeeAttendanceLeaveUnlock.create({
+        data: {
+          employeeId: employee.id,
+          leaveRequestId: targetLeaveId,
+          calendarDate,
+          unlockedByUserId: hrUserId,
+          reason,
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              businessId: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          unlockedByUser: {
+            select: {
+              id: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      await this.audit.recordInTx(tx, {
+        actorUserId: hrUserId,
+        action: 'ATTENDANCE_LEAVE_UNLOCKED',
+        entityType: 'EmployeeAttendanceLeaveUnlock',
+        entityId: unlock.id,
+        newValue: unlock,
+        reason,
+        metadata: {
+          employeeId: employee.id,
+          targetUserId: employee.userId,
+          calendarDate,
+          leaveRequestId: targetLeaveId,
+        },
+      });
+
+      return unlock;
+    });
+  }
+
   async getMyStatus(userId: string) {
      const employee = await this.prisma.employee.findUnique({ where: { userId } });
      if (!employee) return null;
@@ -430,6 +579,7 @@ export class EmployeeAttendanceService {
 
   /**
    * Returns ALL active employees with their today's attendance session (null if absent).
+   * Also overlays active approved leave and date unlock status.
    * If departmentId is provided, scopes to that department only (for team leads/dept heads).
    */
   async getAllStaffsWithAttendance(userId: string, requestedDepartmentId?: string) {
@@ -458,37 +608,68 @@ export class EmployeeAttendanceService {
       }
     }
 
-    const employees = await this.prisma.employee.findMany({
-      where: {
-        employmentStatus: 'ACTIVE',
-        ...(departmentId ? { departmentId } : {}),
-      },
-      include: {
-        department: { select: { id: true, name: true, code: true } },
-        user: {
-          select: {
-            id: true,
-            email: true,
-            status: true,
-            userRoles: {
-              include: { role: { select: { id: true, name: true, code: true } } },
+    const [employees, activeLeaves, activeUnlocks] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: {
+          employmentStatus: 'ACTIVE',
+          ...(departmentId ? { departmentId } : {}),
+        },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              status: true,
+              userRoles: {
+                include: { role: { select: { id: true, name: true, code: true } } },
+              },
+            },
+          },
+          attendanceSessions: {
+            where: { calendarDate: today },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: {
+              events: {
+                where: { isInvalidated: false },
+                orderBy: { timestamp: 'asc' },
+              },
             },
           },
         },
-        attendanceSessions: {
-          where: { calendarDate: today },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          include: {
-            events: {
-              where: { isInvalidated: false },
-              orderBy: { timestamp: 'asc' },
-            },
-          },
+        orderBy: [{ department: { name: 'asc' } }, { firstName: 'asc' }],
+      }),
+      this.prisma.employeeLeaveRequest.findMany({
+        where: {
+          status: 'APPROVED',
+          startDate: { lte: today },
+          endDate: { gte: today },
         },
-      },
-      orderBy: [{ department: { name: 'asc' } }, { firstName: 'asc' }],
-    });
+        select: {
+          id: true,
+          employeeId: true,
+          leaveType: true,
+          startDate: true,
+          endDate: true,
+          reason: true,
+        },
+      }),
+      this.prisma.employeeAttendanceLeaveUnlock.findMany({
+        where: {
+          calendarDate: today,
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          leaveRequestId: true,
+          calendarDate: true,
+          reason: true,
+          unlockedByUserId: true,
+          createdAt: true,
+        },
+      }),
+    ]);
 
     return employees.map((emp) => {
       const todaySession = emp.attendanceSessions[0] || null;
@@ -496,6 +677,26 @@ export class EmployeeAttendanceService {
       const checkOutEvent = todaySession?.events.find(
         (e) => e.eventType === 'CHECK_OUT' || e.eventType === 'AUTO_CHECK_OUT',
       );
+
+      const todayLeave = activeLeaves.find((l) => l.employeeId === emp.id) || null;
+      const todayUnlock = todayLeave
+        ? activeUnlocks.find((u) => u.employeeId === emp.id && u.leaveRequestId === todayLeave.id) || null
+        : null;
+
+      // Privacy protection: Mask sensitive reasons unless viewer is HR/CEO/Admin or the employee themselves
+      const canSeeDetails = isGlobalViewer || emp.user.id === userId;
+      const sanitizedTodayLeave = todayLeave
+        ? {
+            ...todayLeave,
+            reason: canSeeDetails ? todayLeave.reason : null,
+          }
+        : null;
+      const sanitizedTodayUnlock = todayUnlock
+        ? {
+            ...todayUnlock,
+            reason: canSeeDetails ? todayUnlock.reason : null,
+          }
+        : null;
 
       return {
         id: emp.id,
@@ -520,44 +721,131 @@ export class EmployeeAttendanceService {
               checkOutTime: checkOutEvent?.timestamp ?? null,
             }
           : null,
+        todayLeave: sanitizedTodayLeave,
+        todayUnlock: sanitizedTodayUnlock,
+        isOnLeave: Boolean(todayLeave),
+        isLeaveUnlocked: Boolean(todayUnlock),
       };
     });
   }
 
   /**
-   * Returns detailed attendance for a single employee — today + last 14 days history.
+   * Returns detailed attendance for a single employee — today + last 14 days history + leave info.
+   * Masks sensitive leave reasons and review notes unless viewer is HR/CEO/Admin or the employee themselves.
    */
-  async getStaffDetail(employeeId: string) {
+  async getStaffDetail(employeeId: string, viewerUserId?: string) {
     const today = this.getTodayStr();
 
-    const employee = await this.prisma.employee.findUnique({
-      where: { id: employeeId },
-      include: {
-        department: true,
-        user: {
-          select: {
-            id: true,
-            email: true,
-            status: true,
-            userRoles: { include: { role: true } },
-          },
+    let isGlobalViewer = false;
+    if (viewerUserId) {
+      const viewer = await this.prisma.user.findUnique({
+        where: { id: viewerUserId },
+        include: {
+          userRoles: { include: { role: true } },
         },
-        attendanceSessions: {
-          orderBy: { calendarDate: 'desc' },
-          take: 14,
-          include: {
-            events: {
-              where: { isInvalidated: false },
-              orderBy: { timestamp: 'asc' },
+      });
+      isGlobalViewer = Boolean(
+        viewer?.userRoles?.some((ur: any) =>
+          ['CEO', 'HR_MANAGER', 'HR_EXECUTIVE', 'ADMIN'].includes(ur.role?.code),
+        ),
+      );
+    }
+
+    const [employee, activeLeaves, activeUnlocks, recentLeaves, recentUnlocks] = await Promise.all([
+      this.prisma.employee.findUnique({
+        where: { id: employeeId },
+        include: {
+          department: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              status: true,
+              userRoles: { include: { role: true } },
+            },
+          },
+          attendanceSessions: {
+            orderBy: { calendarDate: 'desc' },
+            take: 14,
+            include: {
+              events: {
+                where: { isInvalidated: false },
+                orderBy: { timestamp: 'asc' },
+              },
             },
           },
         },
-      },
-    });
+      }),
+      this.prisma.employeeLeaveRequest.findMany({
+        where: {
+          employeeId,
+          status: 'APPROVED',
+          startDate: { lte: today },
+          endDate: { gte: today },
+        },
+      }),
+      this.prisma.employeeAttendanceLeaveUnlock.findMany({
+        where: {
+          employeeId,
+          calendarDate: today,
+        },
+      }),
+      this.prisma.employeeLeaveRequest.findMany({
+        where: { employeeId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: {
+          reviewedByUser: {
+            select: { id: true, email: true },
+          },
+        },
+      }),
+      this.prisma.employeeAttendanceLeaveUnlock.findMany({
+        where: { employeeId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: {
+          unlockedByUser: {
+            select: { id: true, email: true },
+          },
+        },
+      }),
+    ]);
 
     if (!employee) throw new NotFoundException('Employee not found');
 
+    const canSeeDetails = isGlobalViewer || (viewerUserId && employee.user.id === viewerUserId);
+
     const todaySession = employee.attendanceSessions.find((s) => s.calendarDate === today) || null;
+    const todayLeave = activeLeaves[0] || null;
+    const todayUnlock = todayLeave
+      ? activeUnlocks.find((u) => u.leaveRequestId === todayLeave.id) || null
+      : null;
+
+    const sanitizedTodayLeave = todayLeave
+      ? {
+          ...todayLeave,
+          reason: canSeeDetails ? todayLeave.reason : null,
+        }
+      : null;
+
+    const sanitizedTodayUnlock = todayUnlock
+      ? {
+          ...todayUnlock,
+          reason: canSeeDetails ? todayUnlock.reason : null,
+        }
+      : null;
+
+    const sanitizedRecentLeaves = recentLeaves.map((l) => ({
+      ...l,
+      reason: canSeeDetails ? l.reason : null,
+      reviewNote: canSeeDetails ? l.reviewNote : null,
+    }));
+
+    const sanitizedRecentUnlocks = recentUnlocks.map((u) => ({
+      ...u,
+      reason: canSeeDetails ? u.reason : null,
+    }));
 
     return {
       id: employee.id,
@@ -570,6 +858,13 @@ export class EmployeeAttendanceService {
       roles: employee.user.userRoles.map((ur) => ur.role),
       todaySession,
       recentSessions: employee.attendanceSessions,
+      todayLeave: sanitizedTodayLeave,
+      todayUnlock: sanitizedTodayUnlock,
+      isOnLeave: Boolean(todayLeave),
+      isLeaveUnlocked: Boolean(todayUnlock),
+      recentLeaves: sanitizedRecentLeaves,
+      recentUnlocks: sanitizedRecentUnlocks,
     };
   }
 }
+

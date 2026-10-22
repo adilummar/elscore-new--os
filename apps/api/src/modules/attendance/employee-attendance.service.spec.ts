@@ -23,7 +23,9 @@ describe('EmployeeAttendanceService', () => {
             employeeAttendanceSession: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
             globalWorkingSchedule: { findFirst: jest.fn() },
             employeeAttendanceEvent: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
-            employeeAttendanceCorrection: { create: jest.fn() }
+            employeeAttendanceCorrection: { create: jest.fn() },
+            employeeLeaveRequest: { findFirst: jest.fn().mockResolvedValue(null) },
+            employeeAttendanceLeaveUnlock: { findUnique: jest.fn().mockResolvedValue(null), findFirst: jest.fn().mockResolvedValue(null) }
           },
         },
         { provide: AuditService, useValue: { recordInTx: jest.fn() } },

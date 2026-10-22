@@ -57,7 +57,17 @@ export function StaffCard({ staff, onClick }: Props) {
 
         {/* Status badge + chevron */}
         <div className="flex items-center gap-2 shrink-0">
-          {cfg ? (
+          {staff.isOnLeave ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+              On Leave
+              {staff.isLeaveUnlocked && (
+                <span className="text-[10px] bg-amber-200/70 text-amber-900 px-1 rounded ml-0.5 font-normal">
+                  Unlocked
+                </span>
+              )}
+            </span>
+          ) : cfg ? (
             <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.text}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
               {cfg.label}

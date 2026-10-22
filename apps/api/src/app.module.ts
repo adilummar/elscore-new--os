@@ -57,6 +57,7 @@ import { UserModule } from './modules/user/user.module';
 import { HealthModule } from './modules/health/health.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { QuotationModule } from './modules/quotation/quotation.module';
+import { LeaveModule } from './modules/leave/leave.module';
 
 import { AuditMiddleware } from './common/audit/audit.middleware';
 
@@ -119,6 +120,7 @@ import { AuditMiddleware } from './common/audit/audit.middleware';
     HealthModule,
     PricingModule,
     QuotationModule,
+    LeaveModule,
     // Phase 2+: add module imports here as each phase is implemented.
     // Do not add placeholder imports for unbuilt modules.
   ],

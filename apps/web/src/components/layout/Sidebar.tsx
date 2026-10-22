@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   Clock,
+  Calendar,
 } from "lucide-react";
 import { logout } from "@/lib/api/auth";
 import { usePermissions } from "@/components/providers/AuthProvider";
@@ -31,6 +32,7 @@ export function Sidebar({ user }: { user: any }) {
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Attendance", href: "/attendance", icon: Clock },
+    ...(hasPermission("leave.request.own") || hasPermission("leave.read.all") ? [{ name: "Leaves", href: "/leaves", icon: Calendar }] : []),
     ...(hasPermission("attendance.read.team") || hasPermission("employee.read-all") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
     ...(hasPermission("target.read.own") || hasPermission("target.read.team") || hasPermission("lead.read") ? [{ name: "Sales", href: "/sales", icon: Users }] : []),
     ...(hasPermission("lead.read") || hasPermission("lead.read-all") ? [{ name: "Leads", href: "/leads", icon: Users }] : []),

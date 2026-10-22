@@ -248,6 +248,10 @@ const PERMISSIONS: Array<{
     { code: 'attendance.read.team', resource: 'attendance.employee', action: 'read.team', description: 'Read team attendance history', isDelegatable: false },
     { code: 'attendance.correct', resource: 'attendance.employee', action: 'correct', description: 'Correct historical attendance records', isDelegatable: false },
     { code: 'attendance.settings.manage', resource: 'attendance.employee', action: 'settings.manage', description: 'Manage global working schedule', isDelegatable: false },
+    { code: 'leave.request.own', resource: 'leave', action: 'request.own', description: 'Submit and view own leave requests', isDelegatable: false },
+    { code: 'leave.read.all', resource: 'leave', action: 'read.all', description: 'Read all employee leave requests', isDelegatable: true },
+    { code: 'leave.manage', resource: 'leave', action: 'manage', description: 'Approve or reject employee leave requests', isDelegatable: false },
+    { code: 'attendance.unlock.leave', resource: 'attendance.employee', action: 'unlock.leave', description: 'Unlock attendance check-in for an employee on approved leave', isDelegatable: false },
 
     // ---------------------------------------------------------------------------
   // Finance (Slice 2E)
@@ -1015,6 +1019,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   OPERATIONS_MANAGER: [
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'employee.read',
     'employee.read-all',
     'audit.view',
@@ -1031,6 +1036,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'attendance.read.team',
     'attendance.correct',
     'attendance.settings.manage',
+    'attendance.unlock.leave',
+    'leave.request.own',
+    'leave.read.all',
+    'leave.manage',
     'user.read',
     'user.create',
     'user.update',
@@ -1105,6 +1114,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   DEMO_HEAD: [
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'employee.read',
     'department.read',
     'tutor.profile.read',
@@ -1122,6 +1132,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   DEMO_ADMIN: [
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'employee.read',
     'department.read',
     'tutor.profile.read',
@@ -1138,6 +1149,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   DEMO_COORDINATOR: [
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'demo.read',
     'demo.read_assigned',
     'demo.coordinate',
@@ -1171,6 +1183,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   ACADEMIC_HEAD: [
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'employee.read',
     'department.read',
     'tutor.profile.read',
@@ -1181,13 +1194,23 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   MARKETING_HEAD: [
     'attendance.action.own',
-    'attendance.read.own','employee.read', 'department.read'],
+    'attendance.read.own',
+    'leave.request.own',
+    'employee.read',
+    'department.read',
+  ],
   PERFORMANCE_MARKETER: [
     'attendance.action.own',
-    'attendance.read.own','department.read'],
+    'attendance.read.own',
+    'leave.request.own',
+    'department.read',
+  ],
   DESIGNER: [
     'attendance.action.own',
-    'attendance.read.own','department.read'],
+    'attendance.read.own',
+    'leave.request.own',
+    'department.read',
+  ],
   SALES_HEAD: [
     'pricing.manage',
     'quotation.create',
@@ -1195,6 +1218,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'quotation.update',
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'attendance.read.team',
     'demo.book',
     'demo.read_own',
@@ -1245,6 +1269,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'quotation.update',
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
 
     'demo.book',
     'demo.read_own',
@@ -1277,7 +1302,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   FINANCE_HEAD: [
     'attendance.action.own',
-    'attendance.read.own','employee.read', 'department.read'],
+    'attendance.read.own',
+    'leave.request.own',
+    'employee.read',
+    'department.read',
+  ],
   FINANCE_MANAGER: [
     'finance.invoice.create',
     'finance.invoice.read',
@@ -1296,6 +1325,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   FINANCE_EXECUTIVE: [
     'attendance.action.own',
     'attendance.read.own',
+    'leave.request.own',
     'finance.invoice.create',
     'finance.invoice.read',
     'finance.invoice.issue',
