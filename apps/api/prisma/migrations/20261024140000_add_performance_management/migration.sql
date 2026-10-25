@@ -266,10 +266,10 @@ ALTER TABLE "performance_improvement_plans" ADD CONSTRAINT "performance_improvem
 ALTER TABLE "pip_objectives" ADD CONSTRAINT "pip_objectives_pip_id_fkey" FOREIGN KEY ("pip_id") REFERENCES "performance_improvement_plans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Insert Sequences
-INSERT INTO "sequences" ("entity_type", "prefix", "next_number", "padding", "created_at", "updated_at")
+INSERT INTO "sequences" ("entity_type", "next_number", "prefix", "padding")
 VALUES
-  ('CYC', 'CYC', 1, 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('GOL', 'GOL', 1, 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('REV', 'REV', 1, 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('PIP', 'PIP', 1, 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  ('CYC', 1, 'CYC', 4),
+  ('GOL', 1, 'GOL', 4),
+  ('REV', 1, 'REV', 4),
+  ('PIP', 1, 'PIP', 4)
 ON CONFLICT ("entity_type") DO NOTHING;
