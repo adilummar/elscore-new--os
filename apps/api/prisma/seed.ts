@@ -581,7 +581,7 @@ const PERMISSIONS: Array<{
   },
   {
     code: 'payroll.payment.manage',
-    resource: 'payroll',
+    resource: 'payroll.payment',
     action: 'manage',
     description: 'Record payment details for finalized payroll and tutor payable items',
     isDelegatable: false,
@@ -1286,13 +1286,6 @@ const PERMISSIONS: Array<{
     isDelegatable: true,
   },
   {
-    code: 'demo.read',
-    resource: 'demo',
-    action: 'read',
-    description: 'Read demo',
-    isDelegatable: true,
-  },
-  {
     code: 'demo.update',
     resource: 'demo',
     action: 'update',
@@ -1312,15 +1305,6 @@ const PERMISSIONS: Array<{
     resource: 'sales-routing',
     action: 'manage',
     description: 'Manage sales routing',
-    isDelegatable: false,
-  },
-
-  // 🚀 Reports (placeholder; extended per phase) 🚀
-  {
-    code: 'report.view',
-    resource: 'report',
-    action: 'view',
-    description: 'View reports (scope extended per phase)',
     isDelegatable: false,
   },
 ];
