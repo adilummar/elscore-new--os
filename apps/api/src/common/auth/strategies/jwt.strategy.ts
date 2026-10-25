@@ -5,6 +5,7 @@ import { UserStatus } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import type { RequestUser } from '../decorators/current-user.decorator';
+import { isSystemActorIdentity } from '../../id-generator/seed-identity';
 import { UserStatusCacheService } from '../services/user-status-cache.service';
 
 interface JwtPayload {
@@ -59,6 +60,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   async validate(payload: JwtPayload): Promise<RequestUser> {
     if (!payload.sub || !payload.email) {
       throw new UnauthorizedException('Invalid token payload');
+    }
+
+    if (isSystemActorIdentity({ id: payload.sub, email: payload.email })) {
+      throw new UnauthorizedException('System actor sessions are not permitted');
     }
 
     // R-1: Verify account is still active on every request.

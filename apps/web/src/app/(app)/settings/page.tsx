@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { usePermissions } from '@/components/providers/AuthProvider';
-import { Users, Briefcase, Shield, Key, ShieldOff, Database, History, Clock } from 'lucide-react';
+import { Users, Briefcase, Shield, Key, ShieldOff, Database, History, Clock, UserCheck, Award } from 'lucide-react';
 
 const SETTINGS_SECTIONS = [
   {
@@ -14,6 +14,11 @@ const SETTINGS_SECTIONS = [
       { name: 'Employees', href: '/settings/employees', icon: Briefcase, permission: 'employee.read-all' },
       { name: 'Departments', href: '/settings/departments', icon: Database, permission: 'department.read' },
       { name: 'Attendance', href: '/settings/attendance', icon: Clock, permission: 'attendance.settings.manage' },
+      { name: 'Payroll & Payables', href: '/settings/payroll', icon: Briefcase, permission: 'payroll.run.read' },
+      { name: 'Workforce & Vacancies', href: '/settings/vacancies', icon: Users, permission: 'vacancy.read' },
+      { name: 'Candidates & Offers', href: '/settings/candidates', icon: Users, permission: 'candidate.read' },
+      { name: 'Onboarding & Probation', href: '/settings/onboarding', icon: UserCheck, permission: 'onboarding.read' },
+      { name: 'Performance Management', href: '/settings/performance', icon: Award, permission: 'performance.read.own' },
     ]
   },
   {

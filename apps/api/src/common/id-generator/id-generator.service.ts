@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService, PrismaTxClient } from '../prisma/prisma.service';
 
@@ -58,10 +59,27 @@ export class IdGeneratorService {
     tx: PrismaTxClient,
     entityType: string,
   ): Promise<string> {
-    const sequence = await tx.sequence.update({
-      where: { entityType },
-      data: { nextNumber: { increment: 1 } },
-    });
+    let sequence: { nextNumber: number; padding: number; prefix: string };
+    try {
+      sequence = await tx.sequence.update({
+        where: { entityType },
+        data: { nextNumber: { increment: 1 } },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        const safeType = /^[A-Z][A-Z0-9_]{0,15}$/.test(entityType)
+          ? entityType
+          : 'UNKNOWN';
+        throw new InternalServerErrorException({
+          code: 'SEQUENCE_NOT_CONFIGURED',
+          message: `ID sequence "${safeType}" is not configured. Provision that sequences row before issuing identifiers.`,
+        });
+      }
+      throw error;
+    }
 
     // The updated record returns the NEW nextNumber (after increment).
     // The issued number is nextNumber - 1 (the value before the increment).

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { resolveServerApiUrl } from '@/lib/api/server-api-url';
 import { authCookieOptions } from '@/lib/auth/auth-cookie-options';
 import { unwrapRefreshPayload } from '@/lib/auth/unwrap-refresh-payload';
 
@@ -22,19 +23,15 @@ export async function middleware(request: NextRequest) {
   // If we have no access token but have a refresh token, we should refresh it
   if (!accessToken && refreshToken) {
     try {
-      let apiUrl = process.env.API_URL;
-      
-      if (!apiUrl) {
-        if (process.env.NODE_ENV === 'development') {
-          apiUrl = 'http://localhost:3001/api/v1';
-        } else {
-          console.error('[CONFIG ERROR] API_URL is missing in production/staging environment.');
-          // Fail clearly by throwing or deleting cookies and returning to login
-          const response = NextResponse.redirect(new URL('/login', request.url), 303);
-          response.cookies.delete('accessToken');
-          response.cookies.delete('refreshToken');
-          return response;
-        }
+      let apiUrl: string;
+      try {
+        apiUrl = resolveServerApiUrl();
+      } catch {
+        console.error('[CONFIG ERROR] API_URL is missing.');
+        const response = NextResponse.redirect(new URL('/login', request.url), 303);
+        response.cookies.delete('accessToken');
+        response.cookies.delete('refreshToken');
+        return response;
       }
 
       const res = await fetch(`${apiUrl}/auth/refresh`, {

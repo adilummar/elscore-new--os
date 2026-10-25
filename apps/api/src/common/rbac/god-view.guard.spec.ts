@@ -92,4 +92,16 @@ describe('GodViewGuard mutation access', () => {
 
     expect(request.isGodViewReadOnly).toBe(true);
   });
+
+  it('rejects God View entrance for the system actor even if stored with CEO role', async () => {
+    const request = {
+      user: { id: 'SYSTEM', email: 'system@elscore.internal' },
+      headers: { 'x-god-view-target': 'head-1' },
+      method: 'GET',
+    };
+
+    await expect(
+      guardFor(['god-view.enter', 'analytics.ceo.read'], true).canActivate(contextFor(request)),
+    ).rejects.toThrow(ForbiddenException);
+  });
 });

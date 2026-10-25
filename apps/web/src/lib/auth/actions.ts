@@ -3,7 +3,19 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+import { ApiUrlNotConfiguredError, resolveServerApiUrl } from "@/lib/api/server-api-url"
+
+function readApiBase(): string | null {
+  try {
+    return resolveServerApiUrl()
+  } catch (error) {
+    if (error instanceof ApiUrlNotConfiguredError) {
+      console.error("[CONFIG ERROR] API_URL is missing.")
+      return null
+    }
+    throw error
+  }
+}
 
 export async function login(prevState: any, formData: FormData) {
   const email = formData.get("email") as string
@@ -13,8 +25,13 @@ export async function login(prevState: any, formData: FormData) {
     return { error: "Email and password are required." }
   }
 
+  const apiBase = readApiBase()
+  if (!apiBase) {
+    return { error: "Unable to sign in because the service is not configured." }
+  }
+
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    const res = await fetch(`${apiBase}/auth/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -69,9 +86,10 @@ export async function logout() {
   const refreshToken = cookieStore.get("refreshToken")?.value
   const accessToken = cookieStore.get("accessToken")?.value
 
-  if (refreshToken && accessToken) {
+  const apiBase = readApiBase()
+  if (refreshToken && accessToken && apiBase) {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
+      await fetch(`${apiBase}/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,8 +115,13 @@ export async function getSession() {
     return null
   }
 
+  const apiBase = readApiBase()
+  if (!apiBase) {
+    return null
+  }
+
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/me`, {
+    const res = await fetch(`${apiBase}/auth/me`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },

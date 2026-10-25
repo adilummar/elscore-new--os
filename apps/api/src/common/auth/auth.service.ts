@@ -11,6 +11,7 @@ import * as argon2 from 'argon2';
 
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isSystemActorIdentity } from '../id-generator/seed-identity';
 
 export interface ValidatedUser {
   id: string;
@@ -81,7 +82,7 @@ export class AuthService {
       isValid = false;
     }
 
-    if (!user || !isValid) {
+    if (!user || !isValid || isSystemActorIdentity({ id: user?.id, email: user?.email ?? email })) {
       return null;
     }
 
@@ -148,6 +149,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    if (isSystemActorIdentity({ id: payload.sub, email: payload.email })) {
+      throw new UnauthorizedException('System actor sessions are not permitted');
+    }
+
     const tokenHash = this.hashToken(rawRefreshToken);
 
     // Find the stored token record
@@ -167,6 +172,10 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: stored.userId } });
     if (!user || (user.status !== UserStatus.ACTIVE && user.status !== UserStatus.PENDING_SETUP)) {
       throw new UnauthorizedException('User account is not active');
+    }
+
+    if (isSystemActorIdentity({ id: user.id, email: user.email })) {
+      throw new UnauthorizedException('System actor sessions are not permitted');
     }
 
     // Issue new token pair and revoke old one atomically

@@ -1,17 +1,18 @@
 import { cookies } from 'next/headers';
 import { unstable_noStore as noStore } from 'next/cache';
 
-const BASE_URL = process.env.API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:3001/api/v1' : '');
-
-if (!BASE_URL) {
-  // Log but do NOT throw at module level — a module-level throw crashes every Server Component
-  // that imports this file, even indirectly (e.g. during Next.js soft navigation).
-  console.error('[CONFIG ERROR] API_URL is missing. All API calls will fail.');
-}
+import { ApiUrlNotConfiguredError, resolveServerApiUrl } from './server-api-url';
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit & { skipGodView?: boolean } = {}): Promise<T> {
-  if (!BASE_URL) {
-    throw new Error('API_URL is not configured. Check the server environment.');
+  // Resolve per call. A module-level throw crashes every Server Component that imports this file.
+  let baseUrl: string;
+  try {
+    baseUrl = resolveServerApiUrl();
+  } catch (error) {
+    if (error instanceof ApiUrlNotConfiguredError) {
+      console.error('[CONFIG ERROR] API_URL is missing. All API calls will fail.');
+    }
+    throw error;
   }
 
   // Opt out of Next.js fetch cache — ensures fresh data on every call.
@@ -36,7 +37,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
     headers.set('X-God-View-Target', godViewUserId);
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     cache: 'no-store',
     ...options,
     headers,

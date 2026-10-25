@@ -4,20 +4,46 @@
  * Seeds all essential reference data required before any business module can operate.
  *
  * Sections (in order):
- *   1. Departments
- *   2. Roles             — with isSystem / isProtected / isCustom flags
- *   3. Permissions       — with isDelegatable flag per Revision 3.1 catalog
- *   4. Role–Permission assignments
- *   5. ID Sequences
- *   6. Reference data    — Subject, Grade, Curriculum (initial entries; admin-manageable)
- *   7. Initial admin user (first-run only)
+ *   1. Departments          — upsert name by code
+ *   2. Roles                — insert a missing role; do not rewrite an existing row
+ *   3. Permissions          — insert a missing permission; do not rewrite an existing row.
+ *                             isProtected on two permission entries is not a database column
+ *   4. Role–Permission      — on an empty user table, insert missing links.
+ *                             On a populated user table, leave links unchanged unless
+ *                             SEED_RECONCILE_ROLE_PERMISSIONS=true. Never delete links.
+ *   5. ID Sequences         — insert missing rows at nextNumber 1; existing
+ *                             nextNumber, prefix, and padding are left unchanged
+ *   6. Reference data       — upsert subject, grade, and curriculum names
+ *   7. Initial CEO admin    — only when the user table is empty
+ *   8. System actor         — create system@elscore.internal with no roles when
+ *                             that email is absent; never change an existing row
  *
- * Idempotent: safe to run multiple times (upsert on unique keys).
+ * Does not create HR logins. Does not create a CEO login when any user exists.
+ * The system actor is an audit FK (id SYSTEM). Login, password reset, password
+ * change, and role assignment reject that identity. This script does not delete
+ * a role already stored on an existing system row.
  * Run with: pnpm db:seed
+ * Optional: SEED_RECONCILE_ROLE_PERMISSIONS=true inserts missing role-permission
+ * links on a populated database and still does not delete links.
  */
 
 import { PrismaClient, UserStatus, EmploymentStatus, DepartmentStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
+
+import {
+  SEQUENCE_DEFINITIONS,
+  sequenceUpsertArgs,
+} from '../src/common/id-generator/sequence-definitions';
+import {
+  SYSTEM_ACTOR_EMAIL,
+  shouldCreateInitialCeoAdmin,
+  systemActorCreateData,
+} from '../src/common/id-generator/seed-identity';
+import {
+  planRolePermissionSeed,
+  preservedCatalogUpdate,
+  reconcileRolePermissionsRequested,
+} from '../src/common/id-generator/seed-permission-plan';
 
 const prisma = new PrismaClient();
 
@@ -228,6 +254,8 @@ const PERMISSIONS: Array<{
   action: string;
   description?: string;
   isDelegatable: boolean;
+  /** Documentation flag only. The Permission model has no such column, and seedPermissions does not write it. */
+  isProtected?: boolean;
 }> = [
   // Slice 2F: Attendance
   { code: 'attendance.student.read', resource: 'attendance.student', action: 'read', description: 'Read student attendance', isDelegatable: false },
@@ -489,7 +517,14 @@ const PERMISSIONS: Array<{
     code: 'employee.manage-status',
     resource: 'employee',
     action: 'manage-status',
-    description: 'Change employment status (terminate/reactivate)',
+    description: 'Change employment lifecycle status (probation, active, notice, suspension, termination)',
+    isDelegatable: false,
+  },
+  {
+    code: 'employee.history.read',
+    resource: 'employee',
+    action: 'history.read',
+    description: 'View confidential employee lifecycle and status change history',
     isDelegatable: false,
   },
   {
@@ -499,6 +534,298 @@ const PERMISSIONS: Array<{
     description: 'Org-wide employee list',
     isDelegatable: false,
   },
+  {
+    code: 'compensation.read',
+    resource: 'compensation',
+    action: 'read',
+    description: 'View employee compensation, salary and bank payment details',
+    isDelegatable: false,
+  },
+  {
+    code: 'compensation.manage',
+    resource: 'compensation',
+    action: 'manage',
+    description: 'Submit employee compensation change requests',
+    isDelegatable: false,
+  },
+  {
+    code: 'compensation.approve',
+    resource: 'compensation',
+    action: 'approve',
+    description: 'Approve or reject employee compensation changes (CEO only)',
+    isDelegatable: false,
+    isProtected: true,
+  },
+
+  // ── Payroll & Tutor Payables ───────────────────────────────────────────────
+  {
+    code: 'payroll.run.read',
+    resource: 'payroll',
+    action: 'read',
+    description: 'View employee payroll runs and item details',
+    isDelegatable: false,
+  },
+  {
+    code: 'payroll.run.manage',
+    resource: 'payroll',
+    action: 'manage',
+    description: 'Create and update draft employee payroll runs',
+    isDelegatable: false,
+  },
+  {
+    code: 'payroll.run.finalize',
+    resource: 'payroll',
+    action: 'finalize',
+    description: 'Finalize employee payroll runs',
+    isDelegatable: false,
+  },
+  {
+    code: 'payroll.payment.manage',
+    resource: 'payroll',
+    action: 'manage',
+    description: 'Record payment details for finalized payroll and tutor payable items',
+    isDelegatable: false,
+  },
+  {
+    code: 'tutor.payable.read',
+    resource: 'tutor.payable',
+    action: 'read',
+    description: 'View tutor payable runs and item details',
+    isDelegatable: false,
+  },
+  {
+    code: 'tutor.payable.manage',
+    resource: 'tutor.payable',
+    action: 'manage',
+    description: 'Create and recalculate draft tutor payable runs',
+    isDelegatable: false,
+  },
+  {
+    code: 'tutor.payable.finalize',
+    resource: 'tutor.payable',
+    action: 'finalize',
+    description: 'Finalize tutor payable runs',
+    isDelegatable: false,
+  },
+
+  // ── Workforce Planning & Vacancies ─────────────────────────────────────────
+  {
+    code: 'vacancy.read',
+    resource: 'vacancy',
+    action: 'read',
+    description: 'View workforce requirements and vacancy records',
+    isDelegatable: true,
+  },
+  {
+    code: 'vacancy.create',
+    resource: 'vacancy',
+    action: 'create',
+    description: 'Create draft workforce vacancy records',
+    isDelegatable: false,
+  },
+  {
+    code: 'vacancy.update',
+    resource: 'vacancy',
+    action: 'update',
+    description: 'Update draft or open vacancy details',
+    isDelegatable: false,
+  },
+  {
+    code: 'vacancy.approve',
+    resource: 'vacancy',
+    action: 'approve',
+    description: 'Approve or reject vacancy requests',
+    isDelegatable: false,
+  },
+  {
+    code: 'vacancy.manage-status',
+    resource: 'vacancy',
+    action: 'manage-status',
+    description: 'Transition vacancy status (Open, On Hold, Filled, Cancel)',
+    isDelegatable: false,
+  },
+
+  // ── Candidate Selection & Offers (HR Phase 5) ──────────────────────────────
+  {
+    code: 'candidate.read',
+    resource: 'candidate',
+    action: 'read',
+    description: 'View candidates and vacancy applications',
+    isDelegatable: true,
+  },
+  {
+    code: 'candidate.manage',
+    resource: 'candidate',
+    action: 'manage',
+    description: 'Create and update candidates and applications',
+    isDelegatable: false,
+  },
+  {
+    code: 'candidate.interview.manage',
+    resource: 'candidate',
+    action: 'interview.manage',
+    description: 'Schedule interviews and record interview evaluations',
+    isDelegatable: false,
+  },
+  {
+    code: 'candidate.interview.feedback-read',
+    resource: 'candidate',
+    action: 'interview.feedback-read',
+    description: 'View confidential interview ratings, scores, and feedback',
+    isDelegatable: false,
+  },
+  {
+    code: 'offer.read',
+    resource: 'offer',
+    action: 'read',
+    description: 'View job offers and offered compensation details',
+    isDelegatable: false,
+  },
+  {
+    code: 'offer.manage',
+    resource: 'offer',
+    action: 'manage',
+    description: 'Draft, revise, and submit job offers for approval',
+    isDelegatable: false,
+  },
+  {
+    code: 'offer.approve',
+    resource: 'offer',
+    action: 'approve',
+    description: 'Approve or reject job offers (HR Manager / CEO)',
+    isDelegatable: false,
+  },
+  {
+    code: 'offer.status.manage',
+    resource: 'offer',
+    action: 'manage-status',
+    description: 'Record offer sent, response (accepted/declined), withdrawal, or expiry',
+    isDelegatable: false,
+  },
+
+  // ── Employee Onboarding & Probation (HR Phase 6) ───────────────────────────
+  {
+    code: 'onboarding.read',
+    resource: 'onboarding',
+    action: 'read',
+    description: 'View onboarding cases, documents, and task checklists',
+    isDelegatable: true,
+  },
+  {
+    code: 'onboarding.manage',
+    resource: 'onboarding',
+    action: 'manage',
+    description: 'Create onboarding cases, manage tasks, and upload documents',
+    isDelegatable: false,
+  },
+  {
+    code: 'onboarding.verify',
+    resource: 'onboarding',
+    action: 'verify',
+    description: 'Verify or reject candidate onboarding documents',
+    isDelegatable: false,
+  },
+  {
+    code: 'onboarding.finalize',
+    resource: 'onboarding',
+    action: 'finalize',
+    description: 'Finalize onboarding, convert candidate to employee, and trigger initial compensation approval',
+    isDelegatable: false,
+  },
+  {
+    code: 'probation.read',
+    resource: 'probation',
+    action: 'read',
+    description: 'View employee probation details and reviews',
+    isDelegatable: true,
+  },
+  {
+    code: 'probation.manage',
+    resource: 'probation',
+    action: 'manage',
+    description: 'Record probation reviews, extend probation, or initiate confirmation/termination',
+    isDelegatable: false,
+  },
+
+  // ── Performance Management (HR Phase 7) ──────────────────────────────────
+  {
+    code: 'performance.read.all',
+    resource: 'performance',
+    action: 'read.all',
+    description: 'View company-wide performance cycles, reviews, goals, and improvement plans',
+    isDelegatable: false,
+  },
+  {
+    code: 'performance.read.team',
+    resource: 'performance',
+    action: 'read.team',
+    description: 'View team performance reviews, goals, and improvement plans within departmental scope',
+    isDelegatable: true,
+  },
+  {
+    code: 'performance.read.own',
+    resource: 'performance',
+    action: 'read.own',
+    description: 'View own performance reviews, goals, and assigned improvement plans',
+    isDelegatable: true,
+  },
+  {
+    code: 'performance.cycle.manage',
+    resource: 'performance',
+    action: 'cycle.manage',
+    description: 'Create and manage performance review cycles and deadlines',
+    isDelegatable: false,
+  },
+  {
+    code: 'performance.goal.manage',
+    resource: 'performance',
+    action: 'goal.manage',
+    description: 'Create and update employee goals, KPIs, targets, and progress',
+    isDelegatable: true,
+  },
+  {
+    code: 'performance.review.create',
+    resource: 'performance',
+    action: 'review.create',
+    description: 'Create and initiate performance reviews for employees',
+    isDelegatable: true,
+  },
+  {
+    code: 'performance.review.evaluate',
+    resource: 'performance',
+    action: 'review.evaluate',
+    description: 'Evaluate performance, record ratings, manager feedback, and confidential internal notes',
+    isDelegatable: true,
+  },
+  {
+    code: 'performance.review.finalize',
+    resource: 'performance',
+    action: 'review.finalize',
+    description: 'Finalize and complete performance reviews (enforces separation of duties)',
+    isDelegatable: false,
+  },
+  {
+    code: 'performance.review.acknowledge',
+    resource: 'performance',
+    action: 'review.acknowledge',
+    description: 'Acknowledge receipt of own finalized performance review and submit comments',
+    isDelegatable: true,
+  },
+  {
+    code: 'performance.review.amend',
+    resource: 'performance',
+    action: 'review.amend',
+    description: 'Amend completed performance reviews with mandatory audit trail',
+    isDelegatable: false,
+  },
+  {
+    code: 'performance.pip.manage',
+    resource: 'performance',
+    action: 'pip.manage',
+    description: 'Create, monitor, and transition Performance Improvement Plans',
+    isDelegatable: false,
+  },
+
   {
     code: 'god-view.enter',
     resource: 'system',
@@ -682,6 +1009,14 @@ const PERMISSIONS: Array<{
     action: 'manage',
     description: 'Set or change tutor hourly rate (HR Manager only)',
     isDelegatable: false,
+  },
+  {
+    code: 'tutor.rate.approve',
+    resource: 'tutor.rate',
+    action: 'approve',
+    description: 'Approve or reject tutor rate change requests (CEO only)',
+    isDelegatable: false,
+    isProtected: true,
   },
 
   // ── Tutor self-service ────────────────────────────────────────────────────
@@ -1028,6 +1363,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.read_all',
     'demo.manage_operations',
     'demo.approve_exception',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.acknowledge',
+    'performance.pip.manage',
   ],
 
   HR_MANAGER: [
@@ -1050,6 +1392,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'employee.create',
     'employee.update',
     'employee.manage-status',
+    'employee.history.read',
     'employee.read-all',
     'department.read',
     'role.read',
@@ -1070,7 +1413,46 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor.rate.read',
     'tutor.rate.manage',
     'tutor.feedback.read',
+    'compensation.read',
+    'compensation.manage',
+    'payroll.run.read',
+    'payroll.run.manage',
+    'payroll.run.finalize',
+    'payroll.payment.manage',
+    'tutor.payable.read',
+    'tutor.payable.manage',
+    'tutor.payable.finalize',
+    'vacancy.read',
+    'vacancy.create',
+    'vacancy.update',
+    'vacancy.approve',
+    'vacancy.manage-status',
+    'candidate.read',
+    'candidate.manage',
+    'candidate.interview.manage',
+    'candidate.interview.feedback-read',
+    'offer.read',
+    'offer.manage',
+    'offer.approve',
+    'offer.status.manage',
+    'onboarding.read',
+    'onboarding.manage',
+    'onboarding.verify',
+    'onboarding.finalize',
+    'probation.read',
+    'probation.manage',
     'audit.view',
+    'performance.read.all',
+    'performance.read.team',
+    'performance.read.own',
+    'performance.cycle.manage',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.finalize',
+    'performance.review.acknowledge',
+    'performance.review.amend',
+    'performance.pip.manage',
   ],
 
   HR_EXECUTIVE: [
@@ -1081,6 +1463,27 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'employee.update',
     'department.read',
     'role.read',
+    'vacancy.read',
+    'vacancy.create',
+    'candidate.read',
+    'candidate.manage',
+    'candidate.interview.manage',
+    'candidate.interview.feedback-read',
+    'offer.read',
+    'offer.manage',
+    'offer.status.manage',
+    'onboarding.read',
+    'onboarding.manage',
+    'onboarding.verify',
+    'probation.read',
+    'performance.read.all',
+    'performance.read.team',
+    'performance.read.own',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.acknowledge',
+    'performance.pip.manage',
     'tutor_lead.read',
     'tutor_lead.manage',
     'tutor_lead.create',
@@ -1106,10 +1509,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor.feedback.read',
     'tutor.feedback.create',
     'attendance.student.read',
-      'attendance.tutor.read',
-      'attendance.tutor.verify',
-      'attendance.tutor.correct',
-    ],
+    'attendance.tutor.read',
+    'attendance.tutor.verify',
+    'attendance.tutor.correct',
+    'performance.read.own',
+    'performance.review.acknowledge',
+  ],
 
   DEMO_HEAD: [
     'attendance.action.own',
@@ -1127,6 +1532,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.cancel',
     'demo.reports.company',
     'demo.reports.operational',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.acknowledge',
+    'performance.pip.manage',
   ],
 
   DEMO_ADMIN: [
@@ -1144,6 +1556,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.reschedule',
     'demo.cancel',
     'demo.reports.operational',
+    'performance.read.own',
+    'performance.review.acknowledge',
   ],
 
   DEMO_COORDINATOR: [
@@ -1162,21 +1576,24 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor.profile.read', // scoped: no rate, no recruitment details
     'tutor.feedback.read',
     'tutor.feedback.create',
+    'performance.read.own',
+    'performance.review.acknowledge',
   ],
 
   // TUTOR: self-service only — all access is scoped to their own profile at service layer
   TUTOR: [
-
     'demo.read_assigned',
     'demo.complete',
     'department.read',
     'tutor.self.update',
     'tutor.profile.read', // own profile only — service layer enforces ownership
     'attendance.student.read',
-      'attendance.student.mark',
-      'attendance.tutor.read',
-      'attendance.tutor.mark',
-    ],
+    'attendance.student.mark',
+    'attendance.tutor.read',
+    'attendance.tutor.mark',
+    'performance.read.own',
+    'performance.review.acknowledge',
+  ],
 
   // The following roles will receive domain-specific permissions in later phases.
   // Seeded with minimal read access for now.
@@ -1191,6 +1608,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.read',
     'demo.read_all',
     'demo.approve_exception',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.acknowledge',
+    'performance.pip.manage',
   ],
   MARKETING_HEAD: [
     'attendance.action.own',
@@ -1198,18 +1622,29 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'leave.request.own',
     'employee.read',
     'department.read',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.acknowledge',
+    'performance.pip.manage',
   ],
   PERFORMANCE_MARKETER: [
     'attendance.action.own',
     'attendance.read.own',
     'leave.request.own',
     'department.read',
+    'performance.read.own',
+    'performance.review.acknowledge',
   ],
   DESIGNER: [
     'attendance.action.own',
     'attendance.read.own',
     'leave.request.own',
     'department.read',
+    'performance.read.own',
+    'performance.review.acknowledge',
   ],
   SALES_HEAD: [
     'pricing.manage',
@@ -1262,6 +1697,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.update',
     'sales-routing.read',
     'sales-routing.manage',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.goal.manage',
+    'performance.review.create',
+    'performance.review.evaluate',
+    'performance.review.acknowledge',
+    'performance.pip.manage',
   ],
   SALES_COUNSELLOR: [
     'quotation.create',
@@ -1299,6 +1741,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'demo.create',
     'demo.read',
     'demo.update',
+    'performance.read.own',
+    'performance.review.acknowledge',
   ],
   FINANCE_HEAD: [
     'attendance.action.own',
@@ -1306,6 +1750,16 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'leave.request.own',
     'employee.read',
     'department.read',
+    'payroll.run.read',
+    'payroll.run.manage',
+    'payroll.run.finalize',
+    'payroll.payment.manage',
+    'tutor.payable.read',
+    'tutor.payable.manage',
+    'tutor.payable.finalize',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.review.acknowledge',
   ],
   FINANCE_MANAGER: [
     'finance.invoice.create',
@@ -1320,7 +1774,17 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'finance.refund.execute',
     'finance.refund.read',
     'finance.receipt.read',
-    'finance.report.read'
+    'finance.report.read',
+    'payroll.run.read',
+    'payroll.run.manage',
+    'payroll.run.finalize',
+    'payroll.payment.manage',
+    'tutor.payable.read',
+    'tutor.payable.manage',
+    'tutor.payable.finalize',
+    'performance.read.own',
+    'performance.read.team',
+    'performance.review.acknowledge',
   ],
   FINANCE_EXECUTIVE: [
     'attendance.action.own',
@@ -1333,40 +1797,22 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'finance.payment.read',
     'finance.refund.request',
     'finance.refund.read',
-    'finance.receipt.read'
+    'finance.receipt.read',
+    'performance.read.own',
+    'performance.review.acknowledge',
   ],
-  ACCOUNTANT: ['department.read'],
+  ACCOUNTANT: [
+    'department.read',
+    'performance.read.own',
+    'performance.review.acknowledge',
+  ],
 };
 
 // =============================================================================
 // ID SEQUENCES
 // =============================================================================
-
-const SEQUENCES = [
-  { entityType: 'STA', prefix: 'STA-', padding: 7 }, // Student Attendance
-  { entityType: 'TCR', prefix: 'TCR-', padding: 7 }, // Tutor Class Record
-
-  { entityType: 'EMP', prefix: 'EMP', padding: 4 },
-    { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
-
-  { entityType: 'TL', prefix: 'TL', padding: 4 }, // Tutor Lead
-  { entityType: 'LED', prefix: 'LED', nextNumber: 1, padding: 4 }, // Lead
-  { entityType: 'RQT', prefix: 'RQT', nextNumber: 1, padding: 4 }, // Requirement (canonical runtime key)
-  { entityType: 'QUO', prefix: 'QUO', nextNumber: 1, padding: 4 }, // Quotation
-  { entityType: 'STU', prefix: 'STU', padding: 4 },
-  { entityType: 'FUP', prefix: 'FUP', nextNumber: 1, padding: 4 }, // FollowUp
-  { entityType: 'DMO', prefix: 'DMO', nextNumber: 1, padding: 4 }, // Demo-ups (Slice 2B)
-  { entityType: 'TUT', prefix: 'TUT', padding: 4 },
-  { entityType: 'DEM', prefix: 'DEM', padding: 4 },
-  { entityType: 'ADM', prefix: 'ADM', padding: 4 },
-  { entityType: 'PAY', prefix: 'PAY', padding: 4 },
-  { entityType: 'INV', prefix: 'INV', padding: 4 },
-  { entityType: 'PMT', prefix: 'PMT', padding: 4 },
-  { entityType: 'RCT', prefix: 'RCT', padding: 4 },
-  { entityType: 'CLS', prefix: 'CLS', padding: 4 },
-  { entityType: 'REN', prefix: 'REN', padding: 4 },
-  { entityType: 'MTG', prefix: 'MTG', padding: 4 },
-];
+// Definitions live in src/common/id-generator/sequence-definitions.ts so tests
+// can check runtime keys without opening a database connection.
 
 // =============================================================================
 // REFERENCE DATA — Subject, Grade, Curriculum
@@ -1443,13 +1889,7 @@ async function seedRoles() {
   for (const role of ROLES) {
     await prisma.role.upsert({
       where: { code: role.code },
-      update: {
-        name: role.name,
-        description: role.description,
-        isSystem: role.isSystem,
-        isProtected: role.isProtected,
-        isCustom: role.isCustom,
-      },
+      update: preservedCatalogUpdate(),
       create: {
         code: role.code,
         name: role.name,
@@ -1467,12 +1907,7 @@ async function seedPermissions() {
   for (const perm of PERMISSIONS) {
     await prisma.permission.upsert({
       where: { code: perm.code },
-      update: {
-        resource: perm.resource,
-        action: perm.action,
-        description: perm.description,
-        isDelegatable: perm.isDelegatable,
-      },
+      update: preservedCatalogUpdate(),
       create: {
         code: perm.code,
         resource: perm.resource,
@@ -1486,13 +1921,31 @@ async function seedPermissions() {
 
 async function seedRolePermissions() {
   console.log('  Seeding role–permission assignments...');
+  const existingUserCount = await prisma.user.count();
+  const action = planRolePermissionSeed({
+    existingUserCount,
+    reconcileRequested: reconcileRolePermissionsRequested(
+      process.env.SEED_RECONCILE_ROLE_PERMISSIONS,
+    ),
+  });
+  if (action === 'leave-unchanged') {
+    console.log(
+      '    Users already exist. Role-permission links were left unchanged, including any sensitive HR grants an administrator removed. Set SEED_RECONCILE_ROLE_PERMISSIONS=true to insert missing catalog links. Existing links are not deleted.',
+    );
+    return;
+  }
+  console.log(
+    existingUserCount === 0
+      ? '    User table is empty. Inserting missing role-permission links. Existing links are not deleted.'
+      : '    SEED_RECONCILE_ROLE_PERMISSIONS=true. Inserting missing catalog links only. Existing links are not deleted.',
+  );
   for (const [roleCode, permCodes] of Object.entries(ROLE_PERMISSIONS)) {
     const role = await prisma.role.findUniqueOrThrow({ where: { code: roleCode } });
     for (const permCode of permCodes) {
       const perm = await prisma.permission.findUniqueOrThrow({ where: { code: permCode } });
       await prisma.rolePermission.upsert({
         where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
-        update: {},
+        update: preservedCatalogUpdate(),
         create: { roleId: role.id, permissionId: perm.id },
       });
     }
@@ -1501,12 +1954,8 @@ async function seedRolePermissions() {
 
 async function seedSequences() {
   console.log('  Seeding ID sequences...');
-  for (const seq of SEQUENCES) {
-    await prisma.sequence.upsert({
-      where: { entityType: seq.entityType },
-      update: { prefix: seq.prefix, padding: seq.padding },
-      create: { ...seq, nextNumber: 1 },
-    });
+  for (const seq of SEQUENCE_DEFINITIONS) {
+    await prisma.sequence.upsert(sequenceUpsertArgs(seq));
   }
 }
 
@@ -1539,12 +1988,13 @@ async function seedReferenceData() {
 }
 
 async function seedAdminUser() {
-  console.log('  Seeding initial admin user...');
+  console.log('  Seeding initial CEO admin...');
 
-  // Only create the seed admin if no users exist yet
   const existingUserCount = await prisma.user.count();
-  if (existingUserCount > 0) {
-    console.log('    Admin user already exists — skipping.');
+  if (!shouldCreateInitialCeoAdmin(existingUserCount)) {
+    console.log(
+      '    Users already exist — CEO admin and HR logins were not created. Provision those accounts separately.',
+    );
     return;
   }
 
@@ -1619,39 +2069,33 @@ async function main() {
   console.log('✅ Seed complete.');
 }
 
-main()
-  .catch((e) => {
-    console.error('❌ Seed failed:', e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error('❌ Seed failed:', e);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
 
 async function seedSystemUser() {
-  console.log('  Seeding SYSTEM user...');
-  const adminDept = await prisma.department.findUniqueOrThrow({ where: { code: 'ADMIN' } });
-  const ceoRole = await prisma.role.findUniqueOrThrow({ where: { code: 'CEO' } });
-  
-  await prisma.user.upsert({
-    where: { email: 'system@elscore.internal' },
-    update: {},
-    create: {
-      id: 'SYSTEM',
-      email: 'system@elscore.internal',
-      passwordHash: 'none',
-      status: 'ACTIVE',
-      userRoles: {
-        create: [{ roleId: ceoRole.id }]
-      },
-      employee: {
-        create: {
-          businessId: 'SYS-0000',
-          departmentId: adminDept.id,
-          employmentStatus: 'ACTIVE',
-          firstName: 'System',
-          lastName: 'Automated'
-        }
-      }
-    }
+  console.log('  Ensuring system audit actor...');
+  const existing = await prisma.user.findUnique({
+    where: { email: SYSTEM_ACTOR_EMAIL },
   });
+  if (existing) {
+    console.log(
+      '    System actor already present. Password, roles, and employee row were not changed.',
+    );
+    return;
+  }
+
+  const adminDept = await prisma.department.findUniqueOrThrow({ where: { code: 'ADMIN' } });
+  await prisma.user.create({
+    data: systemActorCreateData(adminDept.id),
+  });
+  console.log(
+    '    System actor created with no CEO or HR role. It is not a login.',
+  );
 }
 

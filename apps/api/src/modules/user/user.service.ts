@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EmploymentStatus, User, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 
@@ -6,6 +6,10 @@ import { AuditService } from '../../common/audit/audit.service';
 import { AuthService } from '../../common/auth/auth.service';
 import { UserStatusCacheService } from '../../common/auth/services/user-status-cache.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
+import {
+  SYSTEM_ACTOR_INTERACTIVE_DENIAL,
+  isSystemActorIdentity,
+} from '../../common/id-generator/seed-identity';
 import { paginate, PaginateOptions } from '../../common/pagination/paginate.util';
 import { PaginatedResponseDto } from '../../common/pagination/pagination.dto';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
@@ -86,7 +90,11 @@ export class UserService {
       where: { id: actorUserId },
       include: { userRoles: { include: { role: true } } },
     });
-    const actorIsCeo = actor?.userRoles.some((ur: { role: { code: string } }) => ur.role.code === 'CEO');
+    const actorIsCeo = Boolean(
+      actor &&
+      !isSystemActorIdentity(actor) &&
+      actor.userRoles.some((ur: { role: { code: string } }) => ur.role.code === 'CEO'),
+    );
 
     if (role.isProtected && !actorIsCeo) {
       throw new BadRequestException('Only the CEO can assign protected roles');
@@ -190,6 +198,10 @@ export class UserService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
+    if (isSystemActorIdentity(user)) {
+      throw new ForbiddenException('System actor status cannot be modified');
+    }
+
     if (user.status === dto.status) return;
 
     if (dto.status === UserStatus.SUSPENDED) {
@@ -282,6 +294,9 @@ export class UserService {
   async resetPassword(id: string, dto: ResetPasswordDto, actorUserId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+    if (isSystemActorIdentity(user)) {
+      throw new ForbiddenException(SYSTEM_ACTOR_INTERACTIVE_DENIAL);
+    }
 
     const passwordHash = await argon2.hash(dto.newPassword, this.options());
 
@@ -307,6 +322,9 @@ export class UserService {
   async changePassword(id: string, dto: ChangePasswordDto): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+    if (isSystemActorIdentity(user)) {
+      throw new ForbiddenException(SYSTEM_ACTOR_INTERACTIVE_DENIAL);
+    }
 
     const isValid = await argon2.verify(user.passwordHash, dto.oldPassword, this.options());
     if (!isValid) throw new BadRequestException('Incorrect old password');

@@ -68,3 +68,11 @@ apps/api/prisma/dev.db
 # Reports
 FINAL_REPORT.md
 final_implementation_report.md
+apps/web/FINAL_REPORT.md
+apps/web/final_implementation_report.md
+
+# Storage
+storage/
+apps/api/storage/
+
+

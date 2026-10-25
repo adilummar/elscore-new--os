@@ -111,8 +111,8 @@ describe('JwtStrategy', () => {
   });
 
   /**
-   * R-1 Test 7: PENDING_SETUP user → 401
-   * Accounts not yet activated must also be blocked.
+   * R-1 Test 7: PENDING_SETUP user → allowed
+   * Accounts not yet activated must also be allowed to complete setup.
    */
   it('allows a PENDING_SETUP user through', async () => {
     mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.PENDING_SETUP, mustChangePassword: true });
@@ -121,5 +121,36 @@ describe('JwtStrategy', () => {
 
     expect(result).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, mustChangePassword: true });
     expect(mockUserStatusCacheService.getStatus).toHaveBeenCalledWith(VALID_PAYLOAD.sub);
+  });
+
+  /**
+   * System Actor Hardening:
+   * Reject access tokens for system actor (by ID or email) even if cache claims ACTIVE.
+   */
+  it('rejects an access token for SYSTEM actor by ID', async () => {
+    await expect(
+      strategy.validate({ sub: 'SYSTEM', email: 'system@elscore.internal' }),
+    ).rejects.toThrow(UnauthorizedException);
+
+    // Should reject immediately without consulting user status cache
+    expect(mockUserStatusCacheService.getStatus).not.toHaveBeenCalled();
+  });
+
+  it('rejects an access token for system actor by email', async () => {
+    await expect(
+      strategy.validate({ sub: 'some-other-id', email: 'system@elscore.internal' }),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(mockUserStatusCacheService.getStatus).not.toHaveBeenCalled();
+  });
+
+  it('allows legitimate CEO and HR users through', async () => {
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
+    const ceoResult = await strategy.validate({ sub: 'ceo-user-id', email: 'ceo@elscore.com' });
+    expect(ceoResult).toEqual({ id: 'ceo-user-id', email: 'ceo@elscore.com', mustChangePassword: false });
+
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
+    const hrResult = await strategy.validate({ sub: 'hr-user-id', email: 'hr.manager@elscore.com' });
+    expect(hrResult).toEqual({ id: 'hr-user-id', email: 'hr.manager@elscore.com', mustChangePassword: false });
   });
 });

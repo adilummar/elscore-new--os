@@ -3,6 +3,7 @@ import { Request } from 'express';
 
 import { AuditContext } from '../audit/audit.context';
 import { RequestUser } from '../auth/decorators/current-user.decorator';
+import { isSystemActorIdentity } from '../id-generator/seed-identity';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { RbacService } from './rbac.service';
@@ -36,13 +37,17 @@ export class GodViewGuard implements CanActivate {
       return true;
     }
 
+    if (isSystemActorIdentity(realUser)) {
+      throw new ForbiddenException('You do not have permission to use God View');
+    }
+
     // Check if the real user is authorized to enter God View
     const realPerms = await this.rbacService.getPermissionsForUser(realUser.id);
     const ceoRole = await this.prisma.userRole.findFirst({
       where: { userId: realUser.id, role: { code: 'CEO' } },
       select: { userId: true },
     });
-    const isCeo = Boolean(ceoRole);
+    const isCeo = Boolean(ceoRole) && !isSystemActorIdentity(realUser);
     const canEnter = isCeo
       || realPerms.has('god-view.enter')
       || realPerms.has('analytics.ceo.read');

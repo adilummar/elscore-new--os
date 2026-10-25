@@ -20,6 +20,11 @@ export function SettingsNavigation() {
     ...(hasPermission('role.read') ? [{ name: 'Permissions', href: '/settings/permissions' }] : []),
     ...(hasPermission('role.assign') ? [{ name: 'Delegations', href: '/settings/delegations' }] : []),
     ...(hasPermission('pricing.manage') ? [{ name: 'Pricing', href: '/settings/pricing' }] : []),
+    ...(hasPermission('payroll.run.read') ? [{ name: 'Payroll & Payables', href: '/settings/payroll' }] : []),
+    ...(hasPermission('vacancy.read') ? [{ name: 'Workforce & Vacancies', href: '/settings/vacancies' }] : []),
+    ...(hasPermission('candidate.read') ? [{ name: 'Candidates & Offers', href: '/settings/candidates' }] : []),
+    ...(hasPermission('onboarding.read') ? [{ name: 'Onboarding & Probation', href: '/settings/onboarding' }] : []),
+    ...(hasPermission('performance.read.own') ? [{ name: 'Performance', href: '/settings/performance' }] : []),
     ...(hasPermission('reference.manage') ? [{ name: 'Reference Data', href: '/settings/reference-data' }] : []),
     ...(hasPermission('attendance.settings.manage') ? [{ name: 'Attendance', href: '/settings/attendance' }] : []),
     ...(hasPermission('audit.view') ? [{ name: 'Audit', href: '/settings/audit' }] : [])

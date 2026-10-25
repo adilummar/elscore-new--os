@@ -58,6 +58,12 @@ import { HealthModule } from './modules/health/health.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { QuotationModule } from './modules/quotation/quotation.module';
 import { LeaveModule } from './modules/leave/leave.module';
+import { CompensationModule } from './modules/compensation/compensation.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
+import { VacancyModule } from './modules/vacancy/vacancy.module';
+import { CandidateModule } from './modules/candidate/candidate.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { PerformanceModule } from './modules/performance/performance.module';
 
 import { AuditMiddleware } from './common/audit/audit.middleware';
 
@@ -121,6 +127,12 @@ import { AuditMiddleware } from './common/audit/audit.middleware';
     PricingModule,
     QuotationModule,
     LeaveModule,
+    CompensationModule,
+    PayrollModule,
+    VacancyModule,
+    CandidateModule,
+    OnboardingModule,
+    PerformanceModule,
     // Phase 2+: add module imports here as each phase is implemented.
     // Do not add placeholder imports for unbuilt modules.
   ],

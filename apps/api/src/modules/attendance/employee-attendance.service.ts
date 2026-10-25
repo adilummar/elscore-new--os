@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { format, differenceInMinutes, parse, startOfDay, endOfDay } from 'date-fns';
 import { formatInTimeZone, toZonedTime, getTimezoneOffset } from 'date-fns-tz';
 import { isValidCalendarDate } from '../../common/utils/calendar-date.util';
+import { isEligibleForWork } from '../../common/utils/employment-status.util';
 
 const TIMEZONE = 'Asia/Kolkata';
 
@@ -79,8 +80,8 @@ export class EmployeeAttendanceService {
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
       if (!employee) throw new NotFoundException('Employee not found');
-      if (employee.employmentStatus !== 'ACTIVE') {
-        throw new ForbiddenException('Only active employees can check in');
+      if (!isEligibleForWork(employee.employmentStatus)) {
+        throw new ForbiddenException(`Employees with status ${employee.employmentStatus} cannot check in`);
       }
 
       const checkInTime = requestedDate || new Date();
@@ -177,7 +178,9 @@ export class EmployeeAttendanceService {
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
       if (!employee) throw new NotFoundException('Employee not found');
-      if (employee.employmentStatus !== 'ACTIVE') throw new ForbiddenException('Employee not active');
+      if (!isEligibleForWork(employee.employmentStatus)) {
+        throw new ForbiddenException(`Employee not active (status: ${employee.employmentStatus})`);
+      }
 
       const today = this.getTodayStr(requestedDate || new Date());
       
@@ -221,7 +224,9 @@ export class EmployeeAttendanceService {
      return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
       if (!employee) throw new NotFoundException('Employee not found');
-      if (employee.employmentStatus !== 'ACTIVE') throw new ForbiddenException('Employee not active');
+      if (!isEligibleForWork(employee.employmentStatus)) {
+        throw new ForbiddenException(`Employee not active (status: ${employee.employmentStatus})`);
+      }
       
       const endTime = requestedDate || new Date();
       const today = this.getTodayStr(endTime);
@@ -276,7 +281,9 @@ export class EmployeeAttendanceService {
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { userId } });
       if (!employee) throw new NotFoundException('Employee not found');
-      if (employee.employmentStatus !== 'ACTIVE') throw new ForbiddenException('Employee not active');
+      if (!isEligibleForWork(employee.employmentStatus)) {
+        throw new ForbiddenException(`Employee not active (status: ${employee.employmentStatus})`);
+      }
       
       const checkOutTime = requestedDate || new Date();
       const today = this.getTodayStr(checkOutTime);
@@ -611,7 +618,7 @@ export class EmployeeAttendanceService {
     const [employees, activeLeaves, activeUnlocks] = await Promise.all([
       this.prisma.employee.findMany({
         where: {
-          employmentStatus: 'ACTIVE',
+          employmentStatus: { in: ['ACTIVE', 'PROBATION', 'NOTICE_PERIOD'] },
           ...(departmentId ? { departmentId } : {}),
         },
         include: {

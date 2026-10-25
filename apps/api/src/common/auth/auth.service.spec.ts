@@ -90,6 +90,24 @@ describe('AuthService', () => {
       expect(result).toEqual({ id: mockUser.id, email: mockUser.email });
     });
 
+    it('does not authenticate the system actor even when the password hash verifies', async () => {
+      (prismaService.user!.findUnique as jest.Mock).mockResolvedValue({
+        id: 'SYSTEM',
+        email: 'system@elscore.internal',
+        passwordHash: 'hashed-password',
+        status: 'ACTIVE',
+        mustChangePassword: false,
+        userRoles: [{ role: { code: 'CEO', isProtected: true } }],
+      });
+      mockArgon2.verify.mockResolvedValue(true);
+
+      const result = await authService.validateCredentials('system@elscore.internal', 'CorrectPassword');
+
+      expect(result).toBeNull();
+      expect(mockArgon2.verify).toHaveBeenCalled();
+      expect(prismaService.user!.update).toBeUndefined();
+    });
+
     it('throws UnauthorizedException for inactive account', async () => {
       (prismaService.user!.findUnique as jest.Mock).mockResolvedValue({
         ...mockUser,
@@ -102,6 +120,71 @@ describe('AuthService', () => {
       await expect(
         authService.validateCredentials(mockUser.email, 'any'),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('refresh', () => {
+    let jwtService: jest.Mocked<JwtService>;
+
+    beforeEach(() => {
+      jwtService = (authService as any).jwtService;
+      jwtService.verify = jest.fn();
+      jwtService.signAsync = jest.fn().mockResolvedValue('new-token');
+      (prismaService as any).refreshToken = {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn(),
+      };
+      (prismaService as any).$transaction = jest.fn().mockImplementation((promises) => Promise.all(promises));
+    });
+
+    it('rejects a refresh token for SYSTEM actor in JWT payload', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'SYSTEM', email: 'system@elscore.internal' });
+
+      await expect(authService.refresh('raw-system-refresh-token')).rejects.toThrow(
+        'System actor sessions are not permitted',
+      );
+    });
+
+    it('rejects a refresh token where user record resolves to system actor', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'some-id', email: 'other@example.com' });
+      (prismaService as any).refreshToken.findUnique.mockResolvedValue({
+        id: 'tok-1',
+        userId: 'some-id',
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+      });
+      (prismaService.user!.findUnique as jest.Mock).mockResolvedValue({
+        id: 'SYSTEM',
+        email: 'system@elscore.internal',
+        status: 'ACTIVE',
+      });
+
+      await expect(authService.refresh('raw-refresh-token')).rejects.toThrow(
+        'System actor sessions are not permitted',
+      );
+    });
+
+    it('successfully refreshes a session for a legitimate CEO or HR user', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'ceo-user-1', email: 'ceo@elscore.com' });
+      (prismaService as any).refreshToken.findUnique.mockResolvedValue({
+        id: 'tok-1',
+        userId: 'ceo-user-1',
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+      });
+      (prismaService.user!.findUnique as jest.Mock).mockResolvedValue({
+        id: 'ceo-user-1',
+        email: 'ceo@elscore.com',
+        status: 'ACTIVE',
+      });
+
+      const tokens = await authService.refresh('valid-ceo-refresh-token');
+      expect(tokens).toEqual({
+        accessToken: 'new-token',
+        refreshToken: 'new-token',
+      });
+      expect((prismaService as any).$transaction).toHaveBeenCalled();
     });
   });
 });

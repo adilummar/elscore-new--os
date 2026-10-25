@@ -1,6 +1,10 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AuditService } from '../../common/audit/audit.service';
+import {
+  SYSTEM_ACTOR_INTERACTIVE_DENIAL,
+  isSystemActorIdentity,
+} from '../../common/id-generator/seed-identity';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
 
@@ -18,6 +22,9 @@ export class UserRoleService {
       include: { userRoles: { include: { role: true } } },
     });
     if (!user) throw new NotFoundException('User not found');
+    if (isSystemActorIdentity(user)) {
+      throw new ForbiddenException(SYSTEM_ACTOR_INTERACTIVE_DENIAL);
+    }
 
     const role = await this.prisma.role.findUnique({ where: { id: roleId } });
     if (!role) throw new NotFoundException('Role not found');
@@ -26,7 +33,11 @@ export class UserRoleService {
       where: { id: actorUserId },
       include: { userRoles: { include: { role: true } } },
     });
-    const actorIsCeo = actor?.userRoles.some((ur) => ur.role.code === 'CEO');
+    const actorIsCeo = Boolean(
+      actor &&
+      !isSystemActorIdentity(actor) &&
+      actor.userRoles.some((ur) => ur.role.code === 'CEO'),
+    );
 
     // 1. CO_FOUNDER exclusivity logic
     const hasCoFounder = user.userRoles.some((ur) => ur.role.code === 'CO_FOUNDER');

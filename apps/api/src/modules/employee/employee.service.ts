@@ -1,8 +1,34 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Employee, EmploymentStatus, Prisma, UserStatus } from '@prisma/client';
 
 export type EmployeeWithUser = Prisma.EmployeeGetPayload<{
-  include: { department: true; user: { select: { email: true; status: true; id: true } } };
+  include: {
+    department: true;
+    user: { select: { email: true; status: true; id: true } };
+    reportingManager: {
+      select: {
+        id: true;
+        businessId: true;
+        firstName: true;
+        lastName: true;
+        jobTitle: true;
+      };
+    };
+    directReports: {
+      select: {
+        id: true;
+        businessId: true;
+        firstName: true;
+        lastName: true;
+        jobTitle: true;
+      };
+    };
+  };
 }>;
 
 import { AuditService } from '../../common/audit/audit.service';
@@ -11,7 +37,9 @@ import { paginate, PaginateOptions } from '../../common/pagination/paginate.util
 import { PaginatedResponseDto } from '../../common/pagination/pagination.dto';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
+import { isValidCalendarDate } from '../../common/utils/calendar-date.util';
 
+import { TransitionEmployeeStatusDto } from './dto/transition-employee-status.dto';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 
@@ -24,32 +52,118 @@ export class EmployeeService {
     private readonly rbacService: RbacService,
   ) {}
 
-  async findAll(options: Pick<PaginateOptions, 'limit' | 'cursor'>): Promise<PaginatedResponseDto<any>> {
-    return paginate(this.prisma.employee, {
+  /**
+   * Helper to determine if viewer holds HR Manager, HR Executive, CEO, or Admin roles.
+   */
+  private async isHrOrCeoUser(userId?: string): Promise<boolean> {
+    if (!userId) return false;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userRoles: { include: { role: true } } },
+    });
+    return Boolean(
+      user?.userRoles?.some((ur) =>
+        ['CEO', 'HR_MANAGER', 'HR_EXECUTIVE', 'ADMIN'].includes(ur.role.code),
+      ),
+    );
+  }
+
+  /**
+   * List all employees with pagination and role-aware privacy masking.
+   */
+  async findAll(
+    options: Pick<PaginateOptions, 'limit' | 'cursor'>,
+    viewerUserId?: string,
+  ): Promise<PaginatedResponseDto<any>> {
+    const isHrOrCeo = await this.isHrOrCeoUser(viewerUserId);
+
+    const result = await paginate(this.prisma.employee, {
       ...options,
-      orderBy: { id: 'asc' },
+      orderBy: { businessId: 'asc' },
       include: {
+        department: true,
+        reportingManager: {
+          select: {
+            id: true,
+            businessId: true,
+            firstName: true,
+            lastName: true,
+            jobTitle: true,
+          },
+        },
         user: {
           select: {
+            id: true,
+            email: true,
             status: true,
             userRoles: {
               include: {
-                role: true
-              }
-            }
-          }
-        }
-      }
+                role: true,
+              },
+            },
+          },
+        },
+      },
     });
+
+    // Field-level privacy masking for list view
+    const sanitizedData = result.data.map((emp: any) => {
+      const canSeePersonal = isHrOrCeo || emp.userId === viewerUserId;
+      if (canSeePersonal) return emp;
+
+      return {
+        ...emp,
+        personalEmail: null,
+        dateOfBirth: null,
+        gender: null,
+        address: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        emergencyContactRelation: null,
+      };
+    });
+
+    return {
+      ...result,
+      data: sanitizedData,
+    };
   }
 
-  async findOne(id: string): Promise<EmployeeWithUser> {
+  /**
+   * Get single employee detail with field-level privacy masking.
+   */
+  async findOne(id: string, viewerUserId?: string): Promise<any> {
     const employee = await this.prisma.employee.findUnique({
       where: { id },
       include: {
         department: true,
+        reportingManager: {
+          select: {
+            id: true,
+            businessId: true,
+            firstName: true,
+            lastName: true,
+            jobTitle: true,
+          },
+        },
+        directReports: {
+          select: {
+            id: true,
+            businessId: true,
+            firstName: true,
+            lastName: true,
+            jobTitle: true,
+          },
+        },
         user: {
-          select: { email: true, status: true, id: true },
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            userRoles: {
+              include: { role: true },
+            },
+          },
         },
       },
     });
@@ -58,14 +172,41 @@ export class EmployeeService {
       throw new NotFoundException(`Employee with ID ${id} not found`);
     }
 
+    const isHrOrCeo = await this.isHrOrCeoUser(viewerUserId);
+    const canSeePersonal = isHrOrCeo || employee.userId === viewerUserId;
+
+    if (!canSeePersonal) {
+      return {
+        ...employee,
+        personalEmail: null,
+        dateOfBirth: null,
+        gender: null,
+        address: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        emergencyContactRelation: null,
+      };
+    }
+
     return employee;
   }
 
+  /**
+   * Routine profile update (name, phone, personal info, emergency contacts, job title, manager).
+   * Audited as EMPLOYEE_PROFILE_UPDATED.
+   */
   async updateProfile(id: string, dto: UpdateEmployeeDto, actorUserId: string): Promise<Employee> {
-    const employee = await this.findOne(id);
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+    });
+    if (!employee) {
+      throw new NotFoundException(`Employee with ID ${id} not found`);
+    }
+
     const changedFields: Record<string, unknown> = {};
     const data: Record<string, unknown> = {};
 
+    // Basic & Contact
     if (dto.firstName !== undefined && dto.firstName !== employee.firstName) {
       data.firstName = dto.firstName;
       changedFields.firstName = { old: employee.firstName, new: dto.firstName };
@@ -79,18 +220,79 @@ export class EmployeeService {
       changedFields.phone = { old: employee.phone, new: dto.phone };
     }
 
-    let departmentChanged = false;
+    // Personal Details
+    if (dto.personalEmail !== undefined && dto.personalEmail !== employee.personalEmail) {
+      data.personalEmail = dto.personalEmail;
+      changedFields.personalEmail = { old: employee.personalEmail, new: dto.personalEmail };
+    }
+    if (dto.dateOfBirth !== undefined && dto.dateOfBirth !== employee.dateOfBirth) {
+      if (dto.dateOfBirth && !isValidCalendarDate(dto.dateOfBirth)) {
+        throw new BadRequestException('dateOfBirth must be a valid real calendar date in YYYY-MM-DD format');
+      }
+      data.dateOfBirth = dto.dateOfBirth;
+      changedFields.dateOfBirth = { old: employee.dateOfBirth, new: dto.dateOfBirth };
+    }
+    if (dto.gender !== undefined && dto.gender !== employee.gender) {
+      data.gender = dto.gender;
+      changedFields.gender = { old: employee.gender, new: dto.gender };
+    }
+    if (dto.address !== undefined && dto.address !== employee.address) {
+      data.address = dto.address;
+      changedFields.address = { old: employee.address, new: dto.address };
+    }
+
+    // Emergency Contact
+    if (dto.emergencyContactName !== undefined && dto.emergencyContactName !== employee.emergencyContactName) {
+      data.emergencyContactName = dto.emergencyContactName;
+      changedFields.emergencyContactName = { old: employee.emergencyContactName, new: dto.emergencyContactName };
+    }
+    if (dto.emergencyContactPhone !== undefined && dto.emergencyContactPhone !== employee.emergencyContactPhone) {
+      data.emergencyContactPhone = dto.emergencyContactPhone;
+      changedFields.emergencyContactPhone = { old: employee.emergencyContactPhone, new: dto.emergencyContactPhone };
+    }
+    if (dto.emergencyContactRelation !== undefined && dto.emergencyContactRelation !== employee.emergencyContactRelation) {
+      data.emergencyContactRelation = dto.emergencyContactRelation;
+      changedFields.emergencyContactRelation = { old: employee.emergencyContactRelation, new: dto.emergencyContactRelation };
+    }
+
+    // Job & Hierarchy
+    if (dto.jobTitle !== undefined && dto.jobTitle !== employee.jobTitle) {
+      data.jobTitle = dto.jobTitle;
+      changedFields.jobTitle = { old: employee.jobTitle, new: dto.jobTitle };
+    }
+    if (dto.employmentType !== undefined && dto.employmentType !== employee.employmentType) {
+      data.employmentType = dto.employmentType;
+      changedFields.employmentType = { old: employee.employmentType, new: dto.employmentType };
+    }
+    if (dto.noticePeriodDays !== undefined && dto.noticePeriodDays !== employee.noticePeriodDays) {
+      data.noticePeriodDays = dto.noticePeriodDays;
+      changedFields.noticePeriodDays = { old: employee.noticePeriodDays, new: dto.noticePeriodDays };
+    }
+
     if (dto.departmentId !== undefined && dto.departmentId !== employee.departmentId) {
-      // Verify department exists
       const dept = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
       if (!dept) throw new NotFoundException('Department not found');
-
       data.departmentId = dto.departmentId;
-      departmentChanged = true;
+      changedFields.departmentId = { old: employee.departmentId, new: dto.departmentId };
+    }
+
+    if (dto.reportingManagerId !== undefined && dto.reportingManagerId !== employee.reportingManagerId) {
+      if (dto.reportingManagerId === employee.id) {
+        throw new BadRequestException('An employee cannot be their own reporting manager');
+      }
+      if (dto.reportingManagerId) {
+        const mgr = await this.prisma.employee.findUnique({ where: { id: dto.reportingManagerId } });
+        if (!mgr) throw new NotFoundException('Reporting manager not found');
+        if (mgr.employmentStatus === EmploymentStatus.TERMINATED) {
+          throw new BadRequestException('A terminated employee cannot be assigned as reporting manager');
+        }
+      }
+      data.reportingManagerId = dto.reportingManagerId;
+      changedFields.reportingManagerId = { old: employee.reportingManagerId, new: dto.reportingManagerId };
     }
 
     if (Object.keys(data).length === 0) {
-      return employee; // No changes
+      return employee;
     }
 
     const updated = await this.prisma.employee.update({
@@ -98,156 +300,254 @@ export class EmployeeService {
       data,
     });
 
-    // Record audits
-    if (Object.keys(changedFields).length > 0) {
-      await this.audit.record({
-        entityType: 'Employee',
-        entityId: employee.id,
-        action: 'EMPLOYEE_PROFILE_UPDATED',
-        actorUserId,
-        metadata: { changedFields },
-      });
-    }
-
-    if (departmentChanged) {
-      await this.audit.record({
-        entityType: 'Employee',
-        entityId: employee.id,
-        action: 'EMPLOYEE_DEPARTMENT_CHANGED',
-        actorUserId,
-        metadata: { oldDepartmentId: employee.departmentId, newDepartmentId: dto.departmentId },
-      });
-    }
-
-    return updated;
-  }
-
-  async updateStatus(id: string, dto: UpdateEmployeeStatusDto, actorUserId: string): Promise<Employee> {
-    const employee = await this.findOne(id);
-
-    if (employee.employmentStatus === dto.status) {
-      return employee;
-    }
-
-    if (dto.status === EmploymentStatus.TERMINATED) {
-      if (!dto.reason) {
-        throw new BadRequestException('Termination requires a mandatory reason.');
-      }
-      return this.terminateEmployee(employee, dto.reason, actorUserId);
-    } 
-    
-    // Simple status change or Reactivation
-    const isReactivation = employee.employmentStatus === EmploymentStatus.TERMINATED && dto.status === EmploymentStatus.ACTIVE;
-    if (isReactivation && !dto.reason) {
-      throw new BadRequestException('Reactivation requires a mandatory reason.');
-    }
-
-    const updated = await this.prisma.employee.update({
-      where: { id },
-      data: { employmentStatus: dto.status },
-    });
-
-    const action = isReactivation ? 'EMPLOYEE_REACTIVATED' : 'EMPLOYEE_STATUS_CHANGED';
-
     await this.audit.record({
       entityType: 'Employee',
       entityId: employee.id,
-      action,
+      action: 'EMPLOYEE_PROFILE_UPDATED',
       actorUserId,
-      reason: dto.reason,
-      metadata: { oldStatus: employee.employmentStatus, newStatus: dto.status, reason: dto.reason },
+      metadata: { changedFields },
     });
 
     return updated;
   }
 
   /**
-   * Complex termination transaction.
+   * Governed Employment Lifecycle Status Transition.
+   * Requires employee.manage-status permission.
+   * Transactionally updates employee status, records structured EmployeeStatusHistory,
+   * governs user account access, and writes an AuditEvent.
    */
-  private async terminateEmployee(employee: EmployeeWithUser, reason: string, actorUserId: string): Promise<Employee> {
-    const userId = employee.userId;
-
-    // Find active delegations made BY this user
-    const outgoingDelegations = await this.prisma.userPermission.findMany({
-      where: { delegatedByUserId: userId, revokedAt: null },
-      include: { permission: true },
+  async transitionStatus(
+    id: string,
+    dto: TransitionEmployeeStatusDto,
+    actorUserId: string,
+  ): Promise<Employee> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+      include: {
+        user: true,
+      },
     });
 
+    if (!employee) {
+      throw new NotFoundException(`Employee with ID ${id} not found`);
+    }
+
+    // Separation of duties: HR/Admins cannot transition their own employment status
+    if (employee.userId === actorUserId) {
+      throw new ForbiddenException(
+        'Self-transition is not permitted: you cannot modify your own employment lifecycle status',
+      );
+    }
+
+    // Reason validation
+    if (!dto.reason || !dto.reason.trim()) {
+      throw new BadRequestException('A non-empty reason is mandatory for any status transition');
+    }
+
+    // Date validations
+    if (!isValidCalendarDate(dto.effectiveDate)) {
+      throw new BadRequestException('effectiveDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+    if (dto.probationEndDate && !isValidCalendarDate(dto.probationEndDate)) {
+      throw new BadRequestException('probationEndDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+    if (dto.confirmationDate && !isValidCalendarDate(dto.confirmationDate)) {
+      throw new BadRequestException('confirmationDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+    if (dto.resignationDate && !isValidCalendarDate(dto.resignationDate)) {
+      throw new BadRequestException('resignationDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+    if (dto.lastWorkingDate && !isValidCalendarDate(dto.lastWorkingDate)) {
+      throw new BadRequestException('lastWorkingDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+
+    // Access restriction determination
+    // Termination ALWAYS restricts access. Suspension/Notice restricts access ONLY if explicitly requested.
+    const shouldRestrictAccess = dto.status === EmploymentStatus.TERMINATED || Boolean(dto.restrictAccess);
+
+    // Active delegations to revoke if access is being restricted
+    const outgoingDelegations = shouldRestrictAccess
+      ? await this.prisma.userPermission.findMany({
+          where: { delegatedByUserId: employee.userId, revokedAt: null },
+          include: { permission: true },
+        })
+      : [];
+
+    let shouldInvalidateCache = false;
+
     const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      // 1. Employee employment status -> TERMINATED
-      const updatedEmp = await tx.employee.update({
-        where: { id: employee.id },
-        data: { employmentStatus: EmploymentStatus.TERMINATED },
+      // 1. Create structured EmployeeStatusHistory entry
+      await tx.employeeStatusHistory.create({
+        data: {
+          employeeId: employee.id,
+          previousStatus: employee.employmentStatus,
+          newStatus: dto.status,
+          effectiveDate: dto.effectiveDate,
+          reason: dto.reason.trim(),
+          notes: dto.notes?.trim() || null,
+          accessRestricted: shouldRestrictAccess,
+          authorizedByUserId: actorUserId,
+        },
       });
 
-      // 2. User status -> INACTIVE
-      await tx.user.update({
-        where: { id: userId },
-        data: { status: UserStatus.INACTIVE },
-      });
+      // 2. Prepare Employee record updates
+      const employeeUpdateData: Prisma.EmployeeUpdateInput = {
+        employmentStatus: dto.status,
+      };
 
-      // 3. Revoke all active refresh tokens
-      await tx.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-
-      // 4. Revoke active UserPermission grants delegated BY this user
-      if (outgoingDelegations.length > 0) {
-        await tx.userPermission.updateMany({
-          where: { delegatedByUserId: userId, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
+      if (dto.status === EmploymentStatus.ACTIVE && dto.confirmationDate) {
+        employeeUpdateData.confirmationDate = dto.confirmationDate;
+      }
+      if (dto.probationEndDate) {
+        employeeUpdateData.probationEndDate = dto.probationEndDate;
+      }
+      if (dto.resignationDate) {
+        employeeUpdateData.resignationDate = dto.resignationDate;
+      }
+      if (dto.lastWorkingDate) {
+        employeeUpdateData.lastWorkingDate = dto.lastWorkingDate;
+      }
+      if (dto.noticePeriodDays !== undefined) {
+        employeeUpdateData.noticePeriodDays = dto.noticePeriodDays;
       }
 
-      // 5. Audit events
+      const updatedEmp = await tx.employee.update({
+        where: { id: employee.id },
+        data: employeeUpdateData,
+      });
+
+      // 3. User Account Access Governance
+      if (dto.status === EmploymentStatus.TERMINATED) {
+        // Termination offboarding
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: { status: UserStatus.INACTIVE },
+        });
+
+        await tx.refreshToken.updateMany({
+          where: { userId: employee.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+
+        if (outgoingDelegations.length > 0) {
+          await tx.userPermission.updateMany({
+            where: { delegatedByUserId: employee.userId, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+        }
+        shouldInvalidateCache = true;
+      } else if (shouldRestrictAccess) {
+        // Suspension or notice period with explicitly authorized access restriction
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: { status: UserStatus.SUSPENDED },
+        });
+
+        await tx.refreshToken.updateMany({
+          where: { userId: employee.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+
+        if (outgoingDelegations.length > 0) {
+          await tx.userPermission.updateMany({
+            where: { delegatedByUserId: employee.userId, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+        }
+        shouldInvalidateCache = true;
+      } else if (dto.status === EmploymentStatus.ACTIVE && employee.user.status === UserStatus.SUSPENDED) {
+        // Reactivating a previously suspended user
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: { status: UserStatus.ACTIVE },
+        });
+        shouldInvalidateCache = true;
+      }
+
+      // 4. Audit Logging
+      let auditAction = 'EMPLOYEE_STATUS_TRANSITIONED';
+      if (employee.employmentStatus === EmploymentStatus.PROBATION && dto.status === EmploymentStatus.ACTIVE) {
+        auditAction = 'EMPLOYEE_PROBATION_CONFIRMED';
+      } else if (dto.status === EmploymentStatus.NOTICE_PERIOD) {
+        auditAction = 'EMPLOYEE_NOTICE_PERIOD_INITIATED';
+      } else if (dto.status === EmploymentStatus.SUSPENDED) {
+        auditAction = 'EMPLOYEE_SUSPENDED';
+      } else if (dto.status === EmploymentStatus.TERMINATED) {
+        auditAction = 'EMPLOYEE_TERMINATED';
+      }
+
       await this.audit.recordInTx(tx, {
         entityType: 'Employee',
         entityId: employee.id,
-        action: 'EMPLOYEE_TERMINATED',
+        action: auditAction,
         actorUserId,
-        reason,
-        metadata: { reason },
+        reason: dto.reason,
+        metadata: {
+          previousStatus: employee.employmentStatus,
+          newStatus: dto.status,
+          effectiveDate: dto.effectiveDate,
+          accessRestricted: shouldRestrictAccess,
+          notes: dto.notes,
+        },
       });
-
-      await this.audit.recordInTx(tx, {
-        entityType: 'User',
-        entityId: userId,
-        action: 'USER_STATUS_CHANGED',
-        actorUserId,
-        reason: 'Employee termination',
-        metadata: { oldStatus: employee.user.status, newStatus: UserStatus.INACTIVE, reason },
-      });
-
-      for (const grant of outgoingDelegations) {
-        await this.audit.recordInTx(tx, {
-          entityType: 'User',
-          entityId: grant.userId, // recipient
-          action: 'USER_DUTY_REVOKED',
-          actorUserId: undefined, // System action triggered by termination
-          reason: 'Delegator terminated',
-          metadata: { 
-            permissionId: grant.permissionId, 
-            permissionCode: grant.permission.code, 
-            grantId: grant.id, 
-            revokedByUserId: actorUserId, 
-            reason: 'Delegator terminated' 
-          },
-        });
-      }
 
       return updatedEmp;
     });
 
-    // 6. Outside transaction: cache invalidations
-    await this.userStatusCache.invalidate(userId);
-    await this.rbacService.invalidateCache(userId);
-
-    // Invalidate recipients of revoked delegations
-    for (const grant of outgoingDelegations) {
-      await this.rbacService.invalidateCache(grant.userId);
+    // 5. Outside transaction cache invalidation
+    if (shouldInvalidateCache) {
+      await this.userStatusCache.invalidate(employee.userId);
+      await this.rbacService.invalidateCache(employee.userId);
+      for (const grant of outgoingDelegations) {
+        await this.rbacService.invalidateCache(grant.userId);
+      }
     }
 
     return result;
+  }
+
+  /**
+   * Get confidential employment status history for an employee.
+   * Requires employee.history.read permission.
+   */
+  async getStatusHistory(employeeId: string): Promise<any[]> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+    });
+    if (!employee) {
+      throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+    }
+
+    return this.prisma.employeeStatusHistory.findMany({
+      where: { employeeId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        authorizedBy: {
+          select: {
+            id: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Legacy status update endpoint preserved for backward compatibility.
+   * Delegates to transitionStatus using today's calendar date as effectiveDate.
+   */
+  async updateStatus(id: string, dto: UpdateEmployeeStatusDto, actorUserId: string): Promise<Employee> {
+    const today = new Date().toISOString().split('T')[0];
+    return this.transitionStatus(
+      id,
+      {
+        status: dto.status,
+        effectiveDate: today,
+        reason: dto.reason || `Status updated to ${dto.status} via API`,
+        restrictAccess: dto.status === EmploymentStatus.TERMINATED,
+      },
+      actorUserId,
+    );
   }
 }

@@ -10,6 +10,7 @@ import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ReviewLeaveRequestDto } from './dto/review-leave-request.dto';
 import { QueryLeaveRequestsDto } from './dto/query-leave-requests.dto';
 import { isValidCalendarDate } from '../../common/utils/calendar-date.util';
+import { isBlockedFromLeave } from '../../common/utils/employment-status.util';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -30,8 +31,8 @@ export class LeaveService {
       throw new NotFoundException('Employee record not found for the current user');
     }
 
-    if (employee.employmentStatus === 'TERMINATED') {
-      throw new ForbiddenException('Terminated employees cannot submit leave requests');
+    if (isBlockedFromLeave(employee.employmentStatus)) {
+      throw new ForbiddenException(`Employees with status ${employee.employmentStatus} cannot submit leave requests`);
     }
 
     if (!isValidCalendarDate(dto.startDate)) {

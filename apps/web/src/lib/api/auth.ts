@@ -4,10 +4,19 @@ import { cookies } from 'next/headers';
 import { authCookieOptions } from '@/lib/auth/auth-cookie-options';
 
 import { fetchApi } from './client';
+import { ApiUrlNotConfiguredError, resolveServerApiUrl } from './server-api-url';
 
 export async function login(credentials: { email: string; password: string }): Promise<{ mustChangePassword?: boolean; error?: string }> {
-  const apiBase = process.env.API_URL || 'http://localhost:3001/api/v1';
-  console.log('Attempting login to API:', `${apiBase}/auth/login`);
+  let apiBase: string;
+  try {
+    apiBase = resolveServerApiUrl();
+  } catch (error) {
+    if (error instanceof ApiUrlNotConfiguredError) {
+      console.error('[CONFIG ERROR] API_URL is missing.');
+      return { error: 'Unable to sign in because the service is not configured.' };
+    }
+    throw error;
+  }
   
   let res;
   try {

@@ -1,3 +1,6 @@
+import { InternalServerErrorException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+
 import { IdGeneratorService } from './id-generator.service';
 
 // ─── Mock PrismaService ───────────────────────────────────────────────────────
@@ -105,5 +108,54 @@ describe('IdGeneratorService', () => {
 
     expect(new Set([id1, id2, id3]).size).toBe(3);
     expect([id1, id2, id3]).toEqual(['EMP-0001', 'EMP-0002', 'EMP-0003']);
+  });
+
+  it('uses a stored prefix verbatim, including a prefix that already contains a hyphen', async () => {
+    const mockTx = makeMockTx();
+    mockTx.sequence.update.mockResolvedValueOnce({
+      entityType: 'STA',
+      prefix: 'STA-',
+      nextNumber: 2,
+      padding: 7,
+    });
+
+    const id = await service.nextIdInTx(mockTx as any, 'STA');
+    expect(id).toBe('STA--0000001');
+  });
+
+  it('fails with SEQUENCE_NOT_CONFIGURED when the sequence row is missing', async () => {
+    const mockTx = makeMockTx();
+    mockTx.sequence.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Record to update not found.', {
+        code: 'P2025',
+        clientVersion: '5.19.1',
+      }),
+    );
+
+    await expect(service.nextIdInTx(mockTx as any, 'ONB')).rejects.toBeInstanceOf(
+      InternalServerErrorException,
+    );
+
+    try {
+      await service.nextIdInTx(mockTx as any, 'ONB');
+      throw new Error('expected the missing sequence to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(InternalServerErrorException);
+      const body = (error as InternalServerErrorException).getResponse();
+      expect(body).toMatchObject({
+        code: 'SEQUENCE_NOT_CONFIGURED',
+        message: expect.stringContaining('ONB'),
+      });
+      expect(JSON.stringify(body)).not.toMatch(/localhost|postgres:|password|secret/i);
+      expect(JSON.stringify(body)).not.toContain('Record to update not found');
+    }
+  });
+
+  it('rethrows errors that are not a missing sequence row', async () => {
+    const mockTx = makeMockTx();
+    const failure = new Error('connection reset');
+    mockTx.sequence.update.mockRejectedValueOnce(failure);
+
+    await expect(service.nextIdInTx(mockTx as any, 'EMP')).rejects.toBe(failure);
   });
 });
