@@ -106,17 +106,17 @@ export default function DelegationsPage() {
       </Card>
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)}>
-        <h2 className="text-xl font-bold mb-4">Delegate Duty</h2>
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Delegate Duty</h2>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium">Delegate (HR Assistant/Executive)</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Delegate (HR Assistant/Executive)</label>
             <Select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
               <option value="">Select User...</option>
               {eligibleUsers.map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium">Duty / Permission</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Duty / Permission</label>
             <Select value={selectedPermissionId} onChange={e => setSelectedPermissionId(e.target.value)}>
               <option value="">Select Delegatable Permission...</option>
               {delegatablePermissions.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}

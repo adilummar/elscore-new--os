@@ -35,7 +35,7 @@ export function Modal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 md:p-6"
+      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 md:p-6"
       onClick={onClose}
     >
       <div 
@@ -43,9 +43,10 @@ export function Modal({
         onClick={(e) => e.stopPropagation()}
       >
         <button 
+          type="button"
           onClick={onClose} 
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors z-20 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="Close"
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-20 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          title="Close dialog"
           aria-label="Close dialog"
         >
           <X className="w-5 h-5" />

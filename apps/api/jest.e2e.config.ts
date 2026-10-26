@@ -5,17 +5,17 @@ const config: Config = {
   rootDir: '.',
   testRegex: '.e2e-spec.ts$',
   transform: {
-    '^.+\\.(t|j)s$': 'ts-jest',
+    '^.+\\.(t|j)s$': [
+      'ts-jest',
+      {
+        tsconfig: './tsconfig.json',
+      },
+    ],
   },
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@common/(.*)$': '<rootDir>/src/common/$1',
     '^@modules/(.*)$': '<rootDir>/src/modules/$1',
-  },
-  globals: {
-    'ts-jest': {
-      tsconfig: './tsconfig.json',
-    },
   },
   maxWorkers: 1,
 };

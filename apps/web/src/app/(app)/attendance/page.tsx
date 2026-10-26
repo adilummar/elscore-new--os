@@ -224,7 +224,7 @@ export default function MyAttendancePage() {
       {/* Check In Modal */}
       <Modal isOpen={isCheckInModalOpen} onClose={() => setIsCheckInModalOpen(false)} size="lg">
         <div className="space-y-6">
-          <h2 className="text-xl font-bold">Good Morning! Here is your agenda for today</h2>
+          <h2 className="text-xl font-bold text-slate-900">Good Morning! Here is your agenda for today</h2>
           
           {isLoadingSummary ? (
             <div className="py-8 text-center text-slate-500">Loading your tasks...</div>
@@ -270,7 +270,7 @@ export default function MyAttendancePage() {
       {/* Check Out Modal */}
       <Modal isOpen={isCheckOutModalOpen} onClose={() => setIsCheckOutModalOpen(false)} size="lg">
         <div className="space-y-6">
-          <h2 className="text-xl font-bold">End of Day Summary</h2>
+          <h2 className="text-xl font-bold text-slate-900">End of Day Summary</h2>
           
           {isLoadingSummary ? (
             <div className="py-8 text-center text-slate-500">Loading your summary...</div>

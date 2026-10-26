@@ -5,36 +5,85 @@
   body {
     @apply bg-background text-text-primary antialiased;
   }
+
+  /* Form control defaults for guaranteed high contrast */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
+  select,
+  textarea {
+    color: #0f172a;
+    background-color: #ffffff;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #94a3b8;
+  }
+
+  /* Native select dropdown options */
+  select option {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
+  /* Disabled form elements */
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    background-color: #f1f5f9;
+    color: #64748b;
+    cursor: not-allowed;
+  }
+
+  /* Dark theme overrides if .dark class is applied */
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
+  .dark select,
+  .dark textarea {
+    color: #f8fafc;
+    background-color: #1e293b;
+    border-color: #334155;
+  }
+
+  .dark select option {
+    background-color: #1e293b;
+    color: #f8fafc;
+  }
+
+  .dark input:disabled,
+  .dark select:disabled,
+  .dark textarea:disabled {
+    background-color: #0f172a;
+    color: #64748b;
+  }
 }
 
-/* Modern Custom Scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
+/* Modern Accessible Scrollbars */
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-.custom-scrollbar::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 10px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.4);
 }
 
-.custom-scrollbar-dark::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.custom-scrollbar-dark::-webkit-scrollbar-track {
-  background: transparent;
-}
 .custom-scrollbar-dark::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 10px;
 }
 .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.35);
 }
-

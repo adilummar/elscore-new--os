@@ -850,7 +850,7 @@ export default function PerformanceManagementPage() {
             <select
               value={evalForm.rating}
               onChange={(e) => setEvalForm({ ...evalForm, rating: Number(e.target.value) })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               required
             >
               <option value={1}>1 — Unsatisfactory</option>
@@ -866,7 +866,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={evalForm.strengths}
               onChange={(e) => setEvalForm({ ...evalForm, strengths: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               rows={2}
               required
             />
@@ -877,7 +877,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={evalForm.areasForImprovement}
               onChange={(e) => setEvalForm({ ...evalForm, areasForImprovement: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               rows={2}
               required
             />
@@ -888,7 +888,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={evalForm.managerFeedback}
               onChange={(e) => setEvalForm({ ...evalForm, managerFeedback: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               rows={3}
               required
             />
@@ -901,7 +901,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={evalForm.confidentialNotes}
               onChange={(e) => setEvalForm({ ...evalForm, confidentialNotes: e.target.value })}
-              className="w-full text-sm border-amber-300 bg-amber-50 rounded-md p-2"
+              className="w-full text-sm border border-amber-300 bg-amber-50 rounded-lg p-2.5 text-slate-900 placeholder:text-slate-500 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               rows={2}
               placeholder="Internal management notes for promotion or calibration..."
             />
@@ -913,7 +913,7 @@ export default function PerformanceManagementPage() {
               type="text"
               value={evalForm.recommendedTraining}
               onChange={(e) => setEvalForm({ ...evalForm, recommendedTraining: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               placeholder="e.g. Advanced CRM Objection Handling"
             />
           </div>
@@ -958,7 +958,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={selfReviewForm.employeeComments}
               onChange={(e) => setSelfReviewForm({ employeeComments: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-3"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               rows={5}
               placeholder="Detail your highlights, challenges overcome, and key results..."
               required
@@ -994,7 +994,7 @@ export default function PerformanceManagementPage() {
             <select
               value={ackForm.status}
               onChange={(e) => setAckForm({ ...ackForm, status: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="ACKNOWLEDGED">Acknowledge Receipt</option>
               <option value="REFUSED">Refuse Acknowledgement</option>
@@ -1006,7 +1006,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={ackForm.comments}
               onChange={(e) => setAckForm({ ...ackForm, comments: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               rows={3}
               placeholder="Add your comments or contextual notes..."
             />
@@ -1041,7 +1041,7 @@ export default function PerformanceManagementPage() {
             <textarea
               value={amendForm.reason}
               onChange={(e) => setAmendForm({ ...amendForm, reason: e.target.value })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               rows={2}
               placeholder="e.g. Verified data correction from departmental audit..."
               required
@@ -1053,7 +1053,7 @@ export default function PerformanceManagementPage() {
             <select
               value={amendForm.newRating}
               onChange={(e) => setAmendForm({ ...amendForm, newRating: Number(e.target.value) })}
-              className="w-full text-sm border-slate-300 rounded-md p-2"
+              className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value={1}>1 — Unsatisfactory</option>
               <option value={2}>2 — Needs Improvement</option>

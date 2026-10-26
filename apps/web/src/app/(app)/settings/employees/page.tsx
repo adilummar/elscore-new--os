@@ -703,7 +703,7 @@ export default function EmployeesPage() {
         onClose={() => setIsProfileModalOpen(false)}
         size="xl"
       >
-        <div className="p-6">
+        <div>
           <div className="flex items-center justify-between border-b pb-4 mb-6">
             <div>
               <h2 className="text-xl font-bold text-slate-900">
@@ -1176,7 +1176,7 @@ export default function EmployeesPage() {
         onClose={() => setIsSalaryChangeModalOpen(false)}
         size="md"
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <div className="border-b pb-4 mb-4">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-emerald-600" />
@@ -1278,7 +1278,7 @@ export default function EmployeesPage() {
         onClose={() => setIsApprovalsModalOpen(false)}
         size="2xl"
       >
-        <div className="p-6">
+        <div>
           <div className="border-b pb-4 mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
@@ -1486,7 +1486,7 @@ export default function EmployeesPage() {
         onClose={() => setIsRejectModalOpen(false)}
         size="md"
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h3 className="text-lg font-bold text-red-600 mb-2">Reject Compensation Request</h3>
           <p className="text-xs text-slate-600 mb-4">
             Provide a mandatory reason for rejecting this change request. The requester will be notified with this note.
@@ -1500,7 +1500,7 @@ export default function EmployeesPage() {
               <textarea
                 rows={3}
                 required
-                className="w-full text-xs rounded-md border border-slate-200 p-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                className="w-full text-sm rounded-lg border border-slate-300 p-2.5 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"
                 placeholder="State clearly why this request cannot be approved..."
                 value={rejectionNote}
                 onChange={(e) => setRejectionNote(e.target.value)}
@@ -1529,7 +1529,7 @@ export default function EmployeesPage() {
         onClose={() => setIsTransitionModalOpen(false)}
         size="lg"
       >
-        <div className="p-6">
+        <div>
           <div className="border-b pb-4 mb-5">
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Briefcase className="w-5 h-5 text-brand-600" />
@@ -1704,7 +1704,7 @@ export default function EmployeesPage() {
         onClose={() => setIsHistoryModalOpen(false)}
         size="lg"
       >
-        <div className="p-6">
+        <div>
           <div className="border-b pb-4 mb-5">
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <History className="w-5 h-5 text-brand-600" />

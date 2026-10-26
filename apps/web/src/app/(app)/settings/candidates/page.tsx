@@ -884,85 +884,85 @@ export default function CandidatesPage() {
         isOpen={isCandidateModalOpen}
         onClose={() => setIsCandidateModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Create Recruitment Candidate</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Create Recruitment Candidate</h2>
           <form onSubmit={handleCreateCandidate} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Full Name *</label>
-            <Input
-              required
-              value={candidateForm.fullName}
-              onChange={(e) => setCandidateForm({ ...candidateForm, fullName: e.target.value })}
-              placeholder="e.g. Sarah Jenkins"
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Full Name *</label>
+              <Input
+                required
+                value={candidateForm.fullName}
+                onChange={(e) => setCandidateForm({ ...candidateForm, fullName: e.target.value })}
+                placeholder="e.g. Sarah Jenkins"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Email Address *</label>
-            <Input
-              type="email"
-              required
-              value={candidateForm.email}
-              onChange={(e) => setCandidateForm({ ...candidateForm, email: e.target.value })}
-              placeholder="sarah.j@example.com"
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Email Address *</label>
+              <Input
+                type="email"
+                required
+                value={candidateForm.email}
+                onChange={(e) => setCandidateForm({ ...candidateForm, email: e.target.value })}
+                placeholder="sarah.j@example.com"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Phone</label>
-            <Input
-              value={candidateForm.phone}
-              onChange={(e) => setCandidateForm({ ...candidateForm, phone: e.target.value })}
-              placeholder="+971501234567"
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Phone</label>
+              <Input
+                value={candidateForm.phone}
+                onChange={(e) => setCandidateForm({ ...candidateForm, phone: e.target.value })}
+                placeholder="+971501234567"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Source</label>
-            <select
-              value={candidateForm.source}
-              onChange={(e) => setCandidateForm({ ...candidateForm, source: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
-            >
-              <option value="DIRECT_APPLICATION">Direct Application</option>
-              <option value="LINKEDIN">LinkedIn</option>
-              <option value="JOB_PORTAL">Job Portal</option>
-              <option value="REFERRAL">Referral</option>
-              <option value="AGENCY">Agency</option>
-              <option value="CAREERS_PAGE">Careers Page</option>
-              <option value="OTHER">Other</option>
-            </select>
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Source</label>
+              <select
+                value={candidateForm.source}
+                onChange={(e) => setCandidateForm({ ...candidateForm, source: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+              >
+                <option value="DIRECT_APPLICATION">Direct Application</option>
+                <option value="LINKEDIN">LinkedIn</option>
+                <option value="JOB_PORTAL">Job Portal</option>
+                <option value="REFERRAL">Referral</option>
+                <option value="AGENCY">Agency</option>
+                <option value="CAREERS_PAGE">Careers Page</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Referral Details</label>
-            <Input
-              value={candidateForm.referralDetails}
-              onChange={(e) => setCandidateForm({ ...candidateForm, referralDetails: e.target.value })}
-              placeholder="Referred by employee name or agency reference"
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Referral Details</label>
+              <Input
+                value={candidateForm.referralDetails}
+                onChange={(e) => setCandidateForm({ ...candidateForm, referralDetails: e.target.value })}
+                placeholder="Referred by employee name or agency reference"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Recruiter Notes</label>
-            <textarea
-              value={candidateForm.notes}
-              onChange={(e) => setCandidateForm({ ...candidateForm, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-              rows={3}
-              placeholder="Candidate background, screening summary..."
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Recruiter Notes</label>
+              <textarea
+                value={candidateForm.notes}
+                onChange={(e) => setCandidateForm({ ...candidateForm, notes: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                rows={3}
+                placeholder="Candidate background, screening summary..."
+              />
+            </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setIsCandidateModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={actionLoading}>
-              {actionLoading ? 'Creating...' : 'Create Candidate'}
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button type="button" variant="outline" onClick={() => setIsCandidateModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={actionLoading}>
+                {actionLoading ? 'Creating...' : 'Create Candidate'}
+              </Button>
+            </div>
+          </form>
         </div>
       </Modal>
 
@@ -971,63 +971,63 @@ export default function CandidatesPage() {
         isOpen={isApplyModalOpen}
         onClose={() => setIsApplyModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Submit Candidate Application</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Submit Candidate Application</h2>
           <form onSubmit={handleCreateApplication} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Select Open Vacancy *</label>
-            <select
-              required
-              value={applyForm.vacancyId}
-              onChange={(e) => setApplyForm({ ...applyForm, vacancyId: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
-            >
-              <option value="">-- Choose Vacancy --</option>
-              {openVacancies.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.title} ({v.businessId})
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Select Open Vacancy *</label>
+              <select
+                required
+                value={applyForm.vacancyId}
+                onChange={(e) => setApplyForm({ ...applyForm, vacancyId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+              >
+                <option value="">-- Choose Vacancy --</option>
+                {openVacancies.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.title} ({v.businessId})
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Select Candidate *</label>
-            <select
-              required
-              value={applyForm.candidateId}
-              onChange={(e) => setApplyForm({ ...applyForm, candidateId: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
-            >
-              <option value="">-- Choose Candidate --</option>
-              {candidates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.fullName} ({c.email})
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Select Candidate *</label>
+              <select
+                required
+                value={applyForm.candidateId}
+                onChange={(e) => setApplyForm({ ...applyForm, candidateId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+              >
+                <option value="">-- Choose Candidate --</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.fullName} ({c.email})
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Cover Note / Pitch</label>
-            <textarea
-              value={applyForm.coverLetter}
-              onChange={(e) => setApplyForm({ ...applyForm, coverLetter: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-              rows={3}
-              placeholder="Key qualifications, candidate highlights..."
-            />
-          </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Cover Note / Pitch</label>
+              <textarea
+                value={applyForm.coverLetter}
+                onChange={(e) => setApplyForm({ ...applyForm, coverLetter: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                rows={3}
+                placeholder="Key qualifications, candidate highlights..."
+              />
+            </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setIsApplyModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={actionLoading}>
-              {actionLoading ? 'Submitting...' : 'Submit Application'}
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button type="button" variant="outline" onClick={() => setIsApplyModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={actionLoading}>
+                {actionLoading ? 'Submitting...' : 'Submit Application'}
+              </Button>
+            </div>
+          </form>
         </div>
       </Modal>
 
@@ -1038,7 +1038,7 @@ export default function CandidatesPage() {
           onClose={() => setIsDetailModalOpen(false)}
           size="lg"
         >
-          <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+          <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
             <h2 className="text-xl font-bold text-slate-900">Application Details — {selectedApplication.businessId}</h2>
             {/* Candidate & Vacancy Summary */}
             <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg text-sm">
@@ -1190,15 +1190,15 @@ export default function CandidatesPage() {
         isOpen={isInterviewModalOpen}
         onClose={() => setIsInterviewModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Schedule Candidate Interview</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Schedule Candidate Interview</h2>
           <form onSubmit={handleScheduleInterview} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Interview Type</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Interview Type</label>
               <select
                 value={interviewForm.interviewType}
                 onChange={(e) => setInterviewForm({ ...interviewForm, interviewType: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="SCREENING">Screening</option>
                 <option value="TECHNICAL">Technical Round</option>
@@ -1209,11 +1209,11 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Interview Mode</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Interview Mode</label>
               <select
                 value={interviewForm.interviewMode}
                 onChange={(e) => setInterviewForm({ ...interviewForm, interviewMode: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="ONLINE">Online (Google Meet / Zoom)</option>
                 <option value="IN_PERSON">In-Person Office</option>
@@ -1222,7 +1222,7 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Scheduled Date & Time *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Scheduled Date & Time *</label>
               <Input
                 type="datetime-local"
                 required
@@ -1232,7 +1232,7 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Interviewer Name</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Interviewer Name</label>
               <Input
                 value={interviewForm.interviewerName}
                 onChange={(e) => setInterviewForm({ ...interviewForm, interviewerName: e.target.value })}
@@ -1241,7 +1241,7 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Meeting Link / Room</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Meeting Link / Room</label>
               <Input
                 value={interviewForm.location}
                 onChange={(e) => setInterviewForm({ ...interviewForm, location: e.target.value })}
@@ -1249,7 +1249,7 @@ export default function CandidatesPage() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsInterviewModalOpen(false)}>
                 Cancel
               </Button>
@@ -1266,15 +1266,15 @@ export default function CandidatesPage() {
         isOpen={isFeedbackModalOpen}
         onClose={() => setIsFeedbackModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Record Interview Evaluation Feedback</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Record Interview Evaluation Feedback</h2>
           <form onSubmit={handleRecordFeedback} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Recommendation Outcome *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Recommendation Outcome *</label>
               <select
                 value={feedbackForm.recommendation}
                 onChange={(e) => setFeedbackForm({ ...feedbackForm, recommendation: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="STRONG_HIRE">Strong Hire</option>
                 <option value="HIRE">Hire</option>
@@ -1284,11 +1284,11 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Evaluation Rating (1 - 5)</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Evaluation Rating (1 - 5)</label>
               <select
                 value={feedbackForm.rating}
                 onChange={(e) => setFeedbackForm({ ...feedbackForm, rating: Number(e.target.value) })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value={5}>5 - Excellent</option>
                 <option value={4}>4 - Good</option>
@@ -1299,18 +1299,18 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Feedback & Remarks *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Feedback & Remarks *</label>
               <textarea
                 required
                 value={feedbackForm.feedback}
                 onChange={(e) => setFeedbackForm({ ...feedbackForm, feedback: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 rows={4}
                 placeholder="Detailed candidate evaluation, technical strengths, culture fit..."
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsFeedbackModalOpen(false)}>
                 Cancel
               </Button>
@@ -1327,15 +1327,15 @@ export default function CandidatesPage() {
         isOpen={isStageModalOpen}
         onClose={() => setIsStageModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Transition Application Stage</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Transition Application Stage</h2>
           <form onSubmit={handleTransitionStage} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Target Stage</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Target Stage</label>
               <select
                 value={stageForm.stage}
                 onChange={(e) => setStageForm({ ...stageForm, stage: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="SCREENING">Screening</option>
                 <option value="INTERVIEW_ROUND_1">Interview Round 1</option>
@@ -1349,11 +1349,11 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Target Status</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Target Status</label>
               <select
                 value={stageForm.status}
                 onChange={(e) => setStageForm({ ...stageForm, status: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="APPLIED">Applied</option>
                 <option value="SCREENING">Screening</option>
@@ -1367,12 +1367,12 @@ export default function CandidatesPage() {
 
             {stageForm.status === 'REJECTED' && (
               <div>
-                <label className="block text-sm font-medium text-red-700">Rejection Rationale *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-red-700 mb-1.5">Rejection Rationale *</label>
                 <textarea
                   required
                   value={stageForm.rejectionReason}
                   onChange={(e) => setStageForm({ ...stageForm, rejectionReason: e.target.value })}
-                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm"
+                  className="w-full px-3.5 py-2.5 border border-red-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"
                   rows={3}
                   placeholder="Required explanation for candidate rejection..."
                 />
@@ -1380,7 +1380,7 @@ export default function CandidatesPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Transition Notes</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Transition Notes</label>
               <Input
                 value={stageForm.notes}
                 onChange={(e) => setStageForm({ ...stageForm, notes: e.target.value })}
@@ -1388,7 +1388,7 @@ export default function CandidatesPage() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsStageModalOpen(false)}>
                 Cancel
               </Button>
@@ -1406,11 +1406,11 @@ export default function CandidatesPage() {
         onClose={() => setIsOfferModalOpen(false)}
         size="lg"
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Prepare Formal Job Offer</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Prepare Formal Job Offer</h2>
           <form onSubmit={handleCreateOffer} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Designation / Role Title *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Designation / Role Title *</label>
               <Input
                 required
                 value={offerForm.roleTitle}
@@ -1420,7 +1420,7 @@ export default function CandidatesPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700">Offered Salary Amount *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Offered Salary Amount *</label>
                 <Input
                   type="number"
                   required
@@ -1432,11 +1432,11 @@ export default function CandidatesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700">Currency *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Currency *</label>
                 <select
                   value={offerForm.currency}
                   onChange={(e) => setOfferForm({ ...offerForm, currency: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 >
                   <option value="INR">INR</option>
                   <option value="AED">AED</option>
@@ -1448,7 +1448,7 @@ export default function CandidatesPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700">Proposed Start Date *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Proposed Start Date *</label>
                 <Input
                   type="date"
                   required
@@ -1458,7 +1458,7 @@ export default function CandidatesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700">Offer Expiry Date *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Offer Expiry Date *</label>
                 <Input
                   type="date"
                   required
@@ -1469,17 +1469,17 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Offer Terms / Notes</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Offer Terms / Notes</label>
               <textarea
                 value={offerForm.notes}
                 onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 rows={3}
                 placeholder="Allowances, probationary requirements, joining incentives..."
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsOfferModalOpen(false)}>
                 Cancel
               </Button>
@@ -1496,21 +1496,26 @@ export default function CandidatesPage() {
         isOpen={isReviewOfferModalOpen}
         onClose={() => setIsReviewOfferModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Review Job Offer — {selectedOffer?.businessId}</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Review Job Offer — {selectedOffer?.businessId}</h2>
           <form onSubmit={handleReviewOffer} className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Designation: <span className="font-semibold text-slate-900">{selectedOffer?.roleTitle}</span>
-              <br />
-              Compensation: <span className="font-semibold text-slate-900">{selectedOffer?.currency} {Number(selectedOffer?.offeredSalary).toLocaleString()}</span>
-            </p>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-sm space-y-1">
+              <div>
+                <span className="text-slate-500 text-xs uppercase tracking-wider block font-semibold">Designation</span>
+                <span className="font-semibold text-slate-900">{selectedOffer?.roleTitle}</span>
+              </div>
+              <div className="pt-1">
+                <span className="text-slate-500 text-xs uppercase tracking-wider block font-semibold">Compensation</span>
+                <span className="font-semibold text-slate-900">{selectedOffer?.currency} {Number(selectedOffer?.offeredSalary).toLocaleString()}</span>
+              </div>
+            </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Decision *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Decision *</label>
               <select
                 value={reviewOfferForm.action}
                 onChange={(e) => setReviewOfferForm({ ...reviewOfferForm, action: e.target.value as any })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="APPROVE">Approve Offer</option>
                 <option value="REJECT">Reject Offer</option>
@@ -1518,20 +1523,20 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 {reviewOfferForm.action === 'REJECT' ? 'Rejection Reason *' : 'Approval Notes'}
               </label>
               <textarea
                 required={reviewOfferForm.action === 'REJECT'}
                 value={reviewOfferForm.approvalNotes}
                 onChange={(e) => setReviewOfferForm({ ...reviewOfferForm, approvalNotes: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 rows={3}
                 placeholder={reviewOfferForm.action === 'REJECT' ? 'Reason for rejecting this offer...' : 'Optional approval notes...'}
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsReviewOfferModalOpen(false)}>
                 Cancel
               </Button>
@@ -1552,15 +1557,15 @@ export default function CandidatesPage() {
         isOpen={isResponseModalOpen}
         onClose={() => setIsResponseModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Record Candidate Response — {selectedOffer?.businessId}</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Record Candidate Response — {selectedOffer?.businessId}</h2>
           <form onSubmit={handleRecordResponse} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Candidate Response *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Candidate Response *</label>
               <select
                 value={responseForm.decision}
                 onChange={(e) => setResponseForm({ ...responseForm, decision: e.target.value as any })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="ACCEPT">Accepted (Ready for Phase 6 Onboarding)</option>
                 <option value="DECLINE">Declined</option>
@@ -1569,24 +1574,24 @@ export default function CandidatesPage() {
 
             {responseForm.decision === 'DECLINE' ? (
               <div>
-                <label className="block text-sm font-medium text-red-700">Decline Reason *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-red-700 mb-1.5">Decline Reason *</label>
                 <textarea
                   required
                   value={responseForm.declineReason}
                   onChange={(e) => setResponseForm({ ...responseForm, declineReason: e.target.value })}
-                  className="w-full px-3 py-2 border border-red-300 rounded-md text-sm"
+                  className="w-full px-3.5 py-2.5 border border-red-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"
                   rows={3}
                   placeholder="Reason provided by candidate for declining..."
                 />
               </div>
             ) : (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
                 Note: Marking this offer as ACCEPTED establishes a handoff marker for Phase 6 Onboarding. It does not automatically create an employee account or payroll record.
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Response Remarks</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Response Remarks</label>
               <Input
                 value={responseForm.responseNotes}
                 onChange={(e) => setResponseForm({ ...responseForm, responseNotes: e.target.value })}
@@ -1594,7 +1599,7 @@ export default function CandidatesPage() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsResponseModalOpen(false)}>
                 Cancel
               </Button>
@@ -1611,22 +1616,22 @@ export default function CandidatesPage() {
         isOpen={isWithdrawModalOpen}
         onClose={() => setIsWithdrawModalOpen(false)}
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Withdraw Job Offer — {selectedOffer?.businessId}</h2>
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Withdraw Job Offer — {selectedOffer?.businessId}</h2>
           <form onSubmit={handleWithdrawOffer} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-red-700">Withdrawal Reason *</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-red-700 mb-1.5">Withdrawal Reason *</label>
               <textarea
                 required
                 value={withdrawForm.withdrawalReason}
                 onChange={(e) => setWithdrawForm({ withdrawalReason: e.target.value })}
-                className="w-full px-3 py-2 border border-red-300 rounded-md text-sm"
+                className="w-full px-3.5 py-2.5 border border-red-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"
                 rows={3}
                 placeholder="Organizational reason for withdrawing this offer..."
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsWithdrawModalOpen(false)}>
                 Cancel
               </Button>
@@ -1644,15 +1649,17 @@ export default function CandidatesPage() {
         onClose={() => setIsReviseOfferModalOpen(false)}
         size="lg"
       >
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Revise Job Offer — {selectedOffer?.businessId}</h2>
-          <p className="text-xs text-slate-500 mb-4">
-            Creating a revision archives version {selectedOffer?.version} and generates version {((selectedOffer?.version || 1) + 1)} in PENDING_APPROVAL status.
-          </p>
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Revise Job Offer — {selectedOffer?.businessId}</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Creating a revision archives version {selectedOffer?.version} and generates version {((selectedOffer?.version || 1) + 1)} in PENDING_APPROVAL status.
+            </p>
+          </div>
           <form onSubmit={handleReviseOffer} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700">Revised Salary Amount *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Revised Salary Amount *</label>
                 <Input
                   type="number"
                   required
@@ -1664,11 +1671,11 @@ export default function CandidatesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700">Currency *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Currency *</label>
                 <select
                   value={reviseOfferForm.currency}
                   onChange={(e) => setReviseOfferForm({ ...reviseOfferForm, currency: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 >
                   <option value="INR">INR</option>
                   <option value="AED">AED</option>
@@ -1680,7 +1687,7 @@ export default function CandidatesPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700">Proposed Start Date *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Proposed Start Date *</label>
                 <Input
                   type="date"
                   required
@@ -1690,7 +1697,7 @@ export default function CandidatesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700">Offer Expiry Date *</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Offer Expiry Date *</label>
                 <Input
                   type="date"
                   required
@@ -1701,17 +1708,17 @@ export default function CandidatesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700">Revision Notes / Renegotiation Terms</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Revision Notes / Renegotiation Terms</label>
               <textarea
                 value={reviseOfferForm.notes}
                 onChange={(e) => setReviseOfferForm({ ...reviseOfferForm, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 rows={3}
                 placeholder="Details of renegotiated compensation or terms..."
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="outline" onClick={() => setIsReviseOfferModalOpen(false)}>
                 Cancel
               </Button>

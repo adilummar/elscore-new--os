@@ -372,7 +372,7 @@ export default function VacanciesPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="">All Statuses</option>
               <option value="DRAFT">DRAFT</option>
@@ -390,7 +390,7 @@ export default function VacanciesPage() {
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="">All Priorities</option>
               <option value="LOW">LOW</option>
@@ -404,7 +404,7 @@ export default function VacanciesPage() {
             <select
               value={departmentFilter}
               onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="">All Departments</option>
               {departments.map((d) => (
@@ -505,7 +505,7 @@ export default function VacanciesPage() {
 
       {/* Create Vacancy Modal */}
       <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} size="lg">
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-1 flex items-center gap-2">
             <Plus className="w-5 h-5 text-brand-600" />
             Create Workforce Vacancy
@@ -536,7 +536,7 @@ export default function VacanciesPage() {
                   required
                   value={formData.departmentId}
                   onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                  className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">Select Department</option>
                   {departments.map((d) => (
@@ -554,7 +554,7 @@ export default function VacanciesPage() {
                 <select
                   value={formData.roleId}
                   onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
-                  className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">None / Custom Position</option>
                   {roles.map((r) => (
@@ -585,7 +585,7 @@ export default function VacanciesPage() {
                 <select
                   value={formData.employmentType}
                   onChange={(e) => setFormData({ ...formData, employmentType: e.target.value })}
-                  className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="FULL_TIME">Full Time</option>
                   <option value="PART_TIME">Part Time</option>
@@ -601,7 +601,7 @@ export default function VacanciesPage() {
                 <select
                   value={formData.workMode}
                   onChange={(e) => setFormData({ ...formData, workMode: e.target.value })}
-                  className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="ON_SITE">On Site</option>
                   <option value="REMOTE">Remote</option>
@@ -627,7 +627,7 @@ export default function VacanciesPage() {
                 <select
                   value={formData.priority}
                   onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                  className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="LOW">Low</option>
                   <option value="MEDIUM">Medium</option>
@@ -695,7 +695,7 @@ export default function VacanciesPage() {
                 placeholder="Explain why this workforce addition is required and strategic impact..."
                 value={formData.justification}
                 onChange={(e) => setFormData({ ...formData, justification: e.target.value })}
-                className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full p-2.5 text-sm bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
 
@@ -731,7 +731,7 @@ export default function VacanciesPage() {
       {/* Vacancy Detail & Actions Modal */}
       {selectedVacancy && (
         <Modal isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)} size="lg">
-          <div className="p-6 space-y-6">
+          <div className="space-y-6">
             <div className="flex items-start justify-between border-b border-slate-100 pb-4">
               <div>
                 <div className="flex items-center gap-3">

@@ -155,18 +155,18 @@ export default function RolesPage() {
       </Card>
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)}>
-        <h2 className="text-xl font-bold mb-4">Create Custom Role</h2>
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Create Custom Role</h2>
         <div className="space-y-4">
-          <div><label className="text-sm font-medium">Code (e.g. SENIOR_SALES)</label><Input value={formData.code} onChange={e => setFormData({...formData, code: e.target.value})} /></div>
-          <div><label className="text-sm font-medium">Name</label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-          <div><label className="text-sm font-medium">Description</label><Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Code (e.g. SENIOR_SALES)</label><Input value={formData.code} onChange={e => setFormData({...formData, code: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Name</label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Description</label><Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
           <Button onClick={handleCreate} className="w-full">Create</Button>
         </div>
       </Modal>
 
       <Modal isOpen={!!editingRole} onClose={handleCloseEdit}>
         <div className="flex flex-col h-[80vh]">
-          <h2 className="text-xl font-bold mb-2">Edit Role: {editingRole?.name || editingRole?.code}</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Edit Role: {editingRole?.name || editingRole?.code}</h2>
           <p className="text-sm text-gray-500 mb-4">{selectedPermissionIds.size} permissions selected</p>
           
           <div className="mb-4">
@@ -191,7 +191,7 @@ export default function RolesPage() {
                         className="mt-1"
                       />
                       <div>
-                        <div className="font-medium text-sm">{p.code}</div>
+                        <div className="font-medium text-sm text-slate-900">{p.code}</div>
                         {p.description && <div className="text-xs text-gray-500">{p.description}</div>}
                       </div>
                     </label>

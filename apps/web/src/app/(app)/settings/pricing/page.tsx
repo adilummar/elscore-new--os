@@ -271,28 +271,28 @@ function FinanceSettingsCard({ setting, onSuccess }: { setting: any; onSuccess: 
         {error && <div className="text-red-500 text-sm mb-3">{error}</div>}
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium">Registration Fee (AED) *</label>
-            <input type="number" required min="0" step="0.01" value={registrationFee} onChange={(e) => setRegistrationFee(e.target.value)} className="w-full p-2 border rounded-md" />
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Registration Fee (AED) *</label>
+            <input type="number" required min="0" step="0.01" value={registrationFee} onChange={(e) => setRegistrationFee(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div>
-            <label className="text-sm font-medium">Currency</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Currency</label>
             <input value="AED" disabled className="w-full p-2 border rounded-md bg-slate-50" />
           </div>
           <div>
-            <label className="text-sm font-medium">Account Holder Name *</label>
-            <input required value={accountHolderName} onChange={(e) => setAccountHolderName(e.target.value)} className="w-full p-2 border rounded-md" />
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Account Holder Name *</label>
+            <input required value={accountHolderName} onChange={(e) => setAccountHolderName(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div>
-            <label className="text-sm font-medium">Bank Name *</label>
-            <input required value={bankName} onChange={(e) => setBankName(e.target.value)} className="w-full p-2 border rounded-md" />
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Bank Name *</label>
+            <input required value={bankName} onChange={(e) => setBankName(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div>
-            <label className="text-sm font-medium">Account Number *</label>
-            <input required value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} className="w-full p-2 border rounded-md" />
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Account Number *</label>
+            <input required value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div>
-            <label className="text-sm font-medium">IBAN *</label>
-            <input required value={iban} onChange={(e) => setIban(e.target.value)} className="w-full p-2 border rounded-md" />
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">IBAN *</label>
+            <input required value={iban} onChange={(e) => setIban(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div className="md:col-span-2 flex justify-end">
             <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Account Details'}</Button>
@@ -348,14 +348,14 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums, grades, slab }:
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-2">{slab ? 'Edit General Pricing Slab' : 'Add General Pricing Slab'}</h2>
+      <h2 className="text-lg font-bold text-slate-900 mb-2">{slab ? 'Edit General Pricing Slab' : 'Add General Pricing Slab'}</h2>
       <p className="text-xs text-slate-500 mb-4">
         Applies to all subjects for this curriculum and grade range. Subject-specific pricing is added under Exceptional Subject Rates.
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="text-red-500 text-sm">{error}</div>}
         <div>
-          <label className="text-sm font-medium">Curriculum *</label>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Curriculum *</label>
           <Select value={curriculumId} onChange={(e) => setCurriculumId(e.target.value)} required>
             <option value="">Select Curriculum</option>
             {curriculums.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -363,14 +363,14 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums, grades, slab }:
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
-            <label className="text-sm font-medium">Grade From *</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Grade From *</label>
             <Select value={gradeFromId} onChange={(e) => setGradeFromId(e.target.value)} required>
               <option value="">Select Grade</option>
               {grades.map((grade: any) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
             </Select>
           </div>
           <div className="flex-1">
-            <label className="text-sm font-medium">Grade To *</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Grade To *</label>
             <Select value={gradeToId} onChange={(e) => setGradeToId(e.target.value)} required>
               <option value="">Select Grade</option>
               {grades.map((grade: any) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
@@ -378,8 +378,8 @@ function AddSlabModal({ isOpen, onClose, onSuccess, curriculums, grades, slab }:
           </div>
         </div>
         <div>
-          <label className="text-sm font-medium">Hourly Rate (AED) *</label>
-          <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2 border rounded-md" placeholder="11.00" />
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Hourly Rate (AED) *</label>
+          <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" placeholder="11.00" />
         </div>
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
@@ -416,22 +416,22 @@ function AddExceptionalModal({ isOpen, onClose, onSuccess, subjects }: any) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <h2 className="text-lg font-bold mb-2">Add Exceptional Subject Rate</h2>
+      <h2 className="text-lg font-bold text-slate-900 mb-2">Add Exceptional Subject Rate</h2>
       <p className="text-xs text-brand-600 mb-4 bg-brand-50 p-2 rounded">
         Select one subject. This hourly rate overrides the general slab for that subject, regardless of curriculum or grade.
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="text-red-500 text-sm">{error}</div>}
         <div>
-          <label className="text-sm font-medium">Subject *</label>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Subject *</label>
           <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} required>
             <option value="">Select Subject</option>
             {subjects.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </div>
         <div>
-          <label className="text-sm font-medium">Hourly Rate (AED) *</label>
-          <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2 border rounded-md" />
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Hourly Rate (AED) *</label>
+          <input type="number" required min="1" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

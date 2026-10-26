@@ -511,7 +511,7 @@ export default function OnboardingPage() {
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <Filter className="w-4 h-4 text-slate-400" />
               <select
-                className="text-sm border border-slate-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="text-sm border border-slate-300 rounded-lg px-3.5 py-2 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
@@ -890,7 +890,7 @@ export default function OnboardingPage() {
         isOpen={openCaseModalOpen}
         onClose={() => setOpenCaseModalOpen(false)}
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Open Onboarding Case</h2>
           <form onSubmit={handleOpenCaseSubmit} className="space-y-4">
             <div className="bg-slate-50 p-3 rounded-md text-sm text-slate-700">
@@ -900,7 +900,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Target Joining Date (YYYY-MM-DD) *
               </label>
               <Input
@@ -912,7 +912,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Probation Duration (Months)
               </label>
               <Input
@@ -925,7 +925,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Onboarding Notes
               </label>
               <Input
@@ -952,15 +952,15 @@ export default function OnboardingPage() {
         isOpen={uploadDocModalOpen}
         onClose={() => setUploadDocModalOpen(false)}
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Upload Onboarding Document</h2>
           <form onSubmit={handleUploadDocSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Document Type *
               </label>
               <select
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 value={uploadDocForm.documentType}
                 onChange={(e) => setUploadDocForm({ ...uploadDocForm, documentType: e.target.value })}
               >
@@ -976,7 +976,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Document Display Title *
               </label>
               <Input
@@ -988,7 +988,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Select Binary File (.pdf, .png, .jpg, .jpeg, .webp — max 10MB) *
               </label>
               <input
@@ -1026,7 +1026,7 @@ export default function OnboardingPage() {
         isOpen={verifyDocModalOpen}
         onClose={() => setVerifyDocModalOpen(false)}
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Verify Onboarding Document</h2>
           <form onSubmit={handleVerifyDocSubmit} className="space-y-4">
             <div className="text-sm bg-slate-50 p-3 rounded">
@@ -1035,11 +1035,11 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Verification Decision *
               </label>
               <select
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 value={verifyDocForm.status}
                 onChange={(e) => setVerifyDocForm({ ...verifyDocForm, status: e.target.value as any })}
               >
@@ -1049,7 +1049,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Verification Notes {verifyDocForm.status === 'REJECTED' && '* (Mandatory for rejection)'}
               </label>
               <Input
@@ -1077,11 +1077,11 @@ export default function OnboardingPage() {
         isOpen={addTaskModalOpen}
         onClose={() => setAddTaskModalOpen(false)}
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Add Onboarding Task</h2>
           <form onSubmit={handleCreateTaskSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Task Title *
               </label>
               <Input
@@ -1093,11 +1093,11 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Category *
               </label>
               <select
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 value={taskForm.category}
                 onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
               >
@@ -1111,7 +1111,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Due Date (YYYY-MM-DD)
               </label>
               <Input
@@ -1122,7 +1122,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Notes / Instructions
               </label>
               <Input
@@ -1149,7 +1149,7 @@ export default function OnboardingPage() {
         isOpen={cancelModalOpen}
         onClose={() => setCancelModalOpen(false)}
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Cancel Onboarding Case</h2>
           <form onSubmit={handleCancelCaseSubmit} className="space-y-4">
             <div className="p-3 bg-red-50 text-red-800 rounded-md text-xs">
@@ -1157,11 +1157,11 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Cancellation Status *
               </label>
               <select
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 value={cancelForm.status}
                 onChange={(e) => setCancelForm({ ...cancelForm, status: e.target.value as any })}
               >
@@ -1172,7 +1172,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Mandatory Reason / Explanation *
               </label>
               <Input
@@ -1201,7 +1201,7 @@ export default function OnboardingPage() {
         onClose={() => setFinalizeModalOpen(false)}
         size="lg"
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Finalize Onboarding & Hire Employee</h2>
           <form onSubmit={handleFinalizeSubmit} className="space-y-4 max-h-[75vh] overflow-y-auto pr-2">
             <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-md text-xs space-y-1">
@@ -1216,7 +1216,7 @@ export default function OnboardingPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Confirmed Joining Date *
                 </label>
                 <Input
@@ -1228,7 +1228,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Official Job Title
                 </label>
                 <Input
@@ -1238,7 +1238,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Personal Email
                 </label>
                 <Input
@@ -1249,7 +1249,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Mobile Phone
                 </label>
                 <Input
@@ -1259,7 +1259,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Date of Birth
                 </label>
                 <Input
@@ -1270,11 +1270,11 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Gender
                 </label>
                 <select
-                  className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 bg-white"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                   value={finalizeForm.gender}
                   onChange={(e) => setFinalizeForm({ ...finalizeForm, gender: e.target.value })}
                 >
@@ -1286,7 +1286,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Residential Address
               </label>
               <Input
@@ -1343,7 +1343,7 @@ export default function OnboardingPage() {
         isOpen={probationModalOpen}
         onClose={() => setProbationModalOpen(false)}
       >
-        <div className="p-6">
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-slate-900 mb-4">Probation Review & Decision</h2>
           <form onSubmit={handleRecordProbationSubmit} className="space-y-4">
             <div className="p-3 bg-slate-50 text-slate-800 rounded-md text-xs space-y-1">
@@ -1352,7 +1352,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Review Date (YYYY-MM-DD) *
               </label>
               <Input
@@ -1364,11 +1364,11 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Probation Decision Outcome *
               </label>
               <select
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 bg-white"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 value={probationForm.outcome}
                 onChange={(e) => setProbationForm({ ...probationForm, outcome: e.target.value as any })}
               >
@@ -1380,7 +1380,7 @@ export default function OnboardingPage() {
 
             {probationForm.outcome === 'EXTENDED' && (
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   New Extended End Date (YYYY-MM-DD) *
                 </label>
                 <Input
@@ -1393,7 +1393,7 @@ export default function OnboardingPage() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Review Notes & Feedback *
               </label>
               <Input

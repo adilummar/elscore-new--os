@@ -94,14 +94,14 @@ export default function UsersPage() {
       </Card>
       
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)}>
-        <h2 className="text-xl font-bold mb-4">Create User</h2>
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Create User</h2>
         <div className="space-y-4">
-          <div><label className="text-sm font-medium">Email</label><Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
-          <div><label className="text-sm font-medium">Password</label><Input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} /></div>
-          <div><label className="text-sm font-medium">First Name</label><Input value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} /></div>
-          <div><label className="text-sm font-medium">Last Name</label><Input value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Email</label><Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Password</label><Input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">First Name</label><Input value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Last Name</label><Input value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} /></div>
           <div>
-            <label className="text-sm font-medium">Department</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Department</label>
             <Select value={formData.departmentId} onChange={e => {
               setFormData({...formData, departmentId: e.target.value, roleId: ''});
             }}>
@@ -110,7 +110,7 @@ export default function UsersPage() {
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium">Role</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Role</label>
             <Select value={formData.roleId} onChange={e => setFormData({...formData, roleId: e.target.value})} disabled={!formData.departmentId}>
               <option value="">Select...</option>
               {roles.filter(r => {

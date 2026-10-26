@@ -114,11 +114,11 @@ export default function ReferenceDataPage() {
       </Card>
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)}>
-        <h2 className="text-xl font-bold mb-4">Create {activeTab.slice(0, -1)}</h2>
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Create {activeTab.slice(0, -1)}</h2>
         <div className="space-y-4">
-          <div><label className="text-sm font-medium">Code *</label><Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} required /></div>
-          <div><label className="text-sm font-medium">Name *</label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required /></div>
-          {activeTab === 'grades' && <div><label className="text-sm font-medium">Sort Order</label><Input type="number" value={form.sortOrder} onChange={e => setForm({...form, sortOrder: e.target.value})} /></div>}
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Code *</label><Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} required /></div>
+          <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Name *</label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required /></div>
+          {activeTab === 'grades' && <div><label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Sort Order</label><Input type="number" value={form.sortOrder} onChange={e => setForm({...form, sortOrder: e.target.value})} /></div>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
             <Button variant="primary" onClick={handleCreate} disabled={loading || !form.code || !form.name}>
