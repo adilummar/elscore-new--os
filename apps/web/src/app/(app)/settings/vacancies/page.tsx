@@ -927,16 +927,24 @@ export default function VacanciesPage() {
                     Management Review Required
                   </div>
 
-                  {user?.id === selectedVacancy.requestedByUserId ? (
+                  {user?.id === selectedVacancy.requestedByUserId && !hasPermission('vacancy.approve') ? (
                     <div className="flex items-center gap-2 p-2 bg-amber-100 text-amber-800 text-xs rounded border border-amber-300">
                       <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                       <span>
-                        <strong>Self-approval prohibited:</strong> As the requester of this vacancy, you
-                        cannot approve or review your own submission.
+                        <strong>Awaiting CEO Approval:</strong> As the requester of this vacancy, you
+                        cannot approve or review your own submission. Awaiting CEO review.
                       </span>
                     </div>
                   ) : hasPermission('vacancy.approve') ? (
                     <div className="space-y-3">
+                      {user?.id === selectedVacancy.requestedByUserId && (
+                        <div className="flex items-center gap-2 p-2 bg-blue-50 text-blue-800 text-xs rounded border border-blue-200">
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-blue-600" />
+                          <span>
+                            <strong>CEO Requisition:</strong> As executive approver, you can self-approve this requisition.
+                          </span>
+                        </div>
+                      )}
                       <div>
                         <label className="block text-xs font-medium text-slate-700 mb-1">
                           Review Note (Mandatory for rejection)
@@ -963,13 +971,13 @@ export default function VacanciesPage() {
                           onClick={() => handleReview(selectedVacancy.id, 'APPROVE')}
                           className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          Approve Vacancy
+                          {user?.id === selectedVacancy.requestedByUserId ? 'Self-Approve Vacancy' : 'Approve Vacancy'}
                         </Button>
                       </div>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500">
-                      You do not have permission to approve vacancies.
+                      You do not have permission to approve vacancies. Awaiting CEO review.
                     </p>
                   )}
                 </div>

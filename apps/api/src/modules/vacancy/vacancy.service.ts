@@ -445,10 +445,17 @@ export class VacancyService {
 
   /**
    * Review (Approve / Reject) a pending vacancy.
-   * STRICT SEPARATION OF DUTIES: Requester CANNOT approve their own vacancy request.
-   * SEC-VAC-002: Rejection requires a mandatory, non-empty review note.
+   * Business Rules:
+   * - Requisitions created by HR or non-executive staff MUST be approved by CEO. Requesters cannot self-approve.
+   * - Requisitions created by the CEO themselves can be self-approved by the CEO.
+   * - Mandatory non-empty review note for rejections (SEC-VAC-002).
    */
-  async reviewVacancy(id: string, dto: ReviewVacancyDto, actorUserId: string): Promise<Vacancy> {
+  async reviewVacancy(
+    id: string,
+    dto: ReviewVacancyDto,
+    actorUserId: string,
+    isCeoOverride?: boolean,
+  ): Promise<Vacancy> {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireVacancyLock(tx, id);
 
@@ -465,8 +472,14 @@ export class VacancyService {
         );
       }
 
-      // Self-approval prevention
-      if (existing.requestedByUserId === actorUserId) {
+      const isCeo =
+        isCeoOverride !== undefined
+          ? isCeoOverride
+          : await this.authService.hasPermission(actorUserId, 'vacancy.approve');
+
+      // Self-approval rule:
+      // Requisition creators cannot approve their own vacancies unless they have CEO-level approval authority.
+      if (existing.requestedByUserId === actorUserId && !isCeo) {
         throw new ForbiddenException(
           'Self-approval is not permitted: you cannot approve or review your own vacancy request',
         );
@@ -524,7 +537,11 @@ export class VacancyService {
         actorUserId,
         oldValue: { status: existing.status },
         newValue: { status: updated.status, reviewNote: updated.reviewNote },
-        reason: dto.reviewNote || `Vacancy request was ${dto.action.toLowerCase()}d`,
+        reason:
+          dto.reviewNote ||
+          (existing.requestedByUserId === actorUserId
+            ? 'CEO self-approved vacancy request'
+            : `Vacancy request was ${dto.action.toLowerCase()}d`),
       });
 
       return updated;

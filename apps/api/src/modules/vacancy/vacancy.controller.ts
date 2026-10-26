@@ -89,13 +89,15 @@ export class VacancyController {
 
   @Post(':id/review')
   @RequirePermissions('vacancy.approve')
-  @ApiOperation({ summary: 'Approve or reject a pending workforce vacancy (Self-approval prevented)' })
+  @ApiOperation({ summary: 'Approve or reject a pending workforce vacancy (CEO approval and self-approval)' })
   async reviewVacancy(
     @Param('id') id: string,
     @Body() dto: ReviewVacancyDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.vacancyService.reviewVacancy(id, dto, user.id);
+    const perms = await this.rbacService.getPermissionsForUser(user.id);
+    const isCeo = perms.has('vacancy.approve');
+    return this.vacancyService.reviewVacancy(id, dto, user.id, isCeo);
   }
 
   @Post(':id/status')

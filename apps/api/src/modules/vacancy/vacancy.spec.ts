@@ -575,7 +575,9 @@ describe('VacancyService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('rejects review when reviewer attempts self-approval', async () => {
+    it('rejects review when non-CEO reviewer attempts self-approval', async () => {
+      authService.hasPermission.mockResolvedValue(false);
+
       prisma.vacancy.findUnique.mockResolvedValueOnce({
         ...mockVacancy,
         status: VacancyStatus.PENDING_APPROVAL,
@@ -587,8 +589,44 @@ describe('VacancyService', () => {
           'vac-uuid-1',
           { action: 'APPROVE' },
           'user-requester-1', // Same user as requestedByUserId!
+          false, // isCeoOverride = false
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows self-approval when reviewer is CEO', async () => {
+      authService.hasPermission.mockImplementation(async (userId: string, perm: string) => {
+        if (userId === 'user-ceo-1' && perm === 'vacancy.approve') return true;
+        return false;
+      });
+
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        status: VacancyStatus.PENDING_APPROVAL,
+        requestedByUserId: 'user-ceo-1',
+      });
+      prisma.vacancy.update.mockResolvedValueOnce({
+        ...mockVacancy,
+        status: VacancyStatus.APPROVED,
+        reviewedByUserId: 'user-ceo-1',
+      });
+
+      const result = await service.reviewVacancy(
+        'vac-uuid-1',
+        { action: 'APPROVE' },
+        'user-ceo-1',
+        true, // isCeoOverride = true
+      );
+
+      expect(result.status).toBe(VacancyStatus.APPROVED);
+      expect(prisma.vacancy.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: VacancyStatus.APPROVED,
+            reviewedByUserId: 'user-ceo-1',
+          }),
+        }),
+      );
     });
   });
 
