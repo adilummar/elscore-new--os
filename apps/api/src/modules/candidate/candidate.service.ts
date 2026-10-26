@@ -83,6 +83,37 @@ export class CandidateService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('offer-' || ${offerId}))`;
   }
 
+  /**
+   * Validates that offered salary conforms to the approved vacancy maximum budget (Policy B).
+   * Rejects offers exceeding budgetMax unless an explicit CEO override path is present.
+   */
+  private validateOfferSalaryCap(
+    vacancy: { businessId: string; budgetMax: Prisma.Decimal | null; currency: string } | null | undefined,
+    offeredSalary: number | Prisma.Decimal,
+    offerCurrency: string,
+  ): void {
+    if (!vacancy || vacancy.budgetMax === null || vacancy.budgetMax === undefined) {
+      return; // No budget cap configured on requisition
+    }
+
+    if (vacancy.currency && offerCurrency && vacancy.currency.toUpperCase() !== offerCurrency.toUpperCase()) {
+      throw new BadRequestException(
+        `Cannot validate offer salary cap: offer currency ('${offerCurrency}') does not match vacancy currency ('${vacancy.currency}') for vacancy ${vacancy.businessId}.`,
+      );
+    }
+
+    const salaryDecimal =
+      offeredSalary instanceof Prisma.Decimal
+        ? offeredSalary
+        : new Prisma.Decimal(offeredSalary);
+
+    if (salaryDecimal.gt(vacancy.budgetMax)) {
+      throw new BadRequestException(
+        `Offered salary (${salaryDecimal.toString()} ${offerCurrency}) exceeds the approved vacancy maximum budget (${vacancy.budgetMax.toString()} ${vacancy.currency}) for vacancy ${vacancy.businessId}. Offers exceeding approved compensation limits require vacancy budget escalation.`,
+      );
+    }
+  }
+
   // ── Candidate Profile Operations ───────────────────────────────────────────
 
   async createCandidate(dto: CreateCandidateDto, actorUserId: string): Promise<Candidate> {
@@ -680,6 +711,9 @@ export class CandidateService {
         throw new BadRequestException('offeredSalary cannot be negative.');
       }
 
+      // Policy B: Enforce approved vacancy salary cap
+      this.validateOfferSalaryCap(application.vacancy, dto.offeredSalary, currency);
+
       const businessId = await this.idGenerator.nextIdInTx(tx, 'OFF');
 
       const offer = await tx.jobOffer.create({
@@ -786,6 +820,7 @@ export class CandidateService {
 
       const existing = await tx.jobOffer.findUnique({
         where: { id },
+        include: { vacancy: true },
       });
       if (!existing) {
         throw new NotFoundException(`Job offer with ID '${id}' not found`);
@@ -805,6 +840,9 @@ export class CandidateService {
       if (finalSalary < 0) {
         throw new BadRequestException('offeredSalary cannot be negative');
       }
+
+      // Policy B: Enforce approved vacancy salary cap on direct edits
+      this.validateOfferSalaryCap(existing.vacancy, finalSalary, finalCurrency);
       if (!SUPPORTED_OFFER_CURRENCIES.includes(finalCurrency as any)) {
         throw new BadRequestException(
           `Unsupported currency: '${finalCurrency}'. Supported currencies: ${SUPPORTED_OFFER_CURRENCIES.join(', ')}`,
@@ -903,6 +941,7 @@ export class CandidateService {
 
       const existing = await tx.jobOffer.findUnique({
         where: { id },
+        include: { vacancy: true },
       });
       if (!existing) {
         throw new NotFoundException(`Job offer with ID '${id}' not found`);
@@ -924,6 +963,9 @@ export class CandidateService {
       const finalExpiryDate = dto.offerExpiryDate || existing.offerExpiryDate;
 
       if (finalSalary < 0) throw new BadRequestException('offeredSalary cannot be negative');
+
+      // Policy B: Enforce approved vacancy salary cap on revisions
+      this.validateOfferSalaryCap(existing.vacancy, finalSalary, finalCurrency);
       if (!SUPPORTED_OFFER_CURRENCIES.includes(finalCurrency as any)) {
         throw new BadRequestException(`Unsupported currency: '${finalCurrency}'`);
       }
@@ -1141,6 +1183,15 @@ export class CandidateService {
             'A non-empty approvalNotes rationale is required when rejecting a job offer.',
           );
         }
+      }
+
+      // Revalidate offer salary cap and currency upon approval (defense-in-depth if vacancy budget changed)
+      if (dto.action === 'APPROVE') {
+        this.validateOfferSalaryCap(
+          existing.vacancy,
+          existing.offeredSalary,
+          existing.currency,
+        );
       }
 
       const targetStatus = dto.action === 'APPROVE' ? OfferStatus.APPROVED : OfferStatus.DRAFT;

@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
+import { RbacService } from '../../common/rbac/rbac.service';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
 import { CreateVacancyDto } from './dto/create-vacancy.dto';
@@ -26,7 +27,10 @@ import { VacancyService } from './vacancy.service';
 @UseGuards(RbacGuard)
 @Controller('vacancies')
 export class VacancyController {
-  constructor(private readonly vacancyService: VacancyService) {}
+  constructor(
+    private readonly vacancyService: VacancyService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   @Post()
   @RequirePermissions('vacancy.create')
@@ -41,15 +45,25 @@ export class VacancyController {
   @Get()
   @RequirePermissions('vacancy.read')
   @ApiOperation({ summary: 'List workforce vacancies with filters and pagination' })
-  async getVacancies(@Query() query: QueryVacanciesDto) {
-    return this.vacancyService.getVacancies(query);
+  async getVacancies(
+    @Query() query: QueryVacanciesDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const perms = await this.rbacService.getPermissionsForUser(user.id);
+    const isCeo = perms.has('vacancy.approve');
+    return this.vacancyService.getVacancies(query, user.id, isCeo);
   }
 
   @Get(':id')
   @RequirePermissions('vacancy.read')
   @ApiOperation({ summary: 'Get a single workforce vacancy by ID' })
-  async getVacancy(@Param('id') id: string) {
-    return this.vacancyService.getVacancy(id);
+  async getVacancy(
+    @Param('id') id: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const perms = await this.rbacService.getPermissionsForUser(user.id);
+    const isCeo = perms.has('vacancy.approve');
+    return this.vacancyService.getVacancy(id, user.id, isCeo);
   }
 
   @Patch(':id')

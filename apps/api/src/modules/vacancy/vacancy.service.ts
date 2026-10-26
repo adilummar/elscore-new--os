@@ -20,8 +20,6 @@ import { UpdateVacancyDto } from './dto/update-vacancy.dto';
 const ALLOWED_STATUS_TRANSITIONS: Record<VacancyStatus, VacancyStatus[]> = {
   [VacancyStatus.DRAFT]: [VacancyStatus.PENDING_APPROVAL, VacancyStatus.CANCELLED],
   [VacancyStatus.PENDING_APPROVAL]: [
-    VacancyStatus.APPROVED,
-    VacancyStatus.REJECTED,
     VacancyStatus.DRAFT,
     VacancyStatus.CANCELLED,
   ],
@@ -622,8 +620,9 @@ export class VacancyService {
 
   /**
    * Get single vacancy by ID.
+   * Policy A: DRAFT, PENDING_APPROVAL, and REJECTED are visible only to their creator and CEO.
    */
-  async getVacancy(id: string): Promise<Vacancy> {
+  async getVacancy(id: string, actorUserId?: string, isCeo = false): Promise<Vacancy> {
     const vacancy = await this.prisma.vacancy.findUnique({
       where: { id },
       include: {
@@ -654,13 +653,28 @@ export class VacancyService {
       throw new NotFoundException(`Vacancy with ID '${id}' not found`);
     }
 
+    if (!isCeo && actorUserId) {
+      const isUnapproved =
+        vacancy.status === VacancyStatus.DRAFT ||
+        vacancy.status === VacancyStatus.PENDING_APPROVAL ||
+        vacancy.status === VacancyStatus.REJECTED;
+
+      if (isUnapproved && vacancy.requestedByUserId !== actorUserId) {
+        throw new ForbiddenException(
+          'Access denied. Unapproved vacancy requisitions are only visible to their creator and CEO.',
+        );
+      }
+    }
+
     return vacancy;
   }
 
   /**
    * List vacancies with optional filters and pagination.
+   * Policy A: DRAFT and PENDING_APPROVAL are visible only to their creator and CEO.
+   * HR and recruitment users see approved/active lifecycle vacancies.
    */
-  async getVacancies(query: QueryVacanciesDto) {
+  async getVacancies(query: QueryVacanciesDto, actorUserId?: string, isCeo = false) {
     const page = Math.max(1, query.page || 1);
     const limit = Math.max(1, Math.min(100, query.limit || 20));
     const skip = (page - 1) * limit;
@@ -673,9 +687,6 @@ export class VacancyService {
     if (query.roleId) {
       where.roleId = query.roleId;
     }
-    if (query.status) {
-      where.status = query.status;
-    }
     if (query.priority) {
       where.priority = query.priority;
     }
@@ -686,6 +697,34 @@ export class VacancyService {
         { businessId: { contains: term, mode: 'insensitive' } },
         { justification: { contains: term, mode: 'insensitive' } },
       ];
+    }
+
+    // Policy A visibility scoping
+    if (!isCeo && actorUserId) {
+      const visibilityCondition: Prisma.VacancyWhereInput = {
+        OR: [
+          { requestedByUserId: actorUserId },
+          {
+            status: {
+              in: [
+                VacancyStatus.APPROVED,
+                VacancyStatus.OPEN,
+                VacancyStatus.ON_HOLD,
+                VacancyStatus.FILLED,
+                VacancyStatus.CANCELLED,
+              ],
+            },
+          },
+        ],
+      };
+
+      if (query.status) {
+        where.AND = [visibilityCondition, { status: query.status }];
+      } else {
+        where.AND = [visibilityCondition];
+      }
+    } else if (query.status) {
+      where.status = query.status;
     }
 
     const [items, total] = await Promise.all([

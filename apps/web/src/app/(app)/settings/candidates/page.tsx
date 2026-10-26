@@ -49,7 +49,6 @@ import {
   transitionApplicationStageAction,
   withdrawOfferAction,
 } from '../actions';
-import { SettingsNavigation } from '../SettingsNavigation';
 
 export default function CandidatesPage() {
   const { hasPermission } = usePermissions();
@@ -433,8 +432,6 @@ export default function CandidatesPage() {
 
   return (
     <div className="space-y-6">
-      <SettingsNavigation />
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

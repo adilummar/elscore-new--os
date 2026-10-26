@@ -6,7 +6,9 @@ import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthorizationService } from '../../common/rbac/authorization.service';
+import { RbacService } from '../../common/rbac/rbac.service';
 
+import { VacancyController } from './vacancy.controller';
 import { VacancyService } from './vacancy.service';
 
 describe('VacancyService', () => {
@@ -668,9 +670,24 @@ describe('VacancyService', () => {
       expect(res.status).toBe(VacancyStatus.OPEN);
       expect(res.filledHeadcount).toBe(1);
     });
+
+    it('rejects direct transition from PENDING_APPROVAL to APPROVED without reviewVacancy (Policy A)', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        status: VacancyStatus.PENDING_APPROVAL,
+      });
+
+      await expect(
+        service.transitionStatus(
+          'vac-uuid-1',
+          { status: VacancyStatus.APPROVED },
+          'user-manager-2',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
-  describe('getVacancy & getVacancies', () => {
+  describe('getVacancy & getVacancies (Policy A Visibility)', () => {
     it('returns single vacancy if found', async () => {
       const res = await service.getVacancy('vac-uuid-1');
       expect(res.id).toBe('vac-uuid-1');
@@ -679,6 +696,108 @@ describe('VacancyService', () => {
     it('throws NotFoundException if vacancy does not exist', async () => {
       prisma.vacancy.findUnique.mockResolvedValueOnce(null);
       await expect(service.getVacancy('non-existent')).rejects.toThrow(NotFoundException);
+    });
+
+    it('allows creator to view their own DRAFT vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.DRAFT,
+      });
+
+      const res = await service.getVacancy('vac-uuid-1', 'user-requester-1', false);
+      expect(res.id).toBe('vac-uuid-1');
+    });
+
+    it('allows creator to view their own PENDING_APPROVAL vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.PENDING_APPROVAL,
+      });
+
+      const res = await service.getVacancy('vac-uuid-1', 'user-requester-1', false);
+      expect(res.id).toBe('vac-uuid-1');
+    });
+
+    it('allows CEO to view another user unapproved DRAFT vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.DRAFT,
+      });
+
+      const res = await service.getVacancy('vac-uuid-1', 'user-ceo-id', true);
+      expect(res.id).toBe('vac-uuid-1');
+    });
+
+    it('allows CEO to view another user unapproved PENDING_APPROVAL vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.PENDING_APPROVAL,
+      });
+
+      const res = await service.getVacancy('vac-uuid-1', 'user-ceo-id', true);
+      expect(res.id).toBe('vac-uuid-1');
+    });
+
+    it('forbids HR Manager (non-creator) from viewing another user unapproved DRAFT vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.DRAFT,
+      });
+
+      await expect(
+        service.getVacancy('vac-uuid-1', 'user-hr-manager', false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('forbids HR Manager (non-creator) from viewing another user unapproved PENDING_APPROVAL vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.PENDING_APPROVAL,
+      });
+
+      await expect(
+        service.getVacancy('vac-uuid-1', 'user-hr-manager', false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('forbids HR Manager (non-creator) from viewing another user REJECTED vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.REJECTED,
+      });
+
+      await expect(
+        service.getVacancy('vac-uuid-1', 'user-hr-manager', false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows any user to view an APPROVED vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.APPROVED,
+      });
+
+      const res = await service.getVacancy('vac-uuid-1', 'user-other-person', false);
+      expect(res.id).toBe('vac-uuid-1');
+    });
+
+    it('allows any user to view an OPEN, ON_HOLD, or FILLED vacancy', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce({
+        ...mockVacancy,
+        requestedByUserId: 'user-requester-1',
+        status: VacancyStatus.OPEN,
+      });
+
+      const res = await service.getVacancy('vac-uuid-1', 'user-other-person', false);
+      expect(res.id).toBe('vac-uuid-1');
     });
 
     it('returns paginated vacancies with filters', async () => {
@@ -691,6 +810,129 @@ describe('VacancyService', () => {
       expect(res.items).toHaveLength(1);
       expect(res.total).toBe(1);
       expect(res.totalPages).toBe(1);
+    });
+
+    it('scopes unapproved vacancies to creator when caller is not CEO', async () => {
+      await service.getVacancies({ page: 1, limit: 10 }, 'user-requester-1', false);
+
+      expect(prisma.vacancy.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: expect.arrayContaining([
+              expect.objectContaining({
+                OR: expect.arrayContaining([
+                  { requestedByUserId: 'user-requester-1' },
+                ]),
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('does not restrict to creator when caller is CEO', async () => {
+      prisma.vacancy.findMany.mockClear();
+
+      await service.getVacancies({ page: 1, limit: 10 }, 'user-ceo-id', true);
+
+      expect(prisma.vacancy.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({
+            AND: expect.anything(),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('VacancyController — CEO Visibility Resolution & CO_FOUNDER Protection', () => {
+    let controller: VacancyController;
+    let mockRbacService: { getPermissionsForUser: jest.Mock };
+    let mockVacancyService: { getVacancies: jest.Mock; getVacancy: jest.Mock };
+
+    beforeEach(() => {
+      mockRbacService = {
+        getPermissionsForUser: jest.fn(),
+      };
+      mockVacancyService = {
+        getVacancies: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+        getVacancy: jest.fn().mockResolvedValue({ id: 'vac-1', status: 'DRAFT' }),
+      };
+
+      controller = new VacancyController(
+        mockVacancyService as any,
+        mockRbacService as any,
+      );
+    });
+
+    it('resolves isCeo = true for CEO user holding vacancy.approve', async () => {
+      mockRbacService.getPermissionsForUser.mockResolvedValue(
+        new Set(['vacancy.read', 'vacancy.approve']),
+      );
+
+      await controller.getVacancies({}, { id: 'ceo-user-1', email: 'ceo@elscore.com' });
+
+      expect(mockVacancyService.getVacancies).toHaveBeenCalledWith(
+        {},
+        'ceo-user-1',
+        true, // isCeo = true
+      );
+    });
+
+    it('resolves isCeo = false for HR Manager holding vacancy.read without vacancy.approve', async () => {
+      mockRbacService.getPermissionsForUser.mockResolvedValue(
+        new Set(['vacancy.read', 'vacancy.create', 'vacancy.update']),
+      );
+
+      await controller.getVacancies({}, { id: 'hr-mgr-1', email: 'hr@elscore.com' });
+
+      expect(mockVacancyService.getVacancies).toHaveBeenCalledWith(
+        {},
+        'hr-mgr-1',
+        false, // isCeo = false
+      );
+    });
+
+    it('resolves isCeo = false for CO_FOUNDER holding analytics.ceo.read without vacancy.approve', async () => {
+      mockRbacService.getPermissionsForUser.mockResolvedValue(
+        new Set(['vacancy.read', 'analytics.ceo.read', 'report.view']),
+      );
+
+      await controller.getVacancies({}, { id: 'co-founder-1', email: 'cofounder@elscore.com' });
+
+      expect(mockVacancyService.getVacancies).toHaveBeenCalledWith(
+        {},
+        'co-founder-1',
+        false, // isCeo = false (CO_FOUNDER no longer receives CEO-level vacancy scoping!)
+      );
+    });
+
+    it('passes isCeo = false to getVacancy for CO_FOUNDER holding analytics.ceo.read', async () => {
+      mockRbacService.getPermissionsForUser.mockResolvedValue(
+        new Set(['vacancy.read', 'analytics.ceo.read']),
+      );
+
+      await controller.getVacancy('vac-1', { id: 'co-founder-1', email: 'cofounder@elscore.com' });
+
+      expect(mockVacancyService.getVacancy).toHaveBeenCalledWith(
+        'vac-1',
+        'co-founder-1',
+        false, // isCeo = false
+      );
+    });
+
+    it('passes isCeo = true to getVacancy for CEO holding vacancy.approve', async () => {
+      mockRbacService.getPermissionsForUser.mockResolvedValue(
+        new Set(['vacancy.read', 'vacancy.approve']),
+      );
+
+      await controller.getVacancy('vac-1', { id: 'ceo-user-1', email: 'ceo@elscore.com' });
+
+      expect(mockVacancyService.getVacancy).toHaveBeenCalledWith(
+        'vac-1',
+        'ceo-user-1',
+        true, // isCeo = true
+      );
     });
   });
 });

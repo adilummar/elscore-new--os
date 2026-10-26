@@ -813,7 +813,7 @@ describe('CandidateService', () => {
 
       const revised = await service.reviseOffer(
         mockOffer.id,
-        { offeredSalary: 85000 },
+        { offeredSalary: 75000 },
         mockUser1.id,
       );
 
@@ -823,7 +823,7 @@ describe('CandidateService', () => {
           data: expect.objectContaining({
             version: 2,
             status: OfferStatus.DRAFT,
-            offeredSalary: new Prisma.Decimal(85000),
+            offeredSalary: new Prisma.Decimal(75000),
           }),
         }),
       );
@@ -844,7 +844,7 @@ describe('CandidateService', () => {
       });
 
       await expect(
-        service.reviseOffer(mockOffer.id, { offeredSalary: 90000 }, mockUser1.id),
+        service.reviseOffer(mockOffer.id, { offeredSalary: 75000 }, mockUser1.id),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -907,9 +907,233 @@ describe('CandidateService', () => {
         return callback(tx);
       });
 
-      await service.reviseOffer(mockOffer.id, { offeredSalary: 82000 }, mockUser1.id);
+      await service.reviseOffer(mockOffer.id, { offeredSalary: 78000 }, mockUser1.id);
 
       expect(lockCalls).toEqual(['application-lock', 'offer-lock']);
+    });
+
+    describe('Policy B: Approved Vacancy Salary Cap Enforcement', () => {
+      it('creates offer successfully when offeredSalary is within vacancy budgetMax', async () => {
+        prisma.jobApplication.findUnique.mockResolvedValueOnce({
+          ...mockApplication,
+          status: ApplicationStatus.APPLIED,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'INR',
+          },
+        });
+        prisma.jobOffer.findFirst.mockResolvedValueOnce(null);
+
+        const offer = await service.createOffer(
+          mockApplication.id,
+          {
+            roleTitle: 'Senior Academic Counselor',
+            offeredSalary: 75000,
+            currency: 'INR',
+            proposedStartDate: '2026-12-01',
+            offerExpiryDate: '2026-11-20',
+          },
+          mockUser1.id,
+        );
+
+        expect(offer).toBeDefined();
+        expect(prisma.jobOffer.create).toHaveBeenCalled();
+      });
+
+      it('rejects createOffer when offeredSalary exceeds vacancy budgetMax', async () => {
+        prisma.jobApplication.findUnique.mockResolvedValueOnce({
+          ...mockApplication,
+          status: ApplicationStatus.APPLIED,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'INR',
+          },
+        });
+        prisma.jobOffer.findFirst.mockResolvedValueOnce(null);
+
+        await expect(
+          service.createOffer(
+            mockApplication.id,
+            {
+              roleTitle: 'Senior Academic Counselor',
+              offeredSalary: 85000, // Exceeds 80000 cap!
+              currency: 'INR',
+              proposedStartDate: '2026-12-01',
+              offerExpiryDate: '2026-11-20',
+            },
+            mockUser1.id,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects createOffer when offer currency differs from vacancy currency', async () => {
+        prisma.jobApplication.findUnique.mockResolvedValueOnce({
+          ...mockApplication,
+          status: ApplicationStatus.APPLIED,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'INR',
+          },
+        });
+        prisma.jobOffer.findFirst.mockResolvedValueOnce(null);
+
+        await expect(
+          service.createOffer(
+            mockApplication.id,
+            {
+              roleTitle: 'Senior Academic Counselor',
+              offeredSalary: 1000,
+              currency: 'AED', // Mismatched currency
+              proposedStartDate: '2026-12-01',
+              offerExpiryDate: '2026-11-20',
+            },
+            mockUser1.id,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('permits createOffer when vacancy has no budgetMax configured', async () => {
+        prisma.jobApplication.findUnique.mockResolvedValueOnce({
+          ...mockApplication,
+          status: ApplicationStatus.APPLIED,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: null,
+            currency: 'INR',
+          },
+        });
+        prisma.jobOffer.findFirst.mockResolvedValueOnce(null);
+
+        const offer = await service.createOffer(
+          mockApplication.id,
+          {
+            roleTitle: 'Senior Academic Counselor',
+            offeredSalary: 120000,
+            currency: 'INR',
+            proposedStartDate: '2026-12-01',
+            offerExpiryDate: '2026-11-20',
+          },
+          mockUser1.id,
+        );
+
+        expect(offer).toBeDefined();
+        expect(prisma.jobOffer.create).toHaveBeenCalled();
+      });
+
+      it('rejects updateOffer when direct edit pushes offeredSalary above budgetMax', async () => {
+        prisma.jobOffer.findUnique.mockResolvedValueOnce({
+          ...mockOffer,
+          status: OfferStatus.DRAFT,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'INR',
+          },
+        });
+
+        await expect(
+          service.updateOffer(
+            mockOffer.id,
+            { offeredSalary: 95000 },
+            mockUser1.id,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects reviseOffer when renegotiated salary pushes offeredSalary above budgetMax', async () => {
+        prisma.jobOffer.findUnique.mockResolvedValueOnce({
+          ...mockOffer,
+          status: OfferStatus.SENT,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'INR',
+          },
+        });
+
+        await expect(
+          service.reviseOffer(
+            mockOffer.id,
+            { offeredSalary: 90000 },
+            mockUser1.id,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects reviewOffer approval when vacancy budget was lowered below offeredSalary while offer was pending', async () => {
+        prisma.jobOffer.findUnique.mockResolvedValue({
+          ...mockOffer,
+          offeredSalary: new Prisma.Decimal(75000),
+          currency: 'INR',
+          status: OfferStatus.PENDING_APPROVAL,
+          requestedById: mockUser1.id,
+          lastModifiedById: mockUser1.id,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(70000), // Budget lowered to 70k, below 75k offer!
+            currency: 'INR',
+          },
+        });
+
+        await expect(
+          service.reviewOffer(
+            mockOffer.id,
+            { action: 'APPROVE', approvalNotes: 'Attempting to approve over-cap' },
+            mockUser2.id,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('approves reviewOffer when offeredSalary remains within current vacancy budgetMax', async () => {
+        prisma.jobOffer.findUnique.mockResolvedValue({
+          ...mockOffer,
+          offeredSalary: new Prisma.Decimal(75000),
+          currency: 'INR',
+          status: OfferStatus.PENDING_APPROVAL,
+          requestedById: mockUser1.id,
+          lastModifiedById: mockUser1.id,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'INR',
+          },
+        });
+
+        const approved = await service.reviewOffer(
+          mockOffer.id,
+          { action: 'APPROVE', approvalNotes: 'Within approved limits' },
+          mockUser2.id,
+        );
+
+        expect(approved.status).toBe(OfferStatus.APPROVED);
+      });
+
+      it('rejects reviewOffer approval if vacancy currency differs from offer currency', async () => {
+        prisma.jobOffer.findUnique.mockResolvedValue({
+          ...mockOffer,
+          offeredSalary: new Prisma.Decimal(75000),
+          currency: 'INR',
+          status: OfferStatus.PENDING_APPROVAL,
+          requestedById: mockUser1.id,
+          lastModifiedById: mockUser1.id,
+          vacancy: {
+            ...mockVacancy,
+            budgetMax: new Prisma.Decimal(80000),
+            currency: 'AED', // Currency mismatch
+          },
+        });
+
+        await expect(
+          service.reviewOffer(
+            mockOffer.id,
+            { action: 'APPROVE', approvalNotes: 'Approval with currency mismatch' },
+            mockUser2.id,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
     });
   });
 });

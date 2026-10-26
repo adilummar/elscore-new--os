@@ -43,7 +43,6 @@ import {
   uploadOnboardingDocumentAction,
   verifyOnboardingDocumentAction,
 } from '../actions';
-import { SettingsNavigation } from '../SettingsNavigation';
 
 export default function OnboardingPage() {
   const { hasPermission } = usePermissions();
@@ -342,8 +341,6 @@ export default function OnboardingPage() {
 
   return (
     <div className="space-y-6">
-      <SettingsNavigation />
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
