@@ -527,13 +527,15 @@ export default function VacanciesPage() {
       {/* Create Vacancy Modal */}
       <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} size="lg">
         <div className="space-y-4">
-          <h2 className="text-xl font-bold text-slate-900 mb-1 flex items-center gap-2">
-            <Plus className="w-5 h-5 text-brand-600" />
-            Create Workforce Vacancy
-          </h2>
-          <p className="text-xs text-slate-500 mb-6">
-            Initiate a workforce requisition. Initial status will be DRAFT for review.
-          </p>
+          <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-2 pr-10">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-brand-600" />
+              Create Workforce Vacancy
+            </h2>
+            <p className="text-xs text-slate-500">
+              Initiate a workforce requisition. Initial status will be DRAFT for review.
+            </p>
+          </div>
 
           <form onSubmit={handleCreateVacancy} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -783,7 +785,7 @@ export default function VacanciesPage() {
       {selectedVacancy && (
         <Modal isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)} size="lg">
           <div className="space-y-6">
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+            <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4 pt-1 pr-10">
               <div>
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm font-semibold bg-slate-100 text-slate-800 px-2 py-0.5 rounded">
