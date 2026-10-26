@@ -3,13 +3,17 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   Building,
   Calendar,
   CheckCircle2,
   Clock,
+  Eye,
   FileCheck,
   FileText,
   Filter,
+  History,
+  Info,
   Layers,
   Plus,
   RefreshCw,
@@ -37,6 +41,7 @@ import {
   getApplicationAction,
   getApplicationsAction,
   getCandidatesAction,
+  getOfferAction,
   getOffersAction,
   getVacanciesAction,
   recordInterviewFeedbackAction,
@@ -50,6 +55,16 @@ import {
   withdrawOfferAction,
 } from '../actions';
 
+const getDefaultDates = () => {
+  const today = new Date();
+  const plus7 = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const plus30 = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+  return {
+    offerExpiryDate: plus7.toISOString().split('T')[0],
+    proposedStartDate: plus30.toISOString().split('T')[0],
+  };
+};
+
 export default function CandidatesPage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
@@ -58,7 +73,9 @@ export default function CandidatesPage() {
 
   // Data states
   const [candidates, setCandidates] = React.useState<any[]>([]);
+  const [allCandidates, setAllCandidates] = React.useState<any[]>([]);
   const [applications, setApplications] = React.useState<any[]>([]);
+  const [allApplications, setAllApplications] = React.useState<any[]>([]);
   const [offers, setOffers] = React.useState<any[]>([]);
   const [openVacancies, setOpenVacancies] = React.useState<any[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -80,6 +97,7 @@ export default function CandidatesPage() {
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = React.useState(false);
   const [isStageModalOpen, setIsStageModalOpen] = React.useState(false);
   const [isOfferModalOpen, setIsOfferModalOpen] = React.useState(false);
+  const [isOfferDetailsModalOpen, setIsOfferDetailsModalOpen] = React.useState(false);
   const [isReviewOfferModalOpen, setIsReviewOfferModalOpen] = React.useState(false);
   const [isResponseModalOpen, setIsResponseModalOpen] = React.useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = React.useState(false);
@@ -89,6 +107,7 @@ export default function CandidatesPage() {
   const [selectedApplication, setSelectedApplication] = React.useState<any | null>(null);
   const [selectedInterview, setSelectedInterview] = React.useState<any | null>(null);
   const [selectedOffer, setSelectedOffer] = React.useState<any | null>(null);
+  const [detailedOffer, setDetailedOffer] = React.useState<any | null>(null);
 
   // Form states
   const [candidateForm, setCandidateForm] = React.useState({
@@ -197,8 +216,22 @@ export default function CandidatesPage() {
         }
       }
 
-      // Fetch open vacancies for application modal
-      const vacRes = await getVacanciesAction('status=OPEN');
+      // Pre-load candidates, applications, and vacancies for modals so selectors are never empty
+      const [allCandRes, allAppRes, vacRes] = await Promise.all([
+        getCandidatesAction('limit=100'),
+        getApplicationsAction('limit=100'),
+        getVacanciesAction('status=OPEN'),
+      ]);
+
+      if (allCandRes?.items) {
+        setAllCandidates(allCandRes.items);
+        if (activeTab !== 'candidates' && candidates.length === 0) {
+          setCandidates(allCandRes.items);
+        }
+      }
+      if (allAppRes?.items) {
+        setAllApplications(allAppRes.items);
+      }
       if (vacRes?.items) {
         setOpenVacancies(vacRes.items);
       }
@@ -207,7 +240,7 @@ export default function CandidatesPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, search, statusFilter, stageFilter]);
+  }, [activeTab, search, statusFilter, stageFilter, candidates.length]);
 
   React.useEffect(() => {
     loadData();
@@ -219,7 +252,11 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await createCandidateAction(candidateForm);
+      const res = await createCandidateAction(candidateForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to create candidate');
+        return;
+      }
       setSuccessMessage('Candidate profile successfully created');
       setIsCandidateModalOpen(false);
       setCandidateForm({ fullName: '', email: '', phone: '', source: 'DIRECT_APPLICATION', referralDetails: '', notes: '' });
@@ -236,10 +273,14 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await createApplicationAction(applyForm.vacancyId, {
+      const res = await createApplicationAction(applyForm.vacancyId, {
         candidateId: applyForm.candidateId,
         coverLetter: applyForm.coverLetter,
       });
+      if (!res.success) {
+        setError(res.error || 'Failed to submit application');
+        return;
+      }
       setSuccessMessage('Application successfully submitted');
       setIsApplyModalOpen(false);
       setApplyForm({ candidateId: '', vacancyId: '', coverLetter: '' });
@@ -253,6 +294,7 @@ export default function CandidatesPage() {
 
   const handleViewApplicationDetails = async (id: string) => {
     setActionLoading(true);
+    setError(null);
     try {
       const app = await getApplicationAction(id);
       setSelectedApplication(app);
@@ -270,7 +312,11 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await scheduleInterviewAction(selectedApplication.id, interviewForm);
+      const res = await scheduleInterviewAction(selectedApplication.id, interviewForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to schedule interview');
+        return;
+      }
       setSuccessMessage('Interview scheduled successfully');
       setIsInterviewModalOpen(false);
       const app = await getApplicationAction(selectedApplication.id);
@@ -289,7 +335,11 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await recordInterviewFeedbackAction(selectedInterview.id, feedbackForm);
+      const res = await recordInterviewFeedbackAction(selectedInterview.id, feedbackForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to record feedback');
+        return;
+      }
       setSuccessMessage('Evaluation feedback recorded');
       setIsFeedbackModalOpen(false);
       if (selectedApplication) {
@@ -310,7 +360,11 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await transitionApplicationStageAction(selectedApplication.id, stageForm);
+      const res = await transitionApplicationStageAction(selectedApplication.id, stageForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to update stage');
+        return;
+      }
       setSuccessMessage('Application stage updated');
       setIsStageModalOpen(false);
       const app = await getApplicationAction(selectedApplication.id);
@@ -323,20 +377,106 @@ export default function CandidatesPage() {
     }
   };
 
+  // Open Prepare Offer modal directly or from application details
+  const openPrepareOfferModal = (app?: any) => {
+    const dates = getDefaultDates();
+    if (app) {
+      setSelectedApplication(app);
+      setOfferForm({
+        roleTitle: app.vacancy?.title || '',
+        employmentType: app.vacancy?.employmentType || 'FULL_TIME',
+        workMode: app.vacancy?.workMode || 'ON_SITE',
+        location: app.vacancy?.location || '',
+        offeredSalary: app.vacancy?.budgetMax ? String(app.vacancy.budgetMax) : '',
+        currency: app.vacancy?.currency || 'INR',
+        salaryPeriod: 'ANNUAL',
+        proposedStartDate: dates.proposedStartDate,
+        offerExpiryDate: dates.offerExpiryDate,
+        notes: '',
+      });
+    } else {
+      setSelectedApplication(null);
+      setOfferForm({
+        roleTitle: '',
+        employmentType: 'FULL_TIME',
+        workMode: 'ON_SITE',
+        location: '',
+        offeredSalary: '',
+        currency: 'INR',
+        salaryPeriod: 'ANNUAL',
+        proposedStartDate: dates.proposedStartDate,
+        offerExpiryDate: dates.offerExpiryDate,
+        notes: '',
+      });
+    }
+    setIsOfferModalOpen(true);
+  };
+
+  const handleSelectApplicationForOffer = (appId: string) => {
+    const found = allApplications.find((a) => a.id === appId);
+    if (found) {
+      setSelectedApplication(found);
+      const dates = getDefaultDates();
+      setOfferForm({
+        roleTitle: found.vacancy?.title || '',
+        employmentType: found.vacancy?.employmentType || 'FULL_TIME',
+        workMode: found.vacancy?.workMode || 'ON_SITE',
+        location: found.vacancy?.location || '',
+        offeredSalary: found.vacancy?.budgetMax ? String(found.vacancy.budgetMax) : '',
+        currency: found.vacancy?.currency || 'INR',
+        salaryPeriod: 'ANNUAL',
+        proposedStartDate: dates.proposedStartDate,
+        offerExpiryDate: dates.offerExpiryDate,
+        notes: '',
+      });
+    }
+  };
+
   const handleCreateOffer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedApplication) return;
+    if (!selectedApplication) {
+      setError('Please select an eligible application to prepare an offer.');
+      return;
+    }
+
+    // Client-side date order validation
+    if (offerForm.offerExpiryDate > offerForm.proposedStartDate) {
+      setError('Invalid Date Order: Offer expiry date (candidate acceptance deadline) cannot be after proposed start date.');
+      return;
+    }
+
+    // Client-side salary cap validation
+    const offeredSalaryNum = Number(offerForm.offeredSalary);
+    if (isNaN(offeredSalaryNum) || offeredSalaryNum < 0) {
+      setError('Offered salary must be a valid non-negative number.');
+      return;
+    }
+
+    const budgetMax = selectedApplication.vacancy?.budgetMax ? Number(selectedApplication.vacancy.budgetMax) : null;
+    if (budgetMax !== null && offeredSalaryNum > budgetMax) {
+      setError(
+        `Offered salary (${offeredSalaryNum.toLocaleString()} ${offerForm.currency}) exceeds approved vacancy budget maximum (${budgetMax.toLocaleString()} ${selectedApplication.vacancy.currency || offerForm.currency}) for vacancy ${selectedApplication.vacancy.businessId}.`,
+      );
+      return;
+    }
+
     setActionLoading(true);
     setError(null);
     try {
-      await createOfferAction(selectedApplication.id, {
+      const res = await createOfferAction(selectedApplication.id, {
         ...offerForm,
-        offeredSalary: Number(offerForm.offeredSalary),
+        offeredSalary: offeredSalaryNum,
       });
-      setSuccessMessage('Draft offer prepared successfully');
+      if (!res.success) {
+        setError(res.error || 'Failed to prepare offer');
+        return;
+      }
+      setSuccessMessage('Draft formal job offer prepared successfully');
       setIsOfferModalOpen(false);
-      const app = await getApplicationAction(selectedApplication.id);
-      setSelectedApplication(app);
+      if (selectedApplication?.id) {
+        const app = await getApplicationAction(selectedApplication.id);
+        setSelectedApplication(app);
+      }
       loadData();
     } catch (err: any) {
       setError(err?.message || 'Failed to create offer');
@@ -348,11 +488,31 @@ export default function CandidatesPage() {
   const handleReviewOffer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOffer) return;
+
+    // Strict Anti-Self-Approval check
+    const isSelfApproval =
+      user?.id && (selectedOffer.requestedById === user.id || selectedOffer.lastModifiedById === user.id);
+    if (isSelfApproval && reviewOfferForm.action === 'APPROVE') {
+      setError(
+        'Self-approval is prohibited: you cannot approve or review a job offer you requested or modified. Another authorized manager must review this offer.',
+      );
+      return;
+    }
+
+    if (reviewOfferForm.action === 'REJECT' && !reviewOfferForm.approvalNotes?.trim()) {
+      setError('A rejection rationale is required when rejecting a job offer.');
+      return;
+    }
+
     setActionLoading(true);
     setError(null);
     try {
-      await reviewOfferAction(selectedOffer.id, reviewOfferForm);
-      setSuccessMessage(`Offer ${reviewOfferForm.action.toLowerCase()}d successfully`);
+      const res = await reviewOfferAction(selectedOffer.id, reviewOfferForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to review offer');
+        return;
+      }
+      setSuccessMessage(`Offer ${selectedOffer.businessId} ${reviewOfferForm.action.toLowerCase()}d successfully`);
       setIsReviewOfferModalOpen(false);
       loadData();
     } catch (err: any) {
@@ -368,7 +528,11 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await recordOfferResponseAction(selectedOffer.id, responseForm);
+      const res = await recordOfferResponseAction(selectedOffer.id, responseForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to record response');
+        return;
+      }
       setSuccessMessage('Candidate response recorded successfully');
       setIsResponseModalOpen(false);
       loadData();
@@ -385,7 +549,11 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await withdrawOfferAction(selectedOffer.id, withdrawForm);
+      const res = await withdrawOfferAction(selectedOffer.id, withdrawForm);
+      if (!res.success) {
+        setError(res.error || 'Failed to withdraw offer');
+        return;
+      }
       setSuccessMessage('Offer withdrawn successfully');
       setIsWithdrawModalOpen(false);
       loadData();
@@ -399,14 +567,38 @@ export default function CandidatesPage() {
   const handleReviseOffer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOffer) return;
+
+    if (reviseOfferForm.offerExpiryDate > reviseOfferForm.proposedStartDate) {
+      setError('Invalid Date Order: Offer expiry date cannot be after proposed start date.');
+      return;
+    }
+
+    const revisedSalaryNum = Number(reviseOfferForm.offeredSalary);
+    if (isNaN(revisedSalaryNum) || revisedSalaryNum < 0) {
+      setError('Revised salary must be a valid non-negative number.');
+      return;
+    }
+
+    const budgetMax = selectedOffer.vacancy?.budgetMax ? Number(selectedOffer.vacancy.budgetMax) : null;
+    if (budgetMax !== null && revisedSalaryNum > budgetMax) {
+      setError(
+        `Revised salary (${revisedSalaryNum.toLocaleString()} ${reviseOfferForm.currency}) exceeds approved vacancy budget maximum (${budgetMax.toLocaleString()} ${selectedOffer.vacancy.currency || reviseOfferForm.currency}) for vacancy ${selectedOffer.vacancy.businessId}.`,
+      );
+      return;
+    }
+
     setActionLoading(true);
     setError(null);
     try {
-      await reviseOfferAction(selectedOffer.id, {
+      const res = await reviseOfferAction(selectedOffer.id, {
         ...reviseOfferForm,
-        offeredSalary: Number(reviseOfferForm.offeredSalary),
+        offeredSalary: revisedSalaryNum,
       });
-      setSuccessMessage(`Offer ${selectedOffer.businessId} revised to next version successfully (pending approval)`);
+      if (!res.success) {
+        setError(res.error || 'Failed to revise offer');
+        return;
+      }
+      setSuccessMessage(`Offer ${selectedOffer.businessId} revised to version ${((selectedOffer.version || 1) + 1)} successfully (reset to Draft)`);
       setIsReviseOfferModalOpen(false);
       loadData();
     } catch (err: any) {
@@ -420,11 +612,31 @@ export default function CandidatesPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await expireOfferAction(offerId);
+      const res = await expireOfferAction(offerId);
+      if (!res.success) {
+        setError(res.error || 'Failed to expire offer');
+        return;
+      }
       setSuccessMessage('Offer marked as expired');
       loadData();
     } catch (err: any) {
       setError(err?.message || 'Failed to expire offer');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleViewOfferDetails = async (offer: any) => {
+    setSelectedOffer(offer);
+    setActionLoading(true);
+    setError(null);
+    try {
+      const fullOffer = await getOfferAction(offer.id);
+      setDetailedOffer(fullOffer || offer);
+      setIsOfferDetailsModalOpen(true);
+    } catch (err: any) {
+      setDetailedOffer(offer);
+      setIsOfferDetailsModalOpen(true);
     } finally {
       setActionLoading(false);
     }
@@ -450,10 +662,10 @@ export default function CandidatesPage() {
                 className="flex items-center gap-1.5"
               >
                 <UserPlus className="w-4 h-4" />
-                New Candidate
+                Add Candidate
               </Button>
               <Button
-                variant="primary"
+                variant="outline"
                 onClick={() => setIsApplyModalOpen(true)}
                 className="flex items-center gap-1.5"
               >
@@ -462,30 +674,49 @@ export default function CandidatesPage() {
               </Button>
             </>
           )}
+
+          {hasPermission('offer.manage') && (
+            <Button
+              variant="primary"
+              onClick={() => openPrepareOfferModal()}
+              className="flex items-center gap-1.5"
+            >
+              <FileText className="w-4 h-4" />
+              Prepare Job Offer
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Feedback Alerts */}
+      {/* Notifications */}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between text-red-700 text-sm">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-start justify-between">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <span className="font-semibold block">Action Incomplete</span>
+              {error}
+            </div>
           </div>
-          <button onClick={() => setError(null)} className="font-bold ml-2">×</button>
-        </div>
-      )}
-      {successMessage && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-emerald-700 text-sm">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-            <span>{successMessage}</span>
-          </div>
-          <button onClick={() => setSuccessMessage(null)} className="font-bold ml-2">×</button>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-800 text-xs font-semibold">
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Sub-Tabs */}
+      {successMessage && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+          <button onClick={() => setSuccessMessage(null)} className="text-emerald-500 hover:text-emerald-800 text-xs font-semibold">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Tab Navigation */}
       <div className="flex border-b border-slate-200 gap-6">
         <button
           onClick={() => { setActiveTab('applications'); setSearch(''); setStatusFilter(''); }}
@@ -540,7 +771,7 @@ export default function CandidatesPage() {
                 <select
                   value={stageFilter}
                   onChange={(e) => setStageFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white text-slate-900"
                 >
                   <option value="">All Stages</option>
                   <option value="SCREENING">Screening</option>
@@ -556,7 +787,7 @@ export default function CandidatesPage() {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white text-slate-900"
                 >
                   <option value="">All Statuses</option>
                   <option value="APPLIED">Applied</option>
@@ -574,7 +805,7 @@ export default function CandidatesPage() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white text-slate-900"
               >
                 <option value="">All Offer Statuses</option>
                 <option value="DRAFT">Draft</option>
@@ -595,7 +826,7 @@ export default function CandidatesPage() {
         </div>
       </Card>
 
-      {/* Main Content Area */}
+      {/* Main Content Area: Applications */}
       {activeTab === 'applications' && (
         <Card>
           <Table>
@@ -648,7 +879,21 @@ export default function CandidatesPage() {
                     <TableCell className="text-xs text-slate-500">
                       {new Date(app.appliedAt).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-1">
+                      {hasPermission('offer.manage') &&
+                        app.status !== 'REJECTED' &&
+                        app.status !== 'WITHDRAWN' &&
+                        app.status !== 'ACCEPTED' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openPrepareOfferModal(app)}
+                            className="text-brand-600 border-brand-200 hover:bg-brand-50"
+                          >
+                            <FileText className="w-3.5 h-3.5 mr-1" />
+                            Offer
+                          </Button>
+                        )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -665,6 +910,7 @@ export default function CandidatesPage() {
         </Card>
       )}
 
+      {/* Main Content Area: Candidates */}
       {activeTab === 'candidates' && (
         <Card>
           <Table>
@@ -714,6 +960,7 @@ export default function CandidatesPage() {
         </Card>
       )}
 
+      {/* Main Content Area: Job Offers */}
       {activeTab === 'offers' && hasPermission('offer.read') && (
         <Card>
           <Table>
@@ -739,14 +986,19 @@ export default function CandidatesPage() {
               ) : offers.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-8 text-slate-500">
-                    No job offers found.
+                    No job offers found. Use &quot;Prepare Job Offer&quot; above to issue an offer.
                   </TableCell>
                 </TableRow>
               ) : (
                 offers.map((off) => (
                   <TableRow key={off.id}>
-                    <TableCell className="font-mono font-medium text-xs text-brand-600">
-                      {off.businessId} {off.version > 1 && <span className="text-slate-400 font-sans">(v{off.version})</span>}
+                    <TableCell>
+                      <button
+                        onClick={() => handleViewOfferDetails(off)}
+                        className="font-mono font-semibold text-xs text-brand-600 hover:text-brand-800 underline text-left"
+                      >
+                        {off.businessId} {off.version > 1 && <span className="text-slate-500 font-sans">(v{off.version})</span>}
+                      </button>
                     </TableCell>
                     <TableCell className="font-medium text-slate-900">
                       {off.application?.candidate?.fullName || '—'}
@@ -761,18 +1013,38 @@ export default function CandidatesPage() {
                     <TableCell>
                       <StatusBadge status={off.status} />
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
+                    <TableCell className="text-right space-x-1 whitespace-nowrap">
+                      {/* View Details Button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewOfferDetails(off)}
+                        title="View Full Offer Details & Version History"
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        Details
+                      </Button>
+
+                      {/* DRAFT -> Submit for Approval */}
                       {off.status === 'DRAFT' && hasPermission('offer.manage') && (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={async () => {
+                            setActionLoading(true);
+                            setError(null);
                             try {
-                              await submitOfferAction(off.id);
-                              setSuccessMessage('Offer submitted for approval');
+                              const res = await submitOfferAction(off.id);
+                              if (!res.success) {
+                                setError(res.error || 'Failed to submit offer for approval');
+                                return;
+                              }
+                              setSuccessMessage(`Offer ${off.businessId} submitted for management approval`);
                               loadData();
                             } catch (e: any) {
                               setError(e?.message);
+                            } finally {
+                              setActionLoading(false);
                             }
                           }}
                         >
@@ -780,6 +1052,7 @@ export default function CandidatesPage() {
                         </Button>
                       )}
 
+                      {/* PENDING_APPROVAL -> Review (Approve / Reject) */}
                       {off.status === 'PENDING_APPROVAL' && hasPermission('offer.approve') && (
                         <Button
                           variant="outline"
@@ -788,29 +1061,41 @@ export default function CandidatesPage() {
                             setSelectedOffer(off);
                             setIsReviewOfferModalOpen(true);
                           }}
+                          className="text-amber-700 border-amber-300 hover:bg-amber-50"
                         >
                           Review
                         </Button>
                       )}
 
+                      {/* APPROVED -> Send Offer to Candidate */}
                       {off.status === 'APPROVED' && hasPermission('offer.status.manage') && (
                         <Button
-                          variant="outline"
+                          variant="primary"
                           size="sm"
                           onClick={async () => {
+                            setActionLoading(true);
+                            setError(null);
                             try {
-                              await sendOfferAction(off.id);
-                              setSuccessMessage('Offer recorded as sent');
+                              const res = await sendOfferAction(off.id);
+                              if (!res.success) {
+                                setError(res.error || 'Failed to record offer as sent');
+                                return;
+                              }
+                              setSuccessMessage(`Offer ${off.businessId} marked as SENT to candidate`);
                               loadData();
                             } catch (e: any) {
                               setError(e?.message);
+                            } finally {
+                              setActionLoading(false);
                             }
                           }}
                         >
+                          <Send className="w-3.5 h-3.5 mr-1" />
                           Send
                         </Button>
                       )}
 
+                      {/* SENT -> Record Response */}
                       {off.status === 'SENT' && hasPermission('offer.status.manage') && (
                         <Button
                           variant="primary"
@@ -824,6 +1109,7 @@ export default function CandidatesPage() {
                         </Button>
                       )}
 
+                      {/* Revise Offer */}
                       {['APPROVED', 'SENT', 'DECLINED', 'EXPIRED'].includes(off.status) && hasPermission('offer.manage') && (
                         <Button
                           variant="outline"
@@ -848,6 +1134,7 @@ export default function CandidatesPage() {
                         </Button>
                       )}
 
+                      {/* Expire Offer */}
                       {off.status === 'SENT' && hasPermission('offer.status.manage') && (
                         <Button
                           variant="outline"
@@ -858,6 +1145,7 @@ export default function CandidatesPage() {
                         </Button>
                       )}
 
+                      {/* Withdraw Offer */}
                       {['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SENT'].includes(off.status) && hasPermission('offer.status.manage') && (
                         <Button
                           variant="outline"
@@ -866,6 +1154,7 @@ export default function CandidatesPage() {
                             setSelectedOffer(off);
                             setIsWithdrawModalOpen(true);
                           }}
+                          className="text-red-600 border-red-200 hover:bg-red-50"
                         >
                           Withdraw
                         </Button>
@@ -879,13 +1168,17 @@ export default function CandidatesPage() {
         </Card>
       )}
 
+      {/* ─────────────────── MODALS ─────────────────── */}
+
       {/* Modal: Create Candidate */}
       <Modal
         isOpen={isCandidateModalOpen}
         onClose={() => setIsCandidateModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Create Recruitment Candidate</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleCreateCandidate} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Full Name *</label>
@@ -971,8 +1264,10 @@ export default function CandidatesPage() {
         isOpen={isApplyModalOpen}
         onClose={() => setIsApplyModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Submit Candidate Application</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleCreateApplication} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Select Open Vacancy *</label>
@@ -982,10 +1277,10 @@ export default function CandidatesPage() {
                 onChange={(e) => setApplyForm({ ...applyForm, vacancyId: e.target.value })}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
-                <option value="">-- Choose Vacancy --</option>
+                <option value="">-- Choose Open Vacancy --</option>
                 {openVacancies.map((v) => (
                   <option key={v.id} value={v.id}>
-                    {v.title} ({v.businessId})
+                    {v.title} ({v.businessId}) — {v.department?.name || 'Department'}
                   </option>
                 ))}
               </select>
@@ -1000,12 +1295,15 @@ export default function CandidatesPage() {
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
                 <option value="">-- Choose Candidate --</option>
-                {candidates.map((c) => (
+                {(allCandidates.length > 0 ? allCandidates : candidates).map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.fullName} ({c.email})
+                    {c.fullName} ({c.email}) [{c.businessId}]
                   </option>
                 ))}
               </select>
+              {allCandidates.length === 0 && candidates.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">No candidate profiles found. Please create a candidate profile first.</p>
+              )}
             </div>
 
             <div>
@@ -1038,20 +1336,22 @@ export default function CandidatesPage() {
           onClose={() => setIsDetailModalOpen(false)}
           size="lg"
         >
-          <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+          <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
             <h2 className="text-xl font-bold text-slate-900">Application Details — {selectedApplication.businessId}</h2>
+          </div>
+          <div className="space-y-6 max-h-[75vh] overflow-y-auto px-1">
             {/* Candidate & Vacancy Summary */}
-            <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg text-sm">
+            <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm">
               <div>
                 <span className="text-xs font-semibold text-slate-500 uppercase">Candidate</span>
-                <div className="font-semibold text-slate-900">{selectedApplication.candidate.fullName}</div>
-                <div className="text-slate-600">{selectedApplication.candidate.email}</div>
-                <div className="text-slate-500">{selectedApplication.candidate.phone || 'No phone'}</div>
+                <div className="font-semibold text-slate-900">{selectedApplication.candidate?.fullName}</div>
+                <div className="text-slate-600">{selectedApplication.candidate?.email}</div>
+                <div className="text-slate-500">{selectedApplication.candidate?.phone || 'No phone'}</div>
               </div>
               <div>
                 <span className="text-xs font-semibold text-slate-500 uppercase">Target Vacancy</span>
-                <div className="font-semibold text-slate-900">{selectedApplication.vacancy.title}</div>
-                <div className="text-slate-600">{selectedApplication.vacancy.department?.name || 'Department'}</div>
+                <div className="font-semibold text-slate-900">{selectedApplication.vacancy?.title}</div>
+                <div className="text-slate-600">{selectedApplication.vacancy?.department?.name || 'Department'}</div>
                 <div className="mt-1 flex items-center gap-2">
                   <span className="text-xs text-slate-500">Stage:</span>
                   <span className="font-semibold">{selectedApplication.stage}</span>
@@ -1092,30 +1392,19 @@ export default function CandidatesPage() {
                 </Button>
               )}
 
-              {hasPermission('offer.manage') && selectedApplication.status !== 'REJECTED' && (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => {
-                    setOfferForm({
-                      roleTitle: selectedApplication.vacancy.title,
-                      employmentType: 'FULL_TIME',
-                      workMode: 'ON_SITE',
-                      location: '',
-                      offeredSalary: '',
-                      currency: 'INR',
-                      salaryPeriod: 'ANNUAL',
-                      proposedStartDate: '',
-                      offerExpiryDate: '',
-                      notes: '',
-                    });
-                    setIsOfferModalOpen(true);
-                  }}
-                >
-                  <FileText className="w-3.5 h-3.5 mr-1" />
-                  Prepare Offer
-                </Button>
-              )}
+              {hasPermission('offer.manage') &&
+                selectedApplication.status !== 'REJECTED' &&
+                selectedApplication.status !== 'WITHDRAWN' &&
+                selectedApplication.status !== 'ACCEPTED' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={() => openPrepareOfferModal(selectedApplication)}
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1" />
+                    Prepare Offer
+                  </Button>
+                )}
             </div>
 
             {/* Scheduled Interviews */}
@@ -1190,8 +1479,10 @@ export default function CandidatesPage() {
         isOpen={isInterviewModalOpen}
         onClose={() => setIsInterviewModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Schedule Candidate Interview</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleScheduleInterview} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Interview Type</label>
@@ -1266,8 +1557,10 @@ export default function CandidatesPage() {
         isOpen={isFeedbackModalOpen}
         onClose={() => setIsFeedbackModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Record Interview Evaluation Feedback</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleRecordFeedback} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Recommendation Outcome *</label>
@@ -1327,8 +1620,10 @@ export default function CandidatesPage() {
         isOpen={isStageModalOpen}
         onClose={() => setIsStageModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Transition Application Stage</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleTransitionStage} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Target Stage</label>
@@ -1406,15 +1701,74 @@ export default function CandidatesPage() {
         onClose={() => setIsOfferModalOpen(false)}
         size="lg"
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Prepare Formal Job Offer</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Configure approved compensation, position terms, and candidate acceptance window.
+          </p>
+        </div>
+
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleCreateOffer} className="space-y-4">
+            {/* If opened from Job Offers tab without a selected application, allow choosing an eligible application */}
+            {!selectedApplication ? (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                  Select Candidate Application *
+                </label>
+                <select
+                  required
+                  value=""
+                  onChange={(e) => handleSelectApplicationForOffer(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                >
+                  <option value="">-- Choose Candidate Application to Issue Offer --</option>
+                  {allApplications
+                    .filter((a) => a.status !== 'REJECTED' && a.status !== 'WITHDRAWN' && a.status !== 'ACCEPTED')
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.candidate?.fullName} — {a.vacancy?.title} ({a.businessId})
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-slate-500">
+                  Select an active application to automatically load candidate, vacancy, and budget constraints.
+                </p>
+              </div>
+            ) : (
+              /* Display selected candidate and target vacancy context */
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-slate-500 uppercase font-semibold block text-[11px]">Candidate</span>
+                    <span className="font-semibold text-slate-900 text-sm">{selectedApplication.candidate?.fullName}</span>
+                    <span className="text-slate-600 block text-xs">{selectedApplication.candidate?.email}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-500 uppercase font-semibold block text-[11px]">Target Requisition</span>
+                    <span className="font-semibold text-slate-900 text-sm">{selectedApplication.vacancy?.title}</span>
+                    <span className="text-slate-500 block font-mono text-[11px]">
+                      {selectedApplication.vacancy?.businessId} — {selectedApplication.vacancy?.department?.name || 'Department'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
+                  <span className="text-slate-600 font-medium">Approved Requisition Budget:</span>
+                  <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    {selectedApplication.vacancy?.budgetMin ? Number(selectedApplication.vacancy.budgetMin).toLocaleString() : '0'} – {selectedApplication.vacancy?.budgetMax ? Number(selectedApplication.vacancy.budgetMax).toLocaleString() : 'No Cap'} {selectedApplication.vacancy?.currency || 'INR'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Designation / Role Title *</label>
               <Input
                 required
                 value={offerForm.roleTitle}
                 onChange={(e) => setOfferForm({ ...offerForm, roleTitle: e.target.value })}
+                placeholder="e.g. Senior System Architect"
               />
             </div>
 
@@ -1446,15 +1800,79 @@ export default function CandidatesPage() {
               </div>
             </div>
 
+            {/* Live Budget Cap Enforcement Warning */}
+            {selectedApplication?.vacancy?.budgetMax &&
+              Number(offerForm.offeredSalary) > Number(selectedApplication.vacancy.budgetMax) && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-semibold block">Salary Cap Exceeded</span>
+                    Offered salary ({Number(offerForm.offeredSalary).toLocaleString()} {offerForm.currency}) exceeds approved vacancy budget maximum ({Number(selectedApplication.vacancy.budgetMax).toLocaleString()} {selectedApplication.vacancy.currency || offerForm.currency}). Organizational policy prohibits exceeding approved vacancy budgets.
+                  </div>
+                </div>
+              )}
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Salary Period</label>
+                <select
+                  value={offerForm.salaryPeriod}
+                  onChange={(e) => setOfferForm({ ...offerForm, salaryPeriod: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                >
+                  <option value="ANNUAL">Annual</option>
+                  <option value="MONTHLY">Monthly</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Employment Type</label>
+                <select
+                  value={offerForm.employmentType}
+                  onChange={(e) => setOfferForm({ ...offerForm, employmentType: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                >
+                  <option value="FULL_TIME">Full Time</option>
+                  <option value="PART_TIME">Part Time</option>
+                  <option value="CONTRACT">Contract</option>
+                  <option value="INTERNSHIP">Internship</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Work Mode</label>
+                <select
+                  value={offerForm.workMode}
+                  onChange={(e) => setOfferForm({ ...offerForm, workMode: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                >
+                  <option value="ON_SITE">On-Site</option>
+                  <option value="REMOTE">Remote</option>
+                  <option value="HYBRID">Hybrid</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Work Location</label>
+              <Input
+                value={offerForm.location}
+                onChange={(e) => setOfferForm({ ...offerForm, location: e.target.value })}
+                placeholder="e.g. Dubai Main Office / Academic Campus"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Proposed Start Date *</label>
                 <Input
                   type="date"
                   required
+                  min={new Date().toISOString().split('T')[0]}
                   value={offerForm.proposedStartDate}
                   onChange={(e) => setOfferForm({ ...offerForm, proposedStartDate: e.target.value })}
                 />
+                <span className="text-[11px] text-slate-500 mt-1 block">Expected first working day</span>
               </div>
 
               <div>
@@ -1462,11 +1880,27 @@ export default function CandidatesPage() {
                 <Input
                   type="date"
                   required
+                  min={new Date().toISOString().split('T')[0]}
+                  max={offerForm.proposedStartDate || undefined}
                   value={offerForm.offerExpiryDate}
                   onChange={(e) => setOfferForm({ ...offerForm, offerExpiryDate: e.target.value })}
                 />
+                <span className="text-[11px] text-slate-500 mt-1 block">Candidate acceptance deadline</span>
               </div>
             </div>
+
+            {/* Live Date Ordering Check */}
+            {offerForm.offerExpiryDate &&
+              offerForm.proposedStartDate &&
+              offerForm.offerExpiryDate > offerForm.proposedStartDate && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-semibold block">Invalid Date Order</span>
+                    Offer expiry date (deadline for candidate acceptance) cannot be after proposed start date.
+                  </div>
+                </div>
+              )}
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Offer Terms / Notes</label>
@@ -1475,7 +1909,7 @@ export default function CandidatesPage() {
                 onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 rows={3}
-                placeholder="Allowances, probationary requirements, joining incentives..."
+                placeholder="Allowances, probationary terms, joining incentives..."
               />
             </div>
 
@@ -1483,8 +1917,24 @@ export default function CandidatesPage() {
               <Button type="button" variant="outline" onClick={() => setIsOfferModalOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={actionLoading}>
-                Prepare Offer
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={
+                  actionLoading ||
+                  !selectedApplication ||
+                  Boolean(
+                    selectedApplication?.vacancy?.budgetMax &&
+                    Number(offerForm.offeredSalary) > Number(selectedApplication.vacancy.budgetMax),
+                  ) ||
+                  Boolean(
+                    offerForm.offerExpiryDate &&
+                    offerForm.proposedStartDate &&
+                    offerForm.offerExpiryDate > offerForm.proposedStartDate,
+                  )
+                }
+              >
+                {actionLoading ? 'Preparing...' : 'Prepare Draft Offer'}
               </Button>
             </div>
           </form>
@@ -1496,19 +1946,48 @@ export default function CandidatesPage() {
         isOpen={isReviewOfferModalOpen}
         onClose={() => setIsReviewOfferModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Review Job Offer — {selectedOffer?.businessId}</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleReviewOffer} className="space-y-4">
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-sm space-y-1">
-              <div>
-                <span className="text-slate-500 text-xs uppercase tracking-wider block font-semibold">Designation</span>
-                <span className="font-semibold text-slate-900">{selectedOffer?.roleTitle}</span>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-sm space-y-2">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-500 font-semibold uppercase block text-[11px]">Candidate</span>
+                  <span className="font-semibold text-slate-900">{selectedOffer?.application?.candidate?.fullName || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-semibold uppercase block text-[11px]">Requisition</span>
+                  <span className="font-semibold text-slate-900">{selectedOffer?.roleTitle}</span>
+                </div>
               </div>
-              <div className="pt-1">
-                <span className="text-slate-500 text-xs uppercase tracking-wider block font-semibold">Compensation</span>
-                <span className="font-semibold text-slate-900">{selectedOffer?.currency} {Number(selectedOffer?.offeredSalary).toLocaleString()}</span>
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                <span className="text-slate-600 text-xs font-medium">Proposed Compensation:</span>
+                <span className="font-semibold text-slate-900">
+                  {selectedOffer?.currency} {Number(selectedOffer?.offeredSalary).toLocaleString()} /{selectedOffer?.salaryPeriod?.toLowerCase() || 'yr'}
+                </span>
+              </div>
+              <div className="text-xs flex justify-between items-center text-slate-500">
+                <span>Requested By:</span>
+                <span>
+                  {selectedOffer?.requestedBy?.employee
+                    ? `${selectedOffer.requestedBy.employee.firstName} ${selectedOffer.requestedBy.employee.lastName}`
+                    : (selectedOffer?.requestedBy?.email || 'Recruiter')}
+                </span>
               </div>
             </div>
+
+            {/* Anti-Self-Approval Enforcement Check */}
+            {user?.id && (selectedOffer?.requestedById === user.id || selectedOffer?.lastModifiedById === user.id) && (
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-semibold block">Anti-Self-Approval Governance Enforced</span>
+                  You created or modified this job offer. Under EL SCORE OS governance policy, an independent authorized manager must review and approve this offer. You cannot self-approve.
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Decision *</label>
@@ -1517,14 +1996,14 @@ export default function CandidatesPage() {
                 onChange={(e) => setReviewOfferForm({ ...reviewOfferForm, action: e.target.value as any })}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
               >
-                <option value="APPROVE">Approve Offer</option>
-                <option value="REJECT">Reject Offer</option>
+                <option value="APPROVE">Approve Job Offer</option>
+                <option value="REJECT">Reject Job Offer (Revert to Draft)</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                {reviewOfferForm.action === 'REJECT' ? 'Rejection Reason *' : 'Approval Notes'}
+                {reviewOfferForm.action === 'REJECT' ? 'Rejection Rationale *' : 'Approval Notes'}
               </label>
               <textarea
                 required={reviewOfferForm.action === 'REJECT'}
@@ -1532,7 +2011,7 @@ export default function CandidatesPage() {
                 onChange={(e) => setReviewOfferForm({ ...reviewOfferForm, approvalNotes: e.target.value })}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
                 rows={3}
-                placeholder={reviewOfferForm.action === 'REJECT' ? 'Reason for rejecting this offer...' : 'Optional approval notes...'}
+                placeholder={reviewOfferForm.action === 'REJECT' ? 'Mandatory reason for rejecting this offer...' : 'Optional approval notes...'}
               />
             </div>
 
@@ -1543,12 +2022,186 @@ export default function CandidatesPage() {
               <Button
                 type="submit"
                 variant={reviewOfferForm.action === 'APPROVE' ? 'primary' : 'danger'}
-                disabled={actionLoading}
+                disabled={
+                  actionLoading ||
+                  (reviewOfferForm.action === 'APPROVE' &&
+                    Boolean(
+                      user?.id &&
+                      (selectedOffer?.requestedById === user.id || selectedOffer?.lastModifiedById === user.id),
+                    ))
+                }
               >
-                Confirm Decision
+                {actionLoading ? 'Processing...' : 'Confirm Decision'}
               </Button>
             </div>
           </form>
+        </div>
+      </Modal>
+
+      {/* Modal: Job Offer Details & Version Audit Trail */}
+      <Modal
+        isOpen={isOfferDetailsModalOpen}
+        onClose={() => setIsOfferDetailsModalOpen(false)}
+        size="lg"
+      >
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-900">Job Offer Details — {detailedOffer?.businessId}</h2>
+            {detailedOffer && <StatusBadge status={detailedOffer.status} />}
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Version {detailedOffer?.version || 1} &bull; Controlled compensation terms and lifecycle history.
+          </p>
+        </div>
+
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-6 text-sm">
+          {/* Candidate & Position Grid */}
+          <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+            <div>
+              <span className="text-slate-500 uppercase font-semibold block text-[11px]">Candidate</span>
+              <span className="font-semibold text-slate-900 text-sm block">
+                {detailedOffer?.application?.candidate?.fullName || '—'}
+              </span>
+              <span className="text-slate-600">{detailedOffer?.application?.candidate?.email}</span>
+              <span className="text-slate-500 block">{detailedOffer?.application?.candidate?.phone || 'No phone'}</span>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase font-semibold block text-[11px]">Target Requisition</span>
+              <span className="font-semibold text-slate-900 text-sm block">{detailedOffer?.roleTitle}</span>
+              <span className="text-slate-600 block">
+                {detailedOffer?.vacancy?.businessId} — {detailedOffer?.vacancy?.department?.name || 'Department'}
+              </span>
+              <span className="text-emerald-700 block mt-1">
+                Approved Budget Cap: {detailedOffer?.vacancy?.budgetMax ? `${Number(detailedOffer.vacancy.budgetMax).toLocaleString()} ${detailedOffer.vacancy.currency || detailedOffer?.currency}` : 'No Cap'}
+              </span>
+            </div>
+          </div>
+
+          {/* Compensation & Terms */}
+          <div className="p-4 border border-slate-200 rounded-lg space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <FileCheck className="w-4 h-4 text-brand-600" />
+              Compensation & Position Terms
+            </h3>
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="p-2.5 bg-slate-50 rounded">
+                <span className="text-slate-500 block">Offered Salary</span>
+                <span className="font-semibold text-slate-900 text-sm">
+                  {detailedOffer?.currency} {Number(detailedOffer?.offeredSalary).toLocaleString()}
+                </span>
+                <span className="text-slate-400 block text-[10px]">Per {detailedOffer?.salaryPeriod?.toLowerCase() || 'year'}</span>
+              </div>
+              <div className="p-2.5 bg-slate-50 rounded">
+                <span className="text-slate-500 block">Employment Type</span>
+                <span className="font-semibold text-slate-900">{detailedOffer?.employmentType}</span>
+                <span className="text-slate-400 block text-[10px]">Work Mode: {detailedOffer?.workMode}</span>
+              </div>
+              <div className="p-2.5 bg-slate-50 rounded">
+                <span className="text-slate-500 block">Work Location</span>
+                <span className="font-semibold text-slate-900">{detailedOffer?.location || 'Unspecified'}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+              <div className="p-2.5 bg-slate-50 rounded flex justify-between items-center">
+                <span className="text-slate-500">Proposed Start Date:</span>
+                <span className="font-semibold text-slate-900">{detailedOffer?.proposedStartDate}</span>
+              </div>
+              <div className="p-2.5 bg-slate-50 rounded flex justify-between items-center">
+                <span className="text-slate-500">Offer Expiry Date:</span>
+                <span className="font-semibold text-slate-900">{detailedOffer?.offerExpiryDate}</span>
+              </div>
+            </div>
+
+            {detailedOffer?.notes && (
+              <div className="p-2.5 bg-slate-50 rounded text-xs text-slate-700">
+                <span className="font-semibold block text-slate-600 mb-0.5">Offer Terms & Notes:</span>
+                <p className="whitespace-pre-line">{detailedOffer.notes}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Governance & Approvals */}
+          <div className="p-4 border border-slate-200 rounded-lg space-y-2 text-xs">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <UserCheck className="w-4 h-4 text-brand-600" />
+              Governance & Approvals
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="text-slate-500 block">Requested By:</span>
+                <span className="font-semibold text-slate-900">
+                  {detailedOffer?.requestedBy?.employee
+                    ? `${detailedOffer.requestedBy.employee.firstName} ${detailedOffer.requestedBy.employee.lastName}`
+                    : (detailedOffer?.requestedBy?.email || detailedOffer?.requestedById)}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Approved By:</span>
+                <span className="font-semibold text-slate-900">
+                  {detailedOffer?.approvedBy?.employee
+                    ? `${detailedOffer.approvedBy.employee.firstName} ${detailedOffer.approvedBy.employee.lastName}`
+                    : (detailedOffer?.approvedBy?.email || (detailedOffer?.approvedAt ? 'Approved' : 'Pending Management Approval'))}
+                </span>
+                {detailedOffer?.approvedAt && (
+                  <span className="text-slate-400 block text-[10px]">
+                    {new Date(detailedOffer.approvedAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {detailedOffer?.approvalNotes && (
+              <div className="mt-2 p-2 bg-slate-50 rounded text-slate-700">
+                <span className="font-semibold text-slate-600">Approval Notes: </span>
+                {detailedOffer.approvalNotes}
+              </div>
+            )}
+            {detailedOffer?.declineReason && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-800">
+                <span className="font-semibold">Candidate Decline Reason: </span>
+                {detailedOffer.declineReason}
+              </div>
+            )}
+          </div>
+
+          {/* Version Audit Trail */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <History className="w-4 h-4 text-brand-600" />
+              Version Snapshot History ({detailedOffer?.versions?.length || 0})
+            </h3>
+            {(!detailedOffer?.versions || detailedOffer.versions.length === 0) ? (
+              <p className="text-xs text-slate-500 italic">Initial version snapshot recorded.</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {detailedOffer.versions.map((v: any) => (
+                  <div key={v.id} className="p-3 bg-slate-50 border border-slate-200 rounded text-xs space-y-1">
+                    <div className="flex justify-between items-center font-medium">
+                      <span>Version {v.version} — <span className="font-mono text-brand-600">{v.action}</span></span>
+                      <StatusBadge status={v.status} />
+                    </div>
+                    <div className="text-slate-500 flex justify-between">
+                      <span>Salary: {v.currency} {Number(v.offeredSalary).toLocaleString()}</span>
+                      <span>
+                        Actor: {v.actor?.employee ? `${v.actor.employee.firstName} ${v.actor.employee.lastName}` : (v.actor?.email || 'System')}
+                      </span>
+                    </div>
+                    {v.notes && <p className="text-slate-600 italic mt-0.5">{v.notes}</p>}
+                    <span className="text-[10px] text-slate-400 block">
+                      {new Date(v.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-slate-100">
+            <Button variant="outline" onClick={() => setIsOfferDetailsModalOpen(false)}>
+              Close
+            </Button>
+          </div>
         </div>
       </Modal>
 
@@ -1557,8 +2210,10 @@ export default function CandidatesPage() {
         isOpen={isResponseModalOpen}
         onClose={() => setIsResponseModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Record Candidate Response — {selectedOffer?.businessId}</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleRecordResponse} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Candidate Response *</label>
@@ -1616,8 +2271,10 @@ export default function CandidatesPage() {
         isOpen={isWithdrawModalOpen}
         onClose={() => setIsWithdrawModalOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
           <h2 className="text-xl font-bold text-slate-900">Withdraw Job Offer — {selectedOffer?.businessId}</h2>
+        </div>
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleWithdrawOffer} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-red-700 mb-1.5">Withdrawal Reason *</label>
@@ -1649,13 +2306,14 @@ export default function CandidatesPage() {
         onClose={() => setIsReviseOfferModalOpen(false)}
         size="lg"
       >
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Revise Job Offer — {selectedOffer?.businessId}</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Creating a revision archives version {selectedOffer?.version} and generates version {((selectedOffer?.version || 1) + 1)} in PENDING_APPROVAL status.
-            </p>
-          </div>
+        <div className="sticky top-0 bg-white dark:bg-slate-900 z-10 pb-3 mb-4 border-b border-slate-100 pr-10">
+          <h2 className="text-xl font-bold text-slate-900">Revise Job Offer — {selectedOffer?.businessId}</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Creating a revision archives version {selectedOffer?.version} and generates version {((selectedOffer?.version || 1) + 1)} in DRAFT status.
+          </p>
+        </div>
+
+        <div className="max-h-[75vh] overflow-y-auto px-1 space-y-4">
           <form onSubmit={handleReviseOffer} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1685,12 +2343,25 @@ export default function CandidatesPage() {
               </div>
             </div>
 
+            {/* Live Budget Cap Enforcement Warning */}
+            {selectedOffer?.vacancy?.budgetMax &&
+              Number(reviseOfferForm.offeredSalary) > Number(selectedOffer.vacancy.budgetMax) && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-semibold block">Salary Cap Exceeded</span>
+                    Revised salary ({Number(reviseOfferForm.offeredSalary).toLocaleString()} {reviseOfferForm.currency}) exceeds approved vacancy budget maximum ({Number(selectedOffer.vacancy.budgetMax).toLocaleString()} {selectedOffer.vacancy.currency || reviseOfferForm.currency}).
+                  </div>
+                </div>
+              )}
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Proposed Start Date *</label>
                 <Input
                   type="date"
                   required
+                  min={new Date().toISOString().split('T')[0]}
                   value={reviseOfferForm.proposedStartDate}
                   onChange={(e) => setReviseOfferForm({ ...reviseOfferForm, proposedStartDate: e.target.value })}
                 />
@@ -1701,11 +2372,26 @@ export default function CandidatesPage() {
                 <Input
                   type="date"
                   required
+                  min={new Date().toISOString().split('T')[0]}
+                  max={reviseOfferForm.proposedStartDate || undefined}
                   value={reviseOfferForm.offerExpiryDate}
                   onChange={(e) => setReviseOfferForm({ ...reviseOfferForm, offerExpiryDate: e.target.value })}
                 />
               </div>
             </div>
+
+            {/* Live Date Ordering Check */}
+            {reviseOfferForm.offerExpiryDate &&
+              reviseOfferForm.proposedStartDate &&
+              reviseOfferForm.offerExpiryDate > reviseOfferForm.proposedStartDate && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-semibold block">Invalid Date Order</span>
+                    Offer expiry date cannot be after proposed start date.
+                  </div>
+                </div>
+              )}
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Revision Notes / Renegotiation Terms</label>
@@ -1722,7 +2408,22 @@ export default function CandidatesPage() {
               <Button type="button" variant="outline" onClick={() => setIsReviseOfferModalOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={actionLoading}>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={
+                  actionLoading ||
+                  Boolean(
+                    selectedOffer?.vacancy?.budgetMax &&
+                    Number(reviseOfferForm.offeredSalary) > Number(selectedOffer.vacancy.budgetMax),
+                  ) ||
+                  Boolean(
+                    reviseOfferForm.offerExpiryDate &&
+                    reviseOfferForm.proposedStartDate &&
+                    reviseOfferForm.offerExpiryDate > reviseOfferForm.proposedStartDate,
+                  )
+                }
+              >
                 Submit Revision
               </Button>
             </div>

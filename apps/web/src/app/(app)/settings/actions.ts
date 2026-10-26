@@ -348,154 +348,260 @@ export async function transitionVacancyStatusAction(
 // ── Candidate Selection & Offers (HR Phase 5) ───────────────────────────────
 
 export async function getCandidatesAction(query: string = '') {
-  return fetchApi<any>('/candidates?' + query);
+  try {
+    const res = await fetchApi<any>('/candidates?' + query);
+    return res;
+  } catch (err: any) {
+    console.error('[getCandidatesAction] Failed:', err);
+    return { items: [], total: 0 };
+  }
 }
 
 export async function getCandidateAction(id: string) {
-  return fetchApi<any>(`/candidates/${id}`);
+  try {
+    const res = await fetchApi<any>(`/candidates/${id}`);
+    return res;
+  } catch (err: any) {
+    console.error('[getCandidateAction] Failed:', err);
+    return null;
+  }
 }
 
 export async function createCandidateAction(data: any) {
-  const res = await fetchApi<any>('/candidates', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>('/candidates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[createCandidateAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to create candidate profile' };
+  }
 }
 
 export async function getApplicationsAction(query: string = '') {
-  return fetchApi<any>('/applications?' + query);
+  try {
+    const res = await fetchApi<any>('/applications?' + query);
+    return res;
+  } catch (err: any) {
+    console.error('[getApplicationsAction] Failed:', err);
+    return { items: [], total: 0 };
+  }
 }
 
 export async function getApplicationAction(id: string) {
-  return fetchApi<any>(`/applications/${id}`);
+  try {
+    const res = await fetchApi<any>(`/applications/${id}`);
+    return res;
+  } catch (err: any) {
+    console.error('[getApplicationAction] Failed:', err);
+    return null;
+  }
 }
 
 export async function createApplicationAction(vacancyId: string, data: any) {
-  const res = await fetchApi<any>(`/vacancies/${vacancyId}/applications`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  revalidatePath('/settings/vacancies');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/vacancies/${vacancyId}/applications`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    revalidatePath('/settings/vacancies');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[createApplicationAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to submit application' };
+  }
 }
 
 export async function transitionApplicationStageAction(id: string, data: any) {
-  const res = await fetchApi<any>(`/applications/${id}/stage`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/applications/${id}/stage`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[transitionApplicationStageAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to transition application stage' };
+  }
 }
 
 export async function scheduleInterviewAction(applicationId: string, data: any) {
-  const res = await fetchApi<any>(`/applications/${applicationId}/interviews`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/applications/${applicationId}/interviews`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[scheduleInterviewAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to schedule interview' };
+  }
 }
 
 export async function recordInterviewFeedbackAction(interviewId: string, data: any) {
-  const res = await fetchApi<any>(`/interviews/${interviewId}/feedback`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/interviews/${interviewId}/feedback`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[recordInterviewFeedbackAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to record interview feedback' };
+  }
 }
 
 export async function getOffersAction(query: string = '') {
-  return fetchApi<any>('/offers?' + query);
+  try {
+    const res = await fetchApi<any>('/offers?' + query);
+    return res;
+  } catch (err: any) {
+    console.error('[getOffersAction] Failed:', err);
+    return { items: [], total: 0 };
+  }
 }
 
 export async function getOfferAction(id: string) {
-  return fetchApi<any>(`/offers/${id}`);
+  try {
+    const res = await fetchApi<any>(`/offers/${id}`);
+    return res;
+  } catch (err: any) {
+    console.error('[getOfferAction] Failed:', err);
+    return null;
+  }
 }
 
 export async function createOfferAction(applicationId: string, data: any) {
-  const res = await fetchApi<any>(`/applications/${applicationId}/offers`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/applications/${applicationId}/offers`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[createOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to prepare offer' };
+  }
 }
 
 export async function updateOfferAction(id: string, data: any) {
-  const res = await fetchApi<any>(`/offers/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[updateOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to update offer' };
+  }
 }
 
 export async function reviseOfferAction(id: string, data: any) {
-  const res = await fetchApi<any>(`/offers/${id}/revise`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/revise`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[reviseOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to revise offer' };
+  }
 }
 
 export async function submitOfferAction(id: string) {
-  const res = await fetchApi<any>(`/offers/${id}/submit`, {
-    method: 'POST',
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/submit`, {
+      method: 'POST',
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[submitOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to submit offer for approval' };
+  }
 }
 
 export async function reviewOfferAction(id: string, data: { action: 'APPROVE' | 'REJECT'; approvalNotes?: string }) {
-  const res = await fetchApi<any>(`/offers/${id}/review`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[reviewOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to review offer' };
+  }
 }
 
 export async function sendOfferAction(id: string) {
-  const res = await fetchApi<any>(`/offers/${id}/send`, {
-    method: 'POST',
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/send`, {
+      method: 'POST',
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[sendOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to send offer' };
+  }
 }
 
 export async function recordOfferResponseAction(
   id: string,
   data: { decision: 'ACCEPT' | 'DECLINE'; responseNotes?: string; declineReason?: string },
 ) {
-  const res = await fetchApi<any>(`/offers/${id}/response`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/response`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[recordOfferResponseAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to record candidate response' };
+  }
 }
 
 export async function withdrawOfferAction(id: string, data: { withdrawalReason: string }) {
-  const res = await fetchApi<any>(`/offers/${id}/withdraw`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/withdraw`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[withdrawOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to withdraw offer' };
+  }
 }
 
 export async function expireOfferAction(id: string) {
-  const res = await fetchApi<any>(`/offers/${id}/expire`, {
-    method: 'POST',
-  });
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/offers/${id}/expire`, {
+      method: 'POST',
+    });
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[expireOfferAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to mark offer as expired' };
+  }
 }
 
 // ── Onboarding & Probation Actions ──────────────────────────────────────────
