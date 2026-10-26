@@ -845,7 +845,8 @@ export class OnboardingService {
     if (!isValidCalendarDate(dto.confirmedJoiningDate)) {
       throw new BadRequestException('confirmedJoiningDate must be a valid real calendar date in YYYY-MM-DD format');
     }
-    if (dto.dateOfBirth && !isValidCalendarDate(dto.dateOfBirth)) {
+    const sanitizedDob = dto.dateOfBirth?.trim();
+    if (sanitizedDob && !isValidCalendarDate(sanitizedDob)) {
       throw new BadRequestException('dateOfBirth must be a valid real calendar date in YYYY-MM-DD format');
     }
 
@@ -1073,8 +1074,8 @@ export class OnboardingService {
           joinedAt: new Date(`${dto.confirmedJoiningDate}T00:00:00.000Z`),
           jobTitle: dto.jobTitle?.trim() || offer.roleTitle,
           personalEmail: dto.personalEmail?.trim().toLowerCase() || candidate.email.toLowerCase(),
-          dateOfBirth: dto.dateOfBirth || null,
-          gender: dto.gender || null,
+          dateOfBirth: sanitizedDob || null,
+          gender: dto.gender?.trim() || null,
           address: dto.address?.trim() || null,
           emergencyContactName: dto.emergencyContactName?.trim() || null,
           emergencyContactPhone: dto.emergencyContactPhone?.trim() || null,

@@ -1257,6 +1257,81 @@ describe('OnboardingService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('allows empty string or omitted dateOfBirth without throwing BadRequestException', async () => {
+      const readyCase = {
+        ...mockOnboardingCase,
+        status: OnboardingCaseStatus.IN_PROGRESS,
+        employeeId: null,
+        documents: [
+          {
+            id: 'doc-pass',
+            documentType: OnboardingDocumentType.PASSPORT,
+            status: DocumentVerificationStatus.VERIFIED,
+            title: 'Passport Copy',
+          },
+          {
+            id: 'doc-offer',
+            documentType: OnboardingDocumentType.SIGNED_OFFER_LETTER,
+            status: DocumentVerificationStatus.VERIFIED,
+            title: 'Signed Corporate Offer',
+          },
+        ],
+        tasks: [
+          {
+            id: 'task-1',
+            status: OnboardingTaskStatus.COMPLETED,
+            title: 'Complete Workstation Setup',
+            category: OnboardingTaskCategory.IT_SETUP,
+          },
+        ],
+      };
+
+      prisma.onboardingCase.findUnique.mockResolvedValue(readyCase);
+
+      await expect(
+        service.finalizeOnboarding(
+          mockOnboardingCase.id,
+          { ...finalizeDto, dateOfBirth: '' },
+          mockActorUserId,
+        ),
+      ).resolves.toBeDefined();
+
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            dateOfBirth: null,
+          }),
+        }),
+      );
+    });
+
+    it('rejects dateOfBirth if it is an invalid real calendar date', async () => {
+      await expect(
+        service.finalizeOnboarding(
+          mockOnboardingCase.id,
+          { ...finalizeDto, dateOfBirth: '2026-02-30' },
+          mockActorUserId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('DTO validation: transforms empty strings to undefined and passes validation', async () => {
+      const { plainToInstance } = await import('class-transformer');
+      const { validate } = await import('class-validator');
+
+      const plain = {
+        confirmedJoiningDate: '2026-11-20',
+        personalEmail: '',
+        dateOfBirth: '',
+        departmentId: '',
+        roleId: '',
+      };
+
+      const dto = plainToInstance(FinalizeOnboardingDto, plain);
+      const errors = await validate(dto);
+      expect(errors).toHaveLength(0);
+    });
+
     it('throws BadRequestException if trying to finalize a WITHDRAWN or REJECTED case', async () => {
       prisma.onboardingCase.findUnique.mockResolvedValue({
         ...mockOnboardingCase,

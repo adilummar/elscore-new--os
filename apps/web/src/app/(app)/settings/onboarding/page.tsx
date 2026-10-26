@@ -176,12 +176,16 @@ export default function OnboardingPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await createOnboardingCaseAction({
+      const res = await createOnboardingCaseAction({
         applicationId: selectedApplicationToOpen.id,
         targetJoiningDate: openCaseForm.targetJoiningDate,
         probationDurationMonths: Number(openCaseForm.probationDurationMonths),
         notes: openCaseForm.notes,
       });
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to create onboarding case');
+        return;
+      }
       setOpenCaseModalOpen(false);
       setSelectedApplicationToOpen(null);
       await loadData();
@@ -208,7 +212,11 @@ export default function OnboardingPage() {
       formData.append('documentType', uploadDocForm.documentType);
       formData.append('title', uploadDocForm.title);
 
-      await uploadOnboardingDocumentAction(selectedCase.id, formData);
+      const res = await uploadOnboardingDocumentAction(selectedCase.id, formData);
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to upload document');
+        return;
+      }
       setUploadDocModalOpen(false);
       setUploadDocForm({ documentType: 'PASSPORT', title: '', fileName: '' });
       setUploadDocFile(null);
@@ -226,11 +234,15 @@ export default function OnboardingPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await verifyOnboardingDocumentAction(
+      const res = await verifyOnboardingDocumentAction(
         selectedCase.id,
         selectedDocToVerify.id,
         verifyDocForm,
       );
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to record verification');
+        return;
+      }
       setVerifyDocModalOpen(false);
       setSelectedDocToVerify(null);
       await loadCaseDetail(selectedCase.id);
@@ -247,12 +259,16 @@ export default function OnboardingPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await createOnboardingTaskAction(selectedCase.id, {
+      const res = await createOnboardingTaskAction(selectedCase.id, {
         title: taskForm.title,
         category: taskForm.category,
         dueDate: taskForm.dueDate || undefined,
         notes: taskForm.notes || undefined,
       });
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to create task');
+        return;
+      }
       setAddTaskModalOpen(false);
       setTaskForm({ title: '', category: 'IT_SETUP', dueDate: '', notes: '' });
       await loadCaseDetail(selectedCase.id);
@@ -267,7 +283,11 @@ export default function OnboardingPage() {
     if (!selectedCase) return;
     const newStatus = currentStatus === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
     try {
-      await updateOnboardingTaskAction(selectedCase.id, taskId, { status: newStatus });
+      const res = await updateOnboardingTaskAction(selectedCase.id, taskId, { status: newStatus });
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to update task status');
+        return;
+      }
       await loadCaseDetail(selectedCase.id);
     } catch (err: any) {
       setError(err?.message || 'Failed to update task status');
@@ -280,7 +300,11 @@ export default function OnboardingPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await cancelOnboardingCaseAction(selectedCase.id, cancelForm);
+      const res = await cancelOnboardingCaseAction(selectedCase.id, cancelForm);
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to cancel onboarding case');
+        return;
+      }
       setCancelModalOpen(false);
       await loadCaseDetail(selectedCase.id);
       await loadData();
@@ -297,7 +321,27 @@ export default function OnboardingPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await finalizeOnboardingCaseAction(selectedCase.id, finalizeForm);
+      const payload: any = {
+        confirmedJoiningDate: finalizeForm.confirmedJoiningDate,
+      };
+      if (finalizeForm.jobTitle?.trim()) payload.jobTitle = finalizeForm.jobTitle.trim();
+      if (finalizeForm.personalEmail?.trim()) payload.personalEmail = finalizeForm.personalEmail.trim();
+      if (finalizeForm.phone?.trim()) payload.phone = finalizeForm.phone.trim();
+      if (finalizeForm.dateOfBirth?.trim()) payload.dateOfBirth = finalizeForm.dateOfBirth.trim();
+      if (finalizeForm.gender?.trim()) payload.gender = finalizeForm.gender.trim();
+      if (finalizeForm.address?.trim()) payload.address = finalizeForm.address.trim();
+      if (finalizeForm.emergencyContactName?.trim()) payload.emergencyContactName = finalizeForm.emergencyContactName.trim();
+      if (finalizeForm.emergencyContactPhone?.trim()) payload.emergencyContactPhone = finalizeForm.emergencyContactPhone.trim();
+      if (finalizeForm.emergencyContactRelation?.trim()) payload.emergencyContactRelation = finalizeForm.emergencyContactRelation.trim();
+
+      const res = await finalizeOnboardingCaseAction(selectedCase.id, payload);
+      if (res && res.success === false) {
+        const msg = res.blockers?.length
+          ? `${res.error || 'Onboarding readiness checks failed'}:\n• ${res.blockers.join('\n• ')}`
+          : res.error || 'Failed to finalize onboarding';
+        setError(msg);
+        return;
+      }
       setFinalizeModalOpen(false);
       await loadCaseDetail(selectedCase.id);
       await loadData();
@@ -328,7 +372,11 @@ export default function OnboardingPage() {
     setActionLoading(true);
     setError(null);
     try {
-      await recordProbationReviewAction(probationEmployee.id, probationForm);
+      const res = await recordProbationReviewAction(probationEmployee.id, probationForm);
+      if (res && res.success === false) {
+        setError(res.error || 'Failed to record probation review');
+        return;
+      }
       setProbationModalOpen(false);
       setProbationEmployee(null);
       await loadData();
@@ -360,12 +408,12 @@ export default function OnboardingPage() {
 
       {/* Error alert */}
       {error && (
-        <div className="p-4 rounded-md bg-red-50 border border-red-200 text-red-700 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm">{error}</span>
+        <div className="p-4 rounded-md bg-red-50 border border-red-200 text-red-700 flex items-start justify-between gap-3">
+          <div className="flex items-start space-x-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="text-sm whitespace-pre-line">{error}</div>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setError(null)}>
+          <Button variant="ghost" size="sm" onClick={() => setError(null)} className="shrink-0">
             Dismiss
           </Button>
         </div>
@@ -1196,147 +1244,279 @@ export default function OnboardingPage() {
       </Modal>
 
       {/* MODAL: FINALIZE ONBOARDING & HIRE */}
-      <Modal
-        isOpen={finalizeModalOpen}
-        onClose={() => setFinalizeModalOpen(false)}
-        size="lg"
-      >
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Finalize Onboarding & Hire Employee</h2>
-          <form onSubmit={handleFinalizeSubmit} className="space-y-4 max-h-[75vh] overflow-y-auto pr-2">
-            <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-md text-xs space-y-1">
-              <div className="font-semibold flex items-center gap-1.5">
-                <ShieldAlert className="w-4 h-4 text-emerald-700" />
-                Idempotent Employee Record Creation
-              </div>
-              <div>
-                This action creates an Employee record (EMP-####), sets up a User account in PENDING_SETUP status with mustChangePassword=true, transitions the application to HIRED, and submits an initial Compensation Request for CEO approval.
-              </div>
-            </div>
+      {(() => {
+        const hasIdentityDoc = Boolean(
+          selectedCase?.documents?.some(
+            (doc: any) =>
+              (doc.documentType === 'NATIONAL_ID' || doc.documentType === 'PASSPORT') &&
+              doc.status === 'VERIFIED',
+          ),
+        );
+        const hasSignedOfferDoc = Boolean(
+          selectedCase?.documents?.some(
+            (doc: any) =>
+              doc.documentType === 'SIGNED_OFFER_LETTER' &&
+              doc.status === 'VERIFIED',
+          ),
+        );
+        const totalTasks = selectedCase?.tasks?.length || 0;
+        const completedOrWaivedTasks = (selectedCase?.tasks || []).filter(
+          (t: any) => t.status === 'COMPLETED' || t.status === 'WAIVED',
+        ).length;
+        const tasksReady = totalTasks > 0 && completedOrWaivedTasks === totalTasks;
+        const pendingDocsCount = (selectedCase?.documents || []).filter(
+          (d: any) => d.status === 'PENDING',
+        ).length;
+        const rejectedDocsCount = (selectedCase?.documents || []).filter(
+          (d: any) => d.status === 'REJECTED',
+        ).length;
+        const docsResolutionReady = pendingDocsCount === 0 && rejectedDocsCount === 0;
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Confirmed Joining Date *
-                </label>
-                <Input
-                  type="date"
-                  required
-                  value={finalizeForm.confirmedJoiningDate}
-                  onChange={(e) => setFinalizeForm({ ...finalizeForm, confirmedJoiningDate: e.target.value })}
-                />
+        const isReadyToFinalize =
+          hasIdentityDoc && hasSignedOfferDoc && tasksReady && docsResolutionReady;
+
+        return (
+          <Modal
+            isOpen={finalizeModalOpen}
+            onClose={() => setFinalizeModalOpen(false)}
+            size="lg"
+          >
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-slate-900 pr-10 mb-2">Finalize Onboarding & Hire Employee</h2>
+
+              {/* In-modal error banner */}
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-md text-xs whitespace-pre-line flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">{error}</div>
+                </div>
+              )}
+
+              {/* Readiness Gates Verification Card */}
+              <div
+                className={`p-3.5 rounded-lg border text-xs space-y-2 ${
+                  isReadyToFinalize
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : 'bg-amber-50 border-amber-200 text-amber-950'
+                }`}
+              >
+                <div className="font-semibold flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 font-bold">
+                    {isReadyToFinalize ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-amber-600" />
+                    )}
+                    Onboarding Readiness Checklist
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                      isReadyToFinalize
+                        ? 'bg-emerald-200 text-emerald-900'
+                        : 'bg-amber-200 text-amber-900'
+                    }`}
+                  >
+                    {isReadyToFinalize ? 'All Gates Satisfied' : 'Gates Incomplete'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200/60">
+                  <div className="flex items-center gap-2">
+                    {hasIdentityDoc ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    )}
+                    <span className={hasIdentityDoc ? 'text-slate-800' : 'text-rose-700 font-medium'}>
+                      Identity Proof (National ID / Passport)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {hasSignedOfferDoc ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    )}
+                    <span className={hasSignedOfferDoc ? 'text-slate-800' : 'text-rose-700 font-medium'}>
+                      Signed Corporate Offer Letter
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {tasksReady ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    )}
+                    <span className={tasksReady ? 'text-slate-800' : 'text-amber-800 font-medium'}>
+                      Checklist Tasks ({completedOrWaivedTasks}/{totalTasks} Completed)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {docsResolutionReady ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    )}
+                    <span className={docsResolutionReady ? 'text-slate-800' : 'text-amber-800 font-medium'}>
+                      Document Resolution ({pendingDocsCount} pending, {rejectedDocsCount} rejected)
+                    </span>
+                  </div>
+                </div>
+
+                {!isReadyToFinalize && (
+                  <div className="text-[11px] text-amber-800 pt-1 border-t border-amber-200/50">
+                    All checklist tasks must be completed/waived, mandatory documents verified, and no documents pending or rejected before finalization.
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Official Job Title
-                </label>
-                <Input
-                  value={finalizeForm.jobTitle}
-                  onChange={(e) => setFinalizeForm({ ...finalizeForm, jobTitle: e.target.value })}
-                />
-              </div>
+              <form onSubmit={handleFinalizeSubmit} className="space-y-4 max-h-[65vh] overflow-y-auto pr-2">
+                <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-md text-xs space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-emerald-700" />
+                    Idempotent Employee Record Creation
+                  </div>
+                  <div>
+                    This action creates an Employee record (EMP-####), sets up a User account in PENDING_SETUP status with mustChangePassword=true, transitions the application to HIRED, and submits an initial Compensation Request for CEO approval.
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Personal Email
-                </label>
-                <Input
-                  type="email"
-                  value={finalizeForm.personalEmail}
-                  onChange={(e) => setFinalizeForm({ ...finalizeForm, personalEmail: e.target.value })}
-                />
-              </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Confirmed Joining Date *
+                    </label>
+                    <Input
+                      type="date"
+                      required
+                      value={finalizeForm.confirmedJoiningDate}
+                      onChange={(e) => setFinalizeForm({ ...finalizeForm, confirmedJoiningDate: e.target.value })}
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Mobile Phone
-                </label>
-                <Input
-                  value={finalizeForm.phone}
-                  onChange={(e) => setFinalizeForm({ ...finalizeForm, phone: e.target.value })}
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Official Job Title
+                    </label>
+                    <Input
+                      value={finalizeForm.jobTitle}
+                      onChange={(e) => setFinalizeForm({ ...finalizeForm, jobTitle: e.target.value })}
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Date of Birth
-                </label>
-                <Input
-                  type="date"
-                  value={finalizeForm.dateOfBirth}
-                  onChange={(e) => setFinalizeForm({ ...finalizeForm, dateOfBirth: e.target.value })}
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Personal Email
+                    </label>
+                    <Input
+                      type="email"
+                      value={finalizeForm.personalEmail}
+                      onChange={(e) => setFinalizeForm({ ...finalizeForm, personalEmail: e.target.value })}
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Gender
-                </label>
-                <select
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
-                  value={finalizeForm.gender}
-                  onChange={(e) => setFinalizeForm({ ...finalizeForm, gender: e.target.value })}
-                >
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
-            </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Mobile Phone
+                    </label>
+                    <Input
+                      value={finalizeForm.phone}
+                      onChange={(e) => setFinalizeForm({ ...finalizeForm, phone: e.target.value })}
+                    />
+                  </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                Residential Address
-              </label>
-              <Input
-                placeholder="Street address, city, state, postal code..."
-                value={finalizeForm.address}
-                onChange={(e) => setFinalizeForm({ ...finalizeForm, address: e.target.value })}
-              />
-            </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Date of Birth
+                    </label>
+                    <Input
+                      type="date"
+                      value={finalizeForm.dateOfBirth}
+                      onChange={(e) => setFinalizeForm({ ...finalizeForm, dateOfBirth: e.target.value })}
+                    />
+                  </div>
 
-            <div className="border-t border-slate-200 pt-3">
-              <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                Emergency Contact Information
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Gender
+                    </label>
+                    <select
+                      className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+                      value={finalizeForm.gender}
+                      onChange={(e) => setFinalizeForm({ ...finalizeForm, gender: e.target.value })}
+                    >
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Name</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Residential Address
+                  </label>
                   <Input
-                    value={finalizeForm.emergencyContactName}
-                    onChange={(e) => setFinalizeForm({ ...finalizeForm, emergencyContactName: e.target.value })}
+                    placeholder="Street address, city, state, postal code..."
+                    value={finalizeForm.address}
+                    onChange={(e) => setFinalizeForm({ ...finalizeForm, address: e.target.value })}
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Phone</label>
-                  <Input
-                    value={finalizeForm.emergencyContactPhone}
-                    onChange={(e) => setFinalizeForm({ ...finalizeForm, emergencyContactPhone: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Relation</label>
-                  <Input
-                    placeholder="e.g. Spouse / Parent"
-                    value={finalizeForm.emergencyContactRelation}
-                    onChange={(e) => setFinalizeForm({ ...finalizeForm, emergencyContactRelation: e.target.value })}
-                  />
-                </div>
-              </div>
-            </div>
 
-            <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200">
-              <Button type="button" variant="outline" onClick={() => setFinalizeModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading}>
-                {actionLoading ? 'Finalizing...' : 'Confirm & Create Employee'}
-              </Button>
+                <div className="border-t border-slate-200 pt-3">
+                  <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                    Emergency Contact Information
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Name</label>
+                      <Input
+                        value={finalizeForm.emergencyContactName}
+                        onChange={(e) => setFinalizeForm({ ...finalizeForm, emergencyContactName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Phone</label>
+                      <Input
+                        value={finalizeForm.emergencyContactPhone}
+                        onChange={(e) => setFinalizeForm({ ...finalizeForm, emergencyContactPhone: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Relation</label>
+                      <Input
+                        placeholder="e.g. Spouse / Parent"
+                        value={finalizeForm.emergencyContactRelation}
+                        onChange={(e) => setFinalizeForm({ ...finalizeForm, emergencyContactRelation: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200">
+                  <Button type="button" variant="outline" onClick={() => setFinalizeModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                    disabled={actionLoading || !isReadyToFinalize}
+                  >
+                    {actionLoading
+                      ? 'Finalizing...'
+                      : !isReadyToFinalize
+                      ? 'Readiness Gates Incomplete'
+                      : 'Confirm & Create Employee'}
+                  </Button>
+                </div>
+              </form>
             </div>
-          </form>
-        </div>
-      </Modal>
+          </Modal>
+        );
+      })()}
 
       {/* MODAL: PROBATION EVALUATION */}
       <Modal

@@ -607,7 +607,12 @@ export async function expireOfferAction(id: string) {
 // ── Onboarding & Probation Actions ──────────────────────────────────────────
 
 export async function getOnboardingReadyQueueAction() {
-  return fetchApi<any[]>('/onboarding/ready');
+  try {
+    return await fetchApi<any[]>('/onboarding/ready');
+  } catch (err: any) {
+    console.error('[getOnboardingReadyQueueAction] Failed:', err);
+    return [];
+  }
 }
 
 export async function getOnboardingCasesAction(params?: {
@@ -616,18 +621,28 @@ export async function getOnboardingCasesAction(params?: {
   page?: number;
   limit?: number;
 }) {
-  const query = new URLSearchParams();
-  if (params?.status) query.set('status', params.status);
-  if (params?.search) query.set('search', params.search);
-  if (params?.page) query.set('page', String(params.page));
-  if (params?.limit) query.set('limit', String(params.limit));
+  try {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
 
-  const qs = query.toString();
-  return fetchApi<any>(`/onboarding/cases${qs ? `?${qs}` : ''}`);
+    const qs = query.toString();
+    return await fetchApi<any>(`/onboarding/cases${qs ? `?${qs}` : ''}`);
+  } catch (err: any) {
+    console.error('[getOnboardingCasesAction] Failed:', err);
+    return { items: [], total: 0 };
+  }
 }
 
 export async function getOnboardingCaseDetailAction(id: string) {
-  return fetchApi<any>(`/onboarding/cases/${id}`);
+  try {
+    return await fetchApi<any>(`/onboarding/cases/${id}`);
+  } catch (err: any) {
+    console.error('[getOnboardingCaseDetailAction] Failed:', err);
+    return null;
+  }
 }
 
 export async function createOnboardingCaseAction(data: {
@@ -636,13 +651,18 @@ export async function createOnboardingCaseAction(data: {
   probationDurationMonths?: number;
   notes?: string;
 }) {
-  const res = await fetchApi<any>('/onboarding/cases', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>('/onboarding/cases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[createOnboardingCaseAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to create onboarding case' };
+  }
 }
 
 export async function updateOnboardingCaseAction(
@@ -654,24 +674,34 @@ export async function updateOnboardingCaseAction(
     notes?: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[updateOnboardingCaseAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to update onboarding case' };
+  }
 }
 
 export async function uploadOnboardingDocumentAction(
   caseId: string,
   formData: FormData,
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${caseId}/documents`, {
-    method: 'POST',
-    body: formData,
-  });
-  revalidatePath('/settings/onboarding');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${caseId}/documents`, {
+      method: 'POST',
+      body: formData,
+    });
+    revalidatePath('/settings/onboarding');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[uploadOnboardingDocumentAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to upload document' };
+  }
 }
 
 export async function verifyOnboardingDocumentAction(
@@ -682,12 +712,17 @@ export async function verifyOnboardingDocumentAction(
     verificationNotes?: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${caseId}/documents/${docId}/verify`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${caseId}/documents/${docId}/verify`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[verifyOnboardingDocumentAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to verify document' };
+  }
 }
 
 export async function createOnboardingTaskAction(
@@ -700,12 +735,17 @@ export async function createOnboardingTaskAction(
     notes?: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${caseId}/tasks`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${caseId}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[createOnboardingTaskAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to create task' };
+  }
 }
 
 export async function updateOnboardingTaskAction(
@@ -720,12 +760,17 @@ export async function updateOnboardingTaskAction(
     notes?: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${caseId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${caseId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[updateOnboardingTaskAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to update task' };
+  }
 }
 
 export async function cancelOnboardingCaseAction(
@@ -735,13 +780,18 @@ export async function cancelOnboardingCaseAction(
     reason: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${caseId}/cancel`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  revalidatePath('/settings/candidates');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${caseId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    revalidatePath('/settings/candidates');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[cancelOnboardingCaseAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to cancel onboarding case' };
+  }
 }
 
 export async function finalizeOnboardingCaseAction(
@@ -762,13 +812,22 @@ export async function finalizeOnboardingCaseAction(
     notes?: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/cases/${caseId}/finalize`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  revalidatePath('/settings/employees');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/cases/${caseId}/finalize`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    revalidatePath('/settings/employees');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[finalizeOnboardingCaseAction] Failed:', err);
+    return {
+      success: false,
+      error: err?.message || 'Failed to finalize onboarding',
+      blockers: (err as any)?.blockers || [],
+    };
+  }
 }
 
 export async function recordProbationReviewAction(
@@ -780,17 +839,27 @@ export async function recordProbationReviewAction(
     notes: string;
   },
 ) {
-  const res = await fetchApi<any>(`/onboarding/employees/${employeeId}/probation/reviews`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/onboarding');
-  revalidatePath('/settings/employees');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/onboarding/employees/${employeeId}/probation/reviews`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/onboarding');
+    revalidatePath('/settings/employees');
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error('[recordProbationReviewAction] Failed:', err);
+    return { success: false, error: err?.message || 'Failed to record probation review' };
+  }
 }
 
 export async function getProbationReviewsAction(employeeId: string) {
-  return fetchApi<any>(`/onboarding/employees/${employeeId}/probation/reviews`);
+  try {
+    return await fetchApi<any>(`/onboarding/employees/${employeeId}/probation/reviews`);
+  } catch (err: any) {
+    console.error('[getProbationReviewsAction] Failed:', err);
+    return null;
+  }
 }
 
 // ── HR Phase 7: Performance Management Actions ──────────────────────────────
