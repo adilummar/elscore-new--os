@@ -133,81 +133,133 @@ export async function upsertFinanceSettingAction(data: {
 
 // ── Payroll & Tutor Payable Actions ──────────────────────────────────────────
 export async function getPayrollRunsAction(status?: string) {
-  const query = status ? `?status=${status}` : '';
-  return fetchApi<any>(`/payroll/runs${query}`);
+  try {
+    const query = status ? `?status=${status}` : '';
+    const res = await fetchApi<any>(`/payroll/runs${query}`);
+    return { success: true, data: Array.isArray(res) ? res : [] };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to load payroll runs', data: [] };
+  }
 }
 
 export async function getPayrollRunDetailsAction(id: string) {
-  return fetchApi<any>(`/payroll/runs/${id}`);
+  try {
+    const res = await fetchApi<any>(`/payroll/runs/${id}`);
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to load payroll run details', data: null };
+  }
 }
 
 export async function createPayrollRunAction(data: { periodStart: string; periodEnd: string; notes?: string }) {
-  const res = await fetchApi<any>('/payroll/runs', { method: 'POST', body: JSON.stringify(data) });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>('/payroll/runs', { method: 'POST', body: JSON.stringify(data) });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to generate employee payroll cycle' };
+  }
 }
 
 export async function finalizePayrollRunAction(id: string) {
-  const res = await fetchApi<any>(`/payroll/runs/${id}/finalize`, { method: 'PATCH' });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/payroll/runs/${id}/finalize`, { method: 'PATCH' });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to finalize payroll run' };
+  }
 }
 
 export async function cancelPayrollRunAction(id: string) {
-  const res = await fetchApi<any>(`/payroll/runs/${id}/cancel`, { method: 'PATCH' });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/payroll/runs/${id}/cancel`, { method: 'PATCH' });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to cancel payroll run' };
+  }
 }
 
 export async function recordPayrollPaymentAction(
   itemId: string,
   data: { paymentReference?: string; paymentNotes?: string },
 ) {
-  const res = await fetchApi<any>(`/payroll/items/${itemId}/payment`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/payroll/items/${itemId}/payment`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to record payroll payment' };
+  }
 }
 
 export async function getTutorPayableRunsAction(status?: string) {
-  const query = status ? `?status=${status}` : '';
-  return fetchApi<any>(`/tutor-payables/runs${query}`);
+  try {
+    const query = status ? `?status=${status}` : '';
+    const res = await fetchApi<any>(`/tutor-payables/runs${query}`);
+    return { success: true, data: Array.isArray(res) ? res : [] };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to load tutor payable runs', data: [] };
+  }
 }
 
 export async function getTutorPayableRunDetailsAction(id: string) {
-  return fetchApi<any>(`/tutor-payables/runs/${id}`);
+  try {
+    const res = await fetchApi<any>(`/tutor-payables/runs/${id}`);
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to load tutor payable run details', data: null };
+  }
 }
 
 export async function createTutorPayableRunAction(data: { periodStart: string; periodEnd: string; notes?: string }) {
-  const res = await fetchApi<any>('/tutor-payables/runs', { method: 'POST', body: JSON.stringify(data) });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>('/tutor-payables/runs', { method: 'POST', body: JSON.stringify(data) });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to generate tutor payable batch' };
+  }
 }
 
 export async function finalizeTutorPayableRunAction(id: string) {
-  const res = await fetchApi<any>(`/tutor-payables/runs/${id}/finalize`, { method: 'PATCH' });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/tutor-payables/runs/${id}/finalize`, { method: 'PATCH' });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to finalize tutor payable run' };
+  }
 }
 
 export async function cancelTutorPayableRunAction(id: string) {
-  const res = await fetchApi<any>(`/tutor-payables/runs/${id}/cancel`, { method: 'PATCH' });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/tutor-payables/runs/${id}/cancel`, { method: 'PATCH' });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to cancel tutor payable run' };
+  }
 }
 
 export async function recordTutorPayablePaymentAction(
   itemId: string,
   data: { paymentReference?: string; paymentNotes?: string },
 ) {
-  const res = await fetchApi<any>(`/tutor-payables/items/${itemId}/payment`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-  revalidatePath('/settings/payroll');
-  return res;
+  try {
+    const res = await fetchApi<any>(`/tutor-payables/items/${itemId}/payment`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    revalidatePath('/settings/payroll');
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to record tutor payable payment' };
+  }
 }
 
 // ── Workforce Vacancies (HR Phase 4) ─────────────────────────────────────────

@@ -35,16 +35,16 @@ export function Modal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 md:p-6"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 md:p-6"
       onClick={onClose}
     >
       <div 
-        className={`bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size] || sizeClasses.md} ${hasPadding ? 'p-6' : ''} relative flex flex-col max-h-[92vh] md:max-h-[85vh] overflow-hidden ${className}`}
+        className={`bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full ${sizeClasses[size] || sizeClasses.md} ${hasPadding ? 'p-6' : ''} relative flex flex-col max-h-[92vh] md:max-h-[85vh] overflow-hidden ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={onClose} 
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors z-20 p-1.5 rounded-lg hover:bg-slate-100"
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors z-20 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
           title="Close"
           aria-label="Close dialog"
         >
