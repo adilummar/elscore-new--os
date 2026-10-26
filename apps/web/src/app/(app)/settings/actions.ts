@@ -23,9 +23,32 @@ export async function requestTutorRateChangeAction(profileId: string, data: any)
 export async function reviewTutorRateChangeAction(requestId: string, data: any) { const res = await fetchApi<any>('/tutors/rates/requests/' + requestId + '/review', { method: 'PATCH', body: JSON.stringify(data) }); revalidatePath('/tutor-hr'); return res; }
 export async function updateEmployeeStatusAction(id: string, status: string, reason?: string) { const res = await fetchApi<any>('/employees/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status, reason }) }); revalidatePath('/settings/employees'); return res; }
 
-export async function getDepartmentsAction() { return fetchApi<any>('/departments'); }
+export async function getDepartmentsAction(): Promise<any[]> {
+  try {
+    const res = await fetchApi<any>('/departments?limit=100');
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    if (Array.isArray(res?.items)) return res.items;
+    return [];
+  } catch (error) {
+    console.error('[getDepartmentsAction] Failed to fetch departments:', error);
+    return [];
+  }
+}
 
-export async function getRolesAction(query: string) { return fetchApi<any>('/roles?' + query); }
+export async function getRolesAction(query: string = ''): Promise<any[]> {
+  try {
+    const q = query ? query : 'limit=100';
+    const res = await fetchApi<any>('/roles?' + q);
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    if (Array.isArray(res?.items)) return res.items;
+    return [];
+  } catch (error) {
+    console.error('[getRolesAction] Failed to fetch roles:', error);
+    return [];
+  }
+}
 export async function createCustomRoleAction(data: any) { const res = await fetchApi<any>('/roles', { method: 'POST', body: JSON.stringify(data) }); revalidatePath('/settings/roles'); return res; }
 export async function updateRolePermissionAction(roleId: string, action: 'ADD' | 'REMOVE', permissionId: string) { const res = await fetchApi<any>('/roles/' + roleId + '/permissions', { method: 'PATCH', body: JSON.stringify({ action, permissionId }) }); revalidatePath('/settings/roles'); return res; }
 

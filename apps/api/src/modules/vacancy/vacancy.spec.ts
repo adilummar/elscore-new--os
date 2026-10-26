@@ -21,6 +21,7 @@ describe('VacancyService', () => {
   const mockDepartment = {
     id: 'dept-123',
     name: 'Academic Counseling',
+    status: 'ACTIVE',
   };
 
   const mockRole = {
@@ -239,6 +240,25 @@ describe('VacancyService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('rejects if department is inactive (DATA-VAC-006)', async () => {
+      prisma.department.findUnique.mockResolvedValueOnce({
+        id: 'dept-inactive-1',
+        name: 'Archived Counseling',
+        status: 'INACTIVE',
+      });
+
+      await expect(
+        service.createVacancy(
+          {
+            title: 'Counselor',
+            departmentId: 'dept-inactive-1',
+            justification: 'Valid justification',
+          },
+          'user-requester-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('rejects if roleId provided does not exist', async () => {
       prisma.role.findUnique.mockResolvedValueOnce(null);
 
@@ -304,6 +324,19 @@ describe('VacancyService', () => {
 
       expect(prisma.vacancy.update).toHaveBeenCalled();
       expect(updated.title).toBe('Updated By Creator');
+    });
+
+    it('rejects update if target department is inactive (DATA-VAC-006)', async () => {
+      prisma.vacancy.findUnique.mockResolvedValueOnce(mockVacancy);
+      prisma.department.findUnique.mockResolvedValueOnce({
+        id: 'dept-inactive-2',
+        name: 'Closed Unit',
+        status: 'INACTIVE',
+      });
+
+      await expect(
+        service.updateVacancy('vac-uuid-1', { departmentId: 'dept-inactive-2' }, 'user-manager-2'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('forbids creator with only vacancy.create from editing ANOTHER user vacancy (SEC-VAC-001)', async () => {

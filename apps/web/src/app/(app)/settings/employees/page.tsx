@@ -192,7 +192,8 @@ export default function EmployeesPage() {
         getDepartmentsAction(),
       ]);
       setEmployees((empRes as any)?.data || []);
-      setDepartments((deptRes as any) || []);
+      const deptList = Array.isArray(deptRes) ? deptRes : (deptRes as any)?.data || (deptRes as any)?.items || [];
+      setDepartments(deptList.filter((d: any) => d.status === 'ACTIVE' || !d.status));
 
       if (canApproveCompensation) {
         loadPendingApprovals();

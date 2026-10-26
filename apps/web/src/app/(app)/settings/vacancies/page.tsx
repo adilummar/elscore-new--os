@@ -42,6 +42,23 @@ export default function VacanciesPage() {
   const [total, setTotal] = React.useState(0);
   const [departments, setDepartments] = React.useState<any[]>([]);
   const [roles, setRoles] = React.useState<any[]>([]);
+  const [deptLoading, setDeptLoading] = React.useState(false);
+  const [deptError, setDeptError] = React.useState<string | null>(null);
+
+  const loadDepartments = React.useCallback(async () => {
+    setDeptLoading(true);
+    setDeptError(null);
+    try {
+      const deptRes = await getDepartmentsAction();
+      const deptList = Array.isArray(deptRes) ? deptRes : (deptRes as any)?.data || (deptRes as any)?.items || [];
+      const activeDepts = deptList.filter((d: any) => d.status === 'ACTIVE' || !d.status);
+      setDepartments(activeDepts);
+    } catch (err: any) {
+      setDeptError(err?.message || 'Failed to load departments');
+    } finally {
+      setDeptLoading(false);
+    }
+  }, []);
   const [loading, setLoading] = React.useState(true);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -92,7 +109,7 @@ export default function VacanciesPage() {
       const [vacRes, deptRes, roleRes] = await Promise.all([
         getVacanciesAction(params.toString()),
         getDepartmentsAction(),
-        getRolesAction(''),
+        getRolesAction('limit=100'),
       ]);
 
       if (vacRes?.items) {
@@ -103,8 +120,12 @@ export default function VacanciesPage() {
         setTotal(0);
       }
 
-      if (Array.isArray(deptRes)) setDepartments(deptRes);
-      if (Array.isArray(roleRes)) setRoles(roleRes);
+      const deptList = Array.isArray(deptRes) ? deptRes : (deptRes as any)?.data || (deptRes as any)?.items || [];
+      const activeDepts = deptList.filter((d: any) => d.status === 'ACTIVE' || !d.status);
+      setDepartments(activeDepts);
+
+      const roleList = Array.isArray(roleRes) ? roleRes : (roleRes as any)?.data || (roleRes as any)?.items || [];
+      setRoles(roleList);
     } catch (err: any) {
       setError(err?.message || 'Failed to load vacancies');
     } finally {
@@ -529,22 +550,52 @@ export default function VacanciesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Department *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Department *
+                  </label>
+                  {deptError && (
+                    <button
+                      type="button"
+                      onClick={loadDepartments}
+                      className="text-xs text-brand-600 hover:text-brand-700 underline font-medium"
+                    >
+                      Retry loading
+                    </button>
+                  )}
+                </div>
                 <select
                   required
+                  disabled={deptLoading}
                   value={formData.departmentId}
                   onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50 disabled:text-slate-400"
                 >
-                  <option value="">Select Department</option>
+                  {deptLoading ? (
+                    <option value="" disabled>Loading departments...</option>
+                  ) : deptError ? (
+                    <option value="" disabled>Error loading departments — click Retry</option>
+                  ) : departments.length === 0 ? (
+                    <option value="" disabled>No active departments available</option>
+                  ) : (
+                    <option value="">Select Department</option>
+                  )}
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>
-                      {d.name}
+                      {d.name} ({d.code})
                     </option>
                   ))}
                 </select>
+                {deptError && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">
+                    {deptError}. <button type="button" onClick={loadDepartments} className="underline">Retry</button>
+                  </p>
+                )}
+                {!deptLoading && !deptError && departments.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-600 font-medium">
+                    No active departments found in the system.
+                  </p>
+                )}
               </div>
 
               <div>

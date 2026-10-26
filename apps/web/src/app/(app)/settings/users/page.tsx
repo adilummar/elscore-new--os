@@ -22,8 +22,10 @@ export default function UsersPage() {
     const res = await getUsersAction('');
     setUsers((res as any)?.data || []);
     const [deps, rls] = await Promise.all([getDepartmentsAction(), getRolesAction('limit=100')]);
-    setDepartments((deps as any)?.data || []);
-    setRoles((rls as any)?.data || []);
+    const deptList = Array.isArray(deps) ? deps : (deps as any)?.data || (deps as any)?.items || [];
+    setDepartments(deptList.filter((d: any) => d.status === 'ACTIVE' || !d.status));
+    const roleList = Array.isArray(rls) ? rls : (rls as any)?.data || (rls as any)?.items || [];
+    setRoles(roleList);
   };
 
   React.useEffect(() => { loadData(); }, []);

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Vacancy, VacancyStatus } from '@prisma/client';
+import { DepartmentStatus, Prisma, Vacancy, VacancyStatus } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
@@ -110,12 +110,15 @@ export class VacancyService {
       throw new BadRequestException('targetHeadcount must be at least 1');
     }
 
-    // Verify department exists
+    // Verify department exists and is active
     const department = await this.prisma.department.findUnique({
       where: { id: dto.departmentId },
     });
     if (!department) {
       throw new NotFoundException(`Department with ID '${dto.departmentId}' not found`);
+    }
+    if (department.status !== DepartmentStatus.ACTIVE) {
+      throw new BadRequestException(`Department '${department.name}' is inactive and cannot accept new workforce vacancies`);
     }
 
     // Verify role exists if provided
@@ -287,6 +290,9 @@ export class VacancyService {
         });
         if (!department) {
           throw new NotFoundException(`Department with ID '${dto.departmentId}' not found`);
+        }
+        if (department.status !== DepartmentStatus.ACTIVE) {
+          throw new BadRequestException(`Department '${department.name}' is inactive and cannot accept new workforce vacancies`);
         }
       }
 
