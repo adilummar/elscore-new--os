@@ -47,6 +47,21 @@ export class EmployeeAttendanceController {
   }
 
   /**
+   * GET /attendance/summary
+   * Company-wide staff attendance dashboard summary and staff breakdown.
+   * Supports ?date=YYYY-MM-DD and optional ?departmentId=
+   */
+  @Get('summary')
+  @RequirePermissions('attendance.read.team')
+  async getDashboardSummary(
+    @CurrentUser() user: RequestUser,
+    @Query('date') date?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.attendanceService.getAttendanceDashboardSummary(user.id, date, departmentId);
+  }
+
+  /**
    * GET /attendance/staffs
    * CEO / managers: all employees.
    * Department heads: scoped to their own department via ?departmentId=

@@ -873,5 +873,255 @@ export class EmployeeAttendanceService {
       recentUnlocks: sanitizedRecentUnlocks,
     };
   }
+
+  /**
+   * Returns company-wide staff attendance summary and detailed records for a specific date.
+   * Scoped by RBAC (global viewers can view all departments or filter by department;
+   * department managers are scoped to their own department).
+   */
+  async getAttendanceDashboardSummary(
+    userId: string,
+    queryDate?: string,
+    requestedDepartmentId?: string,
+  ) {
+    const todayStr = this.getTodayStr();
+    const targetDate = queryDate?.trim() || todayStr;
+
+    if (!isValidCalendarDate(targetDate)) {
+      throw new BadRequestException('targetDate must be a valid real calendar date in YYYY-MM-DD format');
+    }
+
+    const requestor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        userRoles: { include: { role: true } },
+        employee: true,
+      },
+    });
+
+    const isGlobalViewer = Boolean(
+      requestor?.userRoles.some((ur) =>
+        ['CEO', 'HR_MANAGER', 'HR_EXECUTIVE', 'ADMIN'].includes(ur.role.code),
+      ),
+    );
+
+    let departmentId = requestedDepartmentId && requestedDepartmentId !== 'all' ? requestedDepartmentId : undefined;
+
+    if (!isGlobalViewer) {
+      departmentId = requestor?.employee?.departmentId;
+      if (!departmentId) {
+        return {
+          date: targetDate,
+          timezone: TIMEZONE,
+          isToday: targetDate === todayStr,
+          isPast: targetDate < todayStr,
+          isFuture: targetDate > todayStr,
+          isWeekend: false,
+          metrics: {
+            totalActiveStaff: 0,
+            present: 0,
+            absent: 0,
+            onLeave: 0,
+            lateArrivals: 0,
+            unmarked: 0,
+            expectedToWork: 0,
+            attendanceRate: 0,
+          },
+          records: [],
+          departments: [],
+        };
+      }
+    }
+
+    // Determine weekend status (Sunday is weekly off in business operations)
+    // Construct Date at 12:00:00 UTC for consistent day-of-week parsing
+    const dateObj = new Date(`${targetDate}T12:00:00Z`);
+    const dayOfWeek = dateObj.getUTCDay(); // 0 = Sunday
+    const isWeekend = dayOfWeek === 0;
+    const isToday = targetDate === todayStr;
+    const isPast = targetDate < todayStr;
+    const isFuture = targetDate > todayStr;
+
+    const [allEligibleEmployees, activeLeaves, departments] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: {
+          employmentStatus: { in: ['ACTIVE', 'PROBATION', 'NOTICE_PERIOD'] },
+          ...(departmentId ? { departmentId } : {}),
+        },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              status: true,
+              userRoles: {
+                include: { role: { select: { id: true, name: true, code: true } } },
+              },
+            },
+          },
+          attendanceSessions: {
+            where: { calendarDate: targetDate },
+            include: {
+              events: {
+                where: { isInvalidated: false },
+                orderBy: { timestamp: 'asc' },
+              },
+            },
+          },
+        },
+        orderBy: [{ department: { name: 'asc' } }, { firstName: 'asc' }],
+      }),
+      this.prisma.employeeLeaveRequest.findMany({
+        where: {
+          status: 'APPROVED',
+          startDate: { lte: targetDate },
+          endDate: { gte: targetDate },
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          leaveType: true,
+          startDate: true,
+          endDate: true,
+          reason: true,
+        },
+      }),
+      this.prisma.department.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, code: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    // Historical filtering: Exclude employees who joined after targetDate or left before targetDate
+    const eligibleEmployees = allEligibleEmployees.filter((emp) => {
+      if (emp.joinedAt) {
+        const joinedDateStr = formatInTimeZone(emp.joinedAt, TIMEZONE, 'yyyy-MM-dd');
+        if (joinedDateStr > targetDate) return false;
+      }
+      if (emp.lastWorkingDate && emp.lastWorkingDate < targetDate) {
+        return false;
+      }
+      return true;
+    });
+
+    let presentCount = 0;
+    let lateCount = 0;
+    let onLeaveCount = 0;
+    let absentCount = 0;
+    let unmarkedCount = 0;
+
+    const records = eligibleEmployees.map((emp) => {
+      const session = emp.attendanceSessions[0] || null;
+      const leave = activeLeaves.find((l) => l.employeeId === emp.id) || null;
+
+      const checkInEvent = session?.events.find((e) => e.eventType === 'CHECK_IN');
+      const checkOutEvent = session?.events.find(
+        (e) => e.eventType === 'CHECK_OUT' || e.eventType === 'AUTO_CHECK_OUT',
+      );
+
+      // Check qualifying attendance
+      const hasQualifyingSession = Boolean(
+        session && ['ACTIVE', 'ON_BREAK', 'COMPLETED', 'AUTO_CHECKED_OUT'].includes(session.status),
+      );
+
+      const isLate = Boolean(hasQualifyingSession && (session?.isLate || (session?.lateMinutes || 0) > 0));
+
+      let attendanceStatus: 'PRESENT' | 'ON_LEAVE' | 'ABSENT' | 'UNMARKED' | 'WEEKEND_OFF' | 'SCHEDULED';
+
+      if (hasQualifyingSession) {
+        attendanceStatus = 'PRESENT';
+        presentCount++;
+        if (isLate) lateCount++;
+      } else if (leave) {
+        attendanceStatus = 'ON_LEAVE';
+        onLeaveCount++;
+      } else if (isWeekend) {
+        attendanceStatus = 'WEEKEND_OFF';
+      } else if (isToday) {
+        attendanceStatus = 'UNMARKED';
+        unmarkedCount++;
+      } else if (isPast) {
+        attendanceStatus = 'ABSENT';
+        absentCount++;
+      } else {
+        attendanceStatus = 'SCHEDULED';
+      }
+
+      const canSeeDetails = isGlobalViewer || emp.user.id === userId;
+
+      return {
+        id: emp.id,
+        businessId: emp.businessId,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        fullName: `${emp.firstName} ${emp.lastName}`.trim(),
+        email: emp.user.email,
+        department: emp.department,
+        roles: emp.user.userRoles.map((ur) => ur.role),
+        attendanceStatus,
+        isLate,
+        lateMinutes: session?.lateMinutes || 0,
+        session: session
+          ? {
+              id: session.id,
+              status: session.status,
+              note: session.note,
+              netDurationMinutes: session.netDurationMinutes,
+              breakDurationMinutes: session.breakDurationMinutes,
+              grossDurationMinutes: session.grossDurationMinutes,
+              checkInTime: checkInEvent?.timestamp ?? null,
+              checkOutTime: checkOutEvent?.timestamp ?? null,
+            }
+          : null,
+        leave: leave
+          ? {
+              id: leave.id,
+              leaveType: leave.leaveType,
+              startDate: leave.startDate,
+              endDate: leave.endDate,
+              reason: canSeeDetails ? leave.reason : null,
+            }
+          : null,
+      };
+    });
+
+    const totalActiveStaff = eligibleEmployees.length;
+
+    // Expected to work: On working days = total active staff - those on approved leave.
+    // On weekends = employees present (working).
+    const expectedToWork = isWeekend
+      ? presentCount
+      : Math.max(0, totalActiveStaff - onLeaveCount);
+
+    // Absent count: On past working days, confirmed absent; on today, employees expected to work who have not yet checked in
+    const totalAbsent = isPast ? absentCount : (isToday && !isWeekend ? unmarkedCount : 0);
+
+    const attendanceRate = expectedToWork > 0
+      ? Number(((presentCount / expectedToWork) * 100).toFixed(1))
+      : 0;
+
+    return {
+      date: targetDate,
+      timezone: TIMEZONE,
+      isToday,
+      isPast,
+      isFuture,
+      isWeekend,
+      metrics: {
+        totalActiveStaff,
+        present: presentCount,
+        absent: totalAbsent,
+        onLeave: onLeaveCount,
+        lateArrivals: lateCount,
+        unmarked: unmarkedCount,
+        expectedToWork,
+        attendanceRate,
+      },
+      records,
+      departments,
+    };
+  }
 }
 
