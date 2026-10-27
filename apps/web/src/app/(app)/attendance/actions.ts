@@ -40,6 +40,21 @@ export async function getAttendanceDashboardSummaryAction(date?: string, departm
   return fetchApi<any>(`/attendance/summary${qStr ? `?${qStr}` : ''}`);
 }
 
+export async function getAttendanceReportAction(params: {
+  startDate?: string;
+  endDate?: string;
+  month?: string;
+  departmentId?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params.startDate) query.set('startDate', params.startDate);
+  if (params.endDate) query.set('endDate', params.endDate);
+  if (params.month) query.set('month', params.month);
+  if (params.departmentId && params.departmentId !== 'all') query.set('departmentId', params.departmentId);
+  const qStr = query.toString();
+  return fetchApi<any>(`/attendance/report${qStr ? `?${qStr}` : ''}`);
+}
+
 export async function correctAttendanceEventAction(eventId: string, sessionId: string, newTimestamp: string, reason: string) {
   const res = await fetchApi<any>(`/attendance/event/${eventId}/correct`, {
     method: 'PATCH',

@@ -62,6 +62,28 @@ export class EmployeeAttendanceController {
   }
 
   /**
+   * GET /attendance/report
+   * Monthly and custom date-range staff attendance reporting with daily breakdown.
+   * Supports ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD or ?month=YYYY-MM, and ?departmentId=
+   */
+  @Get('report')
+  @RequirePermissions('attendance.read.team')
+  async getAttendanceReport(
+    @CurrentUser() user: RequestUser,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('month') month?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.attendanceService.getAttendanceReport(user.id, {
+      startDate,
+      endDate,
+      month,
+      departmentId,
+    });
+  }
+
+  /**
    * GET /attendance/staffs
    * CEO / managers: all employees.
    * Department heads: scoped to their own department via ?departmentId=

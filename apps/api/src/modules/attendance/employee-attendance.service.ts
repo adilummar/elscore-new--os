@@ -1123,5 +1123,376 @@ export class EmployeeAttendanceService {
       departments,
     };
   }
+
+  /**
+   * Returns employee-wise staff attendance reports for a monthly or custom date range.
+   * Includes expected working days, present days, absent days, late days, leave days,
+   * weekly offs, attendance percentage, worked hours, and daily breakdown per employee.
+   */
+  async getAttendanceReport(
+    userId: string,
+    query: {
+      startDate?: string;
+      endDate?: string;
+      month?: string; // YYYY-MM
+      departmentId?: string;
+    },
+  ) {
+    const todayStr = this.getTodayStr();
+    let startDate: string;
+    let endDate: string;
+
+    if (query.month?.trim()) {
+      const monthStr = query.month.trim();
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) {
+        throw new BadRequestException('month must be in YYYY-MM format (e.g. 2026-10)');
+      }
+      const [year, month] = monthStr.split('-').map(Number);
+      startDate = `${monthStr}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      endDate = `${monthStr}-${String(lastDay).padStart(2, '0')}`;
+    } else if (query.startDate?.trim() || query.endDate?.trim()) {
+      startDate = query.startDate?.trim() || todayStr;
+      endDate = query.endDate?.trim() || todayStr;
+
+      if (!isValidCalendarDate(startDate)) {
+        throw new BadRequestException('startDate must be a valid real calendar date in YYYY-MM-DD format');
+      }
+      if (!isValidCalendarDate(endDate)) {
+        throw new BadRequestException('endDate must be a valid real calendar date in YYYY-MM-DD format');
+      }
+      if (startDate > endDate) {
+        throw new BadRequestException('startDate cannot be after endDate');
+      }
+    } else {
+      const currentMonth = todayStr.substring(0, 7);
+      const [year, month] = currentMonth.split('-').map(Number);
+      startDate = `${currentMonth}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      endDate = `${currentMonth}-${String(lastDay).padStart(2, '0')}`;
+    }
+
+    const startD = new Date(`${startDate}T00:00:00Z`);
+    const endD = new Date(`${endDate}T00:00:00Z`);
+    const diffDays = Math.round((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays > 366) {
+      throw new BadRequestException('Date range cannot exceed 366 days');
+    }
+
+    const calendarDates: { date: string; isWeekend: boolean; isPast: boolean; isToday: boolean; isFuture: boolean }[] = [];
+    const cur = new Date(startD);
+    while (cur <= endD) {
+      const dateStr = cur.toISOString().split('T')[0];
+      const dayOfWeek = cur.getUTCDay(); // 0 = Sunday
+      calendarDates.push({
+        date: dateStr,
+        isWeekend: dayOfWeek === 0,
+        isPast: dateStr < todayStr,
+        isToday: dateStr === todayStr,
+        isFuture: dateStr > todayStr,
+      });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    const requestor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        userRoles: { include: { role: true } },
+        employee: true,
+      },
+    });
+
+    const isGlobalViewer = Boolean(
+      requestor?.userRoles.some((ur) =>
+        ['CEO', 'HR_MANAGER', 'HR_EXECUTIVE', 'ADMIN'].includes(ur.role.code),
+      ),
+    );
+
+    let departmentId = query.departmentId && query.departmentId !== 'all' ? query.departmentId : undefined;
+
+    if (!isGlobalViewer) {
+      departmentId = requestor?.employee?.departmentId;
+      if (!departmentId) {
+        return {
+          startDate,
+          endDate,
+          timezone: TIMEZONE,
+          periodSummary: {
+            totalEmployees: 0,
+            expectedWorkingDays: 0,
+            presentDays: 0,
+            absentDays: 0,
+            onLeaveDays: 0,
+            lateDays: 0,
+            weeklyOffDays: 0,
+            avgAttendanceRate: 0,
+            totalWorkedHours: '0h 0m',
+          },
+          employees: [],
+          departments: [],
+        };
+      }
+    }
+
+    const [allEmployees, allSessions, allLeaves, departments] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: {
+          employmentStatus: { in: ['ACTIVE', 'PROBATION', 'NOTICE_PERIOD'] },
+          ...(departmentId ? { departmentId } : {}),
+        },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              status: true,
+              userRoles: { include: { role: { select: { id: true, name: true, code: true } } } },
+            },
+          },
+        },
+        orderBy: [{ department: { name: 'asc' } }, { firstName: 'asc' }],
+      }),
+      this.prisma.employeeAttendanceSession.findMany({
+        where: {
+          calendarDate: { gte: startDate, lte: endDate },
+          ...(departmentId ? { employee: { departmentId } } : {}),
+        },
+        include: {
+          events: {
+            where: { isInvalidated: false },
+            orderBy: { timestamp: 'asc' },
+          },
+        },
+        orderBy: { calendarDate: 'asc' },
+      }),
+      this.prisma.employeeLeaveRequest.findMany({
+        where: {
+          status: 'APPROVED',
+          startDate: { lte: endDate },
+          endDate: { gte: startDate },
+          ...(departmentId ? { employee: { departmentId } } : {}),
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          leaveType: true,
+          startDate: true,
+          endDate: true,
+          reason: true,
+        },
+      }),
+      this.prisma.department.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, code: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    const sessionsMap = new Map<string, typeof allSessions[0]>();
+    for (const s of allSessions) {
+      sessionsMap.set(`${s.employeeId}_${s.calendarDate}`, s);
+    }
+
+    const eligibleEmployees = allEmployees.filter((emp) => {
+      if (emp.joinedAt) {
+        const joinedDateStr = formatInTimeZone(emp.joinedAt, TIMEZONE, 'yyyy-MM-dd');
+        if (joinedDateStr > endDate) return false;
+      }
+      if (emp.lastWorkingDate && emp.lastWorkingDate < startDate) {
+        return false;
+      }
+      return true;
+    });
+
+    const reportEmployees = eligibleEmployees.map((emp) => {
+      const employeeLeaves = allLeaves.filter((l) => l.employeeId === emp.id);
+
+      let expectedWorkingDays = 0;
+      let presentDays = 0;
+      let absentDays = 0;
+      let lateDays = 0;
+      let onLeaveDays = 0;
+      let weeklyOffDays = 0;
+      let unmarkedDays = 0;
+      let totalWorkedMinutes = 0;
+
+      const dailyRecords = calendarDates.map((cd) => {
+        if (emp.joinedAt) {
+          const joinedDateStr = formatInTimeZone(emp.joinedAt, TIMEZONE, 'yyyy-MM-dd');
+          if (joinedDateStr > cd.date) {
+            return {
+              date: cd.date,
+              status: 'NOT_HIRED',
+              isWeekend: cd.isWeekend,
+              isLate: false,
+              lateMinutes: 0,
+              session: null,
+              leave: null,
+            };
+          }
+        }
+        if (emp.lastWorkingDate && emp.lastWorkingDate < cd.date) {
+          return {
+            date: cd.date,
+            status: 'DEPARTED',
+            isWeekend: cd.isWeekend,
+            isLate: false,
+            lateMinutes: 0,
+            session: null,
+            leave: null,
+          };
+        }
+
+        const session = sessionsMap.get(`${emp.id}_${cd.date}`) || null;
+        const leave = employeeLeaves.find((l) => l.startDate <= cd.date && l.endDate >= cd.date) || null;
+
+        const hasQualifying = Boolean(
+          session && ['ACTIVE', 'ON_BREAK', 'COMPLETED', 'AUTO_CHECKED_OUT'].includes(session.status),
+        );
+
+        const isLate = Boolean(hasQualifying && (session?.isLate || (session?.lateMinutes || 0) > 0));
+
+        let status: 'PRESENT' | 'ON_LEAVE' | 'ABSENT' | 'UNMARKED' | 'WEEKEND_OFF' | 'SCHEDULED';
+
+        if (hasQualifying) {
+          status = 'PRESENT';
+          presentDays++;
+          expectedWorkingDays++;
+          if (isLate) lateDays++;
+          totalWorkedMinutes += (session?.netDurationMinutes || 0);
+        } else if (leave) {
+          status = 'ON_LEAVE';
+          onLeaveDays++;
+        } else if (cd.isWeekend) {
+          status = 'WEEKEND_OFF';
+          weeklyOffDays++;
+        } else if (cd.isToday) {
+          status = 'UNMARKED';
+          unmarkedDays++;
+          expectedWorkingDays++;
+        } else if (cd.isPast) {
+          status = 'ABSENT';
+          absentDays++;
+          expectedWorkingDays++;
+        } else {
+          status = 'SCHEDULED';
+          expectedWorkingDays++;
+        }
+
+        const checkInEvent = session?.events?.find((e) => e.eventType === 'CHECK_IN');
+        const checkOutEvent = session?.events?.find(
+          (e) => e.eventType === 'CHECK_OUT' || e.eventType === 'AUTO_CHECK_OUT',
+        );
+
+        const canSeeDetails = isGlobalViewer || emp.user.id === userId;
+
+        return {
+          date: cd.date,
+          status,
+          isWeekend: cd.isWeekend,
+          isLate,
+          lateMinutes: session?.lateMinutes || 0,
+          session: session
+            ? {
+                id: session.id,
+                status: session.status,
+                checkInTime: checkInEvent?.timestamp ?? null,
+                checkOutTime: checkOutEvent?.timestamp ?? null,
+                netDurationMinutes: session.netDurationMinutes,
+                breakDurationMinutes: session.breakDurationMinutes,
+                grossDurationMinutes: session.grossDurationMinutes,
+                note: session.note,
+              }
+            : null,
+          leave: leave
+            ? {
+                id: leave.id,
+                leaveType: leave.leaveType,
+                startDate: leave.startDate,
+                endDate: leave.endDate,
+                reason: canSeeDetails ? leave.reason : null,
+              }
+            : null,
+        };
+      });
+
+      const eligibleWorkingDays = presentDays + absentDays;
+      const attendancePercentage = eligibleWorkingDays > 0
+        ? Number(((presentDays / eligibleWorkingDays) * 100).toFixed(1))
+        : expectedWorkingDays === 0
+        ? 100
+        : 0;
+
+      const workedHoursStr = `${Math.floor(totalWorkedMinutes / 60)}h ${totalWorkedMinutes % 60}m`;
+
+      return {
+        id: emp.id,
+        businessId: emp.businessId,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        fullName: `${emp.firstName} ${emp.lastName}`.trim(),
+        email: emp.user.email,
+        department: emp.department,
+        roles: emp.user.userRoles.map((ur) => ur.role),
+        expectedWorkingDays,
+        presentDays,
+        absentDays,
+        lateDays,
+        onLeaveDays,
+        weeklyOffDays,
+        unmarkedDays,
+        attendancePercentage,
+        totalWorkedMinutes,
+        workedHoursStr,
+        dailyRecords,
+      };
+    });
+
+    let sumPresent = 0;
+    let sumAbsent = 0;
+    let sumOnLeave = 0;
+    let sumLate = 0;
+    let sumWeeklyOffs = 0;
+    let sumWorkedMinutes = 0;
+    let sumExpectedWorkingDays = 0;
+    let sumRate = 0;
+
+    for (const r of reportEmployees) {
+      sumPresent += r.presentDays;
+      sumAbsent += r.absentDays;
+      sumOnLeave += r.onLeaveDays;
+      sumLate += r.lateDays;
+      sumWeeklyOffs += r.weeklyOffDays;
+      sumWorkedMinutes += r.totalWorkedMinutes;
+      sumExpectedWorkingDays += r.expectedWorkingDays;
+      sumRate += r.attendancePercentage;
+    }
+
+    const avgAttendanceRate = reportEmployees.length > 0
+      ? Number((sumRate / reportEmployees.length).toFixed(1))
+      : 0;
+
+    const totalWorkedHours = `${Math.floor(sumWorkedMinutes / 60)}h ${sumWorkedMinutes % 60}m`;
+
+    return {
+      startDate,
+      endDate,
+      timezone: TIMEZONE,
+      periodSummary: {
+        totalEmployees: reportEmployees.length,
+        expectedWorkingDays: sumExpectedWorkingDays,
+        presentDays: sumPresent,
+        absentDays: sumAbsent,
+        onLeaveDays: sumOnLeave,
+        lateDays: sumLate,
+        weeklyOffDays: sumWeeklyOffs,
+        avgAttendanceRate,
+        totalWorkedHours,
+      },
+      employees: reportEmployees,
+      departments,
+    };
+  }
 }
 

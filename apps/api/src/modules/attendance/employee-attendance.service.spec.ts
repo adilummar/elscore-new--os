@@ -351,4 +351,204 @@ describe('EmployeeAttendanceService', () => {
       expect(res.records.length).toBe(0);
     });
   });
+
+  describe('getAttendanceReport', () => {
+    const mockCeoUser = {
+      id: 'ceo-1',
+      userRoles: [{ role: { code: 'CEO' } }],
+      employee: { departmentId: 'dept-exec' },
+      organizationId: 'org-1',
+    };
+
+    const mockReportEmployees = [
+      {
+        id: 'emp-1',
+        businessId: 'EMP-0001',
+        firstName: 'John',
+        lastName: 'Doe',
+        joinedAt: new Date('2026-01-01T00:00:00Z'),
+        departmentId: 'dept-sales',
+        employmentStatus: 'ACTIVE',
+        department: { id: 'dept-sales', name: 'Sales', code: 'SALES' },
+        user: { id: 'u-1', email: 'john@elscore.com', userRoles: [] },
+      },
+      {
+        id: 'emp-2',
+        businessId: 'EMP-0002',
+        firstName: 'Jane',
+        lastName: 'Smith',
+        joinedAt: new Date('2026-01-01T00:00:00Z'),
+        departmentId: 'dept-sales',
+        employmentStatus: 'ACTIVE',
+        department: { id: 'dept-sales', name: 'Sales', code: 'SALES' },
+        user: { id: 'u-2', email: 'jane@elscore.com', userRoles: [] },
+      },
+      {
+        id: 'emp-3',
+        businessId: 'EMP-0003',
+        firstName: 'Bob',
+        lastName: 'Wilson',
+        joinedAt: new Date('2026-01-01T00:00:00Z'),
+        departmentId: 'dept-hr',
+        employmentStatus: 'ACTIVE',
+        department: { id: 'dept-hr', name: 'HR', code: 'HR' },
+        user: { id: 'u-3', email: 'bob@elscore.com', userRoles: [] },
+      },
+    ];
+
+    it('rejects invalid month format', async () => {
+      await expect(
+        service.getAttendanceReport('ceo-1', { month: 'invalid-month' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects when startDate is after endDate', async () => {
+      await expect(
+        service.getAttendanceReport('ceo-1', {
+          startDate: '2026-10-25',
+          endDate: '2026-10-20',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects range exceeding 366 days', async () => {
+      await expect(
+        service.getAttendanceReport('ceo-1', {
+          startDate: '2025-01-01',
+          endDate: '2026-02-01',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('generates employee-wise report and workforce summary correctly for a date range', async () => {
+      jest.spyOn(prisma.user, 'findUnique').mockResolvedValue(mockCeoUser as any);
+      jest.spyOn(prisma.employee, 'findMany').mockResolvedValue(mockReportEmployees as any);
+      jest.spyOn(prisma.department, 'findMany').mockResolvedValue([
+        { id: 'dept-sales', name: 'Sales', code: 'SALES' },
+        { id: 'dept-hr', name: 'HR', code: 'HR' },
+      ] as any);
+
+      // Sessions for emp-1: present on 2026-10-20 (net 480m)
+      // Sessions for emp-2: present on 2026-10-20 (net 480m, late 15m)
+      const mockSessions = [
+        {
+          id: 'sess-1',
+          employeeId: 'emp-1',
+          calendarDate: '2026-10-20',
+          startTime: new Date('2026-10-20T03:30:00Z'), // 09:00 IST
+          status: 'COMPLETED',
+          isLate: false,
+          lateMinutes: 0,
+          netDurationMinutes: 480,
+          breakDurationMinutes: 30,
+          events: [
+            { eventType: 'CHECK_IN', timestamp: new Date('2026-10-20T03:30:00Z') },
+            { eventType: 'CHECK_OUT', timestamp: new Date('2026-10-20T12:00:00Z') },
+          ],
+        },
+        {
+          id: 'sess-2',
+          employeeId: 'emp-2',
+          calendarDate: '2026-10-20',
+          startTime: new Date('2026-10-20T03:45:00Z'), // 09:15 IST
+          status: 'COMPLETED',
+          isLate: true,
+          lateMinutes: 15,
+          netDurationMinutes: 480,
+          breakDurationMinutes: 30,
+          events: [
+            { eventType: 'CHECK_IN', timestamp: new Date('2026-10-20T03:45:00Z') },
+            { eventType: 'CHECK_OUT', timestamp: new Date('2026-10-20T12:15:00Z') },
+          ],
+        },
+      ];
+      jest.spyOn(prisma.employeeAttendanceSession, 'findMany').mockResolvedValue(mockSessions as any);
+
+      // Bob (emp-3) is on approved leave from 2026-10-19 to 2026-10-21
+      jest.spyOn(prisma.employeeLeaveRequest, 'findMany').mockResolvedValue([
+        {
+          id: 'leave-1',
+          employeeId: 'emp-3',
+          leaveType: 'CASUAL',
+          startDate: '2026-10-19',
+          endDate: '2026-10-21',
+          status: 'APPROVED',
+        },
+      ] as any);
+
+      // Range: Monday 2026-10-19 to Wednesday 2026-10-21 (3 working days, 0 Sundays)
+      const report = await service.getAttendanceReport('ceo-1', {
+        startDate: '2026-10-19',
+        endDate: '2026-10-21',
+      });
+
+      expect(report.startDate).toBe('2026-10-19');
+      expect(report.endDate).toBe('2026-10-21');
+
+      expect(report.periodSummary.totalEmployees).toBe(3);
+      // emp1 (3) + emp2 (3) + emp3 (0 on leave) = 6 expected working days
+      expect(report.periodSummary.expectedWorkingDays).toBe(6);
+
+      // Total presents: emp-1 (1) + emp-2 (1) = 2
+      expect(report.periodSummary.presentDays).toBe(2);
+      // Total late days: emp-2 (1) = 1
+      expect(report.periodSummary.lateDays).toBe(1);
+      // Total on leave: emp-3 (3 days: 19, 20, 21) = 3
+      expect(report.periodSummary.onLeaveDays).toBe(3);
+      // Total absent: emp-1 (2 absent days: 19, 21) + emp-2 (2 absent days: 19, 21) = 4
+      expect(report.periodSummary.absentDays).toBe(4);
+
+      // Verify individual employee metrics:
+      const emp1 = report.employees.find((e) => e.id === 'emp-1');
+      expect(emp1).toBeDefined();
+      expect(emp1?.presentDays).toBe(1);
+      expect(emp1?.absentDays).toBe(2);
+      expect(emp1?.lateDays).toBe(0);
+      expect(emp1?.onLeaveDays).toBe(0);
+      expect(emp1?.expectedWorkingDays).toBe(3);
+      // Attendance % = 1 / (1 + 2) * 100 = 33.3%
+      expect(emp1?.attendancePercentage).toBe(33.3);
+      expect(emp1?.workedHoursStr).toBe('8h 0m');
+      expect(emp1?.dailyRecords.length).toBe(3);
+
+      const emp2 = report.employees.find((e) => e.id === 'emp-2');
+      expect(emp2?.presentDays).toBe(1);
+      expect(emp2?.lateDays).toBe(1);
+
+      const emp3 = report.employees.find((e) => e.id === 'emp-3');
+      expect(emp3?.onLeaveDays).toBe(3);
+      expect(emp3?.presentDays).toBe(0);
+      expect(emp3?.absentDays).toBe(0);
+      expect(emp3?.attendancePercentage).toBe(100);
+    });
+
+    it('scopes non-global viewers to their assigned department', async () => {
+      const mockSalesManager = {
+        id: 'mgr-1',
+        userRoles: [{ role: { code: 'SALES_MANAGER' } }],
+        employee: { departmentId: 'dept-sales' },
+        organizationId: 'org-1',
+      };
+
+      jest.spyOn(prisma.user, 'findUnique').mockResolvedValue(mockSalesManager as any);
+      const findEmployeesSpy = jest.spyOn(prisma.employee, 'findMany').mockResolvedValue([]);
+      jest.spyOn(prisma.employeeAttendanceSession, 'findMany').mockResolvedValue([]);
+      jest.spyOn(prisma.employeeLeaveRequest, 'findMany').mockResolvedValue([]);
+      jest.spyOn(prisma.department, 'findMany').mockResolvedValue([]);
+
+      await service.getAttendanceReport('mgr-1', {
+        month: '2026-10',
+        departmentId: 'dept-hr', // Attempting to view HR
+      });
+
+      // Must be forced to dept-sales
+      expect(findEmployeesSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            departmentId: 'dept-sales',
+          }),
+        }),
+      );
+    });
+  });
 });
