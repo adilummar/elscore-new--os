@@ -1129,7 +1129,7 @@ describe('OnboardingService', () => {
     });
 
     it('FLOW-ONB-001: blocks finalization if checklist tasks are still PENDING or IN_PROGRESS', async () => {
-      prisma.onboardingCase.findUnique.mockResolvedValueOnce({
+      prisma.onboardingCase.findUnique.mockResolvedValue({
         ...readyCase,
         tasks: [
           { ...mockTask, id: 't-1', status: OnboardingTaskStatus.PENDING, title: 'IT Setup' },
@@ -1157,8 +1157,8 @@ describe('OnboardingService', () => {
       expect(res).toBeDefined();
     });
 
-    it('FLOW-ONB-001: blocks finalization if mandatory Identity Proof is missing or unverified', async () => {
-      prisma.onboardingCase.findUnique.mockResolvedValueOnce({
+    it('allows finalization with warning when mandatory Identity Proof is missing', async () => {
+      prisma.onboardingCase.findUnique.mockResolvedValue({
         ...readyCase,
         documents: [
           // Only offer letter, no passport/national ID
@@ -1171,13 +1171,21 @@ describe('OnboardingService', () => {
         ],
       });
 
-      await expect(
-        service.finalizeOnboarding(mockOnboardingCase.id, finalizeDto, mockActorUserId),
-      ).rejects.toThrow(UnprocessableEntityException);
+      const res = await service.finalizeOnboarding(mockOnboardingCase.id, finalizeDto, mockActorUserId);
+      expect(res).toBeDefined();
+      expect(auditService.recordInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          newValue: expect.objectContaining({
+            missingDocumentsWarning: true,
+            missingDocuments: expect.arrayContaining([expect.stringContaining('Identity Proof')]),
+          }),
+        }),
+      );
     });
 
-    it('FLOW-ONB-001: blocks finalization if mandatory Signed Offer Letter is missing or unverified', async () => {
-      prisma.onboardingCase.findUnique.mockResolvedValueOnce({
+    it('allows finalization with warning when mandatory Signed Offer Letter is missing', async () => {
+      prisma.onboardingCase.findUnique.mockResolvedValue({
         ...readyCase,
         documents: [
           // Only passport, no signed offer letter
@@ -1190,13 +1198,43 @@ describe('OnboardingService', () => {
         ],
       });
 
-      await expect(
-        service.finalizeOnboarding(mockOnboardingCase.id, finalizeDto, mockActorUserId),
-      ).rejects.toThrow(UnprocessableEntityException);
+      const res = await service.finalizeOnboarding(mockOnboardingCase.id, finalizeDto, mockActorUserId);
+      expect(res).toBeDefined();
+      expect(auditService.recordInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          newValue: expect.objectContaining({
+            missingDocumentsWarning: true,
+            missingDocuments: expect.arrayContaining([expect.stringContaining('Signed Offer Letter')]),
+          }),
+        }),
+      );
+    });
+
+    it('allows finalization with warnings when both Identity Proof and Signed Offer Letter are missing', async () => {
+      prisma.onboardingCase.findUnique.mockResolvedValue({
+        ...readyCase,
+        documents: [], // 0 documents
+      });
+
+      const res = await service.finalizeOnboarding(mockOnboardingCase.id, finalizeDto, mockActorUserId);
+      expect(res).toBeDefined();
+      expect(auditService.recordInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          newValue: expect.objectContaining({
+            missingDocumentsWarning: true,
+            missingDocuments: expect.arrayContaining([
+              expect.stringContaining('Identity Proof'),
+              expect.stringContaining('Signed Offer Letter'),
+            ]),
+          }),
+        }),
+      );
     });
 
     it('FLOW-ONB-001: blocks finalization if any document is in PENDING verification status', async () => {
-      prisma.onboardingCase.findUnique.mockResolvedValueOnce({
+      prisma.onboardingCase.findUnique.mockResolvedValue({
         ...readyCase,
         documents: [
           ...readyCase.documents,
@@ -1216,7 +1254,7 @@ describe('OnboardingService', () => {
     });
 
     it('FLOW-ONB-001: blocks finalization if any document is REJECTED', async () => {
-      prisma.onboardingCase.findUnique.mockResolvedValueOnce({
+      prisma.onboardingCase.findUnique.mockResolvedValue({
         ...readyCase,
         documents: [
           ...readyCase.documents,

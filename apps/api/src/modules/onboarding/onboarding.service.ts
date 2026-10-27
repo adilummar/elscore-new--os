@@ -898,6 +898,7 @@ export class OnboardingService {
 
       // FLOW-ONB-001: Enforce server-side readiness gates before finalization
       const blockers: string[] = [];
+      const warnings: string[] = [];
 
       // A. Mandatory Tasks Gate: All checklist tasks must be COMPLETED or WAIVED
       const incompleteTasks = (currentCase.tasks || []).filter(
@@ -913,7 +914,7 @@ export class OnboardingService {
         }
       }
 
-      // B. Mandatory Documents Gate: Verified proof of identity (National ID or Passport)
+      // B. Document Warnings: Missing Identity Proof (National ID or Passport)
       const hasVerifiedIdentity = (currentCase.documents || []).some(
         (doc) =>
           (doc.documentType === OnboardingDocumentType.NATIONAL_ID ||
@@ -921,20 +922,20 @@ export class OnboardingService {
           doc.status === DocumentVerificationStatus.VERIFIED,
       );
       if (!hasVerifiedIdentity) {
-        blockers.push(
-          'Missing verified Identity Proof: At least one National ID or Passport must be uploaded and verified.',
+        warnings.push(
+          'Missing verified Identity Proof: At least one National ID or Passport must be uploaded and verified for the employee file.',
         );
       }
 
-      // C. Mandatory Documents Gate: Verified Signed Corporate Offer Letter
+      // C. Document Warnings: Missing Signed Corporate Offer Letter
       const hasVerifiedSignedOffer = (currentCase.documents || []).some(
         (doc) =>
           doc.documentType === OnboardingDocumentType.SIGNED_OFFER_LETTER &&
           doc.status === DocumentVerificationStatus.VERIFIED,
       );
       if (!hasVerifiedSignedOffer) {
-        blockers.push(
-          'Missing verified Signed Offer Letter: Signed corporate offer letter must be uploaded and verified.',
+        warnings.push(
+          'Missing verified Signed Offer Letter: Signed corporate offer letter must be uploaded and verified for the employee file.',
         );
       }
 
@@ -966,6 +967,7 @@ export class OnboardingService {
           code: 'ONBOARDING_GATES_FAILED',
           message: `Cannot finalize onboarding case: ${blockers.length} readiness condition(s) not satisfied.`,
           blockers,
+          warnings,
         });
       }
 
@@ -1144,6 +1146,12 @@ export class OnboardingService {
       );
 
       // 12. Finalize OnboardingCase
+      let finalNotes = dto.notes !== undefined ? dto.notes?.trim() || null : currentCase.notes;
+      if (warnings.length > 0) {
+        const followUpTag = `[Pending Document Follow-up: ${warnings.join(' | ')}]`;
+        finalNotes = finalNotes ? `${finalNotes}\n${followUpTag}` : followUpTag;
+      }
+
       const finalizedCase = await tx.onboardingCase.update({
         where: { id: caseId },
         data: {
@@ -1152,7 +1160,7 @@ export class OnboardingService {
           confirmedJoiningDate: dto.confirmedJoiningDate,
           finalizedById: actorUserId,
           finalizedAt: new Date(),
-          notes: dto.notes !== undefined ? dto.notes?.trim() || null : currentCase.notes,
+          notes: finalNotes,
         },
         include: {
           employee: true,
@@ -1175,8 +1183,13 @@ export class OnboardingService {
           confirmedJoiningDate: dto.confirmedJoiningDate,
           probationEndDate,
           compensationRequestId: compRequest.id,
+          missingDocumentsWarning: warnings.length > 0,
+          missingDocuments: warnings,
         },
-        reason: 'Onboarding finalized and employee created',
+        reason:
+          warnings.length > 0
+            ? `Onboarding finalized with pending document warnings: ${warnings.join('; ')}`
+            : 'Onboarding finalized and employee created',
       });
 
       return finalizedCase;

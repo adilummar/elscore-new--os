@@ -124,6 +124,8 @@ export default function OnboardingPage() {
     notes: '',
   });
 
+  const [confirmMissingDocs, setConfirmMissingDocs] = React.useState(false);
+
   const [probationForm, setProbationForm] = React.useState({
     reviewDate: '',
     outcome: 'CONFIRMED' as 'CONFIRMED' | 'EXTENDED' | 'TERMINATED',
@@ -655,6 +657,26 @@ export default function OnboardingPage() {
 
             <div className="flex items-center space-x-2">
               <StatusBadge status={selectedCase.status} />
+              {selectedCase.status === 'COMPLETED' && (() => {
+                const hasId = selectedCase.documents?.some(
+                  (d: any) => (d.documentType === 'NATIONAL_ID' || d.documentType === 'PASSPORT') && d.status === 'VERIFIED'
+                );
+                const hasOffer = selectedCase.documents?.some(
+                  (d: any) => d.documentType === 'SIGNED_OFFER_LETTER' && d.status === 'VERIFIED'
+                );
+                const isMissing = !hasId || !hasOffer;
+                return isMissing ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                    Document Follow-up Required
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Employee File Complete
+                  </span>
+                );
+              })()}
               {selectedCase.status !== 'COMPLETED' &&
                 selectedCase.status !== 'WITHDRAWN' &&
                 selectedCase.status !== 'NO_SHOW' &&
@@ -692,6 +714,7 @@ export default function OnboardingPage() {
                             emergencyContactRelation: '',
                             notes: '',
                           });
+                          setConfirmMissingDocs(false);
                           setFinalizeModalOpen(true);
                         }}
                       >
@@ -703,6 +726,43 @@ export default function OnboardingPage() {
                 )}
             </div>
           </div>
+
+          {/* Post-Finalization Document Follow-up Banner */}
+          {selectedCase.status === 'COMPLETED' && (() => {
+            const hasId = selectedCase.documents?.some(
+              (d: any) => (d.documentType === 'NATIONAL_ID' || d.documentType === 'PASSPORT') && d.status === 'VERIFIED'
+            );
+            const hasOffer = selectedCase.documents?.some(
+              (d: any) => d.documentType === 'SIGNED_OFFER_LETTER' && d.status === 'VERIFIED'
+            );
+            const missingList = [
+              !hasId && 'Identity Proof (National ID / Passport)',
+              !hasOffer && 'Signed Corporate Offer Letter',
+            ].filter(Boolean) as string[];
+
+            if (missingList.length === 0) return null;
+
+            return (
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-sm text-amber-950">
+                      Employee File Incomplete — HR Follow-up Required
+                    </div>
+                    <div className="text-amber-800 mt-0.5">
+                      Employee record <strong className="font-mono text-emerald-900 font-bold">{selectedCase.employee?.businessId || 'EMP-####'}</strong> was created, but <strong>{missingList.join(' and ')}</strong> still require HR verification to complete the employee file.
+                    </div>
+                  </div>
+                </div>
+                <div className="shrink-0">
+                  <span className="px-2.5 py-1 rounded bg-amber-200 text-amber-950 font-bold text-xs uppercase tracking-wide">
+                    HR Follow-up Required
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Overview Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1272,8 +1332,9 @@ export default function OnboardingPage() {
         ).length;
         const docsResolutionReady = pendingDocsCount === 0 && rejectedDocsCount === 0;
 
-        const isReadyToFinalize =
-          hasIdentityDoc && hasSignedOfferDoc && tasksReady && docsResolutionReady;
+        const hasHardBlockers = !tasksReady || !docsResolutionReady;
+        const hasMissingDocsWarning = !hasIdentityDoc || !hasSignedOfferDoc;
+        const canSubmit = !hasHardBlockers && (!hasMissingDocsWarning || confirmMissingDocs);
 
         return (
           <Modal
@@ -1295,28 +1356,38 @@ export default function OnboardingPage() {
               {/* Readiness Gates Verification Card */}
               <div
                 className={`p-3.5 rounded-lg border text-xs space-y-2 ${
-                  isReadyToFinalize
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                    : 'bg-amber-50 border-amber-200 text-amber-950'
+                  hasHardBlockers
+                    ? 'bg-rose-50 border-rose-200 text-rose-950'
+                    : hasMissingDocsWarning
+                    ? 'bg-amber-50 border-amber-200 text-amber-950'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-950'
                 }`}
               >
                 <div className="font-semibold flex items-center justify-between">
                   <span className="flex items-center gap-1.5 font-bold">
-                    {isReadyToFinalize ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    ) : (
+                    {hasHardBlockers ? (
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                    ) : hasMissingDocsWarning ? (
                       <AlertCircle className="w-4 h-4 text-amber-600" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     )}
                     Onboarding Readiness Checklist
                   </span>
                   <span
                     className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                      isReadyToFinalize
-                        ? 'bg-emerald-200 text-emerald-900'
-                        : 'bg-amber-200 text-amber-900'
+                      hasHardBlockers
+                        ? 'bg-rose-200 text-rose-900'
+                        : hasMissingDocsWarning
+                        ? 'bg-amber-200 text-amber-900'
+                        : 'bg-emerald-200 text-emerald-900'
                     }`}
                   >
-                    {isReadyToFinalize ? 'All Gates Satisfied' : 'Gates Incomplete'}
+                    {hasHardBlockers
+                      ? 'Hard Blockers Remaining'
+                      : hasMissingDocsWarning
+                      ? 'Ready with Warning'
+                      : 'All Gates Satisfied'}
                   </span>
                 </div>
 
@@ -1325,10 +1396,10 @@ export default function OnboardingPage() {
                     {hasIdentityDoc ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     ) : (
-                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     )}
-                    <span className={hasIdentityDoc ? 'text-slate-800' : 'text-rose-700 font-medium'}>
-                      Identity Proof (National ID / Passport)
+                    <span className={hasIdentityDoc ? 'text-slate-800' : 'text-amber-800 font-medium'}>
+                      Identity Proof ({hasIdentityDoc ? 'Verified' : 'Missing — Warning'})
                     </span>
                   </div>
 
@@ -1336,10 +1407,10 @@ export default function OnboardingPage() {
                     {hasSignedOfferDoc ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     ) : (
-                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     )}
-                    <span className={hasSignedOfferDoc ? 'text-slate-800' : 'text-rose-700 font-medium'}>
-                      Signed Corporate Offer Letter
+                    <span className={hasSignedOfferDoc ? 'text-slate-800' : 'text-amber-800 font-medium'}>
+                      Signed Offer Letter ({hasSignedOfferDoc ? 'Verified' : 'Missing — Warning'})
                     </span>
                   </div>
 
@@ -1347,9 +1418,9 @@ export default function OnboardingPage() {
                     {tasksReady ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     ) : (
-                      <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                     )}
-                    <span className={tasksReady ? 'text-slate-800' : 'text-amber-800 font-medium'}>
+                    <span className={tasksReady ? 'text-slate-800' : 'text-rose-700 font-medium'}>
                       Checklist Tasks ({completedOrWaivedTasks}/{totalTasks} Completed)
                     </span>
                   </div>
@@ -1358,20 +1429,50 @@ export default function OnboardingPage() {
                     {docsResolutionReady ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     ) : (
-                      <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                     )}
-                    <span className={docsResolutionReady ? 'text-slate-800' : 'text-amber-800 font-medium'}>
+                    <span className={docsResolutionReady ? 'text-slate-800' : 'text-rose-700 font-medium'}>
                       Document Resolution ({pendingDocsCount} pending, {rejectedDocsCount} rejected)
                     </span>
                   </div>
                 </div>
 
-                {!isReadyToFinalize && (
-                  <div className="text-[11px] text-amber-800 pt-1 border-t border-amber-200/50">
-                    All checklist tasks must be completed/waived, mandatory documents verified, and no documents pending or rejected before finalization.
+                {hasHardBlockers ? (
+                  <div className="text-[11px] text-rose-800 pt-1 border-t border-rose-200/50">
+                    All checklist tasks must be completed/waived, and all uploaded documents must be resolved before finalization.
                   </div>
-                )}
+                ) : hasMissingDocsWarning ? (
+                  <div className="text-[11px] text-amber-800 pt-1 border-t border-amber-200/50">
+                    Checklist tasks are completed. Missing documents are treated as non-blocking warnings and require HR follow-up.
+                  </div>
+                ) : null}
               </div>
+
+              {/* Confirmation callout for missing documents */}
+              {!hasHardBlockers && hasMissingDocsWarning && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-md text-xs space-y-2 text-amber-950">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Notice:</strong> Some onboarding documents are missing ({[
+                        !hasIdentityDoc && 'Identity Proof (National ID / Passport)',
+                        !hasSignedOfferDoc && 'Signed Corporate Offer Letter',
+                      ].filter(Boolean).join(', ')}). You may continue, but HR must follow up to complete the employee file.
+                    </div>
+                  </div>
+                  <label className="flex items-start gap-2 pt-1 border-t border-amber-200/80 cursor-pointer font-medium text-amber-950 select-none">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 mt-0.5"
+                      checked={confirmMissingDocs}
+                      onChange={(e) => setConfirmMissingDocs(e.target.checked)}
+                    />
+                    <span>
+                      I acknowledge required documents are missing and confirm HR will follow up post-hire to complete the employee file.
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <form onSubmit={handleFinalizeSubmit} className="space-y-4 max-h-[65vh] overflow-y-auto pr-2">
                 <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-md text-xs space-y-1">
@@ -1503,12 +1604,16 @@ export default function OnboardingPage() {
                   <Button
                     type="submit"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
-                    disabled={actionLoading || !isReadyToFinalize}
+                    disabled={actionLoading || !canSubmit}
                   >
                     {actionLoading
                       ? 'Finalizing...'
-                      : !isReadyToFinalize
-                      ? 'Readiness Gates Incomplete'
+                      : hasHardBlockers
+                      ? 'Incomplete Tasks / Docs Required'
+                      : hasMissingDocsWarning
+                      ? confirmMissingDocs
+                        ? 'Confirm & Finalize Hire'
+                        : 'Acknowledge Warning to Proceed'
                       : 'Confirm & Create Employee'}
                   </Button>
                 </div>
