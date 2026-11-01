@@ -12,6 +12,8 @@ out/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 
 # Logs
 *.log
@@ -75,4 +77,9 @@ apps/web/final_implementation_report.md
 storage/
 apps/api/storage/
 
-
+# Backup and database artefacts (encrypted or not) must never be committed
+*.enc
+*.dump
+*.dump.gz
+*.sql.gz
+*.tar.gz
