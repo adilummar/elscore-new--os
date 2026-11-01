@@ -101,13 +101,11 @@ describe('assertConnectedToDisposableDatabase (run-time cross-check)', () => {
 describe('PrismaService.cleanDatabase', () => {
   const originalEnv = { ...process.env };
   const build = (reportedDb: string) => {
-    const service = Object.create(PrismaService.prototype) as PrismaService & {
-      $executeRaw: jest.Mock;
-      $queryRaw: jest.Mock;
-    };
-    service.$executeRaw = jest.fn().mockResolvedValue(1);
-    service.$queryRaw = jest.fn().mockResolvedValue([{ db: reportedDb }]);
-    return service;
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const queryRaw = jest.fn().mockResolvedValue([{ db: reportedDb }]);
+    const service = Object.create(PrismaService.prototype) as PrismaService;
+    Object.assign(service, { $executeRaw: executeRaw, $queryRaw: queryRaw });
+    return { service, executeRaw };
   };
 
   afterEach(() => {
@@ -117,11 +115,11 @@ describe('PrismaService.cleanDatabase', () => {
   it('truncates only when the URL and the live connection both name a disposable local database', async () => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = url('elscore_e2e_test');
-    const service = build('elscore_e2e_test');
+    const { service, executeRaw } = build('elscore_e2e_test');
 
     await service.cleanDatabase();
 
-    expect(service.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -131,27 +129,27 @@ describe('PrismaService.cleanDatabase', () => {
   ])('never truncates %s', async (_label, databaseUrl, reportedDb) => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = databaseUrl;
-    const service = build(reportedDb);
+    const { service, executeRaw } = build(reportedDb);
 
     await expect(service.cleanDatabase()).rejects.toBeInstanceOf(UnsafeDatabaseError);
-    expect(service.$executeRaw).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 
   it('never truncates when the connection reports a different database than DATABASE_URL (misdirected URL)', async () => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = url('elscore_e2e_test');
-    const service = build('elscore_os_staging');
+    const { service, executeRaw } = build('elscore_os_staging');
 
     await expect(service.cleanDatabase()).rejects.toBeInstanceOf(UnsafeDatabaseError);
-    expect(service.$executeRaw).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 
   it('keeps the original NODE_ENV rule', async () => {
     process.env.NODE_ENV = 'development';
     process.env.DATABASE_URL = url('elscore_e2e_test');
-    const service = build('elscore_e2e_test');
+    const { service, executeRaw } = build('elscore_e2e_test');
 
     await expect(service.cleanDatabase()).rejects.toThrow('only permitted in test environments');
-    expect(service.$executeRaw).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 });
