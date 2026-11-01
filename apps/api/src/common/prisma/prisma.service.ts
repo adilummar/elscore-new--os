@@ -1,6 +1,8 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
+import { assertConnectedToDisposableDatabase, assertDisposableDatabase } from './disposable-database.guard';
+
 
 /**
  * PrismaTxClient — type for Prisma interactive transaction callback argument.
@@ -51,6 +53,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     if (process.env.NODE_ENV !== 'test') {
       throw new Error('cleanDatabase() is only permitted in test environments');
     }
+
+    // NODE_ENV alone is not enough: the connection must be a disposable local database.
+    const target = assertDisposableDatabase(process.env.DATABASE_URL);
+    await assertConnectedToDisposableDatabase(this, target);
 
     // Use raw SQL to truncate in one statement with CASCADE
     await this.$executeRaw`
