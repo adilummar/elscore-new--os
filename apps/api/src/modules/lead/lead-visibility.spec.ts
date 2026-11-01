@@ -126,6 +126,7 @@ function serviceWith(prisma: any) {
     { recordInTx: jest.fn() } as any,
     { nextIdInTx: jest.fn() } as any,
     {} as any,
+    {} as any,
   );
 }
 

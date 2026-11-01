@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MentoringHandoverService } from '../mentoring/mentoring-handover.service';
 import { RoundRobinService } from '../round-robin/round-robin.service';
 
 import { LeadService } from './lead.service';
@@ -42,6 +43,7 @@ describe('LeadService.getTimeline deleted student', () => {
         { provide: AuditService, useValue: {} },
         { provide: IdGeneratorService, useValue: {} },
         { provide: RoundRobinService, useValue: {} },
+        { provide: MentoringHandoverService, useValue: {} },
       ],
     }).compile();
 

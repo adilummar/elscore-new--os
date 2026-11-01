@@ -5,6 +5,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { encodeCursor, decodeCursor } from '../../common/pagination/paginate.util';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
+import { HANDOVER_TRIGGER_STATUSES, MentoringHandoverService } from '../mentoring/mentoring-handover.service';
 import { RoundRobinService } from '../round-robin/round-robin.service';
 
 import { CreateLeadDto } from './dto/create-lead.dto';
@@ -22,6 +23,7 @@ export class LeadService {
     private readonly audit: AuditService,
     private readonly idGen: IdGeneratorService,
     private readonly roundRobin: RoundRobinService,
+    private readonly mentoringHandover: MentoringHandoverService,
   ) {}
 
   /**
@@ -471,6 +473,10 @@ export class LeadService {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const oldLead = await tx.lead.findUniqueOrThrow({ where: { id } });
 
+      if (HANDOVER_TRIGGER_STATUSES.includes(oldLead.status)) {
+        await this.mentoringHandover.assertCanLeaveEnrolled(tx, id, dto.status);
+      }
+
       let newAssignedTo = oldLead.assignedToUserId;
       let didReassign = false;
 
@@ -528,8 +534,23 @@ export class LeadService {
         newValue: updated,
       });
 
+      // Sales enrollment hands the student(s) over to Mentoring in the same transaction, so a lead is
+      // never ENROLLED without its handover. Idempotent: repeated ENROLLED/PAID events create nothing new.
+      if (HANDOVER_TRIGGER_STATUSES.includes(dto.status)) {
+        await this.mentoringHandover.ensureHandoverInTx(tx, id, userId);
+      }
+
       return updated;
     });
+  }
+
+  async getMentoringHandoverStatus(id: string, userId: string, hasReadAll: boolean) {
+    await this.checkOwnership(id, userId, hasReadAll);
+    return this.mentoringHandover.getStatusForLead(id);
+  }
+
+  async retryMentoringHandover(id: string, userId: string) {
+    return this.mentoringHandover.retryForLead(id, userId);
   }
 
   async reassign(id: string, dto: ReassignLeadDto, userId: string) {

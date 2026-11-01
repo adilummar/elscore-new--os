@@ -1291,6 +1291,8 @@ model Lead {
   distributionEvents    LeadDistributionEvent[]
   Quotation             Quotation[]
   demoBookings          DemoBooking[]
+  enrollmentHandovers   EnrollmentHandover[]
+  mentoringActivations  MentoringActivation[]
 
   @@index([assignedToUserId])
   @@index([primaryPhone])
@@ -1329,6 +1331,8 @@ model Student {
   targetCreditLedger TargetCreditLedger[]
   StudentAttendance  StudentAttendance[]
   Quotation          Quotation[]
+  enrollmentHandover  EnrollmentHandover?
+  mentoringActivation MentoringActivation?
 
   @@index([leadId])
   @@map("students")
@@ -3669,6 +3673,96 @@ model PipObjective {
   @@map("pip_objectives")
 }
 
+// =============================================================================
+// MENTORING — Sales ENROLLED handover and Phase 1 activation (WP2)
+// =============================================================================
 
+enum EnrollmentHandoverStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
 
+enum MentoringActivationStatus {
+  AWAITING_ALLOCATION
+  ACTIVATION_IN_PROGRESS
+  ACTIVATION_ON_HOLD
+  ACTIVATION_BLOCKED
+  PENDING_FINAL_APPROVAL
+  ACTIVATED
+  CANCELLED
+}
 
+enum MentoringStageStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  ON_HOLD
+  BLOCKED
+  PENDING_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+/// One handover per student. The unique studentId is what makes ENROLLED idempotent.
+/// sourceSnapshot preserves the Sales values exactly as they were at handover time.
+model EnrollmentHandover {
+  id                String                   @id @default(uuid())
+  leadId            String                   @map("lead_id")
+  studentId         String                   @unique @map("student_id")
+  status            EnrollmentHandoverStatus @default(PENDING)
+  sourceSnapshot    Json                     @map("source_snapshot")
+  transferredFields Json                     @map("transferred_fields")
+  missingFields     Json                     @map("missing_fields")
+  lastError         String?                  @map("last_error") @db.Text
+  attempts          Int                      @default(1)
+  triggeredByUserId String                   @map("triggered_by_user_id")
+  completedAt       DateTime?                @map("completed_at")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  updatedAt         DateTime                 @updatedAt @map("updated_at")
+
+  lead       Lead                 @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  student    Student              @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  activation MentoringActivation?
+
+  @@index([leadId])
+  @@index([status])
+  @@map("enrollment_handovers")
+}
+
+/// Mentoring Phase 1 workflow header. Separate from Sales ENROLLED status.
+model MentoringActivation {
+  id           String                    @id @default(uuid())
+  leadId       String                    @map("lead_id")
+  studentId    String                    @unique @map("student_id")
+  handoverId   String                    @unique @map("handover_id")
+  status       MentoringActivationStatus @default(AWAITING_ALLOCATION)
+  currentStage Int                       @default(1) @map("current_stage")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+
+  lead     Lead               @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  student  Student            @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  handover EnrollmentHandover @relation(fields: [handoverId], references: [id], onDelete: Restrict)
+  stages   MentoringStage[]
+
+  @@index([leadId])
+  @@index([status])
+  @@map("mentoring_activations")
+}
+
+model MentoringStage {
+  id           String               @id @default(uuid())
+  activationId String               @map("activation_id")
+  stageNumber  Int                  @map("stage_number")
+  key          String
+  status       MentoringStageStatus @default(NOT_STARTED)
+  startedAt    DateTime?            @map("started_at")
+  completedAt  DateTime?            @map("completed_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+
+  @@unique([activationId, stageNumber])
+  @@map("mentoring_stages")
+}

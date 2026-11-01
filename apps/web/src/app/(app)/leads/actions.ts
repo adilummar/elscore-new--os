@@ -24,6 +24,10 @@ export async function getLeadTimelineAction(id: string) {
   return fetchApi<any>(`/leads/${id}/timeline`);
 }
 
+export async function getMentoringHandoverAction(id: string) {
+  return fetchApi<any>(`/leads/${id}/mentoring-handover`);
+}
+
 export async function updateLeadDetailsAction(id: string, data: any) {
   const res = await fetchApi<any>(`/leads/${id}`, {
     method: 'PATCH',

@@ -20,6 +20,7 @@ import { StudentWorkspace } from './StudentWorkspace';
 import { EditLeadDialog } from './EditLeadDialog';
 import { LeadDistributionHistory } from './LeadDistributionHistory';
 import { LeadStatusHistory } from './LeadStatusHistory';
+import { MentoringHandoverStatus } from './MentoringHandoverStatus';
 
 type TabId = 'students' | 'followups' | 'demos' | 'finance' | 'notes' | 'history' | 'assignments';
 
@@ -253,6 +254,7 @@ export function LeadDetailClient({ leadId, initialLead = null, initialError = nu
           )}
           {activeTab === 'history' && (
             <div className="space-y-6">
+              <MentoringHandoverStatus leadId={leadId} />
               <LeadStatusHistory leadId={leadId} />
               <UnifiedTimeline leadId={leadId} />
             </div>

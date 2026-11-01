@@ -64,6 +64,19 @@ export class LeadController {
     return this.leadService.updateStatus(id, dto, user.id, readAll);
   }
 
+  @Get(':id/mentoring-handover')
+  @RequirePermissions('lead.read')
+  async getMentoringHandover(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    const readAll = await this.hasReadAll(user.id);
+    return this.leadService.getMentoringHandoverStatus(id, user.id, readAll);
+  }
+
+  @Post(':id/mentoring-handover/retry')
+  @RequirePermissions('mentoring.handover.retry')
+  async retryMentoringHandover(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.leadService.retryMentoringHandover(id, user.id);
+  }
+
   @Post(':id/reassign')
   @RequirePermissions('lead.reassign')
   async reassign(@Param('id') id: string, @Body() dto: ReassignLeadDto, @CurrentUser() user: RequestUser) {

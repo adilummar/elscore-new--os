@@ -1255,6 +1255,13 @@ const PERMISSIONS: Array<{
     description: 'Delete an unused pending student',
     isDelegatable: false,
   },
+  {
+    code: 'mentoring.handover.retry',
+    resource: 'mentoring.handover',
+    action: 'retry',
+    description: 'Retry the Sales-to-Mentoring handover for an enrolled lead',
+    isDelegatable: false,
+  },
 
   {
     code: 'requirement.create',
@@ -1630,6 +1637,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   SALES_HEAD: [
     'pricing.manage',
+    'mentoring.handover.retry',
     'quotation.create',
     'quotation.read',
     'quotation.update',
