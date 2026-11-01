@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 import { authCookieOptions } from './auth-cookie-options';
 
@@ -41,16 +41,27 @@ describe('authCookieOptions', () => {
     delete process.env.COOKIE_SECURE;
     expect(authCookieOptions(900).secure).toBe(true);
   });
-});
 
-describe('staging deployment cookie configuration', () => {
-  const deploySource = fs.readFileSync(
-    path.resolve(__dirname, '../../../../../scratch/deploy-staging.js'),
-    'utf8',
-  );
+  it('only the exact string "false" turns Secure off; any other value stays Secure', () => {
+    for (const value of ['FALSE', 'False', '0', 'no', '', ' false', 'false ', 'off']) {
+      process.env.COOKIE_SECURE = value;
+      expect(authCookieOptions(900).secure).toBe(true);
+    }
+  });
 
-  it('sets COOKIE_SECURE=false for the staging web environment and PM2 process', () => {
-    expect(deploySource).toContain('COOKIE_SECURE=false');
-    expect(deploySource).toContain("COOKIE_SECURE: 'false'");
+  // Replaces a former check of an untracked-style deploy script that also carried server credentials.
+  // The staging requirement ("plain-HTTP staging must opt in with COOKIE_SECURE=false") is now pinned by the
+  // behaviour tests above plus the documented, secret-free templates that operators copy from.
+  it('both tracked env templates document the exact-false plain-HTTP override', () => {
+    const templates = [
+      join(__dirname, '../../../.env.example'),
+      join(__dirname, '../../../../../.env.example'),
+    ];
+    for (const file of templates) {
+      const text = readFileSync(file, 'utf8');
+      expect(text).toMatch(/^COOKIE_SECURE=true$/m);
+      expect(text).toMatch(/Secure unless this is the exact\s+#?\s*string false/);
+      expect(text).toMatch(/Use false only for plain HTTP/);
+    }
   });
 });
