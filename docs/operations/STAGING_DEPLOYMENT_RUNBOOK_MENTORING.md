@@ -18,7 +18,15 @@ The deploy target is pinned by SHA (`3426f67`), not by branch tip. This runbook 
 | CO_FOUNDER | Stays in the grant (read-only, 4 permissions). |
 | Deploy scripts | `deploy.sh` and `deploy-staging.sh` to be fixed or removed in a later reviewed change; never used for this release. |
 
-Still OPEN (no recommendation was given, or information is missing): handling of existing enrolled students (count from 3.6 first), the operator's name, the test account per role, the real holders of the Mentoring roles, the maintenance window, and the rollback decision-maker.
+**Owner decision record, update 2 (2026-11-02):**
+
+| Topic | Decision |
+|---|---|
+| Existing enrolled students | Out of scope. **Only newly enrolled students are handed over.** No backfill, no bulk retry. The count query in 3.6 is informational only. |
+| Operator | Claude runs the server commands, one approved step at a time. This still requires a working, **non-exposed** access method (key-based login, step C1). The old server password found in repository history must never be used. |
+| Test accounts, Mentoring role holders, window, rollback decision-maker | Left to the recommendations: test accounts are created as labelled test users by the owner; role holders are assigned by the owner after the grant; the window is chosen by the owner when access is ready; the owner is the rollback decision-maker. |
+
+Still OPEN: the access method for the operator (host, user, authorized key), and the window date.
 
 ## 0. How to read this document
 
