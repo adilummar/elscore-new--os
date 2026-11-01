@@ -11,7 +11,15 @@ async function seedTestUsers() {
     return;
   }
 
-  const password = 'Test@1234!';
+  // The UAT password is supplied by the operator for this run and is never stored in the repository.
+  const password = process.env.SEED_UAT_PASSWORD;
+  if (!password || password.length < 12) {
+    console.error(
+      '❌ SEED_UAT_PASSWORD must be set to a strong password of at least 12 characters. No users were created.',
+    );
+    process.exitCode = 1;
+    return;
+  }
   const passwordHash = await argon2.hash(password, {
     type: argon2.argon2id,
     memoryCost: 65536,

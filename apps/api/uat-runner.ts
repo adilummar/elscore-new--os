@@ -5,6 +5,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const API_URL = 'http://localhost:3001/api/v1';
+
+// Supplied by the operator for this run; never stored in the repository.
+const UAT_PASSWORD = process.env.UAT_PASSWORD ?? '';
+if (UAT_PASSWORD.length < 12) {
+  throw new Error('UAT_PASSWORD must be set to a strong password of at least 12 characters.');
+}
 const prisma = new PrismaClient();
 
 const results: any[] = [];
@@ -19,7 +25,7 @@ function recordTest(workflow: string, actor: string, expected: string, actual: s
 }
 
 async function login(email: string) {
-  const res = await axios.post(\`\${API_URL}/auth/login\`, { email, password: 'Password123!' });
+  const res = await axios.post(\`\${API_URL}/auth/login\`, { email, password: UAT_PASSWORD });
   return res.data.data.accessToken;
 }
 
@@ -30,7 +36,7 @@ async function runUAT() {
   console.log('Creating Test Users...');
   const roles = await prisma.role.findMany();
   const getRole = (code: string) => roles.find(r => r.code === code)!.id;
-  const hash = await argon2.hash('Password123!');
+  const hash = await argon2.hash(UAT_PASSWORD);
 
   const usersToCreate = [
     { email: 'uat_ceo@test.com', role: 'CEO', label: 'CEO' },
@@ -115,7 +121,7 @@ async function runUAT() {
     const res = await axios.get(\`\${API_URL}/users\`, { headers: { Authorization: \`Bearer \${tokens['Co-Founder']}\` } });
     recordTest('Co-Founder read users', 'Co-Founder', 'Success', 'Data returned', 'N/A', 'PASS');
     
-    await axios.post(\`\${API_URL}/users\`, { email: 'co_fake@test.com', password: 'Password123!', firstName: 'Fake', lastName: 'Fake' }, { headers: { Authorization: \`Bearer \${tokens['Co-Founder']}\` } });
+    await axios.post(\`\${API_URL}/users\`, { email: 'co_fake@test.com', password: UAT_PASSWORD, firstName: 'Fake', lastName: 'Fake' }, { headers: { Authorization: \`Bearer \${tokens['Co-Founder']}\` } });
     recordTest('Co-Founder create user', 'Co-Founder', 'Rejected', 'Success unexpectedly', 'N/A', 'FAIL');
   } catch (e: any) {
     recordTest('Co-Founder create user', 'Co-Founder', 'Rejected', \`Rejected: \${e.response?.status}\`, 'N/A', e.response?.status === 403 ? 'PASS' : 'FAIL');
