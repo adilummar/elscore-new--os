@@ -1466,8 +1466,10 @@ const PERMISSIONS: Array<{
 
 const ALL_PERMISSION_CODES = PERMISSIONS.map((p) => p.code);
 
-// Mentoring operations the CEO must NOT receive automatically (CEO has visibility, not operational rights).
+// Mentoring operations the CEO must NOT receive automatically (CEO has company-wide visibility, not operational
+// rights). mentoring.handover.retry is deliberately here: it creates handovers, so it stays with the Sales Head only.
 const MENTORING_OPERATIONAL_CODES = new Set([
+  'mentoring.handover.retry',
   'mentoring.staff.manage',
   'mentoring.allocation.manage',
   'mentoring.allocation.configure',
