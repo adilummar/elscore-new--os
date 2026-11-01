@@ -6,6 +6,20 @@ The deploy target is pinned by SHA (`3426f67`), not by branch tip. This runbook 
 
 **Owner decision record (2026-11-02):** the owner answered "yes for all questions". That is a clear approval for the push (done) and for committing this runbook (done, local only). It does not settle the choice questions (rotation before or after deploy, HTTPS, UAT accounts, Redis timing, enrolled-student handling, backup timing) or supply the operator, accounts, role holders and window. Those stay OPEN until answered specifically. No server contact has taken place.
 
+**Owner decision record, update (2026-11-02):** the owner chose "use recommendations". Recorded as decided:
+
+| Topic | Decision |
+|---|---|
+| Credential rotation | Server login (C1) and staging database password (C2) are rotated **before** the deploy, as separate steps. Production items (C4) and history rewrite (C5) are not part of this release. |
+| HTTPS | Plain HTTP is accepted for this release **with test data only**. HTTPS is required before real HR or student data is entered. |
+| UAT accounts | Delete them (C3), before any tester signs in. |
+| Redis separation | Decide after preflight shows the `APP_ENV` values and key prefixes. If staging and production share a prefix, separate first. |
+| Backup script | Run from a reviewed copy outside the working tree, before any code change (section 5.2). |
+| CO_FOUNDER | Stays in the grant (read-only, 4 permissions). |
+| Deploy scripts | `deploy.sh` and `deploy-staging.sh` to be fixed or removed in a later reviewed change; never used for this release. |
+
+Still OPEN (no recommendation was given, or information is missing): handling of existing enrolled students (count from 3.6 first), the operator's name, the test account per role, the real holders of the Mentoring roles, the maintenance window, and the rollback decision-maker.
+
 ## 0. How to read this document
 
 ### 0.1 Evidence labels
