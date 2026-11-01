@@ -20,7 +20,7 @@ describe('LeadService', () => {
   const idGen = { nextIdInTx: jest.fn().mockResolvedValue('ID-123') };
   const roundRobin = { getNextAssignee: jest.fn().mockResolvedValue({}) };
 
-  const service = new LeadService(prisma as any, audit as any, idGen as any, roundRobin as any);
+  const service = new LeadService(prisma as any, audit as any, idGen as any, roundRobin as any, {} as any);
 
   it('excludes continueAnyway from the lead create payload', async () => {
     await service.create({

@@ -91,7 +91,7 @@ describe('CEO God View lead data scope', () => {
   };
 
   const controller = new LeadController(
-    new LeadService(prisma as any, {} as any, {} as any, {} as any),
+    new LeadService(prisma as any, {} as any, {} as any, {} as any, {} as any),
     rbac as any,
   );
 

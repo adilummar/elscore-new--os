@@ -48,6 +48,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
 
     const mockTx: any = {
       $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       requirement: {
         findUnique: jest.fn().mockImplementation(({ where }: any) => {
           return Promise.resolve({
@@ -182,6 +183,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
         mockPrisma as any,
         mockAudit as any,
         mockIdGen as any,
+        { assertStudentEditableBySales: jest.fn().mockResolvedValue(undefined), ensureHandoverIfEnrolledInTx: jest.fn().mockResolvedValue(null) } as any,
       );
 
       // Lead with 0 students
@@ -822,6 +824,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
         { recordInTx: jest.fn() } as any,
         { nextIdInTx: jest.fn() } as any,
         {} as any,
+        {} as any,
       );
 
       const lead = await leadService.findOne('lead-1', 'user-1', true);
@@ -923,6 +926,7 @@ describe('Demo Module — Lead-to-Demo Booking Workflow', () => {
         mockPrisma as any,
         { recordInTx: jest.fn() } as any,
         { nextIdInTx: jest.fn() } as any,
+        {} as any,
         {} as any,
       );
 
