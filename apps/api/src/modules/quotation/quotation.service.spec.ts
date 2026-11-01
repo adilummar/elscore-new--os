@@ -5,6 +5,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthorizationService } from '../../common/rbac/authorization.service';
+import { MentoringHandoverService } from '../mentoring/mentoring-handover.service';
 import { PricingService } from '../pricing/pricing.service';
 
 import { QuotationService } from './quotation.service';
@@ -16,6 +17,7 @@ describe('QuotationService', () => {
 
   const mockPrisma: any = {
     $transaction: jest.fn((cb: any) => cb(mockPrisma)),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     student: {
       findUnique: jest.fn(),
     },
@@ -28,7 +30,12 @@ describe('QuotationService', () => {
     },
     requirement: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findMany: jest.fn().mockResolvedValue([]),
     },
+  };
+
+  const mockHandover = {
+    isHandedOver: jest.fn().mockResolvedValue(false),
   };
 
   const mockPricingService = {
@@ -47,6 +54,8 @@ describe('QuotationService', () => {
     jest.clearAllMocks();
     mockAuthzService.hasPermissions.mockResolvedValue(true);
     mockIdGenerator.nextIdInTx.mockResolvedValue('QUO-0001');
+    mockHandover.isHandedOver.mockResolvedValue(false);
+    mockPrisma.requirement.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -56,6 +65,7 @@ describe('QuotationService', () => {
         { provide: IdGeneratorService, useValue: mockIdGenerator },
         { provide: PricingService, useValue: mockPricingService },
         { provide: AuthorizationService, useValue: mockAuthzService },
+        { provide: MentoringHandoverService, useValue: mockHandover },
       ],
     }).compile();
 
@@ -391,6 +401,138 @@ describe('QuotationService', () => {
     expect(mockPrisma.requirement.updateMany).toHaveBeenCalledWith({
       where: { studentId: 's1', subjectId: 'subj-override' },
       data: { monthlyHours: 15 },
+    });
+  });
+
+  describe('Mentoring handover: Sales cannot change monthly hours through a quotation', () => {
+    const storedRequirement = (monthlyHours: unknown) => ({
+      subjectId: 'subj1',
+      curriculumId: 'c1',
+      gradeId: 'grade1',
+      monthlyHours,
+      subject: { name: 'Math' },
+      curriculum: { name: 'CBSE' },
+      grade: { name: 'Grade 5', sortOrder: 6 },
+    });
+    const handedOver = (hours: unknown = 10) => {
+      mockHandover.isHandedOver.mockResolvedValue(true);
+      setupMockStudent('DEMO_COMPLETED', { requirements: [storedRequirement(hours)] });
+      mockPrisma.requirement.findMany.mockResolvedValue([{ subjectId: 'subj1', monthlyHours: hours }]);
+    };
+    const LOCK_MESSAGE = /handed over to Mentoring.*Request the correction through Mentoring/s;
+
+    it('BEFORE handover: hours supplied in the quotation are still saved exactly as before', async () => {
+      setupMockStudent('DEMO_COMPLETED');
+
+      const generated: any = await service.generateQuotation(
+        { studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 12 }] },
+        testUser('u1'),
+      );
+
+      expect(generated.lineItems[0].monthlyHours).toBe(12);
+      expect(mockPrisma.requirement.updateMany).toHaveBeenCalledWith({
+        where: { studentId: 's1', subjectId: 'subj1' },
+        data: { monthlyHours: 12 },
+      });
+      expect(mockPrisma.requirement.findMany).not.toHaveBeenCalled();
+    });
+
+    it('AFTER handover: changing the hours is rejected with an actionable message, nothing is written', async () => {
+      handedOver(10);
+
+      const attempt = service.generateQuotation(
+        { studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 20 }] },
+        testUser('u1'),
+      );
+
+      await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(attempt).rejects.toThrow(LOCK_MESSAGE);
+      expect(mockPrisma.requirement.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.quotation.create).not.toHaveBeenCalled();
+    });
+
+    it('AFTER handover: preview cannot be used to price different hours either', async () => {
+      handedOver(10);
+
+      await expect(
+        service.previewQuotation({ studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 25 }] }, testUser('u1')),
+      ).rejects.toThrow(LOCK_MESSAGE);
+    });
+
+    it('AFTER handover: setting hours on a requirement that has none is also a change and is rejected', async () => {
+      handedOver(null);
+
+      await expect(
+        service.generateQuotation({ studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 8 }] }, testUser('u1')),
+      ).rejects.toThrow(LOCK_MESSAGE);
+      expect(mockPrisma.requirement.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('AFTER handover: a quotation can still be generated from the verified stored hours (no overrides)', async () => {
+      handedOver(10);
+
+      const result: any = await service.generateQuotation({ studentId: 's1' }, testUser('u1'));
+
+      expect(result.lineItems[0].monthlyHours).toBe(10);
+      expect(result.quotationNumber).toBe('QUO-0001');
+      expect(mockPrisma.requirement.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('AFTER handover: re-sending the same hours is not a change, so generation succeeds without any write', async () => {
+      handedOver('10.00');
+
+      const result: any = await service.generateQuotation(
+        { studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 10 }] },
+        testUser('u1'),
+      );
+
+      expect(result.lineItems[0].monthlyHours).toBe(10);
+      expect(mockPrisma.requirement.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('AFTER handover: pricing, offer rate and notes keep working (only monthly hours are locked)', async () => {
+      handedOver(10);
+      mockPricingService.resolveHourlyRate.mockResolvedValue({ rate: 50, source: 'SLAB' });
+
+      const result: any = await service.generateQuotation(
+        { studentId: 's1', offerHourlyRate: 40, quotationNotes: 'Sibling discount' },
+        testUser('u1'),
+      );
+
+      expect(result.offerHourlyRate).toBe(40);
+      expect(result.offerMonthlyTotal).toBe(400);
+      expect(result.normalMonthlyTotal).toBe(500);
+      expect(result.quotationNotes).toBe('Sibling discount');
+    });
+
+    it('AFTER handover: an override for a subject that is not one of the student\'s requirements changes nothing and is allowed', async () => {
+      handedOver(10);
+
+      await expect(
+        service.generateQuotation({ studentId: 's1', subjectHours: [{ subjectId: 'not-a-requirement', monthlyHours: 5 }] }, testUser('u1')),
+      ).resolves.toBeDefined();
+      expect(mockPrisma.requirement.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('the rule is enforced in the service (every caller), after locking the lead and before any write', async () => {
+      handedOver(10);
+
+      await expect(
+        service.generateQuotation({ studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 11 }] }, testUser('u1')),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(mockPrisma.$executeRaw).toHaveBeenCalledTimes(1); // lead row locked so it cannot race a handover
+      expect(mockHandover.isHandedOver).toHaveBeenCalledWith(mockPrisma, 's1');
+      expect(mockPrisma.quotation.create).not.toHaveBeenCalled();
+    });
+
+    it('other rules are unchanged: an unauthorised user is still refused before the hours rule', async () => {
+      handedOver(10);
+      mockAuthzService.hasPermissions.mockResolvedValue(false);
+
+      await expect(
+        service.generateQuotation({ studentId: 's1', subjectHours: [{ subjectId: 'subj1', monthlyHours: 99 }] }, testUser('someone-else')),
+      ).rejects.toThrow('You do not have permission to generate quotations for this student');
     });
   });
 });

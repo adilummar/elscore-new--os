@@ -15,6 +15,9 @@ export const HANDOVER_TRIGGER_STATUS: LeadStatus = LeadStatus.ENROLLED;
  */
 export const OPEN_ACTIVATION_STATUSES: readonly LeadStatus[] = [LeadStatus.ENROLLED, LeadStatus.PAID];
 
+export const MONTHLY_HOURS_LOCKED_MESSAGE =
+  'This student has been handed over to Mentoring, so monthly hours can no longer be changed through a quotation. Request the correction through Mentoring, then generate the quotation using the verified hours.';
+
 export const STUDENT_LOCKED_MESSAGE =
   'This student has been handed over to Mentoring. Sales can no longer change the student or their subject requirements.';
 
@@ -289,6 +292,12 @@ export class MentoringHandoverService {
     await tx.$executeRaw`SELECT 1 FROM leads WHERE id = ${leadId} FOR UPDATE`;
     if (!(await this.hasBeenEnrolled(tx, leadId))) return null;
     return this.ensureHandoverInTx(tx, leadId, actorUserId, { strict: false });
+  }
+
+  /** True once a handover exists for the student. The record is never deleted, so this is permanent. */
+  async isHandedOver(client: Pick<PrismaTxClient, 'enrollmentHandover'>, studentId: string): Promise<boolean> {
+    const handover = await client.enrollmentHandover.findUnique({ where: { studentId }, select: { id: true } });
+    return handover !== null;
   }
 
   /** Sales may not change a student (or their requirements) once the student has been handed over. */

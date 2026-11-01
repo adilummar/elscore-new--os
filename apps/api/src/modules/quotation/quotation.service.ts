@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { RequestUser } from '../../common/auth/decorators/current-user.decorator';
@@ -6,6 +6,7 @@ import { IdGeneratorService } from '../../common/id-generator/id-generator.servi
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { AuthorizationService } from '../../common/rbac/authorization.service';
 import { assertOwnershipOrBypass } from '../../common/rbac/ownership.utils';
+import { MentoringHandoverService, MONTHLY_HOURS_LOCKED_MESSAGE } from '../mentoring/mentoring-handover.service';
 import { PricingService } from '../pricing/pricing.service';
 
 import { GenerateQuotationDto } from './dto/quotation.dto';
@@ -28,7 +29,37 @@ export class QuotationService {
     private readonly idGenerator: IdGeneratorService,
     private readonly pricingService: PricingService,
     private readonly authzService: AuthorizationService,
+    private readonly mentoringHandover: MentoringHandoverService,
   ) {}
+
+  /**
+   * Once a student has been handed over to Mentoring, Sales may not change monthly hours (here, through a
+   * quotation). Supplying the hours that are already stored is not a change and is allowed, so quotations
+   * can still be produced from the verified hours. Anything else is rejected, never silently ignored.
+   * This is enforced on the server for both preview and generate; the web form is not relied upon.
+   */
+  private async assertMonthlyHoursUnchangedAfterHandover(
+    client: PrismaTxClient | PrismaService,
+    studentId: string,
+    subjectHours: GenerateQuotationDto['subjectHours'],
+  ): Promise<{ handedOver: boolean }> {
+    if (!(await this.mentoringHandover.isHandedOver(client, studentId))) return { handedOver: false };
+    if (!subjectHours || subjectHours.length === 0) return { handedOver: true };
+
+    const stored = await client.requirement.findMany({
+      where: { studentId },
+      select: { subjectId: true, monthlyHours: true },
+    });
+    const storedBySubject = new Map(stored.map((r) => [r.subjectId, r.monthlyHours]));
+
+    for (const sh of subjectHours) {
+      if (!storedBySubject.has(sh.subjectId)) continue; // not this student's requirement: nothing would change
+      const current = storedBySubject.get(sh.subjectId);
+      const unchanged = current !== null && current !== undefined && Number(current).toFixed(2) === Number(sh.monthlyHours).toFixed(2);
+      if (!unchanged) throw new ForbiddenException(MONTHLY_HOURS_LOCKED_MESSAGE);
+    }
+    return { handedOver: true };
+  }
 
   public canGenerateQuotation(lead: { status: string }): boolean {
     return lead?.status === 'DEMO_COMPLETED';
@@ -265,6 +296,8 @@ export class QuotationService {
       'You do not have permission to view quotations for this student',
     );
 
+    await this.assertMonthlyHoursUnchangedAfterHandover(this.prisma, dto.studentId, dto.subjectHours);
+
     const result = await this._calculateQuotation(dto, this.prisma);
     const { student: _student, ...preview } = result;
     void _student;
@@ -287,9 +320,14 @@ export class QuotationService {
         'You do not have permission to generate quotations for this student',
       );
 
+      // Serialise with a concurrent handover for this lead, then apply the Mentoring rule before any write.
+      await tx.$executeRaw`SELECT 1 FROM leads WHERE id = ${studentCheck.leadId} FOR UPDATE`;
+      const { handedOver } = await this.assertMonthlyHoursUnchangedAfterHandover(tx, studentCheck.id, dto.subjectHours);
+
       const calc = await this._calculateQuotation(dto, tx);
 
-      if (dto.subjectHours && dto.subjectHours.length > 0) {
+      // After handover the hours are verified by Mentoring: the guard above proved nothing would change.
+      if (!handedOver && dto.subjectHours && dto.subjectHours.length > 0) {
         for (const sh of dto.subjectHours) {
           await tx.requirement.updateMany({
             where: { studentId: studentCheck.id, subjectId: sh.subjectId },
