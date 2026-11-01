@@ -120,6 +120,7 @@ model Notification {
   action          String? // deep-link hint for the UI
   message         String
   readAt          DateTime? @map("read_at")
+  dedupeKey       String?   @unique @map("dedupe_key")
   createdAt       DateTime  @default(now()) @map("created_at")
 
   recipient User @relation("UserNotifications", fields: [recipientUserId], references: [id])
@@ -3737,6 +3738,11 @@ model MentoringActivation {
   handoverId   String                    @unique @map("handover_id")
   status       MentoringActivationStatus @default(AWAITING_ALLOCATION)
   currentStage Int                       @default(1) @map("current_stage")
+  currentMentorUserId    String?   @map("current_mentor_user_id")
+  submittedForApprovalAt DateTime? @map("submitted_for_approval_at")
+  activatedAt            DateTime? @map("activated_at")
+  cancelledAt            DateTime? @map("cancelled_at")
+  cancelReason           String?   @map("cancel_reason") @db.Text
   createdAt    DateTime                  @default(now()) @map("created_at")
   updatedAt    DateTime                  @updatedAt @map("updated_at")
 
@@ -3744,9 +3750,15 @@ model MentoringActivation {
   student  Student            @relation(fields: [studentId], references: [id], onDelete: Restrict)
   handover EnrollmentHandover @relation(fields: [handoverId], references: [id], onDelete: Restrict)
   stages   MentoringStage[]
+  assignments MentorAssignment[]
+  holds       WorkflowHold[]
+  tasks       MentoringTask[]
+  approvals   FinalApproval[]
+  events      MentoringEvent[]
 
   @@index([leadId])
   @@index([status])
+  @@index([currentMentorUserId, status])
   @@map("mentoring_activations")
 }
 
@@ -3757,12 +3769,270 @@ model MentoringStage {
   key          String
   status       MentoringStageStatus @default(NOT_STARTED)
   startedAt    DateTime?            @map("started_at")
+  pendingReviewAt  DateTime?        @map("pending_review_at")
+  verifiedByUserId String?          @map("verified_by_user_id")
   completedAt  DateTime?            @map("completed_at")
   createdAt    DateTime             @default(now()) @map("created_at")
   updatedAt    DateTime             @updatedAt @map("updated_at")
 
   activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  checklist  StageChecklistResponse[]
+  exceptions WorkflowException[]
+  holds      WorkflowHold[]
+  tasks      MentoringTask[]
 
   @@unique([activationId, stageNumber])
   @@map("mentoring_stages")
+}
+
+// =============================================================================
+// MENTORING — WP3: allocation, tasks, workflow engine, approval, history
+// =============================================================================
+
+enum MentoringStaffRole {
+  MENTOR
+  DEMO_COUNSELOR
+}
+
+enum MentorAssignmentType {
+  AUTO
+  MANUAL
+  TEMPORARY
+}
+
+enum AllocationMode {
+  AUTO
+  MANUAL
+}
+
+enum MentoringTaskStatus {
+  OPEN
+  IN_PROGRESS
+  ON_HOLD
+  SUBMITTED
+  RETURNED
+  VERIFIED
+  CANCELLED
+}
+
+enum MentoringTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ChecklistItemState {
+  PENDING_COLLECTION
+  COLLECTED
+  VERIFIED
+  UNAVAILABLE
+  NOT_APPLICABLE
+}
+
+enum WorkflowHoldKind {
+  HOLD
+  BLOCK
+}
+
+enum FinalApprovalDecision {
+  PENDING
+  APPROVED
+  RETURNED
+}
+
+/// Capacity and eligibility profile for a Mentor or Demo Counselor. userId is validated against
+/// the user's assigned role in the service layer.
+model MentoringStaffProfile {
+  id                String             @id @default(uuid())
+  userId            String             @unique @map("user_id")
+  role              MentoringStaffRole
+  capacity          Int?
+  isActive          Boolean            @default(true) @map("is_active")
+  acceptsAllocation Boolean            @default(true) @map("accepts_allocation")
+  team              String?
+  notes             String?            @db.Text
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  @@index([role, isActive])
+  @@map("mentoring_staff_profiles")
+}
+
+/// Singleton settings row (id = "default").
+model MentoringSetting {
+  id               String         @id @default("default")
+  allocationMode   AllocationMode @default(AUTO) @map("allocation_mode")
+  defaultCapacity  Int            @default(40) @map("default_capacity")
+  siblingAffinity  Boolean        @default(true) @map("sibling_affinity")
+  updatedByUserId  String?        @map("updated_by_user_id")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  @@map("mentoring_settings")
+}
+
+/// Allocation history. currentKey equals activationId while the assignment is current and is NULL
+/// afterwards, so the unique index allows exactly one current assignment per activation.
+model MentorAssignment {
+  id               String               @id @default(uuid())
+  activationId     String               @map("activation_id")
+  mentorUserId     String               @map("mentor_user_id")
+  assignedByUserId String?              @map("assigned_by_user_id")
+  type             MentorAssignmentType
+  reason           String
+  decision         Json?
+  currentKey       String?              @unique @map("current_key")
+  returnToUserId   String?              @map("return_to_user_id")
+  expectedReturnAt DateTime?            @map("expected_return_at")
+  startedAt        DateTime             @default(now()) @map("started_at")
+  endedAt          DateTime?            @map("ended_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+
+  @@index([activationId, startedAt])
+  @@index([mentorUserId])
+  @@map("mentor_assignments")
+}
+
+model StageChecklistResponse {
+  id                String             @id @default(uuid())
+  stageId           String             @map("stage_id")
+  itemKey           String             @map("item_key")
+  definitionVersion Int                @default(1) @map("definition_version")
+  mandatory         Boolean
+  state             ChecklistItemState @default(PENDING_COLLECTION)
+  value             Json?
+  note              String?            @db.Text
+  reason            String?            @db.Text
+  evidenceRef       String?            @map("evidence_ref")
+  updatedByUserId   String?            @map("updated_by_user_id")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  stage MentoringStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  @@unique([stageId, itemKey])
+  @@map("stage_checklist_responses")
+}
+
+/// Head-authorised exception allowing a mandatory item to be skipped, with a reason.
+model WorkflowException {
+  id                   String   @id @default(uuid())
+  stageId              String   @map("stage_id")
+  itemKey              String   @map("item_key")
+  reason               String   @db.Text
+  authorizedByUserId   String   @map("authorized_by_user_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  stage MentoringStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  @@unique([stageId, itemKey])
+  @@map("workflow_exceptions")
+}
+
+/// A pause (HOLD) or blocker (BLOCK) on the whole student workflow. Nothing entered is touched.
+/// The previous statuses are stored so resume restores the exact saved stage.
+model WorkflowHold {
+  id                      String                    @id @default(uuid())
+  activationId            String                    @map("activation_id")
+  stageId                 String?                   @map("stage_id")
+  kind                    WorkflowHoldKind
+  reason                  String                    @db.Text
+  pendingAction           String?                   @map("pending_action") @db.Text
+  responsibleUserId       String?                   @map("responsible_user_id")
+  followUpAt              DateTime?                 @map("follow_up_at")
+  dependency              String?                   @db.Text
+  previousActivationStatus MentoringActivationStatus @map("previous_activation_status")
+  previousStageStatus     MentoringStageStatus?     @map("previous_stage_status")
+  createdByUserId         String                    @map("created_by_user_id")
+  createdAt               DateTime                  @default(now()) @map("created_at")
+  resolvedAt              DateTime?                 @map("resolved_at")
+  resolvedByUserId        String?                   @map("resolved_by_user_id")
+  resolution              String?                   @db.Text
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  stage      MentoringStage?     @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  @@index([activationId, resolvedAt])
+  @@map("workflow_holds")
+}
+
+model MentoringTask {
+  id                 String                @id @default(uuid())
+  activationId       String                @map("activation_id")
+  stageId            String?               @map("stage_id")
+  title              String
+  description        String?               @db.Text
+  priority           MentoringTaskPriority @default(MEDIUM)
+  status             MentoringTaskStatus   @default(OPEN)
+  statusBeforeHold   MentoringTaskStatus?  @map("status_before_hold")
+  holdReason         String?               @map("hold_reason") @db.Text
+  dueAt              DateTime?             @map("due_at")
+  assigneeUserId     String                @map("assignee_user_id")
+  assignedByUserId   String                @map("assigned_by_user_id")
+  evidence           Json?
+  submittedAt        DateTime?             @map("submitted_at")
+  verifiedByUserId   String?               @map("verified_by_user_id")
+  verifiedAt         DateTime?             @map("verified_at")
+  returnReason       String?               @map("return_reason") @db.Text
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+
+  activation MentoringActivation   @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  stage      MentoringStage?       @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  comments   MentoringTaskComment[]
+
+  @@index([assigneeUserId, status])
+  @@index([activationId])
+  @@map("mentoring_tasks")
+}
+
+model MentoringTaskComment {
+  id           String   @id @default(uuid())
+  taskId       String   @map("task_id")
+  authorUserId String   @map("author_user_id")
+  body         String   @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  task MentoringTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, createdAt])
+  @@map("mentoring_task_comments")
+}
+
+model FinalApproval {
+  id              String                @id @default(uuid())
+  activationId    String                @map("activation_id")
+  submittedByUserId String              @map("submitted_by_user_id")
+  submittedAt     DateTime              @default(now()) @map("submitted_at")
+  decision        FinalApprovalDecision @default(PENDING)
+  decidedByUserId String?               @map("decided_by_user_id")
+  decidedAt       DateTime?             @map("decided_at")
+  comment         String?               @db.Text
+  returnToStage   Int?                  @map("return_to_stage")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+
+  @@index([activationId, submittedAt])
+  @@map("final_approvals")
+}
+
+/// Append-only history of everything that happens to a student's activation.
+model MentoringEvent {
+  id           String   @id @default(uuid())
+  activationId String   @map("activation_id")
+  stageId      String?  @map("stage_id")
+  taskId       String?  @map("task_id")
+  type         String
+  actorUserId  String?  @map("actor_user_id")
+  fromStatus   String?  @map("from_status")
+  toStatus     String?  @map("to_status")
+  reason       String?  @db.Text
+  payload      Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+
+  @@index([activationId, createdAt])
+  @@map("mentoring_events")
 }

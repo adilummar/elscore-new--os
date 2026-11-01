@@ -58,6 +58,7 @@ const DEPARTMENTS = [
   { code: 'ACADEMICS', name: 'Academics' },
   { code: 'FINANCE', name: 'Finance' },
   { code: 'HR', name: 'Human Resources' },
+  { code: 'MENTORING', name: 'Mentoring' },
 ];
 
 // =============================================================================
@@ -164,6 +165,23 @@ const ROLES: Array<{
     code: 'DEMO_ADMIN',
     name: 'Demo Admin',
     description: 'Operational administration of Demo bookings, coordinator assignments, schedules, tutor assignments, and reports',
+    isSystem: true,
+    isProtected: false,
+    isCustom: false,
+  },
+  {
+    code: 'MENTORING_HEAD',
+    name: 'Mentoring Head',
+    description:
+      'Mentoring Department head: allocation, reassignment, task oversight, exception review and final Phase 1 activation approval',
+    isSystem: true,
+    isProtected: false,
+    isCustom: false,
+  },
+  {
+    code: 'DEMO_COUNSELOR',
+    name: 'Demo Counselor',
+    description: 'Completes tasks assigned by Mentors and the Mentoring Head; cannot verify stages',
     isSystem: true,
     isProtected: false,
     isCustom: false,
@@ -1262,6 +1280,125 @@ const PERMISSIONS: Array<{
     description: 'Retry the Sales-to-Mentoring handover for an enrolled lead',
     isDelegatable: false,
   },
+  {
+    code: 'mentoring.student.read-all',
+    resource: 'mentoring.student',
+    action: 'read-all',
+    description: 'View every Mentoring student and activation',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.student.read-assigned',
+    resource: 'mentoring.student',
+    action: 'read-assigned',
+    description: 'View Mentoring students assigned to the user (as Mentor or via a task)',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.staff.read',
+    resource: 'mentoring.staff',
+    action: 'read',
+    description: 'View Mentoring staff profiles and workload',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.staff.manage',
+    resource: 'mentoring.staff',
+    action: 'manage',
+    description: 'Manage Mentor and Demo Counselor profiles and capacity',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.allocation.read',
+    resource: 'mentoring.allocation',
+    action: 'read',
+    description: 'View the allocation queue and allocation history',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.allocation.manage',
+    resource: 'mentoring.allocation',
+    action: 'manage',
+    description: 'Allocate, reassign and transfer students between Mentors',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.allocation.configure',
+    resource: 'mentoring.allocation',
+    action: 'configure',
+    description: 'Configure automatic allocation settings',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.task.create',
+    resource: 'mentoring.task',
+    action: 'create',
+    description: 'Create and assign tasks to Demo Counselors',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.task.work',
+    resource: 'mentoring.task',
+    action: 'work',
+    description: 'Work on assigned Mentoring tasks and submit them',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.task.verify',
+    resource: 'mentoring.task',
+    action: 'verify',
+    description: 'Verify or return submitted Mentoring tasks',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.stage.work',
+    resource: 'mentoring.stage',
+    action: 'work',
+    description: 'Work on and update checklists of assigned students',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.stage.verify',
+    resource: 'mentoring.stage',
+    action: 'verify',
+    description: 'Verify and complete activation stages of assigned students',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.workflow.pause',
+    resource: 'mentoring.workflow',
+    action: 'pause',
+    description: 'Pause, block and resume a student activation workflow',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.exception.authorize',
+    resource: 'mentoring.exception',
+    action: 'authorize',
+    description: 'Authorize exceptions to mandatory checklist items',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.approval.final',
+    resource: 'mentoring.approval',
+    action: 'final',
+    description: 'Approve or return final Phase 1 activation',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.activation.cancel',
+    resource: 'mentoring.activation',
+    action: 'cancel',
+    description: 'Cancel a Mentoring activation',
+    isDelegatable: false,
+  },
+  {
+    code: 'mentoring.audit.read',
+    resource: 'mentoring.audit',
+    action: 'read',
+    description: 'View Mentoring department audit history',
+    isDelegatable: false,
+  },
 
   {
     code: 'requirement.create',
@@ -1329,6 +1466,22 @@ const PERMISSIONS: Array<{
 
 const ALL_PERMISSION_CODES = PERMISSIONS.map((p) => p.code);
 
+// Mentoring operations the CEO must NOT receive automatically (CEO has visibility, not operational rights).
+const MENTORING_OPERATIONAL_CODES = new Set([
+  'mentoring.staff.manage',
+  'mentoring.allocation.manage',
+  'mentoring.allocation.configure',
+  'mentoring.task.create',
+  'mentoring.task.work',
+  'mentoring.task.verify',
+  'mentoring.stage.work',
+  'mentoring.stage.verify',
+  'mentoring.workflow.pause',
+  'mentoring.exception.authorize',
+  'mentoring.approval.final',
+  'mentoring.activation.cancel',
+]);
+
 // Read-only permissions for Co-Founder — all *.read and *.view, no writes
 const CO_FOUNDER_PERMISSIONS = PERMISSIONS.filter(
   (p) =>
@@ -1338,7 +1491,7 @@ const CO_FOUNDER_PERMISSIONS = PERMISSIONS.filter(
 ).map((p) => p.code);
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  CEO: ALL_PERMISSION_CODES,
+  CEO: ALL_PERMISSION_CODES.filter((code) => !MENTORING_OPERATIONAL_CODES.has(code)),
 
   CO_FOUNDER: CO_FOUNDER_PERMISSIONS,
 
@@ -1491,7 +1644,41 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   // HR_ASSISTANT: intentionally empty — duties delegated at runtime via UserPermission
   HR_ASSISTANT: [],
 
+  MENTORING_HEAD: [
+    'attendance.action.own',
+    'attendance.read.own',
+    'employee.read',
+    'department.read',
+    'mentoring.student.read-all',
+    'mentoring.staff.read',
+    'mentoring.staff.manage',
+    'mentoring.allocation.read',
+    'mentoring.allocation.manage',
+    'mentoring.allocation.configure',
+    'mentoring.task.create',
+    'mentoring.task.verify',
+    'mentoring.workflow.pause',
+    'mentoring.exception.authorize',
+    'mentoring.approval.final',
+    'mentoring.activation.cancel',
+    'mentoring.audit.read',
+  ],
+
+  DEMO_COUNSELOR: [
+    'attendance.action.own',
+    'attendance.read.own',
+    'department.read',
+    'mentoring.student.read-assigned',
+    'mentoring.task.work',
+  ],
+
   MENTOR: [
+    'mentoring.student.read-assigned',
+    'mentoring.task.create',
+    'mentoring.task.verify',
+    'mentoring.stage.work',
+    'mentoring.stage.verify',
+    'mentoring.workflow.pause',
     'employee.read', // scoped to Tutor-role employees at service layer
     'department.read',
     'tutor.profile.read', // scoped: no rate, no recruitment details

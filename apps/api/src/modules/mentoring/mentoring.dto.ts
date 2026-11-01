@@ -1,0 +1,142 @@
+import { ChecklistItemState, MentoringStaffRole, MentoringTaskPriority, MentoringTaskStatus } from '@prisma/client';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsDate,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+
+  Max,
+  Min,
+} from 'class-validator';
+
+export class StudentListQueryDto {
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(7) stage?: number;
+  @IsOptional() @IsString() mentorUserId?: string;
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsInt() @Min(1) page?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(100) pageSize?: number;
+}
+
+export class UpdateChecklistItemDto {
+  @IsOptional() @IsEnum(ChecklistItemState) state?: ChecklistItemState;
+  @IsOptional() value?: unknown;
+  @IsOptional() @IsString() note?: string | null;
+  @IsOptional() @IsString() reason?: string | null;
+  @IsOptional() @IsString() evidenceRef?: string | null;
+}
+
+export class PauseDto {
+  @IsString() @IsNotEmpty() reason!: string;
+  @IsString() @IsNotEmpty() pendingAction!: string;
+  @IsString() @IsNotEmpty() responsibleUserId!: string;
+  @Type(() => Date) @IsDate() followUpAt!: Date;
+}
+
+export class BlockDto {
+  @IsString() @IsNotEmpty() reason!: string;
+  @IsString() @IsNotEmpty() dependency!: string;
+  @IsString() @IsNotEmpty() responsibleUserId!: string;
+  @Type(() => Date) @IsDate() followUpAt!: Date;
+}
+
+export class ResumeDto {
+  @IsOptional() @IsString() resolution?: string;
+}
+
+export class ExceptionDto {
+  @IsString() @IsNotEmpty() reason!: string;
+}
+
+export class ApprovalDecisionDto {
+  @IsIn(['APPROVED', 'RETURNED']) decision!: 'APPROVED' | 'RETURNED';
+  @IsOptional() @IsString() comment?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(7) returnToStage?: number;
+}
+
+export class CancelDto {
+  @IsString() @IsNotEmpty() reason!: string;
+}
+
+// ─── Allocation / staff ──────────────────────────────────────────────────────
+
+export class AssignMentorDto {
+  @IsString() @IsNotEmpty() mentorUserId!: string;
+  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() overCapacityReason?: string;
+}
+
+export class ReassignMentorDto {
+  @IsString() @IsNotEmpty() mentorUserId!: string;
+  @IsString() @IsNotEmpty() reason!: string;
+  @IsOptional() @IsString() overCapacityReason?: string;
+}
+
+export class TransferMentorDto {
+  @IsString() @IsNotEmpty() mentorUserId!: string;
+  @IsString() @IsNotEmpty() reason!: string;
+  @Type(() => Date) @IsDate() expectedReturnAt!: Date;
+}
+
+export class ReturnToQueueDto {
+  @IsString() @IsNotEmpty() reason!: string;
+}
+
+export class UpdateSettingsDto {
+  @IsOptional() @IsIn(['AUTO', 'MANUAL']) allocationMode?: 'AUTO' | 'MANUAL';
+  @IsOptional() @IsInt() @Min(1) @Max(500) defaultCapacity?: number;
+  @IsOptional() @IsBoolean() siblingAffinity?: boolean;
+}
+
+export class UpsertStaffDto {
+  @IsEnum(MentoringStaffRole) role!: MentoringStaffRole;
+  @IsOptional() @IsInt() @Min(1) @Max(500) capacity?: number | null;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsBoolean() acceptsAllocation?: boolean;
+  @IsOptional() @IsString() team?: string | null;
+  @IsOptional() @IsString() notes?: string | null;
+}
+
+// ─── Tasks ───────────────────────────────────────────────────────────────────
+
+export class CreateTaskDto {
+  @IsString() @IsNotEmpty() activationId!: string;
+  @IsOptional() @IsInt() @Min(1) @Max(7) stageNumber?: number;
+  @IsString() @IsNotEmpty() title!: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsEnum(MentoringTaskPriority) priority?: MentoringTaskPriority;
+  @IsOptional() @Type(() => Date) @IsDate() dueAt?: Date;
+  @IsString() @IsNotEmpty() assigneeUserId!: string;
+}
+
+export class TaskListQueryDto {
+  @IsOptional() @IsIn(['assigned', 'created', 'all']) scope?: 'assigned' | 'created' | 'all';
+  @IsOptional() @IsEnum(MentoringTaskStatus) status?: MentoringTaskStatus;
+  @IsOptional() @IsString() activationId?: string;
+}
+
+export class TaskCommentDto {
+  @IsString() @IsNotEmpty() body!: string;
+}
+
+export class TaskCollectDto {
+  @IsString() @IsNotEmpty() itemKey!: string;
+  @IsOptional() value?: unknown;
+  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() evidenceRef?: string;
+}
+
+export class TaskSubmitDto {
+  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() evidence?: string;
+}
+
+export class TaskReasonDto {
+  @IsString() @IsNotEmpty() reason!: string;
+}
+

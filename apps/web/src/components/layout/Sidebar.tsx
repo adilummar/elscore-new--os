@@ -59,6 +59,7 @@ export function Sidebar({ user }: { user: any }) {
     ...(hasPermission("demo.read") || hasPermission("demo.read_own") || hasPermission("demo.read_assigned") || hasPermission("demo.manage_all") ? [{ name: "Demos", href: "/demos", icon: FileText }] : []),
     ...(hasMarketingRole || hasPermission("analytics.ceo.read") ? [{ name: "Marketing", href: "/marketing", icon: BarChart3 }] : []),
     ...(hasPermission("report.view") || hasPermission("analytics.ceo.read") || hasPermission("target.read.team") ? [{ name: "Reports", href: "/reports", icon: BarChart3 }] : []),
+    ...(hasPermission("mentoring.student.read-all") || hasPermission("mentoring.student.read-assigned") || hasPermission("mentoring.task.work") ? [{ name: "Mentoring", href: "/mentoring", icon: Users }] : []),
     ...(hasPermission("role.manage") || hasPermission("settings.read") || hasPermission("audit.view") || hasPermission("user.read") || hasPermission("employee.read-all") || hasPermission("reference.manage") ? [{ name: "Settings", href: "/settings", icon: Settings }] : []),
   ];
 

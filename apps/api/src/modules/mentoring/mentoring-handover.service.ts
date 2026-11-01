@@ -4,6 +4,8 @@ import { EnrollmentState, LeadStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
+import { MentoringAllocationService } from './mentoring-allocation.service';
+
 /** The only Sales status transition that starts a Mentoring handover. PAID never does. */
 export const HANDOVER_TRIGGER_STATUS: LeadStatus = LeadStatus.ENROLLED;
 
@@ -59,6 +61,7 @@ export class MentoringHandoverService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly allocation: MentoringAllocationService,
   ) {}
 
   /**
@@ -239,6 +242,9 @@ export class MentoringHandoverService {
         where: { id: student.id },
         data: { enrollmentState: EnrollmentState.ENROLLED },
       });
+
+      // Automatic Mentor allocation (or the allocation queue) happens in the same transaction.
+      await this.allocation.autoAllocateInTx(tx, activation.id, actorUserId);
 
       await this.audit.recordInTx(tx, {
         entityType: 'EnrollmentHandover',

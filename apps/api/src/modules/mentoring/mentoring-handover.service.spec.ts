@@ -67,11 +67,13 @@ function makeTx(lead: unknown) {
 describe('MentoringHandoverService', () => {
   const audit = { recordInTx: jest.fn().mockResolvedValue(undefined) };
   const prisma = { lead: { findUnique: jest.fn() }, $transaction: jest.fn(), student: { findMany: jest.fn() } };
+  const allocation = { autoAllocateInTx: jest.fn().mockResolvedValue({ allocated: true, mentorUserId: 'mentor-1' }) };
   let service: MentoringHandoverService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new MentoringHandoverService(prisma as any, audit as any);
+    allocation.autoAllocateInTx.mockResolvedValue({ allocated: true, mentorUserId: 'mentor-1' });
+    service = new MentoringHandoverService(prisma as any, audit as any, allocation as any);
   });
 
   describe('ensureHandoverInTx', () => {
@@ -93,6 +95,7 @@ describe('MentoringHandoverService', () => {
         where: { id: 'stu-1' },
         data: { enrollmentState: 'ENROLLED' },
       });
+      expect(allocation.autoAllocateInTx).toHaveBeenCalledWith(tx, 'act-1', 'user-1');
       expect(result.created).toEqual([{ studentId: 'stu-1', handoverId: 'ho-1', activationId: 'act-1' }]);
       expect(audit.recordInTx).toHaveBeenCalledWith(
         tx,
@@ -108,6 +111,7 @@ describe('MentoringHandoverService', () => {
       expect(tx.enrollmentHandover.create).not.toHaveBeenCalled();
       expect(tx.mentoringActivation.create).not.toHaveBeenCalled();
       expect(tx.student.update).not.toHaveBeenCalled();
+      expect(allocation.autoAllocateInTx).not.toHaveBeenCalled();
       expect(result.alreadyHandedOver).toEqual(['stu-1']);
       expect(result.created).toEqual([]);
     });
