@@ -1,14 +1,20 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { EnrollmentState, LeadStatus, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
-/** Lead statuses that start (or keep) the Mentoring handover. */
-export const HANDOVER_TRIGGER_STATUSES: readonly LeadStatus[] = [LeadStatus.ENROLLED, LeadStatus.PAID];
+/** The only Sales status transition that starts a Mentoring handover. PAID never does. */
+export const HANDOVER_TRIGGER_STATUS: LeadStatus = LeadStatus.ENROLLED;
 
-/** Statuses a lead may move to while a Mentoring activation is open. */
-const STATUSES_ALLOWED_WITH_OPEN_ACTIVATION: readonly LeadStatus[] = [LeadStatus.ENROLLED, LeadStatus.PAID];
+/**
+ * Statuses in which a lead can hold an open Mentoring activation. Moving out of these to any other
+ * status is blocked while an activation is open.
+ */
+export const OPEN_ACTIVATION_STATUSES: readonly LeadStatus[] = [LeadStatus.ENROLLED, LeadStatus.PAID];
+
+export const STUDENT_LOCKED_MESSAGE =
+  'This student has been handed over to Mentoring. Sales can no longer change the student or their subject requirements.';
 
 /** Stage 1 is created at handover; the remaining six stages belong to the WP3 workflow engine. */
 const STAGE_ONE = { stageNumber: 1, key: 'ADMISSION_HANDOVER' } as const;
@@ -60,7 +66,7 @@ export class MentoringHandoverService {
    * started for one of its students. Sales must have the activation cancelled first.
    */
   async assertCanLeaveEnrolled(tx: PrismaTxClient, leadId: string, nextStatus: LeadStatus): Promise<void> {
-    if (STATUSES_ALLOWED_WITH_OPEN_ACTIVATION.includes(nextStatus)) return;
+    if (OPEN_ACTIVATION_STATUSES.includes(nextStatus)) return;
 
     const open = await tx.mentoringActivation.count({
       where: { leadId, status: { not: 'CANCELLED' } },
@@ -77,7 +83,13 @@ export class MentoringHandoverService {
    * has at least one requirement and no handover yet. Safe to call repeatedly and concurrently.
    * Runs inside the caller's transaction so the lead status and the handover commit together.
    */
-  async ensureHandoverInTx(tx: PrismaTxClient, leadId: string, actorUserId: string): Promise<HandoverResult> {
+  async ensureHandoverInTx(
+    tx: PrismaTxClient,
+    leadId: string,
+    actorUserId: string,
+    options: { strict?: boolean } = {},
+  ): Promise<HandoverResult> {
+    const strict = options.strict ?? true;
     // Serialise concurrent ENROLLED/retry requests for the same lead.
     await tx.$executeRaw`SELECT 1 FROM leads WHERE id = ${leadId} FOR UPDATE`;
 
@@ -108,7 +120,7 @@ export class MentoringHandoverService {
 
     const eligible = lead.students.filter((s) => s.requirements.length > 0);
     const hasAnyHandover = lead.students.some((s) => s.enrollmentHandover);
-    if (eligible.length === 0 && !hasAnyHandover) {
+    if (strict && eligible.length === 0 && !hasAnyHandover) {
       throw new BadRequestException(
         'Cannot hand over to Mentoring: add at least one student with at least one subject requirement first.',
       );
@@ -248,14 +260,51 @@ export class MentoringHandoverService {
     return result;
   }
 
+  /**
+   * A lead "has been enrolled" when it is ENROLLED, or PAID after having been ENROLLED.
+   * A lead that reached PAID without ever being ENROLLED is not eligible for Mentoring.
+   */
+  async hasBeenEnrolled(client: Pick<PrismaTxClient, 'lead' | 'leadStatusHistory'>, leadId: string): Promise<boolean> {
+    const lead = await client.lead.findUnique({ where: { id: leadId }, select: { status: true } });
+    if (!lead) return false;
+    if (lead.status === LeadStatus.ENROLLED) return true;
+    if (lead.status !== LeadStatus.PAID) return false;
+    const enrolledBefore = await client.leadStatusHistory.count({
+      where: { leadId, newStatus: LeadStatus.ENROLLED },
+    });
+    return enrolledBefore > 0;
+  }
+
+  /**
+   * Called after Sales adds or changes a student/requirement under a lead. If the lead is already
+   * enrolled, hands over any newly eligible student automatically. Never throws for "nothing eligible".
+   */
+  async ensureHandoverIfEnrolledInTx(tx: PrismaTxClient, leadId: string, actorUserId: string): Promise<HandoverResult | null> {
+    await tx.$executeRaw`SELECT 1 FROM leads WHERE id = ${leadId} FOR UPDATE`;
+    if (!(await this.hasBeenEnrolled(tx, leadId))) return null;
+    return this.ensureHandoverInTx(tx, leadId, actorUserId, { strict: false });
+  }
+
+  /** Sales may not change a student (or their requirements) once the student has been handed over. */
+  async assertStudentEditableBySales(client: Pick<PrismaTxClient, 'enrollmentHandover'>, studentId: string): Promise<void> {
+    const handover = await client.enrollmentHandover.findUnique({
+      where: { studentId },
+      select: { id: true },
+    });
+    if (handover) throw new ForbiddenException(STUDENT_LOCKED_MESSAGE);
+  }
+
   /** Safe retry for a lead whose handover is missing or incomplete (idempotent). */
   async retryForLead(leadId: string, actorUserId: string): Promise<HandoverResult> {
-    const lead = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { status: true } });
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { id: true } });
     if (!lead) throw new BadRequestException('Lead not found');
-    if (!HANDOVER_TRIGGER_STATUSES.includes(lead.status)) {
-      throw new BadRequestException('The lead must be ENROLLED or PAID before it can be handed over to Mentoring.');
-    }
-    return this.prisma.$transaction((tx: PrismaTxClient) => this.ensureHandoverInTx(tx, leadId, actorUserId));
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      await tx.$executeRaw`SELECT 1 FROM leads WHERE id = ${leadId} FOR UPDATE`;
+      if (!(await this.hasBeenEnrolled(tx, leadId))) {
+        throw new BadRequestException('The lead must have been ENROLLED before it can be handed over to Mentoring.');
+      }
+      return this.ensureHandoverInTx(tx, leadId, actorUserId);
+    });
   }
 
   /** Read-only handover status for the Sales lead page. */

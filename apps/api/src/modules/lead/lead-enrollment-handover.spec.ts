@@ -36,12 +36,21 @@ describe('LeadService.updateStatus Mentoring handover', () => {
     expect(handover.assertCanLeaveEnrolled).not.toHaveBeenCalled();
   });
 
-  it('also hands over when a lead reaches PAID without a prior ENROLLED', async () => {
+  it('does NOT hand over when a lead reaches PAID, even without a prior ENROLLED', async () => {
     const { service, handover } = setup('NEGOTIATION');
 
     await service.updateStatus('lead-1', dto('PAID'), 'u-1', false);
 
-    expect(handover.ensureHandoverInTx).toHaveBeenCalledTimes(1);
+    expect(handover.ensureHandoverInTx).not.toHaveBeenCalled();
+  });
+
+  it('moving ENROLLED to PAID creates no further handover and is not blocked', async () => {
+    const { service, handover } = setup('ENROLLED');
+
+    await service.updateStatus('lead-1', dto('PAID'), 'u-1', false);
+
+    expect(handover.assertCanLeaveEnrolled).toHaveBeenCalledWith(expect.anything(), 'lead-1', 'PAID');
+    expect(handover.ensureHandoverInTx).not.toHaveBeenCalled();
   });
 
   it('repeating ENROLLED calls the idempotent handover again, not a second creation path', async () => {

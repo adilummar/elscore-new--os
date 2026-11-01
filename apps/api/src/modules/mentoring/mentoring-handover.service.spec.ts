@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 
 import { MentoringHandoverService } from './mentoring-handover.service';
 
@@ -209,17 +209,99 @@ describe('MentoringHandoverService', () => {
     });
   });
 
+  describe('hasBeenEnrolled', () => {
+    const clientWith = (status: string | null, enrolledHistory = 0) => ({
+      lead: { findUnique: jest.fn().mockResolvedValue(status ? { status } : null) },
+      leadStatusHistory: { count: jest.fn().mockResolvedValue(enrolledHistory) },
+    });
+
+    it('is true for an ENROLLED lead', async () => {
+      await expect(service.hasBeenEnrolled(clientWith('ENROLLED') as any, 'lead-1')).resolves.toBe(true);
+    });
+
+    it('is true for a PAID lead that was ENROLLED before', async () => {
+      const client = clientWith('PAID', 1);
+      await expect(service.hasBeenEnrolled(client as any, 'lead-1')).resolves.toBe(true);
+      expect(client.leadStatusHistory.count).toHaveBeenCalledWith({
+        where: { leadId: 'lead-1', newStatus: 'ENROLLED' },
+      });
+    });
+
+    it('is false for a PAID lead that was never ENROLLED', async () => {
+      await expect(service.hasBeenEnrolled(clientWith('PAID', 0) as any, 'lead-1')).resolves.toBe(false);
+    });
+
+    it('is false for other statuses and missing leads', async () => {
+      await expect(service.hasBeenEnrolled(clientWith('NEGOTIATION') as any, 'lead-1')).resolves.toBe(false);
+      await expect(service.hasBeenEnrolled(clientWith(null) as any, 'lead-1')).resolves.toBe(false);
+    });
+  });
+
+  describe('ensureHandoverIfEnrolledInTx (students added after enrollment)', () => {
+    it('does nothing for a lead that has not been enrolled', async () => {
+      const tx = makeTx(makeLead([makeStudent()]));
+      tx.lead.findUnique.mockResolvedValue({ status: 'NEGOTIATION' });
+      (tx as any).leadStatusHistory = { count: jest.fn().mockResolvedValue(0) };
+
+      const result = await service.ensureHandoverIfEnrolledInTx(tx as any, 'lead-1', 'user-1');
+
+      expect(result).toBeNull();
+      expect(tx.enrollmentHandover.create).not.toHaveBeenCalled();
+    });
+
+    it('hands over a newly eligible student of an already-enrolled lead', async () => {
+      const tx = makeTx(
+        makeLead([makeStudent({ enrollmentHandover: { id: 'old' } }), makeStudent({ id: 'stu-2' })]),
+      );
+      (tx as any).leadStatusHistory = { count: jest.fn() };
+
+      const result = await service.ensureHandoverIfEnrolledInTx(tx as any, 'lead-1', 'user-1');
+
+      expect(result?.created.map((c) => c.studentId)).toEqual(['stu-2']);
+      expect(result?.alreadyHandedOver).toEqual(['stu-1']);
+      expect(tx.enrollmentHandover.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw when the new student has no requirement yet', async () => {
+      const tx = makeTx(makeLead([makeStudent({ requirements: [] })]));
+      (tx as any).leadStatusHistory = { count: jest.fn() };
+
+      const result = await service.ensureHandoverIfEnrolledInTx(tx as any, 'lead-1', 'user-1');
+
+      expect(result?.created).toEqual([]);
+      expect(result?.skippedWithoutRequirements).toEqual(['stu-1']);
+    });
+  });
+
+  describe('assertStudentEditableBySales', () => {
+    it('rejects Sales edits once the student has a handover', async () => {
+      const client = { enrollmentHandover: { findUnique: jest.fn().mockResolvedValue({ id: 'ho-1' }) } };
+      await expect(service.assertStudentEditableBySales(client as any, 'stu-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('allows edits before handover', async () => {
+      const client = { enrollmentHandover: { findUnique: jest.fn().mockResolvedValue(null) } };
+      await expect(service.assertStudentEditableBySales(client as any, 'stu-1')).resolves.toBeUndefined();
+    });
+  });
+
   describe('retryForLead', () => {
-    it('refuses leads that are not ENROLLED or PAID', async () => {
-      prisma.lead.findUnique.mockResolvedValue({ status: 'INTERESTED' });
+    it('refuses leads that have never been ENROLLED', async () => {
+      prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1' });
+      const tx = makeTx({ status: 'PAID' });
+      (tx as any).leadStatusHistory = { count: jest.fn().mockResolvedValue(0) };
+      prisma.$transaction.mockImplementation((fn: (t: unknown) => unknown) => Promise.resolve(fn(tx)));
 
       await expect(service.retryForLead('lead-1', 'user-1')).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.enrollmentHandover.create).not.toHaveBeenCalled();
     });
 
     it('runs the idempotent handover in a transaction for ENROLLED leads', async () => {
-      prisma.lead.findUnique.mockResolvedValue({ status: 'ENROLLED' });
+      prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1' });
       const tx = makeTx(makeLead([makeStudent()]));
+      (tx as any).leadStatusHistory = { count: jest.fn() };
       prisma.$transaction.mockImplementation((fn: (t: unknown) => unknown) => Promise.resolve(fn(tx)));
 
       const result = await service.retryForLead('lead-1', 'user-1');

@@ -4,6 +4,7 @@ import { EnrollmentState, Prisma } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdGeneratorService } from '../../common/id-generator/id-generator.service';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
+import { MentoringHandoverService } from '../mentoring/mentoring-handover.service';
 
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -20,7 +21,17 @@ export class StudentService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly idGen: IdGeneratorService,
+    private readonly mentoringHandover: MentoringHandoverService,
   ) {}
+
+  /**
+   * Serialises against a concurrent handover for the same lead and rejects Sales edits to a student
+   * that has already been handed over to Mentoring.
+   */
+  private async lockLeadAndAssertEditable(tx: PrismaTxClient, leadId: string, studentId?: string | null) {
+    await tx.$executeRaw`SELECT 1 FROM leads WHERE id = ${leadId} FOR UPDATE`;
+    if (studentId) await this.mentoringHandover.assertStudentEditableBySales(tx, studentId);
+  }
 
   private async checkLeadOwnership(leadId: string, userId: string, hasReadAll: boolean) {
     const lead = await this.prisma.lead.findUnique({
@@ -80,6 +91,8 @@ export class StudentService {
     await this.checkLeadOwnership(student.leadId, userId, hasReadAll);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      await this.lockLeadAndAssertEditable(tx, student.leadId, id);
+
       const updated = await tx.student.update({
         where: { id },
         data: dto,
@@ -104,6 +117,8 @@ export class StudentService {
     await this.checkLeadOwnership(student.leadId, userId, hasReadAll);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      await this.lockLeadAndAssertEditable(tx, student.leadId, studentId);
+
       const businessId = await this.idGen.nextIdInTx(tx, 'RQT');
 
       const requirement = await tx.requirement.create({
@@ -122,6 +137,9 @@ export class StudentService {
         newValue: requirement,
       });
 
+      // A student added to an already-enrolled lead is handed over as soon as it has a requirement.
+      await this.mentoringHandover.ensureHandoverIfEnrolledInTx(tx, student.leadId, userId);
+
       return requirement;
     });
   }
@@ -132,6 +150,8 @@ export class StudentService {
     await this.checkLeadOwnership(req.student.leadId, userId, hasReadAll);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      await this.lockLeadAndAssertEditable(tx, req.student.leadId, req.studentId);
+
       const updated = await tx.requirement.update({
         where: { id },
         data: dto,
@@ -154,6 +174,8 @@ export class StudentService {
     await this.checkLeadOwnership(leadId, userId, hasReadAll);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      await this.lockLeadAndAssertEditable(tx, leadId, studentId);
+
       let student;
       const { subjectIds, ...studentData } = dto;
 
@@ -205,6 +227,9 @@ export class StudentService {
           });
         }
       }
+
+      // A student added to an already-enrolled lead is handed over as soon as it has a requirement.
+      await this.mentoringHandover.ensureHandoverIfEnrolledInTx(tx, leadId, userId);
 
       return tx.student.findUnique({
         where: { id: student.id },
