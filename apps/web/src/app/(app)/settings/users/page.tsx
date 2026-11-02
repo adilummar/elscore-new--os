@@ -10,6 +10,8 @@ import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { usePermissions } from '@/components/providers/AuthProvider';
 import { filterRolesForDepartment } from '@/lib/rbac/department-roles';
+import { validateCreateUserForm } from '@/lib/forms/create-user';
+import { GENERIC_ACTION_ERROR } from '@/lib/api/action-result';
 
 export default function UsersPage() {
   const [users, setUsers] = React.useState<any[]>([]);
@@ -17,6 +19,7 @@ export default function UsersPage() {
   const [roles, setRoles] = React.useState<any[]>([]);
   const [isOpen, setIsOpen] = React.useState(false);
   const [formData, setFormData] = React.useState({ email: '', password: '', firstName: '', lastName: '', departmentId: '', roleId: '' });
+  const [formError, setFormError] = React.useState<string | null>(null);
   const { hasPermission } = usePermissions();
 
   const loadData = async () => {
@@ -35,17 +38,28 @@ export default function UsersPage() {
 
   const handleOpenModal = () => {
     setFormData(EMPTY_FORM);
+    setFormError(null);
     setIsOpen(true);
   };
 
   const handleCreate = async () => {
+    const problems = validateCreateUserForm(formData);
+    if (problems.length > 0) {
+      setFormError(problems.join(' '));
+      return;
+    }
+    setFormError(null);
     try {
-      await createUserAction(formData);
+      const result = await createUserAction({ ...formData, email: formData.email.trim(), firstName: formData.firstName.trim(), lastName: formData.lastName.trim() });
+      if (!result.ok) {
+        setFormError(result.message);
+        return;
+      }
       setFormData(EMPTY_FORM);
       setIsOpen(false);
       loadData();
     } catch (e: any) {
-      alert(e.message);
+      setFormError(e?.message || GENERIC_ACTION_ERROR);
     }
   };
 
@@ -119,6 +133,7 @@ export default function UsersPage() {
               {filterRolesForDepartment(roles, departments.find(d => d.id === formData.departmentId)?.code).map(r => <option key={r.id} value={r.id}>{r.name || r.code}</option>)}
             </Select>
           </div>
+          {formError && <p role="alert" className="text-sm text-red-600">{formError}</p>}
           <Button onClick={handleCreate} className="w-full">Create</Button>
         </div>
       </Modal>

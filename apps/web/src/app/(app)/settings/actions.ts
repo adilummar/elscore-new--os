@@ -1,9 +1,16 @@
 "use server";
 import { fetchApi } from '@/lib/api/client';
+import { toActionResult } from '@/lib/api/action-result';
 import { revalidatePath } from 'next/cache';
 
 export async function getUsersAction(query: string) { return fetchApi<any>('/users?' + query); }
-export async function createUserAction(data: any) { const res = await fetchApi<any>('/users', { method: 'POST', body: JSON.stringify(data) }); revalidatePath('/settings/users'); return res; }
+export async function createUserAction(data: any) {
+  return toActionResult(async () => {
+    const res = await fetchApi<any>('/users', { method: 'POST', body: JSON.stringify(data) });
+    revalidatePath('/settings/users');
+    return res;
+  });
+}
 export async function updateUserStatusAction(id: string, status: string, reason?: string) { const res = await fetchApi<any>('/users/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status, reason }) }); revalidatePath('/settings/users'); return res; }
 export async function assignRoleAction(userId: string, roleId: string) { const res = await fetchApi<any>('/users/' + userId + '/roles', { method: 'POST', body: JSON.stringify({ roleId }) }); revalidatePath('/settings/users'); return res; }
 

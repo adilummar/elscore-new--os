@@ -62,6 +62,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit & { ski
       throw new Error('UNAUTHORIZED');
     }
     const error = new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+    (error as Error & { status?: number }).status = response.status;
     if (errorCode) (error as Error & { code?: string }).code = errorCode;
     if (blockers) (error as Error & { blockers?: string[] }).blockers = blockers;
     throw error;
