@@ -33,7 +33,8 @@ export function AllocationClient() {
     try { await fn(); await refresh(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
 
-  const mentors = (load?.staff ?? []).filter((s: any) => s.role === 'MENTOR' && s.isActive);
+  // Same eligibility the server uses for manual assignment (account, role, employment, profile), not just "active".
+  const mentors = (load?.staff ?? []).filter((s: any) => s.role === 'MENTOR' && s.eligibleForManual);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -61,6 +62,9 @@ export function AllocationClient() {
         <h2 className="font-semibold">Allocation queue ({queue.length})</h2>
         <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 text-sm">
           {queue.length === 0 && <p className="p-4 text-slate-500">No students are waiting for a Mentor.</p>}
+          {queue.length > 0 && load && mentors.length === 0 && (
+            <p className="p-4 text-amber-700 bg-amber-50">No eligible Mentors yet. Create Mentors in Settings → Users under the Mentoring department. Mentors created earlier appear after you open Mentoring → Staff and choose “Add missing Mentors”.</p>
+          )}
           {queue.map((q) => (
             <div key={q.activationId} className="p-3 flex flex-wrap items-center gap-3">
               <Link href={`/mentoring/students/${q.activationId}`} className="font-medium text-brand-700 hover:underline">{q.studentName} ({q.studentBusinessId})</Link>
@@ -92,7 +96,10 @@ export function AllocationClient() {
                   <td className="px-3 py-2">{s.name}</td><td className="px-3 py-2">{s.role === 'MENTOR' ? 'Mentor' : 'Demo Counselor'}</td>
                   <td className="px-3 py-2">{s.role === 'MENTOR' ? `${s.openStudents} / ${s.capacity}` : '—'}</td>
                   <td className="px-3 py-2">{s.openTasks}</td>
-                  <td className="px-3 py-2">{!s.isActive ? <Badge variant="danger">Inactive</Badge> : s.employmentStatus && s.employmentStatus !== 'ACTIVE' ? <Badge variant="warning">{s.employmentStatus}</Badge> : s.acceptsAllocation ? <Badge variant="success">Accepting</Badge> : <Badge>Not accepting</Badge>}</td>
+                  <td className="px-3 py-2">
+                    {!s.eligibleForManual ? <><Badge variant="danger">Not eligible</Badge> <span className="text-xs text-slate-500">{s.ineligibleReason}</span></> : s.eligibleForAuto ? <Badge variant="success">Accepting</Badge> : <Badge>Manual only</Badge>}
+                    {s.userStatus === 'PENDING_SETUP' && <span className="ml-2 text-xs text-slate-500">Awaiting first sign-in</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

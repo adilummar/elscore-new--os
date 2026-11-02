@@ -14,6 +14,7 @@ import { paginate, PaginateOptions } from '../../common/pagination/paginate.util
 import { PaginatedResponseDto } from '../../common/pagination/pagination.dto';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
+import { ensureMentorStaffProfileInTx } from '../mentoring/mentoring-staff-provisioning';
 
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -136,6 +137,11 @@ export class UserService {
           grantedByUserId: actorUserId,
         },
       });
+
+      // 4.4. A Mentor in the Mentoring department needs a staff profile, or allocation cannot see them.
+      if (role.code === 'MENTOR') {
+        await ensureMentorStaffProfileInTx(tx, user.id, actorUserId, 'USER_CREATION');
+      }
 
       // 4.5. TutorProfile creation if role is TUTOR
       if (role.code === 'TUTOR') {

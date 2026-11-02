@@ -13,11 +13,21 @@ export function StaffClient() {
   const [userId, setUserId] = React.useState('');
   const [role, setRole] = React.useState('MENTOR');
   const [capacity, setCapacity] = React.useState('');
+  const [notice, setNotice] = React.useState<string | null>(null);
 
   const load = React.useCallback(() => {
     mentoringApi('/mentoring/staff').then((d) => { setRows(d); setError(null); }).catch((e) => setError(e.message));
   }, []);
   React.useEffect(load, [load]);
+
+  const syncMentors = async () => {
+    try {
+      const r = await mentoringApi('/mentoring/staff/sync', 'POST', {});
+      setNotice(`Added ${r.created} Mentor profile(s). ${r.alreadyHadProfile} already had one; ${r.skipped} Mentor(s) outside the Mentoring department were skipped.`);
+      setError(null);
+      load();
+    } catch (e: any) { setError(e.message); }
+  };
 
   const save = async (id: string, body: any) => {
     try { await mentoringApi(`/mentoring/staff/${id}`, 'PUT', body); load(); } catch (e: any) { setError(e.message); }
@@ -28,6 +38,11 @@ export function StaffClient() {
       <h1 className="text-2xl font-bold text-slate-900">Mentors and Demo Counselors</h1>
       <p className="text-sm text-slate-600">The user must already hold the Mentor or Demo Counselor role (assign roles in Settings → Users). Here you set capacity and whether they receive students.</p>
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {notice && <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>}
+      <div className="flex items-center gap-3 text-sm">
+        <Button size="sm" onClick={syncMentors}>Add missing Mentors</Button>
+        <span className="text-slate-600">Creates the staff profile for every Mentor in the Mentoring department who does not have one yet. New Mentors get theirs automatically.</span>
+      </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-3 grid gap-2 md:grid-cols-5">
         <Input placeholder="User ID" value={userId} onChange={(e) => setUserId(e.target.value)} />

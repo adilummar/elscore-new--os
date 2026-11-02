@@ -96,6 +96,13 @@ export class MentoringAllocationController {
     return this.staff.listCounselors();
   }
 
+  /** Creates the staff profile for Mentoring-department Mentors who do not have one yet (Head only). */
+  @Post('staff/sync')
+  @RequirePermissions('mentoring.staff.manage')
+  syncStaff(@CurrentUser() user: RequestUser) {
+    return this.staff.syncMentorsFromRoles(user.id);
+  }
+
   @Put('staff/:userId')
   @RequirePermissions('mentoring.staff.manage')
   upsertStaff(@Param('userId') userId: string, @Body() dto: UpsertStaffDto, @CurrentUser() user: RequestUser) {

@@ -4,6 +4,7 @@ import { MentoringStaffRole } from '@prisma/client';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
 import { MentoringHistoryService } from './mentoring-history.service';
+import { ensureMentorStaffProfileInTx } from './mentoring-staff-provisioning';
 import { DEMO_COUNSELOR_ROLE_CODE, MENTOR_ROLE_CODE } from './mentoring.constants';
 
 const ROLE_CODE: Record<MentoringStaffRole, string> = {
@@ -56,6 +57,27 @@ export class MentoringStaffService {
       userId: p.userId,
       name: byUser.get(p.userId) ? `${byUser.get(p.userId)!.firstName} ${byUser.get(p.userId)!.lastName}` : p.userId,
     }));
+  }
+
+  /**
+   * Creates the missing staff profile for every Mentor who is in the Mentoring department. New Mentors get their
+   * profile when they are created; this covers Mentors created before that existed. Idempotent, never changes
+   * an existing profile, and every created profile is audited.
+   */
+  async syncMentorsFromRoles(actorUserId: string) {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const holders = await tx.userRole.findMany({ where: { role: { code: MENTOR_ROLE_CODE } }, select: { userId: true } });
+      let created = 0;
+      let existing = 0;
+      let skipped = 0;
+      for (const { userId } of holders) {
+        const outcome = await ensureMentorStaffProfileInTx(tx, userId, actorUserId, 'SYNC');
+        if (outcome === 'CREATED') created++;
+        else if (outcome === 'EXISTS') existing++;
+        else skipped++;
+      }
+      return { created, alreadyHadProfile: existing, skipped };
+    });
   }
 
   /** The user must already hold the matching role (role assignment stays in the existing user management). */

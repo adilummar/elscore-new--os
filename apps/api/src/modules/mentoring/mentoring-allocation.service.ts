@@ -3,6 +3,7 @@ import { MentorAssignmentType, MentoringSetting, Prisma } from '@prisma/client';
 
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
+import { mentorIneligibleReason } from './mentoring-eligibility';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { openStage } from './mentoring-stage.helpers';
 import {
@@ -10,7 +11,14 @@ import {
   CLOSED_ACTIVATION_STATUSES,
   DEMO_COUNSELOR_ROLE_CODE,
   MENTOR_ROLE_CODE,
+  MENTORING_HEAD_ROLE_CODE,
 } from './mentoring.constants';
+
+interface EligibilityFacts {
+  userStatus: string | null;
+  employmentStatus: string | null;
+  roleCodes: Set<string>;
+}
 
 export const ALLOCATION_RULE_VERSION = 'LEAST_LOADED_V1';
 
@@ -110,19 +118,49 @@ export class MentoringAllocationService {
 
   // ─── Candidates and workload ───────────────────────────────────────────────
 
-  private async candidates(tx: PrismaTxClient, settings: MentoringSetting, onlyAccepting: boolean): Promise<MentorCandidate[]> {
-    const profiles = await tx.mentoringStaffProfile.findMany({
-      where: { role: 'MENTOR', isActive: true, ...(onlyAccepting ? { acceptsAllocation: true } : {}) },
-    });
-    if (profiles.length === 0) return [];
-    const ids = profiles.map((p) => p.userId);
-
-    const [users, roleRows, loads, lastAssigned] = await Promise.all([
+  /** The facts the shared eligibility rule needs, read the same way for automatic, manual and workload views. */
+  private async eligibilityFacts(tx: PrismaTxClient, userIds: string[]): Promise<Map<string, EligibilityFacts>> {
+    const [users, roleRows] = await Promise.all([
       tx.user.findMany({
-        where: { id: { in: ids }, status: 'ACTIVE' },
-        select: { id: true, employee: { select: { employmentStatus: true } } },
+        where: { id: { in: userIds } },
+        select: { id: true, status: true, employee: { select: { employmentStatus: true } } },
       }),
-      tx.userRole.findMany({ where: { userId: { in: ids }, role: { code: MENTOR_ROLE_CODE } }, select: { userId: true } }),
+      tx.userRole.findMany({
+        where: { userId: { in: userIds }, role: { code: { in: [MENTOR_ROLE_CODE, MENTORING_HEAD_ROLE_CODE] } } },
+        select: { userId: true, role: { select: { code: true } } },
+      }),
+    ]);
+    const facts = new Map<string, EligibilityFacts>();
+    for (const u of users) {
+      facts.set(u.id, { userStatus: u.status, employmentStatus: u.employee?.employmentStatus ?? null, roleCodes: new Set() });
+    }
+    for (const r of roleRows) facts.get(r.userId)?.roleCodes.add(r.role.code);
+    return facts;
+  }
+
+  private ineligibleReason(
+    profile: { role: string; isActive: boolean; acceptsAllocation: boolean },
+    facts: EligibilityFacts | undefined,
+    forAutomatic: boolean,
+  ): string | null {
+    return mentorIneligibleReason(
+      {
+        profile,
+        userStatus: facts?.userStatus ?? null,
+        employmentStatus: facts?.employmentStatus ?? null,
+        roleCodes: facts?.roleCodes ?? new Set(),
+      },
+      { forAutomatic },
+    );
+  }
+
+  private async candidates(tx: PrismaTxClient, settings: MentoringSetting, onlyAccepting: boolean): Promise<MentorCandidate[]> {
+    const allProfiles = await tx.mentoringStaffProfile.findMany({ where: { role: 'MENTOR', isActive: true } });
+    if (allProfiles.length === 0) return [];
+    const ids = allProfiles.map((p) => p.userId);
+
+    const [facts, loads, lastAssigned] = await Promise.all([
+      this.eligibilityFacts(tx, ids),
       tx.mentoringActivation.groupBy({
         by: ['currentMentorUserId'],
         where: { currentMentorUserId: { in: ids }, status: { notIn: [...CLOSED_ACTIVATION_STATUSES] } },
@@ -131,17 +169,11 @@ export class MentoringAllocationService {
       tx.mentorAssignment.groupBy({ by: ['mentorUserId'], where: { mentorUserId: { in: ids } }, _max: { startedAt: true } }),
     ]);
 
-    const okUsers = new Set(
-      users
-        .filter((u) => !u.employee || u.employee.employmentStatus === 'ACTIVE')
-        .map((u) => u.id),
-    );
-    const hasRole = new Set(roleRows.map((r) => r.userId));
     const loadMap = new Map(loads.map((l) => [l.currentMentorUserId as string, l._count._all]));
     const lastMap = new Map(lastAssigned.map((l) => [l.mentorUserId, l._max.startedAt ?? null]));
 
-    return profiles
-      .filter((p) => okUsers.has(p.userId) && hasRole.has(p.userId))
+    return allProfiles
+      .filter((p) => this.ineligibleReason(p, facts.get(p.userId), onlyAccepting) === null)
       .map((p) => ({
         userId: p.userId,
         load: loadMap.get(p.userId) ?? 0,
@@ -155,7 +187,8 @@ export class MentoringAllocationService {
       const settings = await this.getSettings(tx);
       const profiles = await tx.mentoringStaffProfile.findMany({ orderBy: { createdAt: 'asc' } });
       const ids = profiles.map((p) => p.userId);
-      const [employees, loads, taskLoads, queued] = await Promise.all([
+      const [facts, employees, loads, taskLoads, queued] = await Promise.all([
+        this.eligibilityFacts(tx, ids),
         tx.employee.findMany({ where: { userId: { in: ids } }, select: { userId: true, firstName: true, lastName: true, employmentStatus: true } }),
         tx.mentoringActivation.groupBy({
           by: ['currentMentorUserId'],
@@ -178,10 +211,19 @@ export class MentoringAllocationService {
         queuedStudents: queued,
         staff: profiles.map((p) => {
           const e = emp.get(p.userId);
+          const f = facts.get(p.userId);
+          // The same rule the allocation paths use: `eligibleForManual` fills the Head's Mentor dropdown,
+          // `eligibleForAuto` is what automatic allocation would consider.
+          const manualReason = this.ineligibleReason(p, f, false);
+          const autoReason = this.ineligibleReason(p, f, true);
           return {
             userId: p.userId,
             name: e ? `${e.firstName} ${e.lastName}` : p.userId,
             employmentStatus: e?.employmentStatus ?? null,
+            userStatus: f?.userStatus ?? null,
+            eligibleForManual: manualReason === null,
+            eligibleForAuto: autoReason === null,
+            ineligibleReason: manualReason ?? autoReason,
             role: p.role,
             team: p.team,
             isActive: p.isActive,
@@ -385,12 +427,14 @@ export class MentoringAllocationService {
 
   private async assertAssignable(tx: PrismaTxClient, mentorUserId: string, overCapacityReason?: string) {
     const profile = await tx.mentoringStaffProfile.findUnique({ where: { userId: mentorUserId } });
-    if (!profile || profile.role !== 'MENTOR' || !profile.isActive) {
-      throw new BadRequestException('The selected user is not an active Mentor');
+    if (!profile) {
+      throw new BadRequestException(
+        'The selected user has no Mentor staff profile. Open Mentoring → Staff and use "Add missing Mentors", or choose another Mentor.',
+      );
     }
-    const hasRole = await tx.userRole.count({ where: { userId: mentorUserId, role: { code: MENTOR_ROLE_CODE } } });
-    const user = await tx.user.findUnique({ where: { id: mentorUserId }, select: { status: true } });
-    if (!hasRole || user?.status !== 'ACTIVE') throw new BadRequestException('The selected user cannot be assigned students');
+    const facts = await this.eligibilityFacts(tx, [mentorUserId]);
+    const reason = this.ineligibleReason(profile, facts.get(mentorUserId), false);
+    if (reason) throw new BadRequestException(`The selected user cannot be assigned students: ${reason}`);
 
     const settings = await this.getSettings(tx);
     const load = await tx.mentoringActivation.count({

@@ -7,6 +7,7 @@ import {
 } from '../../common/id-generator/seed-identity';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { RbacService } from '../../common/rbac/rbac.service';
+import { ensureMentorStaffProfileInTx } from '../mentoring/mentoring-staff-provisioning';
 
 @Injectable()
 export class UserRoleService {
@@ -76,6 +77,10 @@ export class UserRoleService {
         actorUserId,
         metadata: { roleId, roleCode: role.code, grantedByUserId: actorUserId },
       });
+
+      if (role.code === 'MENTOR') {
+        await ensureMentorStaffProfileInTx(tx, userId, actorUserId, 'ROLE_ASSIGNMENT');
+      }
     });
 
     await this.rbacService.invalidateCache(userId);

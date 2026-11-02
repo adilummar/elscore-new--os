@@ -101,6 +101,7 @@ export class FakeDb {
       case 'mentoringTask.activation': return by('mentoringActivation', 'id', row.activationId);
       case 'mentoringTask.stage': return by('mentoringStage', 'id', row.stageId);
       case 'user.employee': return by('employee', 'userId', row.id);
+      case 'userRole.role': return row.roleId === undefined ? [] : by('role', 'id', row.roleId);
       default: return [];
     }
   }
@@ -110,14 +111,15 @@ export class FakeDb {
     const spec = { ...(include ?? {}), ...(select ?? {}) };
     for (const [name, opt] of Object.entries(spec)) {
       if (typeof opt === 'boolean' && !opt) continue;
-      if (name === 'employee' || ['stages', 'tasks', 'holds', 'approvals', 'checklist', 'exceptions', 'comments', 'student', 'lead', 'handover', 'activation', 'stage'].includes(name)) {
+      if (name === 'employee' || name === 'role' || ['stages', 'tasks', 'holds', 'approvals', 'checklist', 'exceptions', 'comments', 'student', 'lead', 'handover', 'activation', 'stage'].includes(name)) {
         const rel = this.related(table, name, row);
         const nested = typeof opt === 'object' ? ((opt as Row).include ?? undefined) : undefined;
         const nestedSelect = typeof opt === 'object' ? ((opt as Row).select ?? undefined) : undefined;
-        const relTable: Record<string, string> = { stages: 'mentoringStage', stage: 'mentoringStage', tasks: 'mentoringTask', activation: 'mentoringActivation', handover: 'enrollmentHandover' };
+        const relTable: Record<string, string> = { role: 'role', stages: 'mentoringStage', stage: 'mentoringStage', tasks: 'mentoringTask', activation: 'mentoringActivation', handover: 'enrollmentHandover' };
         const mapped = rel.map((r) => this.withIncludes(relTable[name] ?? name, r, nested, nestedSelect));
-        const single = ['student', 'lead', 'handover', 'activation', 'stage', 'employee'].includes(name);
-        out[name] = single ? (mapped[0] ?? null) : mapped;
+        const single = ['student', 'lead', 'handover', 'activation', 'stage', 'employee', 'role'].includes(name);
+        // A relation object a test denormalised onto the row (for example userRole.role) is kept when no row resolves.
+        out[name] = single ? (mapped[0] ?? row[name] ?? null) : mapped;
       }
     }
     return out;

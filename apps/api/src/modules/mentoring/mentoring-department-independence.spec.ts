@@ -56,11 +56,21 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('Mentoring access does not depend on department membership', () => {
+  // The only place a department is read: deciding whether a new Mentor gets a staff profile. It never grants
+  // access or changes who can see a student.
+  const PROVISIONING_FILE = 'mentoring-staff-provisioning.ts';
+
   it('no Mentoring source file reads a department when deciding access (comments excluded)', () => {
-    for (const file of sourceFiles(__dirname)) {
+    for (const file of sourceFiles(__dirname).filter((f) => !f.endsWith(PROVISIONING_FILE))) {
       const code = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       expect({ file, usesDepartment: /department/i.test(code) }).toEqual({ file, usesDepartment: false });
     }
+  });
+
+  it('the provisioning exception only creates a staff profile and touches no permission or scope', () => {
+    const code = readFileSync(join(__dirname, PROVISIONING_FILE), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).toMatch(/mentoringStaffProfile\.create/);
+    expect(code).not.toMatch(/rolePermission|userPermission|userRole\.(create|update|delete)|currentMentorUserId|assigneeUserId/);
   });
 
   it('scope is computed from the user id and permissions alone', () => {
