@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { usePermissions } from '@/components/providers/AuthProvider';
+import { filterRolesForDepartment } from '@/lib/rbac/department-roles';
 
 export default function UsersPage() {
   const [users, setUsers] = React.useState<any[]>([]);
@@ -115,23 +116,7 @@ export default function UsersPage() {
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Role</label>
             <Select value={formData.roleId} onChange={e => setFormData({...formData, roleId: e.target.value})} disabled={!formData.departmentId}>
               <option value="">Select...</option>
-              {roles.filter(r => {
-                if (!formData.departmentId) return true;
-                const dep = departments.find(d => d.id === formData.departmentId);
-                if (!dep) return true;
-                
-                const roleMapping: Record<string, string[]> = {
-                  'ADMINISTRATION': ['CEO', 'CO_FOUNDER', 'OPERATIONS_MANAGER'],
-                  'MARKETING': ['MARKETING_HEAD', 'PERFORMANCE_MARKETER', 'DESIGNER'],
-                  'SALES': ['SALES_HEAD', 'SALES_COUNSELLOR'],
-                  'ACADEMICS': ['ACADEMIC_HEAD', 'DEMO_HEAD', 'DEMO_ADMIN', 'MENTOR', 'DEMO_COORDINATOR', 'TUTOR'],
-                  'FINANCE': ['FINANCE_HEAD', 'FINANCE_MANAGER', 'FINANCE_EXECUTIVE', 'ACCOUNTANT'],
-                  'HR': ['HR_MANAGER', 'HR_EXECUTIVE', 'HR_ASSISTANT']
-                };
-                
-                const allowedRoles = roleMapping[dep.code] || [];
-                return allowedRoles.includes(r.code);
-              }).map(r => <option key={r.id} value={r.id}>{r.name || r.code}</option>)}
+              {filterRolesForDepartment(roles, departments.find(d => d.id === formData.departmentId)?.code).map(r => <option key={r.id} value={r.id}>{r.name || r.code}</option>)}
             </Select>
           </div>
           <Button onClick={handleCreate} className="w-full">Create</Button>

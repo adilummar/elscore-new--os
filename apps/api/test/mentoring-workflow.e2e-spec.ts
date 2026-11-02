@@ -73,7 +73,8 @@ describe('Mentoring workflow (e2e)', () => {
 
     await makeUser('head@mentoring.test', 'MENTORING_HEAD', 'MENTORING', 'EMP-M01');
     await makeUser('mentor@mentoring.test', 'MENTOR', 'MENTORING', 'EMP-M02');
-    await makeUser('counselor@mentoring.test', 'DEMO_COUNSELOR', 'MENTORING', 'EMP-M03');
+    // Demo Counselors are not part of the Mentoring department; they sit with the other demo roles.
+    await makeUser('counselor@mentoring.test', 'DEMO_COUNSELOR', 'ACADEMICS', 'EMP-M03');
     const sales = await makeUser('sales@mentoring.test', 'SALES_COUNSELLOR', 'SALES', 'EMP-M04');
 
     // Head registers the Mentor (capacity 5) and the Counselor.
