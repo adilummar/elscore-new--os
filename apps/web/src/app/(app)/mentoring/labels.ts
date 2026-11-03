@@ -84,6 +84,7 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   TASK_CANCELLED: 'Task cancelled',
   TASK_COMMENTED: 'Task comment added',
   HANDOVER_FIELD_UPDATED: 'Information updated',
+  CHECKLIST_DEFINITION_MIGRATED: 'Checklist moved to the new format',
 };
 
 /** Reason codes the system writes itself (as opposed to reasons people type). */

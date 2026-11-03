@@ -119,7 +119,7 @@ describe('plain-language labels', () => {
       expect(REASON_LABELS[code]).toBeDefined();
       expect(pretty(code)).toBe(REASON_LABELS[code]);
     }
-    for (const type of ['ALLOCATION_QUEUED', 'MENTOR_ALLOCATED', 'STAGE_VERIFIED', 'WORKFLOW_RESUMED', 'TASK_SUBMITTED']) {
+    for (const type of ['ALLOCATION_QUEUED', 'MENTOR_ALLOCATED', 'STAGE_VERIFIED', 'WORKFLOW_RESUMED', 'TASK_SUBMITTED', 'HANDOVER_FIELD_UPDATED', 'CHECKLIST_DEFINITION_MIGRATED']) {
       expect(EVENT_TYPE_LABELS[type]).toBeDefined();
     }
     expect(PRIORITY_LABELS).toEqual({ LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' });
