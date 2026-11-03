@@ -6,16 +6,18 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { mentoringApi } from '../../actions';
-import { ITEM_STATE_LABELS, fmt, pretty, statusVariant } from '../../labels';
+import { mentoringApi } from '../../mentoring-client';
+import { formatHandoverValue } from '../../handover-presentation';
+import { ITEM_STATE_LABELS, PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
+import { HandoverSummary } from './HandoverSummary';
 
 type Panel = 'checklist' | 'tasks' | 'history';
 
-export function StudentWorkspaceClient({ activationId }: { activationId: string }) {
-  const [ws, setWs] = React.useState<any>(null);
+export function StudentWorkspaceClient({ activationId, initialWorkspace, initialPanel }: { activationId: string; initialWorkspace?: any; initialPanel?: Panel }) {
+  const [ws, setWs] = React.useState<any>(initialWorkspace ?? null);
   const [counselors, setCounselors] = React.useState<any[]>([]);
   const [stageNo, setStageNo] = React.useState<number | null>(null);
-  const [panel, setPanel] = React.useState<Panel>('checklist');
+  const [panel, setPanel] = React.useState<Panel>(initialPanel ?? 'checklist');
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [form, setForm] = React.useState<null | 'pause' | 'block' | 'return' | 'task'>(null);
@@ -44,8 +46,19 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
 
   if (!ws) return <p className="text-slate-500">{error ?? 'Loading…'}</p>;
 
-  const { activation, student, parent, stages, viewer, openHold } = ws;
+  // A partly filled workspace (no tasks, no history, no parent, no Mentor yet) must still render.
+  const activation = ws.activation ?? {};
+  const student = ws.student ?? {};
+  const parent = ws.parent ?? null;
+  const viewer = ws.viewer ?? {};
+  const openHold = ws.openHold ?? null;
+  const stages: any[] = Array.isArray(ws.stages) ? ws.stages : [];
+  const tasks: any[] = Array.isArray(ws.tasks) ? ws.tasks : [];
+  const events: any[] = Array.isArray(ws.events) ? ws.events : [];
+  const view = { ...ws, stages, tasks, events, viewer };
   const stage = stages.find((s: any) => s.number === (stageNo ?? activation.currentStage)) ?? stages[0];
+  const checklist: any[] = Array.isArray(stage?.checklist) ? stage.checklist : [];
+  const parentLine = parent ? [parent.name, parent.primaryPhone].filter(Boolean).join(' · ') : '';
   const canWork = viewer.isMentor && activation.status === 'ACTIVATION_IN_PROGRESS';
   const canHold = (viewer.isMentor || viewer.isHead) && activation.status === 'ACTIVATION_IN_PROGRESS';
   const onHold = activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED';
@@ -57,19 +70,19 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">{student.firstName} {student.lastName} <span className="text-slate-500 font-normal">({student.businessId})</span></h1>
+          <h1 className="text-xl font-bold text-slate-900">{[student.firstName, student.lastName].filter(Boolean).join(' ') || 'Student'} {student.businessId && <span className="text-slate-500 font-normal">({student.businessId})</span>}</h1>
           <p className="text-sm text-slate-600">{student.grade?.name ?? student.currentGrade ?? 'Grade n/a'} · {student.curriculum?.name ?? 'Curriculum n/a'}</p>
           <p className="text-sm text-slate-600">Mentor: {activation.currentMentorName ?? <em>unallocated</em>}</p>
-          {parent && <p className="text-sm text-slate-600">Parent: {parent.name} · {parent.primaryPhone}</p>}
+          <p className="text-sm text-slate-600">Parent / Guardian: {parentLine || <em>details not provided</em>}</p>
         </div>
-        <Badge variant={statusVariant(activation.status)}>{pretty(activation.status)}</Badge>
+        {activation.status && <Badge variant={statusVariant(activation.status)}>{pretty(activation.status)}</Badge>}
       </div>
 
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       {openHold && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm space-y-1">
-          <p className="font-semibold text-amber-900">{openHold.kind === 'HOLD' ? 'Workflow paused' : 'Workflow blocked'} at stage {stage && ws.stages.find((s: any) => s.status === 'ON_HOLD' || s.status === 'BLOCKED')?.number}</p>
+          <p className="font-semibold text-amber-900">{openHold.kind === 'HOLD' ? 'Workflow paused' : 'Workflow blocked'} at stage {stages.find((s: any) => s.status === 'ON_HOLD' || s.status === 'BLOCKED')?.number}</p>
           <p>Reason: {openHold.reason}</p>
           {openHold.pendingAction && <p>Pending action: {openHold.pendingAction}</p>}
           {openHold.dependency && <p>Missing dependency: {openHold.dependency}</p>}
@@ -83,7 +96,7 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
       <div className="flex flex-wrap gap-2">
         {stages.map((s: any) => (
           <button key={s.number} onClick={() => setStageNo(s.number)}
-            className={`rounded-md border px-3 py-2 text-left text-xs ${s.number === stage.number ? 'border-brand-600 bg-brand-50' : 'border-slate-200 bg-white'}`}>
+            className={`rounded-md border px-3 py-2 text-left text-xs ${s.number === stage?.number ? 'border-brand-600 bg-brand-50' : 'border-slate-200 bg-white'}`}>
             <div className="font-semibold text-slate-800">{s.number}. {s.name}</div>
             <div className="mt-1"><Badge variant={statusVariant(s.status)}>{pretty(s.status)}</Badge></div>
           </button>
@@ -93,12 +106,12 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
       <div className="flex gap-4 border-b border-slate-200 text-sm">
         {(['checklist', 'tasks', 'history'] as Panel[]).map((p) => (
           <button key={p} onClick={() => setPanel(p)} className={`pb-2 ${panel === p ? 'border-b-2 border-brand-600 font-semibold' : 'text-slate-500'}`}>
-            {p === 'checklist' ? 'Checklist' : p === 'tasks' ? `Tasks (${ws.tasks.length})` : 'History'}
+            {p === 'checklist' ? 'Checklist' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
           </button>
         ))}
       </div>
 
-      {panel === 'checklist' && (
+      {panel === 'checklist' && stage && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
             {canWork && stage.status === 'NOT_STARTED' && (
@@ -137,7 +150,7 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
           {stage.number === 1 && ws.handover && <HandoverSummary handover={ws.handover} />}
 
           <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-            {stage.checklist.map((item: any) => (
+            {checklist.map((item: any) => (
               <ChecklistRow key={item.key} item={item} stage={stage} editable={canWork && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW')}
                 canException={viewer.isHead && item.mandatory && !item.exception && item.state !== 'VERIFIED'} busy={busy}
                 onSave={(body: any) => run(() => mentoringApi(`${base}/stages/${stage.number}/items/${item.key}`, 'PATCH', body))}
@@ -148,17 +161,17 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
       )}
 
       {panel === 'tasks' && (
-        <TaskPanel ws={ws} stage={stage} counselors={counselors} busy={busy} run={run} showForm={form === 'task'} setShowForm={(v: boolean) => setForm(v ? 'task' : null)} />
+        <TaskPanel ws={view} stage={stage ?? { number: 1, checklist: [] }} counselors={counselors} busy={busy} run={run} showForm={form === 'task'} setShowForm={(v: boolean) => setForm(v ? 'task' : null)} />
       )}
 
       {panel === 'history' && (
         <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 text-sm">
-          {ws.events.length === 0 && <p className="p-4 text-slate-500">History is visible to the Mentor and the Mentoring Head.</p>}
-          {ws.events.map((e: any) => (
+          {events.length === 0 && <p className="p-4 text-slate-500">History is visible to the Mentor and the Mentoring Head.</p>}
+          {events.map((e: any) => (
             <div key={e.id} className="p-3">
               <span className="font-medium">{pretty(e.type)}</span>
               {e.fromStatus && e.toStatus && <span className="text-slate-500"> · {pretty(e.fromStatus)} → {pretty(e.toStatus)}</span>}
-              {e.reason && <span className="text-slate-600"> · {e.reason}</span>}
+              {e.reason && <span className="text-slate-600"> · {REASON_LABELS[e.reason] ?? e.reason}</span>}
               <div className="text-xs text-slate-400">{fmt(e.createdAt)}</div>
             </div>
           ))}
@@ -168,31 +181,11 @@ export function StudentWorkspaceClient({ activationId }: { activationId: string 
   );
 }
 
-function HandoverSummary({ handover }: { handover: any }) {
-  const missing: any[] = Array.isArray(handover.missingFields) ? handover.missingFields : [];
-  const transferred: any[] = Array.isArray(handover.transferredFields) ? handover.transferredFields : [];
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm grid gap-4 md:grid-cols-2">
-      <div>
-        <p className="font-semibold mb-1">Transferred from Sales ({transferred.length})</p>
-        <ul className="space-y-0.5 text-slate-700">
-          {transferred.filter((f) => f.field !== 'academic.subjects').map((f) => <li key={f.field}><span className="text-slate-500">{f.field}:</span> {String(f.value)}</li>)}
-          {transferred.filter((f) => f.field === 'academic.subjects').flatMap((f) => f.value as any[]).map((r) => <li key={r.requirementId}><span className="text-slate-500">subject:</span> {r.subject} ({r.curriculum}, {r.grade})</li>)}
-        </ul>
-      </div>
-      <div>
-        <p className="font-semibold mb-1">Missing information to collect ({missing.length})</p>
-        <ul className="space-y-0.5 text-slate-700">{missing.map((m) => <li key={m.field}>{m.field} <span className="text-xs text-slate-400">{m.reason === 'NOT_COLLECTED_IN_SALES' ? 'not collected by Sales' : 'not provided'}</span></li>)}</ul>
-      </div>
-    </div>
-  );
-}
-
 function ChecklistRow({ item, editable, canException, busy, onSave, onException }: any) {
   const [state, setState] = React.useState(item.state);
   const [note, setNote] = React.useState(item.note ?? '');
   const [reason, setReason] = React.useState(item.reason ?? '');
-  const [value, setValue] = React.useState(typeof item.value === 'string' ? item.value : item.value ? JSON.stringify(item.value) : '');
+  const [value, setValue] = React.useState(typeof item.value === 'string' ? item.value : item.value ? formatHandoverValue(item.key, item.value) : '');
   React.useEffect(() => { setState(item.state); setNote(item.note ?? ''); setReason(item.reason ?? ''); }, [item.state, item.note, item.reason]);
   const needsReason = state === 'UNAVAILABLE' || state === 'NOT_APPLICABLE';
 
@@ -202,7 +195,7 @@ function ChecklistRow({ item, editable, canException, busy, onSave, onException 
         <span className="font-medium text-slate-800">{item.label}</span>
         {item.mandatory ? <Badge variant="info">Mandatory</Badge> : <Badge>Advisory</Badge>}
         {item.exception && <Badge variant="warning">Exception authorised</Badge>}
-        <Badge variant={statusVariant(item.state)}>{ITEM_STATE_LABELS[item.state]}</Badge>
+        <Badge variant={statusVariant(item.state)}>{ITEM_STATE_LABELS[item.state] ?? pretty(item.state)}</Badge>
       </div>
       {editable ? (
         <div className="grid gap-2 md:grid-cols-4">
@@ -216,7 +209,7 @@ function ChecklistRow({ item, editable, canException, busy, onSave, onException 
         </div>
       ) : (
         <p className="text-sm text-slate-600">
-          {item.value ? `Entered: ${typeof item.value === 'string' ? item.value : JSON.stringify(item.value)}` : ''} {item.note ? `· Note: ${item.note}` : ''} {item.reason ? `· Reason: ${item.reason}` : ''}
+          {item.value ? `Entered: ${typeof item.value === 'string' ? item.value : formatHandoverValue(item.key, item.value)}` : ''} {item.note ? `· Note: ${item.note}` : ''} {item.reason ? `· Reason: ${item.reason}` : ''}
         </p>
       )}
       {canException && <button className="text-xs text-brand-700 hover:underline" onClick={onException}>Authorise exception…</button>}
@@ -278,7 +271,7 @@ function TaskPanel({ ws, stage, counselors, busy, run, showForm, setShowForm }: 
             <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 grid gap-2 md:grid-cols-5">
               <Input placeholder="Task title" value={title} onChange={(e) => setTitle(e.target.value)} />
               <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="">Select counselor</option>{counselors.map((c: any) => <option key={c.userId} value={c.userId}>{c.name}</option>)}</Select>
-              <Select value={priority} onChange={(e) => setPriority(e.target.value)}>{['LOW', 'MEDIUM', 'HIGH', 'URGENT'].map((p) => <option key={p}>{p}</option>)}</Select>
+              <Select value={priority} onChange={(e) => setPriority(e.target.value)}>{['LOW', 'MEDIUM', 'HIGH', 'URGENT'].map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}</Select>
               <input type="datetime-local" className="h-10 rounded-md border border-slate-300 px-3 text-sm" value={due} onChange={(e) => setDue(e.target.value)} />
               <Button size="sm" disabled={!title.trim() || !assignee} isLoading={busy}
                 onClick={() => run(async () => {
@@ -298,7 +291,7 @@ function TaskPanel({ ws, stage, counselors, busy, run, showForm, setShowForm }: 
           <div key={t.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{t.title}</span>
-              <Badge variant={statusVariant(t.status)}>{pretty(t.status)}</Badge><Badge>{t.priority}</Badge>
+              <Badge variant={statusVariant(t.status)}>{pretty(t.status)}</Badge><Badge>{PRIORITY_LABELS[t.priority] ?? pretty(t.priority)}</Badge>
               {t.dueAt && <span className="text-xs text-slate-500">Due {fmt(t.dueAt)}</span>}
             </div>
             {t.returnReason && <p className="text-xs text-red-600">Returned: {t.returnReason}</p>}
@@ -316,7 +309,7 @@ function TaskPanel({ ws, stage, counselors, busy, run, showForm, setShowForm }: 
               <div className="grid gap-2 md:grid-cols-4">
                 <Select value={c.itemKey} onChange={(e) => setCollect({ ...collect, [t.id]: { ...c, itemKey: e.target.value } })}>
                   <option value="">Item to update…</option>
-                  {ws.stages.flatMap((s: any) => s.checklist.filter((i: any) => i.state === 'PENDING_COLLECTION' || i.state === 'COLLECTED').map((i: any) => ({ ...i, stageNo: s.number }))).filter((i: any) => i.stageNo === stage.number).map((i: any) => <option key={i.key} value={i.key}>{i.label}</option>)}
+                  {ws.stages.flatMap((s: any) => (s.checklist ?? []).filter((i: any) => i.state === 'PENDING_COLLECTION' || i.state === 'COLLECTED').map((i: any) => ({ ...i, stageNo: s.number }))).filter((i: any) => i.stageNo === stage.number).map((i: any) => <option key={i.key} value={i.key}>{i.label}</option>)}
                 </Select>
                 <Input placeholder="Information collected" value={c.value} onChange={(e) => setCollect({ ...collect, [t.id]: { ...c, value: e.target.value } })} />
                 <Button size="sm" disabled={!c.itemKey || !c.value} onClick={() => call(t.id, 'collect', { itemKey: c.itemKey, value: c.value })}>Save collected information</Button>

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { mentoringApi } from '../actions';
+import { mentoringApi } from '../mentoring-client';
 import { fmt } from '../labels';
 
 export function AllocationClient() {

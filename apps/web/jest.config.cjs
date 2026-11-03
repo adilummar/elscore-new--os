@@ -18,6 +18,10 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   transform: {
-    '^.+\\.ts$': [resolveTsJest(), { tsconfig: { esModuleInterop: true, module: 'commonjs', jsx: 'react' } }],
+    // .tsx is transformed so page components can be rendered with react-dom/server in tests.
+    '^.+\\.tsx?$': [
+      resolveTsJest(),
+      { tsconfig: { esModuleInterop: true, module: 'commonjs', jsx: 'react', baseUrl: '.', paths: { '@/*': ['src/*'] } } },
+    ],
   },
 };

@@ -4,8 +4,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
-import { mentoringApi } from '../actions';
-import { fmt, pretty, statusVariant } from '../labels';
+import { mentoringApi } from '../mentoring-client';
+import { PRIORITY_LABELS, fmt, pretty, statusVariant } from '../labels';
 
 export function TaskBoardClient() {
   const [scope, setScope] = React.useState('assigned');
@@ -41,7 +41,7 @@ export function TaskBoardClient() {
             <Link href={`/mentoring/students/${t.activationId}`} className="font-medium text-brand-700 hover:underline">{t.title}</Link>
             <span className="text-slate-500">{t.studentName} ({t.studentBusinessId})</span>
             <Badge variant={statusVariant(t.status)}>{pretty(t.status)}</Badge>
-            <Badge>{t.priority}</Badge>
+            <Badge>{PRIORITY_LABELS[t.priority] ?? pretty(t.priority)}</Badge>
             {t.dueAt && <span className={`text-xs ${overdue(t) ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>Due {fmt(t.dueAt)}{overdue(t) ? ' · overdue' : ''}</span>}
             {t.returnReason && <span className="text-xs text-red-600">Returned: {t.returnReason}</span>}
           </div>

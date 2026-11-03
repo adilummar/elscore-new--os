@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { mentoringApi } from '../actions';
+import { mentoringApi } from '../mentoring-client';
 import { ACTIVATION_LABELS, fmt, pretty, statusVariant } from '../labels';
 
 export function StudentListClient({ title, fixedStatus }: { title: string; fixedStatus?: string }) {
