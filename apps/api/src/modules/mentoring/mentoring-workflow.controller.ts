@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
@@ -15,6 +15,7 @@ import {
   ResumeDto,
   StudentListQueryDto,
   UpdateChecklistItemDto,
+  UpdateHandoverFieldDto,
 } from './mentoring.dto';
 
 /**
@@ -43,6 +44,18 @@ export class MentoringWorkflowController {
   @Get(':activationId/events')
   async events(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
     return this.workflow.events(id, await this.access.scopeFor(user.id));
+  }
+
+  /** Fill in or correct one admission-handover field (assigned Mentor). The Sales data is never overwritten. */
+  @Put(':activationId/handover/fields/:fieldKey')
+  @RequirePermissions('mentoring.stage.work')
+  updateHandoverField(
+    @Param('activationId') id: string,
+    @Param('fieldKey') fieldKey: string,
+    @Body() dto: UpdateHandoverFieldDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.workflow.updateHandoverField(id, fieldKey, dto.value, user.id);
   }
 
   @Post(':activationId/stages/:stage/start')

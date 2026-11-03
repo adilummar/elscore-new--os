@@ -5,6 +5,7 @@ import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.servic
 
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringAllocationService } from './mentoring-allocation.service';
+import { HANDOVER_FIELDS, getHandoverField, validateHandoverFieldValue } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
@@ -78,7 +79,7 @@ export class MentoringWorkflowService {
       tx.stageChecklistResponse.findMany({ where: { stageId } }),
       tx.workflowException.findMany({ where: { stageId }, select: { itemKey: true } }),
     ]);
-    const unresolved = unresolvedMandatoryItems(rows, new Set(exceptions.map((e) => e.itemKey)));
+    const unresolved = unresolvedMandatoryItems(getChecklistDefinition(stage.stageNumber), rows, new Set(exceptions.map((e) => e.itemKey)));
     const target: MentoringStageStatus = unresolved.length === 0 ? 'PENDING_REVIEW' : 'IN_PROGRESS';
     if (target !== stage.status) {
       await tx.mentoringStage.update({
@@ -169,6 +170,76 @@ export class MentoringWorkflowService {
     });
   }
 
+  /**
+   * Fills in or corrects one admission-handover field. The value is stored beside the original Sales data
+   * (enrollment_handover_fields); the Sales snapshot, the lead and the student record are never touched.
+   * Only the assigned Mentor can do this, while the workflow is in progress. Every change is added to the
+   * Mentoring history (and the audit log) with the previous and new value.
+   */
+  async updateHandoverField(activationId: string, fieldKey: string, rawValue: unknown, userId: string) {
+    const definition = getHandoverField(fieldKey);
+    if (!definition) throw new BadRequestException('This information cannot be edited here');
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const activation = await this.loadLocked(tx, activationId);
+      this.assertMentor(activation, userId);
+      this.assertWorkable(activation);
+
+      const referenceOptions = definition.optionsFrom ? await this.referenceOptions(tx) : undefined;
+      const value = validateHandoverFieldValue(definition, rawValue, { today: new Date(), referenceOptions });
+
+      const handover = await tx.enrollmentHandover.findUniqueOrThrow({
+        where: { id: activation.handoverId },
+        select: { id: true, transferredFields: true },
+      });
+      const transferred: Array<{ field: string; value: unknown }> = Array.isArray(handover.transferredFields)
+        ? (handover.transferredFields as unknown as Array<{ field: string; value: unknown }>)
+        : [];
+      const salesEntry = transferred.find((f) => f.field === fieldKey);
+      const existing = await tx.enrollmentHandoverField.findUnique({
+        where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
+      });
+
+      const previous = existing ? existing.value : salesEntry?.value ?? null;
+      if (previous !== null && JSON.stringify(previous) === JSON.stringify(value)) {
+        return { fieldKey, value, changed: false as const };
+      }
+
+      const origin = existing ? existing.origin : salesEntry ? ('MENTORING_UPDATED' as const) : ('MENTOR_COLLECTED' as const);
+      const saved = existing
+        ? await tx.enrollmentHandoverField.update({
+            where: { id: existing.id },
+            data: { value: value as Prisma.InputJsonValue, updatedByUserId: userId },
+          })
+        : await tx.enrollmentHandoverField.create({
+            data: {
+              handoverId: handover.id,
+              fieldKey,
+              value: value as Prisma.InputJsonValue,
+              origin,
+              ...(salesEntry ? { salesValue: salesEntry.value as Prisma.InputJsonValue } : {}),
+              updatedByUserId: userId,
+            },
+          });
+
+      await this.history.record(tx, {
+        activationId,
+        type: 'HANDOVER_FIELD_UPDATED',
+        actorUserId: userId,
+        payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null },
+      });
+      return { fieldKey, value: saved.value, origin: saved.origin, changed: true as const };
+    });
+  }
+
+  private async referenceOptions(tx: PrismaTxClient) {
+    const [grades, curricula] = await Promise.all([
+      tx.grade.findMany({ select: { name: true }, orderBy: { name: 'asc' } }),
+      tx.curriculum.findMany({ select: { name: true }, orderBy: { name: 'asc' } }),
+    ]);
+    return { GRADES: grades.map((g) => g.name), CURRICULA: curricula.map((c) => c.name) };
+  }
+
   async verifyStage(activationId: string, stageNumber: number, userId: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const activation = await this.loadLocked(tx, activationId);
@@ -189,7 +260,7 @@ export class MentoringWorkflowService {
         tx.workflowException.findMany({ where: { stageId: stage.id }, select: { itemKey: true } }),
         tx.mentoringTask.count({ where: { stageId: stage.id, status: 'SUBMITTED' } }),
       ]);
-      const unresolved = unresolvedMandatoryItems(rows, new Set(exceptions.map((e) => e.itemKey)));
+      const unresolved = unresolvedMandatoryItems(getChecklistDefinition(stageNumber), rows, new Set(exceptions.map((e) => e.itemKey)));
       if (unresolved.length > 0) {
         throw new ConflictException({ message: 'Mandatory checklist items are not resolved', unresolved });
       }
@@ -602,6 +673,13 @@ export class MentoringWorkflowService {
     const seeParent = this.access.canSeeParentContact(scope, activation);
     const isMentorOrHead = scope.all || activation.currentMentorUserId === scope.userId;
 
+    const [fieldRows, referenceOptions] = await Promise.all([
+      activation.handoverId
+        ? this.prisma.enrollmentHandoverField.findMany({ where: { handoverId: activation.handoverId } })
+        : Promise.resolve([]),
+      this.referenceOptions(this.prisma as unknown as PrismaTxClient),
+    ]);
+
     const [tasks, events, mentor] = await Promise.all([
       this.prisma.mentoringTask.findMany({
         where: { activationId, ...(isMentorOrHead ? {} : { assigneeUserId: scope.userId }) },
@@ -616,6 +694,20 @@ export class MentoringWorkflowService {
         : Promise.resolve(null),
     ]);
 
+    // Names for everyone who changed something the page shows (one lookup).
+    const actorIds = new Set<string>();
+    for (const f of fieldRows) actorIds.add(f.updatedByUserId);
+    for (const st of activation.stages) {
+      for (const c of st.checklist) if (c.updatedByUserId) actorIds.add(c.updatedByUserId);
+      for (const e of st.exceptions) actorIds.add(e.authorizedByUserId);
+    }
+    const people = await this.prisma.employee.findMany({
+      where: { userId: { in: Array.from(actorIds) } },
+      select: { userId: true, firstName: true, lastName: true },
+    });
+    const nameOf = new Map(people.map((e) => [e.userId, `${e.firstName} ${e.lastName}`.trim()]));
+    const nameFor = (id: string | null | undefined) => (id ? nameOf.get(id) ?? null : null);
+
     const strip = (fields: unknown) =>
       Array.isArray(fields) ? fields.filter((f) => !(f && typeof f === 'object' && PARENT_CONTACT_FIELDS.has((f as { field: string }).field))) : fields;
 
@@ -625,6 +717,27 @@ export class MentoringWorkflowService {
       missingFields: activation.handover.missingFields,
       transferredFields: seeParent ? activation.handover.transferredFields : strip(activation.handover.transferredFields),
       sourceSnapshot: seeParent ? activation.handover.sourceSnapshot : undefined,
+      // Mentoring-side values, kept apart from the Sales data above.
+      fieldValues: fieldRows
+        .filter((f) => seeParent || !PARENT_CONTACT_FIELDS.has(f.fieldKey))
+        .map((f) => ({
+          fieldKey: f.fieldKey,
+          value: f.value,
+          origin: f.origin,
+          salesValue: f.salesValue,
+          updatedByUserId: f.updatedByUserId,
+          updatedByName: nameFor(f.updatedByUserId),
+          updatedAt: f.updatedAt,
+        })),
+      editableFields: Object.values(HANDOVER_FIELDS).map((d) => ({
+        key: d.key,
+        type: d.type,
+        options: d.options ?? (d.optionsFrom ? referenceOptions[d.optionsFrom] : undefined) ?? null,
+        columns: d.columns ?? null,
+        maxLength: d.maxLength ?? null,
+        minDate: d.minDate ?? null,
+        maxDate: d.maxDate === 'TODAY' ? new Date().toISOString().slice(0, 10) : null,
+      })),
     };
 
     return {
@@ -646,7 +759,7 @@ export class MentoringWorkflowService {
         const row = activation.stages.find((s) => s.stageNumber === def.number);
         const definitions = getChecklistDefinition(def.number);
         const rows = new Map((row?.checklist ?? []).map((c) => [c.itemKey, c]));
-        const exceptionKeys = new Set((row?.exceptions ?? []).map((e) => e.itemKey));
+        const exceptions = new Map((row?.exceptions ?? []).map((e) => [e.itemKey, e]));
         return {
           number: def.number,
           key: def.key,
@@ -665,7 +778,19 @@ export class MentoringWorkflowService {
               note: r?.note ?? null,
               reason: r?.reason ?? null,
               evidenceRef: r?.evidenceRef ?? null,
-              exception: exceptionKeys.has(d.key),
+              group: d.group ?? null,
+              groupLabel: d.groupLabel ?? null,
+              exception: exceptions.has(d.key),
+              exceptionDetail: exceptions.has(d.key)
+                ? {
+                    reason: exceptions.get(d.key)!.reason,
+                    authorizedByUserId: exceptions.get(d.key)!.authorizedByUserId,
+                    authorizedByName: nameFor(exceptions.get(d.key)!.authorizedByUserId),
+                    at: exceptions.get(d.key)!.createdAt,
+                  }
+                : null,
+              updatedByUserId: r?.updatedByUserId ?? null,
+              updatedByName: nameFor(r?.updatedByUserId),
               updatedAt: r?.updatedAt ?? null,
             };
           }),
@@ -676,7 +801,12 @@ export class MentoringWorkflowService {
       approvals: activation.approvals,
       tasks,
       events,
-      viewer: { userId: scope.userId, isMentor: activation.currentMentorUserId === scope.userId, isHead: scope.all },
+      viewer: {
+        userId: scope.userId,
+        isMentor: activation.currentMentorUserId === scope.userId,
+        isHead: scope.all,
+        canEditHandover: activation.currentMentorUserId === scope.userId && activation.status === 'ACTIVATION_IN_PROGRESS',
+      },
     };
   }
 

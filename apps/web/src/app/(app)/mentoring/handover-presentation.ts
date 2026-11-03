@@ -114,15 +114,46 @@ export function formatHandoverValue(field: string, value: unknown): string {
 
 export type HandoverFieldStatus = 'COLLECTED' | 'NOT_COLLECTED_BY_SALES' | 'NOT_PROVIDED';
 
+/** Where a collected value came from. Sales values are never replaced; a Mentoring value is shown instead of them. */
+export type HandoverSource = 'SALES' | 'MENTORING_UPDATED' | 'MENTOR_COLLECTED';
+
+export const HANDOVER_SOURCE_LABELS: Readonly<Record<HandoverSource, string>> = {
+  SALES: 'Received from Sales',
+  MENTORING_UPDATED: 'Updated by Mentoring',
+  MENTOR_COLLECTED: 'Collected by Mentor',
+};
+
+/** Input definition for an editable field, as sent by the API (the API validates every save against it). */
+export interface EditableFieldMeta {
+  key: string;
+  type: 'TEXT' | 'PHONE' | 'DATE' | 'SELECT' | 'TEXTAREA' | 'ROWS';
+  options: string[] | null;
+  columns: Array<{ key: string; label: string; type: 'text' | 'date' | 'time' | 'select'; options?: string[]; required: boolean }> | null;
+  maxLength: number | null;
+  minDate: string | null;
+  maxDate: string | null;
+}
+
 export interface PresentedField {
   /** Stable React key; not shown. */
   key: string;
+  /** The API field path this row belongs to (several rows can share one, for example subjects). */
+  fieldKey: string;
   label: string;
   /** Formatted value for collected fields, null otherwise. */
   value: string | null;
   status: HandoverFieldStatus;
   /** Short explanation for a field that is still required. */
   hint: string | null;
+  source: HandoverSource | null;
+  /** The value in the shape the editor works with (a string, or a list of rows). */
+  rawValue: unknown;
+  /** The original Sales value, shown only when Mentoring has replaced it. */
+  salesValue: string | null;
+  updatedByName: string | null;
+  updatedAt: string | null;
+  /** Null when the field cannot be edited here (for example the Sales subject requirements). */
+  editor: EditableFieldMeta | null;
 }
 
 export interface PresentedHandover {
@@ -151,23 +182,104 @@ function describeRequirement(requirement: Record<string, unknown>): string | nul
   return `${subject}${detail ? ` (${detail})` : ''}${hours}`;
 }
 
+/** One line per row for the structured fields; anything unexpected falls back to the generic formatter. */
+export function formatRowsValue(field: string, rows: unknown): string {
+  if (!Array.isArray(rows)) return formatHandoverValue(field, rows);
+  const cell = (row: Record<string, unknown>, key: string) => (typeof row[key] === 'string' ? (row[key] as string).trim() : '');
+  const lines = rows
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row))
+    .map((row) => {
+      switch (field) {
+        case 'timetable.schedule':
+          return `${cell(row, 'day')} ${cell(row, 'start')}–${cell(row, 'end')}`.trim();
+        case 'examination.upcomingDates':
+          return `${cell(row, 'subject')} — ${formatHandoverValue('date', cell(row, 'date'))}`;
+        case 'examination.syllabusPortions':
+          return `${cell(row, 'subject')}: ${cell(row, 'portions')}`;
+        case 'tutor.assignments':
+          return `${cell(row, 'subject')} — ${cell(row, 'tutor')}`;
+        default:
+          return formatHandoverValue(field, row);
+      }
+    })
+    .filter((line) => line.replace(/[—:–\s]/g, '').length > 0);
+  return lines.join('\n');
+}
+
+interface OverrideRow {
+  fieldKey: string;
+  value: unknown;
+  origin?: string;
+  salesValue?: unknown;
+  updatedByName?: string | null;
+  updatedAt?: string | null;
+}
+
 /**
  * Turns the API's handover into the two lists shown on screen, with counts that always equal the number of rows.
- * A transferred field whose value turns out to be blank is moved to "not collected" (reason: not provided).
+ *
+ * Order of precedence for a field: a Mentoring value (updated or collected) > the Sales value > not collected.
+ * The Sales data itself is only read. A value that turns out to be blank is moved to "not collected".
  */
 export function presentHandover(handover: unknown): PresentedHandover {
-  const source = (handover && typeof handover === 'object' ? handover : {}) as { transferredFields?: unknown; missingFields?: unknown };
+  const source = (handover && typeof handover === 'object' ? handover : {}) as {
+    transferredFields?: unknown;
+    missingFields?: unknown;
+    fieldValues?: unknown;
+    editableFields?: unknown;
+  };
   const transferred = Array.isArray(source.transferredFields) ? source.transferredFields : [];
   const reported = Array.isArray(source.missingFields) ? source.missingFields : [];
+  const overrides = new Map<string, OverrideRow>(
+    (Array.isArray(source.fieldValues) ? source.fieldValues : [])
+      .filter((row): row is OverrideRow => !!row && typeof row === 'object' && typeof (row as { fieldKey?: unknown }).fieldKey === 'string')
+      .map((row) => [row.fieldKey, row]),
+  );
+  const editors = new Map<string, EditableFieldMeta>(
+    (Array.isArray(source.editableFields) ? source.editableFields : [])
+      .filter((row): row is EditableFieldMeta => !!row && typeof row === 'object' && typeof (row as { key?: unknown }).key === 'string')
+      .map((row) => [row.key, row]),
+  );
 
   const collected: PresentedField[] = [];
   const missing = new Map<string, PresentedField>();
   const collectedKeys = new Set<string>();
 
+  const display = (field: string, value: unknown): string => (Array.isArray(value) && editors.get(field)?.type === 'ROWS' ? formatRowsValue(field, value) : formatHandoverValue(field, value));
+
+  const base = (field: string): Omit<PresentedField, 'key' | 'value' | 'status' | 'hint' | 'source' | 'rawValue' | 'salesValue' | 'updatedByName' | 'updatedAt'> => ({
+    fieldKey: field,
+    label: handoverFieldLabel(field),
+    editor: editors.get(field) ?? null,
+  });
+
   const addMissing = (field: string, status: Exclude<HandoverFieldStatus, 'COLLECTED'>) => {
     if (!missing.has(field)) {
-      missing.set(field, { key: field, label: handoverFieldLabel(field), value: null, status, hint: HINTS[status] });
+      missing.set(field, { ...base(field), key: field, value: null, status, hint: HINTS[status], source: null, rawValue: null, salesValue: null, updatedByName: null, updatedAt: null });
     }
+  };
+
+  /** A Mentoring value that is real information replaces the Sales value on screen. */
+  const addMentoringValue = (field: string, salesText: string | null): boolean => {
+    const row = overrides.get(field);
+    if (!row || !isMeaningfulValue(row.value)) return false;
+    const text = display(field, row.value);
+    if (!text) return false;
+    const origin: HandoverSource = row.origin === 'MENTOR_COLLECTED' ? 'MENTOR_COLLECTED' : 'MENTORING_UPDATED';
+    collected.push({
+      ...base(field),
+      key: field,
+      value: text,
+      status: 'COLLECTED',
+      hint: null,
+      source: origin,
+      rawValue: row.value,
+      salesValue: origin === 'MENTORING_UPDATED' && salesText && salesText !== text ? salesText : null,
+      updatedByName: row.updatedByName ?? null,
+      updatedAt: row.updatedAt ?? null,
+    });
+    collectedKeys.add(field);
+    return true;
   };
 
   for (const entry of transferred) {
@@ -183,19 +295,18 @@ export function presentHandover(handover: unknown): PresentedHandover {
         .filter((row): row is { key: string; text: string } => row.text !== null);
       if (rows.length === 0) addMissing(field, 'NOT_PROVIDED');
       for (const row of rows) {
-        collected.push({ key: row.key, label: handoverFieldLabel(field), value: row.text, status: 'COLLECTED', hint: null });
+        collected.push({ ...base(field), key: row.key, value: row.text, status: 'COLLECTED', hint: null, source: 'SALES', rawValue: null, salesValue: null, updatedByName: null, updatedAt: null });
         collectedKeys.add(field);
       }
       continue;
     }
 
-    if (isMeaningfulValue(value)) {
-      const text = formatHandoverValue(field, value);
-      if (text) {
-        collected.push({ key: field, label: handoverFieldLabel(field), value: text, status: 'COLLECTED', hint: null });
-        collectedKeys.add(field);
-        continue;
-      }
+    const salesText = isMeaningfulValue(value) ? formatHandoverValue(field, value) : '';
+    if (addMentoringValue(field, salesText || null)) continue;
+    if (salesText) {
+      collected.push({ ...base(field), key: field, value: salesText, status: 'COLLECTED', hint: null, source: 'SALES', rawValue: typeof value === 'string' ? value : value, salesValue: null, updatedByName: null, updatedAt: null });
+      collectedKeys.add(field);
+      continue;
     }
     addMissing(field, 'NOT_PROVIDED');
   }
@@ -204,9 +315,24 @@ export function presentHandover(handover: unknown): PresentedHandover {
     if (!entry || typeof entry !== 'object' || typeof (entry as { field?: unknown }).field !== 'string') continue;
     const { field, reason } = entry as { field: string; reason?: string };
     if (collectedKeys.has(field)) continue;
+    if (addMentoringValue(field, null)) continue;
     addMissing(field, reason === 'NOT_COLLECTED_IN_SALES' ? 'NOT_COLLECTED_BY_SALES' : 'NOT_PROVIDED');
   }
 
-  const byOrder = (a: PresentedField, b: PresentedField) => orderOf(a.key.split(':')[0]) - orderOf(b.key.split(':')[0]);
+  // A Mentoring value for a field neither list mentions is still shown (and still counted).
+  for (const field of overrides.keys()) {
+    if (!collectedKeys.has(field) && !missing.has(field)) addMentoringValue(field, null);
+  }
+
+  const byOrder = (a: PresentedField, b: PresentedField) => orderOf(a.fieldKey) - orderOf(b.fieldKey);
   return { collected: collected.sort(byOrder), missing: [...missing.values()].sort(byOrder) };
+}
+
+/** A history entry for a handover field change, in business words: which field, and what it changed from and to. */
+export function describeFieldChange(payload: unknown): { label: string; from: string; to: string } | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const { fieldKey, previous, next } = payload as { fieldKey?: unknown; previous?: unknown; next?: unknown };
+  if (typeof fieldKey !== 'string') return null;
+  const show = (value: unknown) => (isMeaningfulValue(value) ? (Array.isArray(value) ? formatRowsValue(fieldKey, value) : formatHandoverValue(fieldKey, value)).replace(/[\r\n]+/g, '; ') : 'Not collected');
+  return { label: handoverFieldLabel(fieldKey), from: show(previous), to: show(next) };
 }

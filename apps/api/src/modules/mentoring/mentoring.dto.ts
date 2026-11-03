@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsDate,
+  IsDefined,
   IsEnum,
   IsIn,
   IsInt,
@@ -29,6 +30,11 @@ export class UpdateChecklistItemDto {
   @IsOptional() @IsString() note?: string | null;
   @IsOptional() @IsString() reason?: string | null;
   @IsOptional() @IsString() evidenceRef?: string | null;
+}
+
+/** One admission-handover field. The value's shape depends on the field and is validated against its definition. */
+export class UpdateHandoverFieldDto {
+  @IsDefined() value!: unknown;
 }
 
 export class PauseDto {

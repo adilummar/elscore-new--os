@@ -54,16 +54,28 @@ export interface ChecklistRowLike {
   reason: string | null;
 }
 
-/** Mandatory items that are not yet resolved. An item is resolved when the Mentor VERIFIED it, marked it
- * UNAVAILABLE / NOT_APPLICABLE with a reason, or the Head authorised an exception for it. */
-export function unresolvedMandatoryItems(rows: ChecklistRowLike[], exceptionKeys: ReadonlySet<string>): string[] {
-  return rows
-    .filter((r) => r.mandatory)
-    .filter((r) => {
-      if (exceptionKeys.has(r.itemKey)) return false;
-      if (r.state === 'VERIFIED') return false;
-      if ((r.state === 'UNAVAILABLE' || r.state === 'NOT_APPLICABLE') && r.reason?.trim()) return false;
+/**
+ * Mandatory items of the CURRENT definition that are not yet resolved. An item is resolved when the Mentor
+ * VERIFIED it, marked it UNAVAILABLE / NOT_APPLICABLE with a reason, or the Head authorised an exception for it.
+ *
+ * It starts from the definition, not from the stored rows: an item with no row yet is unresolved (it cannot be
+ * skipped just because its row was never created), and rows left from an older definition are ignored.
+ */
+export function unresolvedMandatoryItems(
+  definitions: ReadonlyArray<{ key: string; mandatory: boolean }>,
+  rows: ChecklistRowLike[],
+  exceptionKeys: ReadonlySet<string>,
+): string[] {
+  const byKey = new Map(rows.map((r) => [r.itemKey, r]));
+  return definitions
+    .filter((d) => d.mandatory)
+    .filter((d) => {
+      if (exceptionKeys.has(d.key)) return false;
+      const row = byKey.get(d.key);
+      if (!row) return true;
+      if (row.state === 'VERIFIED') return false;
+      if ((row.state === 'UNAVAILABLE' || row.state === 'NOT_APPLICABLE') && row.reason?.trim()) return false;
       return true;
     })
-    .map((r) => r.itemKey);
+    .map((d) => d.key);
 }

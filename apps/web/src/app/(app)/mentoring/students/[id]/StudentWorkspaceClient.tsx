@@ -7,8 +7,10 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../../mentoring-client';
-import { formatHandoverValue } from '../../handover-presentation';
-import { ITEM_STATE_LABELS, PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
+import { computeProgress } from '../../checklist-progress';
+import { describeFieldChange } from '../../handover-presentation';
+import { PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
+import { ChecklistPanel, ItemUpdate } from './ChecklistPanel';
 import { HandoverSummary } from './HandoverSummary';
 
 type Panel = 'checklist' | 'tasks' | 'history';
@@ -38,6 +40,30 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
     mentoringApi('/mentoring/counselors').then(setCounselors).catch(() => setCounselors([]));
   }, []);
 
+  const [notice, setNotice] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // Unsaved edits: warn before the browser tab closes and before leaving a stage or panel.
+  const dirtyIds = React.useRef(new Set<string>());
+  const [dirtyCount, setDirtyCount] = React.useState(0);
+  const markDirty = React.useCallback((id: string, dirty: boolean) => {
+    const had = dirtyIds.current.has(id);
+    if (dirty === had) return;
+    if (dirty) dirtyIds.current.add(id); else dirtyIds.current.delete(id);
+    setDirtyCount(dirtyIds.current.size);
+  }, []);
+  React.useEffect(() => {
+    if (dirtyCount === 0) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirtyCount]);
+  const confirmLeave = () => dirtyIds.current.size === 0 || window.confirm('You have unsaved changes. Leave without saving?');
+
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -63,6 +89,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const canHold = (viewer.isMentor || viewer.isHead) && activation.status === 'ACTIVATION_IN_PROGRESS';
   const onHold = activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED';
   const base = `/mentoring/students/${activationId}`;
+  const progress = computeProgress(checklist);
+  const stageOpen = canWork && (stage?.status === 'IN_PROGRESS' || stage?.status === 'PENDING_REVIEW');
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
@@ -79,6 +107,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
       </div>
 
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {notice && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>}
 
       {openHold && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm space-y-1">
@@ -95,7 +124,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
 
       <div className="flex flex-wrap gap-2">
         {stages.map((s: any) => (
-          <button key={s.number} onClick={() => setStageNo(s.number)}
+          <button key={s.number} onClick={() => confirmLeave() && setStageNo(s.number)}
             className={`rounded-md border px-3 py-2 text-left text-xs ${s.number === stage?.number ? 'border-brand-600 bg-brand-50' : 'border-slate-200 bg-white'}`}>
             <div className="font-semibold text-slate-800">{s.number}. {s.name}</div>
             <div className="mt-1"><Badge variant={statusVariant(s.status)}>{pretty(s.status)}</Badge></div>
@@ -105,7 +134,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
 
       <div className="flex gap-4 border-b border-slate-200 text-sm">
         {(['checklist', 'tasks', 'history'] as Panel[]).map((p) => (
-          <button key={p} onClick={() => setPanel(p)} className={`pb-2 ${panel === p ? 'border-b-2 border-brand-600 font-semibold' : 'text-slate-500'}`}>
+          <button key={p} onClick={() => confirmLeave() && setPanel(p)} className={`pb-2 ${panel === p ? 'border-b-2 border-brand-600 font-semibold' : 'text-slate-500'}`}>
             {p === 'checklist' ? 'Checklist' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
           </button>
         ))}
@@ -118,7 +147,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
               <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/start`, 'POST', {}))}>Start stage {stage.number}</Button>
             )}
             {canWork && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW') && (
-              <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/verify`, 'POST', {}))}>Verify and complete stage {stage.number}</Button>
+              <Button size="sm" isLoading={busy} disabled={progress.outstandingMandatory.length > 0} title={progress.outstandingMandatory.length > 0 ? 'Resolve every mandatory item first' : undefined}
+                onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/verify`, 'POST', {}))}>Verify and complete stage {stage.number}</Button>
             )}
             {canHold && <Button size="sm" variant="outline" onClick={() => setForm('pause')}>Pause</Button>}
             {canHold && <Button size="sm" variant="outline" onClick={() => setForm('block')}>Report blocker</Button>}
@@ -147,16 +177,36 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
             </div>
           )}
 
-          {stage.number === 1 && ws.handover && <HandoverSummary handover={ws.handover} />}
+          {stage.number === 1 && ws.handover && (
+            <HandoverSummary
+              handover={ws.handover}
+              canEdit={Boolean(viewer.canEditHandover)}
+              onDirtyChange={markDirty}
+              onSave={async (fieldKey, value) => {
+                await mentoringApi(`${base}/handover/fields/${fieldKey}`, 'PUT', { value });
+                setNotice('Information saved.');
+                await load();
+              }}
+            />
+          )}
 
-          <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-            {checklist.map((item: any) => (
-              <ChecklistRow key={item.key} item={item} stage={stage} editable={canWork && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW')}
-                canException={viewer.isHead && item.mandatory && !item.exception && item.state !== 'VERIFIED'} busy={busy}
-                onSave={(body: any) => run(() => mentoringApi(`${base}/stages/${stage.number}/items/${item.key}`, 'PATCH', body))}
-                onException={() => { const reason = window.prompt(`Reason for the exception on "${item.label}"?`); if (reason) run(() => mentoringApi(`${base}/stages/${stage.number}/exceptions/${item.key}`, 'POST', { reason })); }} />
-            ))}
-          </div>
+          <ChecklistPanel
+            items={checklist}
+            editable={Boolean(stageOpen)}
+            canAuthorizeException={Boolean(viewer.isHead) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
+            busy={busy}
+            onDirtyChange={markDirty}
+            onUpdate={async (itemKey: string, update: ItemUpdate) => {
+              await mentoringApi(`${base}/stages/${stage.number}/items/${itemKey}`, 'PATCH', update);
+              setNotice('Checklist updated.');
+              await load();
+            }}
+            onAuthorizeException={async (itemKey: string, reason: string) => {
+              await mentoringApi(`${base}/stages/${stage.number}/exceptions/${itemKey}`, 'POST', { reason });
+              setNotice('Exception recorded.');
+              await load();
+            }}
+          />
         </div>
       )}
 
@@ -169,50 +219,17 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
           {events.length === 0 && <p className="p-4 text-slate-500">History is visible to the Mentor and the Mentoring Head.</p>}
           {events.map((e: any) => (
             <div key={e.id} className="p-3">
-              <span className="font-medium">{pretty(e.type)}</span>
+              <span className="font-medium">{pretty(e.type)}{e.type === 'HANDOVER_FIELD_UPDATED' ? ` — ${describeFieldChange(e.payload)?.label ?? ''}` : ''}</span>
               {e.fromStatus && e.toStatus && <span className="text-slate-500"> · {pretty(e.fromStatus)} → {pretty(e.toStatus)}</span>}
               {e.reason && <span className="text-slate-600"> · {REASON_LABELS[e.reason] ?? e.reason}</span>}
+              {e.type === 'HANDOVER_FIELD_UPDATED' && describeFieldChange(e.payload) && (
+                <div className="break-words text-xs text-slate-600 [overflow-wrap:anywhere]">{describeFieldChange(e.payload)!.from} → {describeFieldChange(e.payload)!.to}</div>
+              )}
               <div className="text-xs text-slate-400">{fmt(e.createdAt)}</div>
             </div>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function ChecklistRow({ item, editable, canException, busy, onSave, onException }: any) {
-  const [state, setState] = React.useState(item.state);
-  const [note, setNote] = React.useState(item.note ?? '');
-  const [reason, setReason] = React.useState(item.reason ?? '');
-  const [value, setValue] = React.useState(typeof item.value === 'string' ? item.value : item.value ? formatHandoverValue(item.key, item.value) : '');
-  React.useEffect(() => { setState(item.state); setNote(item.note ?? ''); setReason(item.reason ?? ''); }, [item.state, item.note, item.reason]);
-  const needsReason = state === 'UNAVAILABLE' || state === 'NOT_APPLICABLE';
-
-  return (
-    <div className="p-3 space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-slate-800">{item.label}</span>
-        {item.mandatory ? <Badge variant="info">Mandatory</Badge> : <Badge>Advisory</Badge>}
-        {item.exception && <Badge variant="warning">Exception authorised</Badge>}
-        <Badge variant={statusVariant(item.state)}>{ITEM_STATE_LABELS[item.state] ?? pretty(item.state)}</Badge>
-      </div>
-      {editable ? (
-        <div className="grid gap-2 md:grid-cols-4">
-          <Select value={state} onChange={(e) => setState(e.target.value)}>
-            {Object.entries(ITEM_STATE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-          <Input placeholder="Entered information" value={value} onChange={(e) => setValue(e.target.value)} />
-          <Input placeholder="Note" value={note} onChange={(e) => setNote(e.target.value)} />
-          {needsReason ? <Input placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} /> : <span />}
-          <Button size="sm" isLoading={busy} onClick={() => onSave({ state, note, value: value || undefined, ...(needsReason ? { reason } : {}) })}>Save</Button>
-        </div>
-      ) : (
-        <p className="text-sm text-slate-600">
-          {item.value ? `Entered: ${typeof item.value === 'string' ? item.value : formatHandoverValue(item.key, item.value)}` : ''} {item.note ? `· Note: ${item.note}` : ''} {item.reason ? `· Reason: ${item.reason}` : ''}
-        </p>
-      )}
-      {canException && <button className="text-xs text-brand-700 hover:underline" onClick={onException}>Authorise exception…</button>}
     </div>
   );
 }

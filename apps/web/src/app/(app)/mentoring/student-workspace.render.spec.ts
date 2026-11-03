@@ -76,7 +76,7 @@ describe('student details page renders with a complete handover', () => {
     expect(count(html, '>Collected<')).toBe(7);
     expect(count(html, '>Not collected<')).toBe(10);
     expect(text(html)).toContain('7 collected · 10 still required');
-    expect(text(html)).toContain('Information received from Sales (7)');
+    expect(text(html)).toContain('Information collected (7)');
     expect(text(html)).toContain('Information still required (10)');
     expect(html).toContain('bg-emerald-50 text-emerald-800');
   });

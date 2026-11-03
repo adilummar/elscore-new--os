@@ -83,6 +83,7 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   TASK_RESUMED: 'Task resumed',
   TASK_CANCELLED: 'Task cancelled',
   TASK_COMMENTED: 'Task comment added',
+  HANDOVER_FIELD_UPDATED: 'Information updated',
 };
 
 /** Reason codes the system writes itself (as opposed to reasons people type). */

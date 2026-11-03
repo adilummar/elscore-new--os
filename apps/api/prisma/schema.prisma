@@ -3724,10 +3724,37 @@ model EnrollmentHandover {
   lead       Lead                 @relation(fields: [leadId], references: [id], onDelete: Restrict)
   student    Student              @relation(fields: [studentId], references: [id], onDelete: Restrict)
   activation MentoringActivation?
+  fields     EnrollmentHandoverField[]
 
   @@index([leadId])
   @@index([status])
   @@map("enrollment_handovers")
+}
+
+/// Who supplied a Mentoring-side value. The original Sales value is never changed: it stays in
+/// EnrollmentHandover.sourceSnapshot / transferredFields, and a correction is stored here beside it.
+enum HandoverFieldOrigin {
+  MENTORING_UPDATED
+  MENTOR_COLLECTED
+}
+
+/// A value the Mentor collected or corrected for one admission-handover field.
+/// salesValue is the value Sales passed on at the time of the first change (null when Sales had none).
+model EnrollmentHandoverField {
+  id              String              @id @default(uuid())
+  handoverId      String              @map("handover_id")
+  fieldKey        String              @map("field_key")
+  value           Json
+  origin          HandoverFieldOrigin
+  salesValue      Json?               @map("sales_value")
+  updatedByUserId String              @map("updated_by_user_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  handover EnrollmentHandover @relation(fields: [handoverId], references: [id], onDelete: Restrict)
+
+  @@unique([handoverId, fieldKey])
+  @@map("enrollment_handover_fields")
 }
 
 /// Mentoring Phase 1 workflow header. Separate from Sales ENROLLED status.

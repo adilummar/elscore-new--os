@@ -13,10 +13,17 @@ export interface ChecklistItemDefinition {
   label: string;
   /** Mandatory items must be resolved before the stage can be verified; advisory ones are warnings only. */
   mandatory: boolean;
+  /** Requirement this item belongs to (stage 1 groups its items under the seven approved requirements). */
+  group?: string;
+  groupLabel?: string;
 }
 
-/** Bump when item definitions change; stored on every checklist response row. */
-export const CHECKLIST_DEFINITION_VERSION = 1;
+/**
+ * Bump when item definitions change; stored on every checklist response row.
+ * Version 2 splits each Admission Handover requirement into individual items. Rows written under version 1
+ * keep their data but are no longer part of the checklist (they are ignored, never deleted).
+ */
+export const CHECKLIST_DEFINITION_VERSION = 2;
 
 export const STAGES: readonly StageDefinition[] = [
   { number: 1, key: 'ADMISSION_HANDOVER', name: 'Admission Handover' },
@@ -29,6 +36,16 @@ export const STAGES: readonly StageDefinition[] = [
 ];
 
 const m = (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: true });
+/** Mandatory item that belongs to a named requirement group. */
+const g = (group: string, groupLabel: string) => (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: true, group, groupLabel });
+
+const studentParent = g('student_parent_verified', 'Student and parent details verified');
+const tutorSubject = g('tutor_subject_confirmed', 'Tutor and subject information confirmed');
+const weeklyTimetable = g('weekly_timetable_verified', 'Weekly timetable verified');
+const academicRequirements = g('academic_requirements_recorded', 'Academic requirements recorded');
+const previousMarks = g('previous_marks', 'Previous marks collected or marked unavailable');
+const examination = g('examination_details', 'Examination details recorded or marked pending');
+const parentExpectations = g('parent_expectations', 'Parent expectations and concerns documented');
 const a = (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: false });
 
 /**
@@ -38,15 +55,36 @@ const a = (key: string, label: string): ChecklistItemDefinition => ({ key, label
  * evidence on top of the same items in WP4-WP7.
  */
 export const CHECKLIST: Record<number, readonly ChecklistItemDefinition[]> = {
+  // Stage 1 keeps the approved requirements as groups; each is split into the items a Mentor actually ticks off.
+  // Every item is mandatory and can be resolved by completing it, marking it unavailable / not applicable with a
+  // reason, or a Mentoring Head exception.
   1: [
-    m('student_parent_verified', 'Student and parent details verified'),
-    m('tutor_subject_confirmed', 'Tutor and subject information confirmed'),
-    m('weekly_timetable_verified', 'Weekly timetable verified'),
-    m('academic_requirements_recorded', 'Academic requirements recorded'),
-    m('previous_marks', 'Previous marks collected or marked unavailable'),
-    m('examination_details', 'Examination details recorded or marked pending'),
-    m('parent_expectations', 'Parent expectations and concerns documented'),
-    m('missing_info_identified', 'Missing information identified for the parent meeting'),
+    studentParent('student_details_checked', 'Student details checked'),
+    studentParent('parent_details_checked', 'Parent / guardian details checked'),
+    studentParent('contact_details_verified', 'Contact details verified'),
+    studentParent('parent_relationship_recorded', 'Parent relationship recorded'),
+    studentParent('missing_info_identified', 'Missing information identified and addressed or documented'),
+    tutorSubject('tutor_assignment_confirmed', 'Tutor assignment confirmed'),
+    tutorSubject('subject_requirements_confirmed', 'Subject requirements confirmed'),
+    tutorSubject('curriculum_grade_confirmed', 'Curriculum and grade confirmed'),
+    tutorSubject('academic_expectations_reviewed', 'Academic expectations reviewed'),
+    weeklyTimetable('preferred_days_collected', 'Preferred days collected'),
+    weeklyTimetable('preferred_time_slots_collected', 'Preferred time slots collected'),
+    weeklyTimetable('tutor_availability_checked', 'Tutor availability checked'),
+    weeklyTimetable('timetable_confirmed', 'Timetable confirmed'),
+    academicRequirements('learning_requirements_reviewed', 'Learning requirements reviewed'),
+    academicRequirements('subject_academic_needs_recorded', 'Subject-wise academic needs recorded'),
+    academicRequirements('learning_concerns_documented', 'Learning difficulties or concerns documented'),
+    academicRequirements('curriculum_syllabus_reviewed', 'Curriculum and syllabus requirements reviewed'),
+    previousMarks('previous_marks_requested', 'Previous marks requested'),
+    previousMarks('previous_marks_collected', 'Marks collected, or marked unavailable with a reason'),
+    examination('exam_dates_collected', 'Upcoming examination dates collected'),
+    examination('exam_syllabus_collected', 'Syllabus / portions collected'),
+    examination('exam_preparation_recorded', 'Examination preparation requirements recorded'),
+    parentExpectations('parent_expectations_recorded', 'Parent expectations recorded'),
+    parentExpectations('parent_concerns_recorded', 'Parent concerns recorded'),
+    parentExpectations('student_engagement_recorded', 'Student engagement information recorded'),
+    parentExpectations('follow_up_identified', 'Follow-up requirements identified'),
   ],
   2: [
     m('additional_info_collected', 'Additional student information collected'),
