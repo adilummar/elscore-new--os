@@ -993,6 +993,15 @@ export class MentoringWorkflowService {
         userId: scope.userId,
         isMentor: activation.currentMentorUserId === scope.userId,
         isHead: scope.all,
+        // What this person may do, from their permissions. The page uses these instead of guessing from visibility,
+        // because the CEO and CO_FOUNDER see every student but hold none of the management permissions.
+        can: {
+          pause: scope.perms.has('mentoring.workflow.pause'),
+          cancel: scope.perms.has('mentoring.activation.cancel'),
+          authorizeException: scope.perms.has('mentoring.exception.authorize'),
+          approve: scope.perms.has('mentoring.approval.final'),
+          manageTasks: scope.perms.has('mentoring.task.create') || scope.perms.has('mentoring.task.verify'),
+        },
         canEditHandover: activation.currentMentorUserId === scope.userId && activation.status === 'ACTIVATION_IN_PROGRESS' && meetingStarted,
       },
     };

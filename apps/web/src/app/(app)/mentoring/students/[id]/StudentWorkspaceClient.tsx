@@ -90,7 +90,10 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const checklist: any[] = Array.isArray(stage?.checklist) ? stage.checklist : [];
   const parentLine = parent ? [parent.name, parent.primaryPhone].filter(Boolean).join(' · ') : '';
   const canWork = viewer.isMentor && activation.status === 'ACTIVATION_IN_PROGRESS';
-  const canHold = (viewer.isMentor || viewer.isHead) && activation.status === 'ACTIVATION_IN_PROGRESS';
+  // What the viewer may do comes from their permissions (sent by the API), not from being able to see every student.
+  // The CEO and CO_FOUNDER see everything but hold none of these, so the page shows them no management button.
+  const can = (viewer.can ?? {}) as { pause?: boolean; cancel?: boolean; authorizeException?: boolean; approve?: boolean; manageTasks?: boolean };
+  const canHold = Boolean(can.pause) && (viewer.isMentor || viewer.isHead) && activation.status === 'ACTIVATION_IN_PROGRESS';
   const onHold = activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED';
   const base = `/mentoring/students/${activationId}`;
   const progress = computeProgress(checklist);
@@ -131,7 +134,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
           {openHold.pendingAction && <p>Pending action: {openHold.pendingAction}</p>}
           {openHold.dependency && <p>Missing dependency: {openHold.dependency}</p>}
           <p>Follow-up: {fmt(openHold.followUpAt)} · Paused {fmt(openHold.createdAt)}</p>
-          {(viewer.isMentor || viewer.isHead) && (
+          {Boolean(can.pause) && (viewer.isMentor || viewer.isHead) && (
             <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi(`${base}/resume`, 'POST', {}))}>Resume exactly where it stopped</Button>
           )}
         </div>
@@ -168,7 +171,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
             )}
             {canHold && <Button size="sm" variant="outline" onClick={() => setForm('pause')}>Pause</Button>}
             {canHold && <Button size="sm" variant="outline" onClick={() => setForm('block')}>Report blocker</Button>}
-            {viewer.isHead && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED' && (
+            {Boolean(can.cancel) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED' && (
               <Button size="sm" variant="danger" onClick={() => {
                 const reason = window.prompt('Reason for cancelling this activation?');
                 if (reason) run(() => mentoringApi(`${base}/cancel`, 'POST', { reason }));
@@ -182,7 +185,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
               onSubmit={(body: any) => run(async () => { await mentoringApi(`${base}/${form}`, 'POST', body); setForm(null); })} />
           ) : null}
 
-          {activation.status === 'PENDING_FINAL_APPROVAL' && viewer.isHead && (
+          {activation.status === 'PENDING_FINAL_APPROVAL' && Boolean(can.approve) && (
             <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
               <p className="font-semibold">All seven stages are complete. Final Phase 1 activation approval</p>
               <div className="flex gap-2">
@@ -249,7 +252,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                   <ChecklistPanel
                     items={checklist}
                     editable={Boolean(stageOpen)}
-                    canAuthorizeException={Boolean(viewer.isHead) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
+                    canAuthorizeException={Boolean(can.authorizeException) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
                     busy={busy}
                     onDirtyChange={markDirty}
                     onUpdate={updateItem}
@@ -265,7 +268,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
             <ChecklistPanel
               items={checklist}
               editable={Boolean(stageOpen)}
-              canAuthorizeException={Boolean(viewer.isHead) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
+              canAuthorizeException={Boolean(can.authorizeException) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
               busy={busy}
               onDirtyChange={markDirty}
               onUpdate={updateItem}
@@ -336,7 +339,7 @@ function ReturnForm({ onSubmit, onCancel }: any) {
 
 function TaskPanel({ ws, stage, counselors, busy, run, showForm, setShowForm }: any) {
   const { viewer } = ws;
-  const canManage = viewer.isMentor || viewer.isHead;
+  const canManage = Boolean(viewer.can?.manageTasks) && (viewer.isMentor || viewer.isHead);
   const [title, setTitle] = React.useState('');
   const [assignee, setAssignee] = React.useState('');
   const [due, setDue] = React.useState('');

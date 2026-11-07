@@ -50,9 +50,10 @@ const handover = () => ({
   ],
 });
 
-const MENTOR = { userId: 'mentor-1', isMentor: true, isHead: false, canEditHandover: true };
-const HEAD = { userId: 'head-1', isMentor: false, isHead: true, canEditHandover: false };
-const CEO = { userId: 'ceo-1', isMentor: false, isHead: false, canEditHandover: false };
+const MENTOR = { userId: 'mentor-1', isMentor: true, isHead: false, can: { pause: true, manageTasks: true }, canEditHandover: true };
+const HEAD = { userId: 'head-1', isMentor: false, isHead: true, can: { pause: true, cancel: true, authorizeException: true, approve: true, manageTasks: true }, canEditHandover: false };
+// The API sends isHead: true to anyone with department-wide read access, the CEO included, and no capability flags.
+const CEO = { userId: 'ceo-1', isMentor: false, isHead: true, can: {}, canEditHandover: false };
 const COUNSELOR = { userId: 'dc-1', isMentor: false, isHead: false, canEditHandover: false };
 
 const stages = (stage2Checklist: any[] = checklist(), stage2Status = 'IN_PROGRESS') => [
@@ -322,5 +323,52 @@ describe('what the page sends to the API', () => {
     expect(page()).toContain("window.addEventListener('beforeunload'");
     expect(page()).toContain('confirmLeave() && setStageNo');
     expect(page()).toContain('confirmLeave() && setPanel');
+  });
+});
+
+describe('management controls follow permissions, not visibility', () => {
+  // The CEO and CO_FOUNDER can read every student, so the API sends isHead: true. They hold no management permission,
+  // so the page must show them no management control. This fixture is what the API really sends for them.
+  const COFOUNDER = { userId: 'cof-1', isMentor: false, isHead: true, can: {}, canEditHandover: false };
+  const OLD_API = { userId: 'x', isMentor: false, isHead: true, canEditHandover: false }; // no capability flags at all
+  const hold = { id: 'h1', kind: 'HOLD', reason: 'Parent travelling', pendingAction: 'Wait', followUpAt: '2026-11-20T09:00:00Z', createdAt: '2026-11-02T09:00:00Z' };
+  const renderPanel = (ws: any, initialPanel: 'checklist' | 'tasks') =>
+    renderToStaticMarkup(React.createElement(StudentWorkspaceClient, { activationId: 'a1', initialWorkspace: ws, initialPanel }));
+  const MANAGEMENT = ['Pause', 'Report blocker', 'Cancel activation', 'Authorise exception'];
+
+  it.each([['the CEO', CEO], ['a CO_FOUNDER', COFOUNDER], ['a Demo Counselor', COUNSELOR], ['a response without capability flags', OLD_API]])('%s sees no management button', (_label, viewer) => {
+    const html = render(workspace(viewer));
+    for (const label of MANAGEMENT) expect(count(html, `>${label}<`)).toBe(0);
+    expect(count(renderPanel(workspace(viewer), 'tasks'), 'New task for a Demo Counselor')).toBe(0);
+  });
+
+  it.each([['the CEO', CEO], ['a CO_FOUNDER', COFOUNDER]])('%s sees no Resume on a paused workflow and no final approval', (_label, viewer) => {
+    const paused = render(workspace(viewer, { activation: { id: 'a1', status: 'ACTIVATION_ON_HOLD', currentStage: 2, currentMentorUserId: 'mentor-1', currentMentorName: 'Mina Mentor' }, openHold: hold }));
+    expect(text(paused)).toContain('Workflow paused'); // they can still read why
+    expect(text(paused)).not.toContain('Resume exactly where it stopped');
+    const pending = render(workspace(viewer, { activation: { id: 'a1', status: 'PENDING_FINAL_APPROVAL', currentStage: 7, currentMentorUserId: 'mentor-1', currentMentorName: 'Mina Mentor' } }));
+    expect(text(pending)).not.toContain('Approve activation');
+    expect(text(pending)).not.toContain('Return to Mentor');
+  });
+
+  it('the Mentoring Head keeps every control the Head had: pause, blocker, cancel, exceptions, resume, tasks and final approval', () => {
+    const html = render(workspace(HEAD));
+    for (const label of ['Pause', 'Report blocker', 'Cancel activation', 'Authorise exception']) expect(count(html, `>${label}<`)).toBeGreaterThan(0);
+    expect(count(renderPanel(workspace(HEAD), 'tasks'), 'New task for a Demo Counselor')).toBe(1);
+    const paused = render(workspace(HEAD, { activation: { id: 'a1', status: 'ACTIVATION_ON_HOLD', currentStage: 2, currentMentorUserId: 'mentor-1', currentMentorName: 'Mina Mentor' }, openHold: hold }));
+    expect(text(paused)).toContain('Resume exactly where it stopped');
+    const pending = render(workspace(HEAD, { activation: { id: 'a1', status: 'PENDING_FINAL_APPROVAL', currentStage: 7, currentMentorUserId: 'mentor-1', currentMentorName: 'Mina Mentor' } }));
+    expect(text(pending)).toContain('Approve activation');
+  });
+
+  it('the assigned Mentor can pause, report a blocker and create tasks, but cannot cancel, authorise exceptions or approve', () => {
+    const html = render(workspace(MENTOR));
+    expect(count(html, '>Pause<')).toBe(1);
+    expect(count(html, '>Report blocker<')).toBe(1);
+    expect(count(html, '>Cancel activation<')).toBe(0);
+    expect(count(html, '>Authorise exception<')).toBe(0);
+    expect(count(renderPanel(workspace(MENTOR), 'tasks'), 'New task for a Demo Counselor')).toBe(1);
+    const pending = render(workspace(MENTOR, { activation: { id: 'a1', status: 'PENDING_FINAL_APPROVAL', currentStage: 7, currentMentorUserId: 'mentor-1', currentMentorName: 'Mina Mentor' } }));
+    expect(text(pending)).not.toContain('Approve activation');
   });
 });

@@ -33,9 +33,10 @@ const review = (over: Record<string, unknown> = {}) => ({
   exception: false, exceptionDetail: null, updatedByName: null, updatedAt: null, ...over,
 });
 
-const MENTOR = { userId: 'mentor-1', isMentor: true, isHead: false, canEditHandover: false };
-const HEAD = { userId: 'head-1', isMentor: false, isHead: true, canEditHandover: false };
-const CEO = { userId: 'ceo-1', isMentor: false, isHead: false, canEditHandover: false };
+const MENTOR = { userId: 'mentor-1', isMentor: true, isHead: false, can: { pause: true, manageTasks: true }, canEditHandover: false };
+const HEAD = { userId: 'head-1', isMentor: false, isHead: true, can: { pause: true, cancel: true, authorizeException: true, approve: true, manageTasks: true }, canEditHandover: false };
+// The API sends isHead: true to anyone with department-wide read access, the CEO included, and no capability flags.
+const CEO = { userId: 'ceo-1', isMentor: false, isHead: true, can: {}, canEditHandover: false };
 const COUNSELOR = { userId: 'dc-1', isMentor: false, isHead: false, canEditHandover: false };
 
 const workspace = (viewer: any = MENTOR, over: Record<string, unknown> = {}) => ({

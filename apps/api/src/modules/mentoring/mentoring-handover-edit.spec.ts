@@ -731,3 +731,53 @@ describe('Read-only and counselor restrictions on the new routes', () => {
     expect(seed).toContain('CEO: ALL_PERMISSION_CODES.filter((code) => !MENTORING_OPERATIONAL_CODES.has(code))');
   });
 });
+
+describe('Viewer capabilities sent to the page', () => {
+  // The real role grants, read from the reviewed grant script (a test keeps that script in step with the seed).
+  const grantSql = readFileSync(join(__dirname, '../../../scripts/mentoring-permission-grant.sql'), 'utf8');
+  const grantsOf = (role: string) => Array.from(grantSql.matchAll(/^\s+\('([A-Z_]+)', '(mentoring\.[a-z.-]+)'\)[,;]/gm)).filter((m) => m[1] === role).map((m) => m[2]);
+  /** Opens the workspace as a user holding exactly the real grants of the role. The shared fixture is restored afterwards. */
+  const capabilitiesFor = async (role: string, userId: string) => {
+    const saved = PERMS[userId];
+    PERMS[userId] = grantsOf(role);
+    try {
+      const w = world();
+      if (userId === 'counselor-1') w.db.seed('mentoringTask', { id: 't-cap', activationId: 'act-1', stageId: null, title: 'x', assigneeUserId: 'counselor-1', status: 'OPEN' });
+      return (await w.workflow.getWorkspace('act-1', await w.scope(userId))).viewer;
+    } finally {
+      if (saved === undefined) delete PERMS[userId]; else PERMS[userId] = saved;
+    }
+  };
+  const NONE = { pause: false, cancel: false, authorizeException: false, approve: false, manageTasks: false };
+
+  it('the Mentoring Head can pause, cancel, authorise exceptions, approve and manage tasks', async () => {
+    expect((await capabilitiesFor('MENTORING_HEAD', 'real-head')).can).toEqual({ pause: true, cancel: true, authorizeException: true, approve: true, manageTasks: true });
+  });
+
+  it('the CEO and the CO_FOUNDER see every student but can do none of it', async () => {
+    for (const role of ['CEO', 'CO_FOUNDER']) {
+      const viewer = await capabilitiesFor(role, `real-${role}`);
+      expect(viewer.isHead).toBe(true); // department-wide read access, which is why the page must not use it for buttons
+      expect(viewer.can).toEqual(NONE);
+    }
+  });
+
+  it('a Demo Counselor can do none of it', async () => {
+    expect((await capabilitiesFor('DEMO_COUNSELOR', 'counselor-1')).can).toEqual(NONE);
+  });
+
+  it('a Mentor can pause and manage tasks, but cannot cancel, authorise exceptions or approve', async () => {
+    expect((await capabilitiesFor('MENTOR', 'mentor-1')).can).toEqual({ ...NONE, pause: true, manageTasks: true });
+  });
+
+  it('the capability flags never widen what the API allows: the CEO is still refused each action', () => {
+    const w = world();
+    const route = (method: string) => Reflect.getMetadata(PERMISSIONS_KEY, (MentoringWorkflowController.prototype as Record<string, any>)[method]) as string[];
+    expect(route('pause')).toEqual(['mentoring.workflow.pause']);
+    expect(route('cancel')).toEqual(['mentoring.activation.cancel']);
+    expect(route('authorizeException')).toEqual(['mentoring.exception.authorize']);
+    expect(route('decideApproval')).toEqual(['mentoring.approval.final']);
+    for (const code of [...route('pause'), ...route('cancel'), ...route('authorizeException'), ...route('decideApproval')]) expect(grantsOf('CEO')).not.toContain(code);
+    expect(w.db.rows('mentoringActivation')[0].status).toBe('ACTIVATION_IN_PROGRESS');
+  });
+});

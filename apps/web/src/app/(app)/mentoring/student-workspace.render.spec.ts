@@ -209,14 +209,14 @@ describe('role restrictions on the page are unchanged', () => {
 
   it('only the assigned Mentor sees the Stage 1 submit action', () => {
     expect(has(render(workspace()), 'Review and submit handover')).toBe(true);
-    for (const viewer of [{ userId: 'head', isMentor: false, isHead: true }, { userId: 'ceo' }, { userId: 'dc', isMentor: false, isHead: false }]) {
+    for (const viewer of [{ userId: 'head', isMentor: false, isHead: true, can: { pause: true, cancel: true, authorizeException: true, approve: true, manageTasks: true } }, { userId: 'ceo', isHead: true, can: {} }, { userId: 'dc', isMentor: false, isHead: false }]) {
       expect(has(render(workspace({ viewer })), 'Review and submit handover')).toBe(false);
     }
   });
 
   it('only the Mentoring Head sees final approval, and a Mentor does not', () => {
     const pending = { id: 'a1', status: 'PENDING_FINAL_APPROVAL', currentStage: 7, currentMentorUserId: 'mentor-1', currentMentorName: 'Ravi Kumar' };
-    expect(has(render(workspace({ activation: pending, viewer: { userId: 'head', isHead: true } })), 'Approve activation')).toBe(true);
+    expect(has(render(workspace({ activation: pending, viewer: { userId: 'head', isHead: true, can: { pause: true, cancel: true, authorizeException: true, approve: true, manageTasks: true } } })), 'Approve activation')).toBe(true);
     expect(has(render(workspace({ activation: pending, viewer: { userId: 'mentor-1', isMentor: true } })), 'Approve activation')).toBe(false);
     expect(has(render(workspace({ activation: pending, viewer: { userId: 'ceo' } })), 'Approve activation')).toBe(false);
   });
