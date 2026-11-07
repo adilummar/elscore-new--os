@@ -14,7 +14,8 @@ import { PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../.
 import { ChecklistPanel, ItemUpdate } from './ChecklistPanel';
 import { EarlierResults } from './EarlierResults';
 import { HandoverOverview } from './HandoverOverview';
-import { HandoverReview } from './HandoverReview';
+import { Check } from 'lucide-react';
+import { COMPLETE_STAGE_1_LABEL, HandoverReview } from './HandoverReview';
 import { InformationWorkspace } from './InformationWorkspace';
 
 type Panel = 'checklist' | 'tasks' | 'history';
@@ -27,6 +28,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [form, setForm] = React.useState<null | 'pause' | 'block' | 'return' | 'task'>(null);
+  const [handoverOpen, setHandoverOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -145,7 +147,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
           <button key={s.number} onClick={() => confirmLeave() && setStageNo(s.number)}
             className={`rounded-md border px-3 py-2 text-left text-xs ${s.number === stage?.number ? 'border-brand-600 bg-brand-50' : 'border-slate-200 bg-white'}`}>
             <div className="font-semibold text-slate-800">{s.number}. {s.name}</div>
-            <div className="mt-1"><Badge variant={statusVariant(s.status)}>{pretty(s.status)}</Badge></div>
+            <div className="mt-1"><Badge variant={statusVariant(s.status)}>{s.status === 'COMPLETED' && <Check aria-hidden className="mr-1 h-3 w-3" />}{pretty(s.status)}</Badge></div>
           </button>
         ))}
       </div>
@@ -164,7 +166,10 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
             {canWork && stage.status === 'NOT_STARTED' && (
               <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/start`, 'POST', {}))}>Start stage {stage.number}</Button>
             )}
-            {/* Stage 1 is submitted from its own panel below, so it has no second completion button here. */}
+            {/* Stage 1 is completed with one action, offered here and in the review panel. Both open the same confirmation. */}
+            {stageOpen && stage.number === 1 && stage.status !== 'COMPLETED' && (
+              <Button size="sm" onClick={() => setHandoverOpen(true)}>{COMPLETE_STAGE_1_LABEL}</Button>
+            )}
             {canWork && stage.number !== 1 && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW') && (
               <Button size="sm" isLoading={busy} disabled={progress.outstandingMandatory.length > 0} title={progress.outstandingMandatory.length > 0 ? 'Resolve every mandatory item first' : undefined}
                 onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/verify`, 'POST', {}))}>Verify and complete stage {stage.number}</Button>
@@ -202,6 +207,10 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
               <HandoverReview
                 item={checklist[0]}
                 stageStatus={stage.status}
+                completedAt={stage.completedAt}
+                nextStageName={stages.find((s: any) => s.number === 2)?.name}
+                open={handoverOpen}
+                onOpenChange={setHandoverOpen}
                 editable={Boolean(stageOpen)}
                 received={overview.received.length}
                 required={overview.required.length}
@@ -212,7 +221,9 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                       await mentoringApi(`${base}/stages/1/items/${checklist[0].key}`, 'PATCH', { state: 'VERIFIED' });
                     }
                     await mentoringApi(`${base}/stages/1/verify`, 'POST', {});
-                    setNotice('Handover submitted. Stage 1 is complete and the Meeting with Parents is next.');
+                    setNotice('Stage 1 completed. Moving to Stage 2, Meeting with Parents.');
+                    setHandoverOpen(false);
+                    setStageNo(2); // show the stage the student has moved to
                   } finally {
                     // Show what was actually saved, including a review that was recorded when the second call was refused.
                     await load();

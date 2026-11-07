@@ -624,6 +624,20 @@ describe('Stage 1: reviewing the handover', () => {
     expect(w.db.rows('mentoringEvent').map((e) => e.type)).toEqual(expect.arrayContaining(['CHECKLIST_UPDATED', 'STAGE_VERIFIED']));
   });
 
+  it('completing Stage 1 makes the Meeting with Parents the active stage, with who and when recorded on Stage 1', async () => {
+    const w = world({ at: 1 });
+    await w.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, 'mentor-1');
+    await w.workflow.verifyStage('act-1', 1, 'mentor-1');
+    const view = await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'));
+    expect(view.activation.currentStage).toBe(2);
+    expect(view.stages[0]).toMatchObject({ number: 1, status: 'COMPLETED', completedAt: expect.any(Date) });
+    expect(view.stages[0].checklist[0]).toMatchObject({ state: 'VERIFIED', updatedByName: 'Mina Mentor' });
+    expect(view.stages[1]).toMatchObject({ number: 2, name: 'Meeting with Parents', status: 'NOT_STARTED' }); // the Mentor starts it
+    expect(view.viewer.canEditHandover).toBe(false); // collecting begins only once Stage 2 is started
+    await w.workflow.startStage('act-1', 2, 'mentor-1');
+    expect((await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).viewer.canEditHandover).toBe(true);
+  });
+
   it('only the assigned Mentor can record the review or complete Stage 1: the Head, the CEO, a CO_FOUNDER, another Mentor and a Counselor are refused', async () => {
     const w = world({ at: 1 });
     for (const user of ['head-1', 'ceo-1', 'mentor-2', 'counselor-1', 'cofounder-1']) {

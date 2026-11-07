@@ -114,83 +114,86 @@ describe('Stage 1 is a handover overview', () => {
   });
 });
 
-describe('Stage 1 submit action by role', () => {
-  const ACTION = 'Review and submit handover';
-  const stage1 = (status: string, itemOver: Record<string, unknown> = {}) => ({ stages: [{ number: 1, name: 'Admission Handover', status, checklist: [review(itemOver)] }, ...[2, 3, 4, 5, 6, 7].map((n) => ({ number: n, name: `Stage ${n}`, status: 'NOT_STARTED', checklist: [] }))] });
-  const button = (html: string, label: string) => new RegExp(`<button(?![^>]*\\sdisabled="")[^>]*>(?:<[^>]*>)*${label}<`).test(html);
+describe('Stage 1 completion action by role', () => {
+  const ACTION = 'Complete Stage 1 and move to Meeting with Parents';
+  const stage1 = (status: string, itemOver: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({ stages: [{ number: 1, name: 'Admission Handover', status, ...extra, checklist: [review(itemOver)] }, { number: 2, name: 'Meeting with Parents', status: status === 'COMPLETED' ? 'IN_PROGRESS' : 'NOT_STARTED', checklist: [] }, ...[3, 4, 5, 6, 7].map((n) => ({ number: n, name: `Stage ${n}`, status: 'NOT_STARTED', checklist: [] }))] });
+  const enabled = (html: string, label: string) => new RegExp(`<button(?![^>]*\\sdisabled="")[^>]*>(?:<[^>]*>)*${label}<`).test(html);
+  const buttons = (html: string, label: string) => (html.match(new RegExp(`<button[^>]*>(?:<[^>]*>)*${label}<`, 'g')) ?? []).length;
 
-  it('the assigned Mentor sees one clearly labelled primary button, and an explanation of what submitting confirms', () => {
+  it('the assigned Mentor sees the primary button twice: in the stage action bar and in the review panel', () => {
     const html = render(workspace(MENTOR));
-    expect(button(html, ACTION)).toBe(true);
-    expect(html).toMatch(/<button[^>]*bg-brand-600[^>]*>(?:<[^>]*>)*Review and submit handover/); // the primary style
-    expect(text(html)).toContain('Missing information is collected in the Meeting with Parents, so you can submit even while fields are missing.');
+    expect(enabled(html, ACTION)).toBe(true);
+    expect(buttons(html, ACTION)).toBe(2);
+    expect(html).toMatch(/<button[^>]*bg-brand-600[^>]*>(?:<[^>]*>)*Complete Stage 1 and move to Meeting with Parents/); // the primary style
+    expect(text(html)).toContain('you can complete Stage 1 even while fields are missing');
   });
 
-  it('the confirmation dialog says what is being confirmed, with the real counts, and offers Cancel and Confirm', () => {
-    const closed = render(workspace(MENTOR));
-    expect(closed).not.toContain('role="dialog"'); // closed until the Mentor asks for it
+  it('the stage action bar button comes before the handover panel, next to the stage status', () => {
+    const html = render(workspace(MENTOR));
+    expect(html.indexOf(ACTION)).toBeLessThan(html.indexOf('aria-label="Admission handover overview"'));
+  });
+
+  it('both buttons open one confirmation dialog that states the counts and what completing does', () => {
+    expect(render(workspace(MENTOR))).not.toContain('role="dialog"'); // closed until the Mentor asks for it
     const open = renderToStaticMarkup(React.createElement(HandoverReview, { item: review() as any, stageStatus: 'IN_PROGRESS', editable: true, received: 5, required: 23, onSubmit: async () => undefined, defaultOpen: true }));
     const t = text(open);
     expect(open).toContain('role="dialog"');
     expect(open).toContain('aria-modal="true"');
-    expect(t).toContain('Submit the admission handover');
     expect(t).toContain('what Sales handed over (5 items received)');
     expect(t).toContain('what is still required (23 items)');
     expect(t).toContain('Missing information does not stop you here.');
-    expect(t).toContain('Submitting completes Stage 1 and opens the Meeting with Parents. The original Sales data is not changed.');
+    expect(t).toContain('Completing Stage 1 moves the student to the Meeting with Parents. The original Sales data is not changed.');
     expect(t).toContain('Cancel');
-    expect(t).toContain('Confirm and submit');
+    expect(t).toContain('Confirm and complete Stage 1');
   });
 
-  it('submitting works with every field still missing: the number of required items never disables the action', () => {
+  it('completing works with every field still missing: the number of required items never disables the action', () => {
     const none = workspace(MENTOR, { handover: { transferredFields: [], missingFields: [], fieldValues: [], fieldVerifications: [], editableFields: [] } });
-    expect(button(render(none), ACTION)).toBe(true);
+    expect(enabled(render(none), ACTION)).toBe(true);
     expect(text(render(none))).toContain('28 still required');
   });
 
-  it('a recorded review that is waiting to be submitted offers Submit handover and says so', () => {
+  it('a recorded review that is waiting to be completed keeps the same button and says so', () => {
     const html = render(workspace(MENTOR, stage1('PENDING_REVIEW', { state: 'VERIFIED', updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:00:00Z' })));
-    expect(button(html, 'Submit handover')).toBe(true);
-    expect(text(html)).toContain('Review recorded, ready to submit');
+    expect(enabled(html, ACTION)).toBe(true);
+    expect(text(html)).toContain('Review recorded, ready to complete');
     expect(text(html)).toContain('Pending review');
   });
 
-  it('after submission the stage shows as completed, with no action left', () => {
-    const html = render(workspace(MENTOR, stage1('COMPLETED', { state: 'VERIFIED', updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:00:00Z' })));
-    expect(text(html)).toContain('Handover submitted');
-    expect(text(html)).toContain('Stage 1 is complete by Mina Mentor');
-    expect(button(html, ACTION)).toBe(false);
-    expect(button(html, 'Submit handover')).toBe(false);
+  it('after completion: a check mark on the stage, the completed message with who, when and the active stage, and no button left', () => {
+    const html = render(workspace(MENTOR, stage1('COMPLETED', { state: 'VERIFIED', updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:00:00Z' }, { completedAt: '2026-11-03T09:05:00Z' })));
+    const t = text(html);
+    expect(t).toMatch(/Stage 1 completed by Mina Mentor on .+\. Active stage: Meeting with Parents\./);
+    expect(/<button[^>]*>[^]*?1\. Admission Handover[^]*?<svg[^>]*lucide-check/.test(html)).toBe(true); // check mark in the Stage 1 chip
+    expect(buttons(html, ACTION)).toBe(0);
+    expect(buttons(html, 'Confirm and complete Stage 1')).toBe(0);
   });
 
-  it.each([['the Mentoring Head', HEAD], ['the CEO', CEO], ['a CO_FOUNDER (read-only, same flags as the CEO)', { ...CEO, userId: 'cof-1' }], ['a Demo Counselor', COUNSELOR]])('%s sees no action at all, only who submits', (_label, viewer) => {
+  it.each([['the Mentoring Head', HEAD], ['the CEO', CEO], ['a CO_FOUNDER (read-only, same flags as the CEO)', { ...CEO, userId: 'cof-1' }], ['a Demo Counselor', COUNSELOR]])('%s sees no action and a read-only note', (_label, viewer) => {
     const html = render(workspace(viewer));
-    expect(html).not.toMatch(/<button[^>]*>(?:<[^>]*>)*(Review and submit handover|Submit handover|Confirm and submit)/);
+    expect(buttons(html, ACTION)).toBe(0);
     expect(html).not.toContain('role="dialog"');
-    expect(text(html)).toContain('Awaiting review. The assigned Mentor reviews and submits the handover.');
+    expect(text(html)).toContain('Awaiting review. The assigned Mentor reviews the handover and completes Stage 1.');
     for (const label of ['Verify and complete', 'Start stage', 'Authorise exception']) expect(text(html)).not.toContain(label);
   });
 
   it('a Mentor who is not assigned to the student gets no action either', () => {
     const html = render(workspace({ userId: 'mentor-2', isMentor: false, isHead: false, canEditHandover: false }));
-    expect(button(html, ACTION)).toBe(false);
+    expect(buttons(html, ACTION)).toBe(0);
   });
 
   it.each([['AWAITING_ALLOCATION'], ['ACTIVATION_ON_HOLD'], ['ACTIVATION_BLOCKED']])('no action while the workflow is %s', (status) => {
     const html = render(workspace(MENTOR, { activation: { id: 'a1', status, currentStage: 1, currentMentorUserId: 'mentor-1', currentMentorName: 'Mina Mentor' } }));
-    expect(button(html, ACTION)).toBe(false);
+    expect(buttons(html, ACTION)).toBe(0);
   });
 
-  it('there is a single completion path on Stage 1: the stage action bar has no second Verify button', () => {
-    expect(text(render(workspace(MENTOR)))).not.toContain('Verify and complete stage 1');
-  });
-
-  it('records the review and then completes the stage, and reloads even if the second call is refused', () => {
+  it('records the review, completes the stage through the API, announces it and moves the view to Stage 2', () => {
     const page = require('fs').readFileSync(require('path').join(__dirname, 'students/[id]/StudentWorkspaceClient.tsx'), 'utf8').replace(/\r\n/g, '\n');
     expect(page).toContain("mentoringApi(`${base}/stages/1/items/${checklist[0].key}`, 'PATCH', { state: 'VERIFIED' })");
     expect(page).toContain("mentoringApi(`${base}/stages/1/verify`, 'POST', {})");
     expect(page.indexOf('/stages/1/items/')).toBeLessThan(page.indexOf('/stages/1/verify'));
-    expect(page).toMatch(/finally \{[^}]*await load\(\);/s);
-    expect(page).toContain('Handover submitted. Stage 1 is complete and the Meeting with Parents is next.');
+    expect(page).toContain('Stage 1 completed. Moving to Stage 2, Meeting with Parents.');
+    expect(page.indexOf('/stages/1/verify')).toBeLessThan(page.indexOf('setStageNo(2)')); // only after the API accepted it
+    expect(page).toMatch(/finally \{[^}]*await load\(\);/s); // a refused second call still reloads what was saved
   });
 });
