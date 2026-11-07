@@ -298,7 +298,7 @@ export function presentHandover(handover: unknown): PresentedHandover {
         .filter((row): row is { key: string; text: string } => row.text !== null);
       if (rows.length === 0) addMissing(field, 'NOT_PROVIDED');
       for (const row of rows) {
-        collected.push({ ...base(field), key: row.key, value: row.text, status: 'COLLECTED', hint: null, source: 'SALES', rawValue: null, salesValue: null, updatedByName: null, updatedAt: null });
+        collected.push({ ...base(field), key: row.key, value: row.text, status: 'COLLECTED', hint: null, source: 'SALES', rawValue: value, salesValue: null, updatedByName: null, updatedAt: null });
         collectedKeys.add(field);
       }
       continue;

@@ -122,6 +122,13 @@ describe('collection status and verification status are tracked separately', () 
     expect(buildInventory(handover).collected).toBe(1);
     expect(rowOf(handover, 'academic.subjects').value).toBe('Maths (CBSE · Grade 8)\nScience (CBSE · Grade 8)');
   });
+
+  it('the subjects row carries the whole stored list, so verifying it is not refused as changed by someone else', () => {
+    const list = [{ requirementId: 'r1', subject: 'Maths', curriculum: 'CBSE', grade: 'Grade 8' }, { requirementId: 'r2', subject: 'Science', curriculum: 'CBSE', grade: 'Grade 8' }];
+    const handover = base({ transferredFields: [sales('academic.subjects', list, 'REQUIREMENT')] });
+    // This is the value the page sends as "based on"; the API compares it with the stored Sales value for the field.
+    expect(rowOf(handover, 'academic.subjects').rawValue).toEqual(list);
+  });
 });
 
 describe('the Stage 1 overview', () => {
