@@ -63,7 +63,7 @@ describe('Counselor tasks', () => {
   it('a counselor collects information as COLLECTED only; the Mentor still has to verify it', async () => {
     const s = setup();
     const task = await newTask(s)();
-    const item = getChecklistDefinition(1)[4].key;
+    const item = getChecklistDefinition(1)[0].key;
 
     await s.tasks.start(task.id, 'counselor-1');
     await s.tasks.collect(task.id, { itemKey: item, value: { marks: '78%' }, note: 'From report card' }, 'counselor-1');
@@ -89,7 +89,7 @@ describe('Counselor tasks', () => {
     const task = await newTask(s)();
     await s.workflow.pause('act-1', { reason: 'Away', pendingAction: 'Wait', responsibleUserId: 'counselor-1', followUpAt: new Date('2026-11-30') }, await s.scope('mentor-1'));
 
-    await expect(s.tasks.collect(task.id, { itemKey: getChecklistDefinition(1)[4].key, value: 'x' }, 'counselor-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(s.tasks.collect(task.id, { itemKey: getChecklistDefinition(1)[0].key, value: 'x' }, 'counselor-1')).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('submit, return with a reason, resubmit and verify; a counselor cannot verify', async () => {

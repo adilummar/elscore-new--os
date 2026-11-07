@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { ALL_FIELD_KEYS } from './handover-inventory';
 import { StudentWorkspaceClient } from './students/[id]/StudentWorkspaceClient';
 
 // The page loads its data in an effect, which does not run during server rendering; the workspace is passed in.
@@ -57,28 +58,40 @@ describe('student details page renders with a complete handover', () => {
   it('shows business labels with the real values for collected information', () => {
     const t = text(html);
     for (const [label, value] of [['Student First Name', 'Asha'], ['Student Last Name', 'Menon'], ['Grade / Class', 'Grade 8'], ['Curriculum / Board', 'CBSE'],
-      ['Parent / Guardian Name', 'Priya Menon'], ['Parent Contact Number', '9876543210'], ['Subject Requirement', 'Mathematics (CBSE · Grade 8) · 8 hrs / month']]) {
+      ['Parent / Guardian Name', 'Priya Menon'], ['Parent Contact Number', '9876543210'], ['Subjects', 'Mathematics (CBSE · Grade 8) · 8 hrs / month']]) {
       expect(t).toContain(`${label} ${value}`);
     }
   });
 
-  it('lists the missing information with business labels and a red "Not collected" indicator', () => {
+  it('lists what is still required with business labels, a short reason and a red missing indicator', () => {
     const t = text(html);
     for (const label of ['Relationship to Student', 'Preferred Language', 'Previous Academic Marks', 'Preferred Timetable / Schedule', 'Upcoming Examination Dates',
-      'Examination Syllabus / Portions', 'Parent Expectations', 'Student Engagement', 'Tutor Assignment', 'Student Notes']) {
+      'Examination Syllabus / Portions', 'Parent Expectations', 'Student Engagement', 'Tutor Assignment', 'Tutor Requirements', 'Student Notes', 'Learning Difficulties or Concerns']) {
       expect(t).toContain(label);
     }
-    expect(html).toContain('bg-red-50 text-red-800');
+    expect(t).toContain('Not asked during the Sales admission. The Mentor collects this.');
+    expect(count(t, 'Not asked during the Sales admission')).toBe(1);
+    expect(html).toContain('aria-label="Missing"');
+    expect(html).toContain('bg-red-500');
   });
 
-  it('green "Collected" and red "Not collected" indicators equal the real counts', () => {
-    // 7 collected rows (6 fields + 1 subject) and 10 missing (9 not asked by Sales + notes).
-    expect(count(html, '>Collected<')).toBe(7);
-    expect(count(html, '>Not collected<')).toBe(10);
-    expect(text(html)).toContain('7 collected · 10 still required');
-    expect(text(html)).toContain('Information collected (7)');
-    expect(text(html)).toContain('Information still required (10)');
-    expect(html).toContain('bg-emerald-50 text-emerald-800');
+  it('green received and red missing indicators equal the real counts', () => {
+    // Received from Sales: 6 fields plus the subject list = 7. The remaining 21 of the 28 fields are still required.
+    expect(count(html, 'aria-label="Received"')).toBe(7);
+    expect(count(html, 'aria-label="Missing"')).toBe(21);
+    expect(text(html)).toContain('7 received, 21 still required');
+    expect(text(html)).toContain('Received from Sales 7');
+    expect(text(html)).toContain('Still required 21');
+    expect(html).toContain('bg-emerald-500');
+  });
+
+  it('shows where the Sales data came from, read-only', () => {
+    const t = text(html);
+    expect(t).toContain('Sales student record');
+    expect(t).toContain('Sales subject requirements');
+    const overview = /<section aria-label="Admission handover overview".*?<\/section>/s.exec(html)![0];
+    expect(overview).not.toMatch(/<(input|textarea|select|button)\b/);
+    for (const label of ['Edit', 'Verify', 'Collect', 'Save']) expect(html).not.toContain(`>${label}<`);
   });
 
   it('exposes no raw field path anywhere on the page', () => {
@@ -87,7 +100,7 @@ describe('student details page renders with a complete handover', () => {
   });
 
   it('uses a two-column layout on desktop that collapses to one column, and wraps long values', () => {
-    expect(html).toContain('grid gap-4 md:grid-cols-2');
+    expect(html).toContain('md:grid-cols-2');
     expect(html).toContain('break-words');
     expect(html).toContain('[overflow-wrap:anywhere]');
   });
@@ -128,15 +141,19 @@ describe('student details page with partial or absent data', () => {
     expect(text(render(workspace({ parent: { name: 'Priya Menon', primaryPhone: null } })))).toContain('Parent / Guardian: Priya Menon');
   });
 
-  it('with nothing collected, shows the full required list and an empty-state message', () => {
+  it('with nothing received, shows the full required list and an empty-state message', () => {
     const t = text(render(workspace({ handover: { transferredFields: [], missingFields: NOT_BY_SALES } })));
-    expect(t).toContain('No information has been received from Sales yet.');
-    expect(t).toContain('0 collected · 9 still required');
+    expect(t).toContain('Sales has not passed on any information yet.');
+    expect(t).toContain('0 received, 28 still required');
   });
 
-  it('with everything collected, says nothing is outstanding', () => {
-    const t = text(render(workspace({ handover: { transferredFields: handover().transferredFields, missingFields: [] } })));
-    expect(t).toContain('All required information has been collected.');
+  it('with every field received, says nothing is missing', () => {
+    const all = ALL_FIELD_KEYS.map((key) => (key === 'academic.subjects'
+      ? { field: key, source: 'REQUIREMENT', value: [{ requirementId: 'r1', subject: 'Mathematics' }] }
+      : SALES(key, key === 'student.dateOfBirth' ? '2015-05-12' : 'Provided')));
+    const t = text(render(workspace({ handover: { transferredFields: all, missingFields: [] } })));
+    expect(t).toContain('Nothing is missing.');
+    expect(t).toContain('28 received, 0 still required');
   });
 
   it('shows a very long value inside its row', () => {

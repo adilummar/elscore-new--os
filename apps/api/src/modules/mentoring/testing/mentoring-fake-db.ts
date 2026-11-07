@@ -13,6 +13,8 @@ const UNIQUE: Record<string, string[][]> = {
   mentoringStage: [['activationId', 'stageNumber']],
   stageChecklistResponse: [['stageId', 'itemKey']],
   workflowException: [['stageId', 'itemKey']],
+  enrollmentHandoverField: [['handoverId', 'fieldKey']],
+  enrollmentHandoverFieldVerification: [['handoverId', 'fieldKey']],
   notification: [['dedupeKey']],
 };
 
@@ -173,6 +175,12 @@ export class FakeDb {
         const r = find(args);
         if (!r) return Promise.reject(new Error(`${table} not found`));
         Object.assign(r, args.data, { updatedAt: new Date() });
+        return Promise.resolve({ ...r });
+      }),
+      delete: jest.fn((args: Row) => {
+        const r = find(args);
+        if (!r) return Promise.reject(new Error(`${table} not found`));
+        this.tables[table] = this.rows(table).filter((x) => x !== r);
         return Promise.resolve({ ...r });
       }),
       updateMany: jest.fn((args: Row) => {

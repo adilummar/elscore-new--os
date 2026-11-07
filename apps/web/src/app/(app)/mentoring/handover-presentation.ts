@@ -19,15 +19,18 @@ export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
   'student.curriculum': 'Curriculum / Board',
   'student.cityLocation': 'City / Location',
   'student.notes': 'Student Notes',
+  'student.learningConcerns': 'Learning Difficulties or Concerns',
   'parent.name': 'Parent / Guardian Name',
   'parent.primaryPhone': 'Parent Contact Number',
   'parent.altPhone1': 'Alternate Contact Number 1',
   'parent.altPhone2': 'Alternate Contact Number 2',
   'parent.whatsappNumber': 'Parent WhatsApp Number',
   'parent.relationship': 'Relationship to Student',
-  'academic.subjects': 'Subject Requirement',
+  'academic.subjects': 'Subjects',
+  'academic.subjectNotes': 'Subject Requirement Details',
   'academic.preferredLanguage': 'Preferred Language',
   'academic.previousMarks': 'Previous Academic Marks',
+  'tutor.requirements': 'Tutor Requirements',
   'tutor.assignments': 'Tutor Assignment',
   'timetable.schedule': 'Preferred Timetable / Schedule',
   'examination.upcomingDates': 'Upcoming Examination Dates',
@@ -171,7 +174,7 @@ function orderOf(field: string): number {
   return index === -1 ? FIELD_ORDER.length : index;
 }
 
-function describeRequirement(requirement: Record<string, unknown>): string | null {
+export function describeRequirement(requirement: Record<string, unknown>): string | null {
   const subject = typeof requirement.subject === 'string' ? requirement.subject.trim() : '';
   if (!subject) return null;
   const detail = [requirement.curriculum, requirement.grade]

@@ -3725,6 +3725,7 @@ model EnrollmentHandover {
   student    Student              @relation(fields: [studentId], references: [id], onDelete: Restrict)
   activation MentoringActivation?
   fields     EnrollmentHandoverField[]
+  fieldVerifications EnrollmentHandoverFieldVerification[]
 
   @@index([leadId])
   @@index([status])
@@ -3748,6 +3749,8 @@ model EnrollmentHandoverField {
   origin          HandoverFieldOrigin
   salesValue      Json?               @map("sales_value")
   updatedByUserId String              @map("updated_by_user_id")
+  /// Who first wrote the value. Null on rows saved before this column existed; readers then fall back to updatedByUserId.
+  createdByUserId String?             @map("created_by_user_id")
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
 
@@ -3755,6 +3758,26 @@ model EnrollmentHandoverField {
 
   @@unique([handoverId, fieldKey])
   @@map("enrollment_handover_fields")
+}
+
+/// The Mentor confirmed a field with the parent during the Meeting with Parents stage. Kept apart from the value on
+/// purpose: a value being present is a collection fact, this row is a verification fact. verifiedValue is what the
+/// Mentor confirmed; if the current value differs, the field counts as not verified again.
+model EnrollmentHandoverFieldVerification {
+  id               String   @id @default(uuid())
+  handoverId       String   @map("handover_id")
+  fieldKey         String   @map("field_key")
+  verifiedValue    Json     @map("verified_value")
+  note             String?  @db.Text
+  verifiedByUserId String   @map("verified_by_user_id")
+  verifiedAt       DateTime @default(now()) @map("verified_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  handover EnrollmentHandover @relation(fields: [handoverId], references: [id], onDelete: Restrict)
+
+  @@unique([handoverId, fieldKey])
+  @@map("enrollment_handover_field_verifications")
 }
 
 /// Mentoring Phase 1 workflow header. Separate from Sales ENROLLED status.

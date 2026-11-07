@@ -84,6 +84,8 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   TASK_CANCELLED: 'Task cancelled',
   TASK_COMMENTED: 'Task comment added',
   HANDOVER_FIELD_UPDATED: 'Information updated',
+  HANDOVER_FIELD_VERIFIED: 'Information verified with the parent',
+  HANDOVER_FIELD_UNVERIFIED: 'Verification withdrawn',
   CHECKLIST_DEFINITION_MIGRATED: 'Checklist moved to the new format',
 };
 
@@ -137,4 +139,11 @@ export function fmt(value: string | Date | null | undefined): string {
   if (!value) return '—';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
+
+/** A calendar date without the time, for lines such as "Verified by Mina Mentor, 7 Nov 2026". */
+export function fmtDate(value: string | Date | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }

@@ -5,10 +5,21 @@ import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.servic
 
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringAllocationService } from './mentoring-allocation.service';
-import { HANDOVER_FIELDS, getHandoverField, validateHandoverFieldValue } from './mentoring-handover-fields';
+import {
+  HANDOVER_FIELDS,
+  HANDOVER_FIELD_LABELS,
+  getHandoverField,
+  isMeaningfulValue,
+  isVerifiableField,
+  stableJson,
+  validateHandoverFieldValue,
+} from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
-import { TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
+import { LEGACY_STAGE1_ITEMS, TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
+
+/** Stage 2 statuses from which the Mentor works with the parent. Collection and verification start here, not in Stage 1. */
+const MEETING_OPEN_STATUSES: ReadonlySet<string> = new Set(['IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED']);
 
 export interface HoldInput {
   reason: string;
@@ -69,6 +80,30 @@ export class MentoringWorkflowService {
     if (activation.status !== 'ACTIVATION_IN_PROGRESS') {
       throw new ConflictException(`The workflow is not in progress (${activation.status})`);
     }
+  }
+
+  /**
+   * Information is collected and confirmed in Stage 2 (Meeting with Parents). Stage 1 only presents the handover,
+   * so nothing can be saved before the Mentor has started Stage 2.
+   */
+  private assertMeetingStarted(activation: { stages: Array<{ stageNumber: number; status: MentoringStageStatus }> }) {
+    const meeting = activation.stages.find((s) => s.stageNumber === 2);
+    if (!meeting || !MEETING_OPEN_STATUSES.has(meeting.status)) {
+      throw new ConflictException('Information is collected in the Meeting with Parents stage. Complete the handover review and start that stage first.');
+    }
+  }
+
+  /** The value the page shows for each handover field: the Mentoring value when there is one, otherwise the Sales value. */
+  private async effectiveHandoverValues(tx: PrismaTxClient, handoverId: string): Promise<Map<string, unknown>> {
+    const handover = await tx.enrollmentHandover.findUniqueOrThrow({ where: { id: handoverId }, select: { transferredFields: true } });
+    const out = new Map<string, unknown>();
+    const transferred: Array<{ field: string; value: unknown }> = Array.isArray(handover.transferredFields)
+      ? (handover.transferredFields as unknown as Array<{ field: string; value: unknown }>)
+      : [];
+    for (const entry of transferred) if (entry && typeof entry.field === 'string') out.set(entry.field, entry.value);
+    const rows = await tx.enrollmentHandoverField.findMany({ where: { handoverId } });
+    for (const row of rows) out.set(row.fieldKey, row.value);
+    return out;
   }
 
   /** Moves a stage between IN_PROGRESS and PENDING_REVIEW depending on whether mandatory items are resolved. */
@@ -143,7 +178,19 @@ export class MentoringWorkflowService {
       const row = await tx.stageChecklistResponse.findUniqueOrThrow({ where: { stageId_itemKey: { stageId: stage.id, itemKey } } });
 
       const nextState = input.state ?? row.state;
-      const updated = await tx.stageChecklistResponse.update({
+
+      // A requirement that depends on information cannot be completed while that information is missing. The Mentor
+      // either collects it or marks the requirement unavailable with a reason. Having the value never completes it.
+      if (input.state === 'VERIFIED' && row.state !== 'VERIFIED' && def.fields?.length) {
+        const values = await this.effectiveHandoverValues(tx, activation.handoverId);
+        const missing = def.fields.filter((key) => !isMeaningfulValue(values.get(key)));
+        if (missing.length > 0) {
+          const names = missing.map((key) => HANDOVER_FIELD_LABELS[key] ?? key).join(', ');
+          throw new ConflictException(`Collect this information first: ${names}. If the parent cannot provide it, mark this requirement unavailable and give the reason.`);
+        }
+      }
+
+      const updated =await tx.stageChecklistResponse.update({
         where: { id: row.id },
         data: {
           state: nextState,
@@ -184,6 +231,7 @@ export class MentoringWorkflowService {
       const activation = await this.loadLocked(tx, activationId);
       this.assertMentor(activation, userId);
       this.assertWorkable(activation);
+      this.assertMeetingStarted(activation);
 
       const referenceOptions = definition.optionsFrom ? await this.referenceOptions(tx) : undefined;
       const value = validateHandoverFieldValue(definition, rawValue, { today: new Date(), referenceOptions });
@@ -218,6 +266,7 @@ export class MentoringWorkflowService {
               value: value as Prisma.InputJsonValue,
               origin,
               ...(salesEntry ? { salesValue: salesEntry.value as Prisma.InputJsonValue } : {}),
+              createdByUserId: userId,
               updatedByUserId: userId,
             },
           });
@@ -229,6 +278,65 @@ export class MentoringWorkflowService {
         payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null },
       });
       return { fieldKey, value: saved.value, origin: saved.origin, changed: true as const };
+    });
+  }
+
+  /**
+   * Records that the Mentor confirmed a field with the parent (or withdraws that confirmation). This is a separate fact
+   * from the value being present: a Sales value stays "not verified" until the Mentor confirms it, and the stored
+   * confirmation covers the value as it was. If the value changes later the field counts as not verified again.
+   * The Sales snapshot and the value itself are never touched.
+   */
+  async setHandoverFieldVerification(activationId: string, fieldKey: string, input: { verified: boolean; note?: string | null }, userId: string) {
+    if (!isVerifiableField(fieldKey)) throw new BadRequestException('This information cannot be verified here');
+    const note = input.note?.trim() || null;
+    if (note && note.length > 1000) throw new BadRequestException('The note must be 1000 characters or fewer');
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const activation = await this.loadLocked(tx, activationId);
+      this.assertMentor(activation, userId);
+      this.assertWorkable(activation);
+      this.assertMeetingStarted(activation);
+
+      const existing = await tx.enrollmentHandoverFieldVerification.findUnique({
+        where: { handoverId_fieldKey: { handoverId: activation.handoverId, fieldKey } },
+      });
+
+      if (!input.verified) {
+        if (!existing) return { fieldKey, verified: false as const, changed: false as const };
+        await tx.enrollmentHandoverFieldVerification.delete({ where: { id: existing.id } });
+        await this.history.record(tx, {
+          activationId,
+          type: 'HANDOVER_FIELD_UNVERIFIED',
+          actorUserId: userId,
+          payload: { fieldKey, previousVerifiedValue: existing.verifiedValue, previousVerifiedByUserId: existing.verifiedByUserId, previousVerifiedAt: existing.verifiedAt },
+        });
+        return { fieldKey, verified: false as const, changed: true as const };
+      }
+
+      const current = (await this.effectiveHandoverValues(tx, activation.handoverId)).get(fieldKey);
+      if (!isMeaningfulValue(current)) {
+        throw new ConflictException('There is nothing to verify yet. Collect this information first.');
+      }
+      if (existing && stableJson(existing.verifiedValue) === stableJson(current)) {
+        return { fieldKey, verified: true as const, changed: false as const };
+      }
+
+      const saved = existing
+        ? await tx.enrollmentHandoverFieldVerification.update({
+            where: { id: existing.id },
+            data: { verifiedValue: current as Prisma.InputJsonValue, note, verifiedByUserId: userId, verifiedAt: new Date() },
+          })
+        : await tx.enrollmentHandoverFieldVerification.create({
+            data: { handoverId: activation.handoverId, fieldKey, verifiedValue: current as Prisma.InputJsonValue, note, verifiedByUserId: userId, verifiedAt: new Date() },
+          });
+      await this.history.record(tx, {
+        activationId,
+        type: 'HANDOVER_FIELD_VERIFIED',
+        actorUserId: userId,
+        payload: { fieldKey, value: current, note },
+      });
+      return { fieldKey, verified: true as const, changed: true as const, verifiedAt: saved.verifiedAt };
     });
   }
 
@@ -673,9 +781,12 @@ export class MentoringWorkflowService {
     const seeParent = this.access.canSeeParentContact(scope, activation);
     const isMentorOrHead = scope.all || activation.currentMentorUserId === scope.userId;
 
-    const [fieldRows, referenceOptions] = await Promise.all([
+    const [fieldRows, verificationRows, referenceOptions] = await Promise.all([
       activation.handoverId
         ? this.prisma.enrollmentHandoverField.findMany({ where: { handoverId: activation.handoverId } })
+        : Promise.resolve([]),
+      activation.handoverId
+        ? this.prisma.enrollmentHandoverFieldVerification.findMany({ where: { handoverId: activation.handoverId } })
         : Promise.resolve([]),
       this.referenceOptions(this.prisma as unknown as PrismaTxClient),
     ]);
@@ -696,7 +807,11 @@ export class MentoringWorkflowService {
 
     // Names for everyone who changed something the page shows (one lookup).
     const actorIds = new Set<string>();
-    for (const f of fieldRows) actorIds.add(f.updatedByUserId);
+    for (const f of fieldRows) {
+      actorIds.add(f.updatedByUserId);
+      if (f.createdByUserId) actorIds.add(f.createdByUserId);
+    }
+    for (const v of verificationRows) actorIds.add(v.verifiedByUserId);
     for (const st of activation.stages) {
       for (const c of st.checklist) if (c.updatedByUserId) actorIds.add(c.updatedByUserId);
       for (const e of st.exceptions) actorIds.add(e.authorizedByUserId);
@@ -707,6 +822,56 @@ export class MentoringWorkflowService {
     });
     const nameOf = new Map(people.map((e) => [e.userId, `${e.firstName} ${e.lastName}`.trim()]));
     const nameFor = (id: string | null | undefined) => (id ? nameOf.get(id) ?? null : null);
+
+    // What each field currently reads as (Mentoring value over Sales value), to compare against confirmations.
+    const effectiveValues = new Map<string, unknown>();
+    const salesList: Array<{ field: string; value: unknown }> = Array.isArray(activation.handover?.transferredFields)
+      ? (activation.handover.transferredFields as unknown as Array<{ field: string; value: unknown }>)
+      : [];
+    for (const entry of salesList) if (entry && typeof entry.field === 'string') effectiveValues.set(entry.field, entry.value);
+    for (const row of fieldRows) effectiveValues.set(row.fieldKey, row.value);
+
+    // Stage 1 results saved under an earlier checklist: still there, no longer counted, shown read-only on Stage 2.
+    const stageOneRow = activation.stages.find((s) => s.stageNumber === 1);
+    const currentStageOneKeys = new Set(getChecklistDefinition(1).map((d) => d.key));
+    const legacyExceptions = new Map((stageOneRow?.exceptions ?? []).map((e) => [e.itemKey, e]));
+    const isLegacyKey = (key: string) => !currentStageOneKeys.has(key) && Object.prototype.hasOwnProperty.call(LEGACY_STAGE1_ITEMS, key);
+    const legacyRows = (stageOneRow?.checklist ?? []).filter((c) => isLegacyKey(c.itemKey));
+    const legacyStage1Items = [
+      ...legacyRows
+        .filter((c) => c.state !== 'PENDING_COLLECTION' || c.note || c.evidenceRef || c.value !== null || legacyExceptions.has(c.itemKey))
+        .map((c) => ({
+          key: c.itemKey,
+          label: LEGACY_STAGE1_ITEMS[c.itemKey].label,
+          group: LEGACY_STAGE1_ITEMS[c.itemKey].group,
+          state: c.state,
+          value: c.value ?? null,
+          note: c.note,
+          reason: c.reason,
+          evidenceRef: c.evidenceRef,
+          exceptionReason: legacyExceptions.get(c.itemKey)?.reason ?? null,
+          updatedByName: nameFor(c.updatedByUserId),
+          updatedAt: c.updatedAt,
+        })),
+      // An exception the Head authorised for an earlier item the Mentor never opened has no row of its own.
+      ...Array.from(legacyExceptions.values())
+        .filter((e) => isLegacyKey(e.itemKey) && !legacyRows.some((c) => c.itemKey === e.itemKey))
+        .map((e) => ({
+          key: e.itemKey,
+          label: LEGACY_STAGE1_ITEMS[e.itemKey].label,
+          group: LEGACY_STAGE1_ITEMS[e.itemKey].group,
+          state: 'PENDING_COLLECTION',
+          value: null,
+          note: null as string | null,
+          reason: null as string | null,
+          evidenceRef: null as string | null,
+          exceptionReason: e.reason,
+          updatedByName: nameFor(e.authorizedByUserId),
+          updatedAt: e.createdAt,
+        })),
+    ];
+    const meetingStage = activation.stages.find((s) => s.stageNumber === 2);
+    const meetingStarted = !!meetingStage && MEETING_OPEN_STATUSES.has(meetingStage.status);
 
     const strip = (fields: unknown) =>
       Array.isArray(fields) ? fields.filter((f) => !(f && typeof f === 'object' && PARENT_CONTACT_FIELDS.has((f as { field: string }).field))) : fields;
@@ -728,7 +893,27 @@ export class MentoringWorkflowService {
           updatedByUserId: f.updatedByUserId,
           updatedByName: nameFor(f.updatedByUserId),
           updatedAt: f.updatedAt,
+          // Rows saved before the column existed have no recorded first writer; the last writer is the best available.
+          collectedByName: nameFor(f.createdByUserId ?? f.updatedByUserId),
+          collectedAt: f.createdAt,
         })),
+      // Meeting verification, separate from whether a value exists. `verified` is true only while the current value is
+      // still the one the Mentor confirmed; `changedSinceVerified` flags a confirmation the value has since outgrown.
+      fieldVerifications: verificationRows
+        .filter((v) => seeParent || !PARENT_CONTACT_FIELDS.has(v.fieldKey))
+        .map((v) => {
+          const current = effectiveValues.get(v.fieldKey);
+          const matches = stableJson(v.verifiedValue) === stableJson(current ?? null);
+          return {
+            fieldKey: v.fieldKey,
+            verified: matches,
+            changedSinceVerified: !matches,
+            note: v.note,
+            verifiedByUserId: v.verifiedByUserId,
+            verifiedByName: nameFor(v.verifiedByUserId),
+            verifiedAt: v.verifiedAt,
+          };
+        }),
       editableFields: Object.values(HANDOVER_FIELDS).map((d) => ({
         key: d.key,
         type: d.type,
@@ -755,6 +940,7 @@ export class MentoringWorkflowService {
         ? { name: [activation.lead.firstName, activation.lead.lastName].filter(Boolean).join(' '), primaryPhone: activation.lead.primaryPhone, altPhone1: activation.lead.altPhone1, altPhone2: activation.lead.altPhone2, whatsappNumber: activation.lead.whatsappNumber }
         : null,
       handover,
+      legacyStage1Items,
       stages: STAGES.map((def) => {
         const row = activation.stages.find((s) => s.stageNumber === def.number);
         const definitions = getChecklistDefinition(def.number);
@@ -780,6 +966,8 @@ export class MentoringWorkflowService {
               evidenceRef: r?.evidenceRef ?? null,
               group: d.group ?? null,
               groupLabel: d.groupLabel ?? null,
+              // The information this requirement depends on, and whether each piece has a value yet.
+              requires: (d.fields ?? []).map((key) => ({ key, label: HANDOVER_FIELD_LABELS[key] ?? key, collected: isMeaningfulValue(effectiveValues.get(key)) })),
               exception: exceptions.has(d.key),
               exceptionDetail: exceptions.has(d.key)
                 ? {
@@ -805,7 +993,7 @@ export class MentoringWorkflowService {
         userId: scope.userId,
         isMentor: activation.currentMentorUserId === scope.userId,
         isHead: scope.all,
-        canEditHandover: activation.currentMentorUserId === scope.userId && activation.status === 'ACTIVATION_IN_PROGRESS',
+        canEditHandover: activation.currentMentorUserId === scope.userId && activation.status === 'ACTIVATION_IN_PROGRESS' && meetingStarted,
       },
     };
   }

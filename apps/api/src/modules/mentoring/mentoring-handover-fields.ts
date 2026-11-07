@@ -6,8 +6,9 @@ import { BadRequestException } from '@nestjs/common';
  * same definitions to the page, which renders the matching control.
  *
  * Corrections are stored beside the original Sales snapshot (see EnrollmentHandoverField); they never replace it.
- * `academic.subjects` is deliberately absent: it mirrors the Sales subject requirements, which are locked once a
- * student is handed over.
+ * `academic.subjects` is deliberately absent: it mirrors the Sales subject requirements (subject, curriculum, grade and
+ * monthly hours), which are locked once a student is handed over. What the Mentor learns about those subjects goes into
+ * `academic.subjectNotes`; it never changes the Sales requirement.
  */
 export type HandoverFieldType = 'TEXT' | 'PHONE' | 'DATE' | 'SELECT' | 'TEXTAREA' | 'ROWS';
 
@@ -68,6 +69,9 @@ export const HANDOVER_FIELDS: Readonly<Record<string, HandoverFieldDefinition>> 
       area('academic.previousMarks'),
       area('parentExpectations'),
       area('studentEngagement'),
+      area('student.learningConcerns'),
+      area('tutor.requirements'),
+      area('academic.subjectNotes'),
       { key: 'tutor.assignments', type: 'ROWS', maxRows: 20, columns: [col('subject', 'Subject'), col('tutor', 'Tutor')] },
       {
         key: 'timetable.schedule',
@@ -90,6 +94,70 @@ export const HANDOVER_FIELDS: Readonly<Record<string, HandoverFieldDefinition>> 
     ] as HandoverFieldDefinition[]
   ).map((definition) => [definition.key, definition]),
 );
+
+/** Plain-language names, used in messages. The web page keeps its own presentation labels for the same keys. */
+export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
+  'student.firstName': 'Student First Name',
+  'student.lastName': 'Student Last Name',
+  'student.dateOfBirth': 'Date of Birth',
+  'student.gender': 'Gender',
+  'student.schoolName': 'School Name',
+  'student.currentGrade': 'Current Grade (as entered)',
+  'student.grade': 'Grade / Class',
+  'student.curriculum': 'Curriculum / Board',
+  'student.cityLocation': 'City / Location',
+  'student.notes': 'Student Notes',
+  'student.learningConcerns': 'Learning Difficulties or Concerns',
+  'parent.name': 'Parent / Guardian Name',
+  'parent.primaryPhone': 'Parent Contact Number',
+  'parent.altPhone1': 'Alternate Contact Number 1',
+  'parent.altPhone2': 'Alternate Contact Number 2',
+  'parent.whatsappNumber': 'Parent WhatsApp Number',
+  'parent.relationship': 'Relationship to Student',
+  'academic.subjects': 'Subjects',
+  'academic.subjectNotes': 'Subject Requirement Details',
+  'academic.preferredLanguage': 'Preferred Language',
+  'academic.previousMarks': 'Previous Academic Marks',
+  'tutor.requirements': 'Tutor Requirements',
+  'tutor.assignments': 'Tutor Assignment',
+  'timetable.schedule': 'Preferred Timetable / Schedule',
+  'examination.upcomingDates': 'Upcoming Examination Dates',
+  'examination.syllabusPortions': 'Examination Syllabus / Portions',
+  parentExpectations: 'Parent Expectations',
+  studentEngagement: 'Student Engagement',
+};
+
+/** Fields the Mentor can verify during the parent meeting: every editable field plus the read-only Sales subjects. */
+export function isVerifiableField(key: string): boolean {
+  return key === 'academic.subjects' || getHandoverField(key) !== undefined;
+}
+
+const PLACEHOLDER_TEXT = new Set(['null', 'undefined', 'nan']);
+
+/** True when the value is real information: not empty or blank, not a placeholder such as "null" or "-", not an empty list. */
+export function isMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text || PLACEHOLDER_TEXT.has(text.toLowerCase())) return false;
+    return !/^[-–—_.\s]+$/.test(text);
+  }
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'boolean') return true;
+  if (Array.isArray(value)) return value.some(isMeaningfulValue);
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(isMeaningfulValue);
+  return false;
+}
+
+/** JSON text with object keys sorted, so two equal values compare equal however the database ordered their keys. */
+export function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
 
 export function getHandoverField(key: string): HandoverFieldDefinition | undefined {
   return Object.prototype.hasOwnProperty.call(HANDOVER_FIELDS, key) ? HANDOVER_FIELDS[key] : undefined;

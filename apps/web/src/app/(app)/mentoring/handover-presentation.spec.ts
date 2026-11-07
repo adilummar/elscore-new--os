@@ -122,8 +122,8 @@ describe('presentHandover', () => {
       ['Student First Name', 'Asha', 'COLLECTED'],
       ['Date of Birth', '12 May 2015', 'COLLECTED'],
       ['Parent Contact Number', '9876543210', 'COLLECTED'],
-      ['Subject Requirement', 'Mathematics (CBSE · Grade 8) · 12 hrs / month', 'COLLECTED'],
-      ['Subject Requirement', 'Science (CBSE · Grade 8)', 'COLLECTED'],
+      ['Subjects', 'Mathematics (CBSE · Grade 8) · 12 hrs / month', 'COLLECTED'],
+      ['Subjects', 'Science (CBSE · Grade 8)', 'COLLECTED'],
     ]);
     expect(missing.map((f) => [f.label, f.status, f.value])).toEqual([
       ['Gender', 'NOT_PROVIDED', null],
@@ -168,7 +168,7 @@ describe('presentHandover', () => {
   it('an empty subject list is shown as still required, not as collected', () => {
     const { collected, missing } = presentHandover({ transferredFields: [{ field: 'academic.subjects', value: [] }], missingFields: [] });
     expect(collected).toHaveLength(0);
-    expect(missing.map((f) => f.label)).toEqual(['Subject Requirement']);
+    expect(missing.map((f) => f.label)).toEqual(['Subjects']);
   });
 
   it('handles long values without altering them', () => {

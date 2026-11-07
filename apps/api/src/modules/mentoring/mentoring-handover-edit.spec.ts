@@ -7,12 +7,12 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
-import { HANDOVER_FIELDS, getHandoverField, validateHandoverFieldValue } from './mentoring-handover-fields';
+import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, getHandoverField, validateHandoverFieldValue } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { MentoringWorkflowController } from './mentoring-workflow.controller';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
-import { CHECKLIST, getChecklistDefinition } from './mentoring.constants';
+import { CHECKLIST, LEGACY_STAGE1_ITEMS, getChecklistDefinition } from './mentoring.constants';
 import { clone, FakeDb } from './testing/mentoring-fake-db';
 
 const PERMS: Record<string, string[]> = {
@@ -33,7 +33,12 @@ function services(db: FakeDb) {
 
 const SALES_PHONE = '+971500000000';
 
-function world(over: { status?: string } = {}) {
+/**
+ * `at: 2` (default) is a student whose Admission Handover is complete and whose Meeting with Parents is open, which is
+ * where information is collected. `at: 1` is a student still in Stage 1.
+ */
+function world(over: { status?: string; at?: 1 | 2 } = {}) {
+  const at = over.at ?? 2;
   const db = new FakeDb();
   db.seed('student', { id: 'stu-1', businessId: 'STU-0001', firstName: 'Asha', lastName: 'K', currentGrade: '8', grade: { name: 'Grade 8' }, curriculum: { name: 'CBSE' } });
   db.seed('lead', { id: 'lead-1', businessId: 'LED-0001', firstName: 'Parent', lastName: 'One', primaryPhone: SALES_PHONE, altPhone1: null, altPhone2: null, whatsappNumber: null });
@@ -58,10 +63,11 @@ function world(over: { status?: string } = {}) {
   db.seed('curriculum', { name: 'CBSE' }); db.seed('curriculum', { name: 'IGCSE' });
   const activation = db.seed('mentoringActivation', {
     id: 'act-1', leadId: 'lead-1', studentId: 'stu-1', handoverId: 'ho-1',
-    status: over.status ?? 'ACTIVATION_IN_PROGRESS', currentStage: 1, currentMentorUserId: 'mentor-1', submittedForApprovalAt: null, activatedAt: null,
+    status: over.status ?? 'ACTIVATION_IN_PROGRESS', currentStage: at, currentMentorUserId: 'mentor-1', submittedForApprovalAt: null, activatedAt: null,
   });
   for (let i = 1; i <= 7; i++) {
-    db.seed('mentoringStage', { activationId: activation.id, stageNumber: i, key: `S${i}`, status: i === 1 ? 'IN_PROGRESS' : 'NOT_STARTED', startedAt: i === 1 ? new Date() : null });
+    const status = i < at ? 'COMPLETED' : i === at ? 'IN_PROGRESS' : 'NOT_STARTED';
+    db.seed('mentoringStage', { activationId: activation.id, stageNumber: i, key: `S${i}`, status, startedAt: i <= at ? new Date() : null });
   }
   return { db, ...services(db) };
 }
@@ -246,7 +252,8 @@ describe('Validation per input type', () => {
   });
 
   it('the registry has a definition for every field the page offers and none for Sales-locked data', () => {
-    expect(Object.keys(HANDOVER_FIELDS)).toHaveLength(24);
+    expect(Object.keys(HANDOVER_FIELDS)).toHaveLength(27);
+    expect(Object.keys(HANDOVER_FIELDS).sort()).toEqual(Object.keys(HANDOVER_FIELD_LABELS).filter((k) => k !== 'academic.subjects').sort());
     expect(getHandoverField('academic.subjects')).toBeUndefined();
     expect(getHandoverField('hasOwnProperty')).toBeUndefined();
   });
@@ -257,126 +264,379 @@ describe('Validation per input type', () => {
   });
 });
 
-describe('Admission handover checklist: definitions', () => {
-  const stage1 = getChecklistDefinition(1);
-  const APPROVED_GROUPS = [
-    'student_parent_verified', 'tutor_subject_confirmed', 'weekly_timetable_verified', 'academic_requirements_recorded',
-    'previous_marks', 'examination_details', 'parent_expectations',
-  ];
-
-  it('splits the seven approved requirements into individual mandatory items', () => {
-    expect(stage1).toHaveLength(26);
-    expect(Array.from(new Set(stage1.map((d) => d.group)))).toEqual(APPROVED_GROUPS);
-    expect(stage1.every((d) => d.mandatory)).toBe(true);
-    expect(new Set(stage1.map((d) => d.key)).size).toBe(stage1.length);
-    expect(stage1.map((d) => d.label)).toEqual(expect.arrayContaining([
-      'Student details checked', 'Tutor assignment confirmed', 'Preferred days collected', 'Learning requirements reviewed',
-      'Previous marks requested', 'Upcoming examination dates collected', 'Parent expectations recorded', 'Follow-up requirements identified',
-    ]));
+describe('Stage 1 and Stage 2 checklist definitions', () => {
+  it('Stage 1 is a single handover review requirement and keeps the key students may already have resolved', () => {
+    const stage1 = getChecklistDefinition(1);
+    expect(stage1.map((d) => d.key)).toEqual(['missing_info_identified']);
+    expect(stage1[0].mandatory).toBe(true);
+    expect(stage1[0].fields).toBeUndefined(); // reviewing the handover does not depend on collecting anything
   });
 
-  it('the other six stages are unchanged and ungrouped', () => {
-    for (const n of [2, 3, 4, 5, 6, 7]) expect(getChecklistDefinition(n).every((d) => !d.group)).toBe(true);
+  it('Stage 1 no longer holds any of the detailed meeting items', () => {
+    const stage1Keys = new Set(getChecklistDefinition(1).map((d) => d.key));
+    for (const key of Object.keys(LEGACY_STAGE1_ITEMS)) expect(stage1Keys.has(key)).toBe(false);
+    expect(getChecklistDefinition(1).some((d) => d.group)).toBe(false);
+  });
+
+  it('Stage 2 holds the ten meeting verification requirements plus the six approved meeting requirements, each once', () => {
+    const stage2 = getChecklistDefinition(2);
+    expect(stage2).toHaveLength(16);
+    expect(stage2.every((d) => d.mandatory)).toBe(true);
+    expect(new Set(stage2.map((d) => d.key)).size).toBe(16);
+    expect(stage2.filter((d) => d.group === 'confirm_information').map((d) => d.label)).toEqual([
+      'Student and parent details verified',
+      'Parent relationship confirmed',
+      'Contact information verified',
+      'Preferred language collected',
+      'Tutor and subject requirements confirmed',
+      'Academic requirements recorded',
+      'Previous marks collected, or marked unavailable with a reason',
+      'Examination details recorded, or marked pending or unavailable with a reason',
+      'Parent expectations and concerns documented',
+      'Student engagement and learning concerns discussed',
+    ]);
+    // The six approved Stage 2 requirements keep their keys, so rows saved earlier still count.
+    expect(stage2.filter((d) => d.group === 'meeting_conduct').map((d) => d.key)).toEqual([
+      'additional_info_collected', 'methodology_explained', 'meet_and_timetable_instructions', 'admission_info_updated', 'meeting_notes_followups', 'parent_acknowledgement',
+    ]);
+  });
+
+  it('every field an item depends on is a field the page can show, and is editable unless it is the read-only Sales subjects', () => {
+    for (const def of getChecklistDefinition(2)) {
+      for (const key of def.fields ?? []) {
+        expect(HANDOVER_FIELD_LABELS[key]).toBeDefined();
+        expect(key === 'academic.subjects' || getHandoverField(key)).toBeTruthy();
+      }
+    }
+  });
+
+  it('the other five stages are unchanged and ungrouped', () => {
+    for (const n of [3, 4, 5, 6, 7]) expect(getChecklistDefinition(n).every((d) => !d.group && !d.fields)).toBe(true);
     expect(Object.keys(CHECKLIST)).toEqual(['1', '2', '3', '4', '5', '6', '7']);
   });
 });
 
-describe('Checklist persistence, progress and blocking', () => {
-  const keys = getChecklistDefinition(1).map((d) => d.key);
+describe('Information is collected in Stage 2, not Stage 1', () => {
+  it('nothing can be saved or verified while the Meeting with Parents has not started', async () => {
+    const w = world({ at: 1 });
+    await expect(w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0);
+    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
+    expect((await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).viewer.canEditHandover).toBe(false);
+  });
+
+  it('becomes available once Stage 2 is open, and stays available after Stage 2 is completed while the workflow runs', async () => {
+    const w = world();
+    await expect(w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1')).resolves.toMatchObject({ changed: true });
+    w.db.rows('mentoringStage').find((s) => s.stageNumber === 2)!.status = 'COMPLETED';
+    await expect(w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Father', 'mentor-1')).resolves.toMatchObject({ changed: true });
+  });
+});
+
+describe('Collection and verification are separate facts', () => {
+  const verified = (w: ReturnType<typeof world>) => w.db.rows('enrollmentHandoverFieldVerification');
+  const read = async (w: ReturnType<typeof world>, user = 'mentor-1'): Promise<any> => (await w.workflow.getWorkspace('act-1', await w.scope(user))).handover;
+
+  it('a Sales value is collected but not verified until the Mentor confirms it', async () => {
+    const w = world();
+    const view = await read(w);
+    expect(view.transferredFields.find((f: any) => f.field === 'parent.primaryPhone')).toBeDefined();
+    expect(view.fieldVerifications).toEqual([]);
+  });
+
+  it('collecting or editing a value never verifies it', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', 'parent.primaryPhone', '9876543210', 'mentor-1');
+    expect(verified(w)).toHaveLength(0);
+    expect((await read(w)).fieldVerifications).toEqual([]);
+  });
+
+  it('verifying a Sales value records who and when, keeps the Sales data untouched and adds history', async () => {
+    const w = world();
+    const before = salesDataOf(w.db);
+    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true, note: 'Confirmed on the call' }, 'mentor-1')).resolves.toMatchObject({ verified: true, changed: true });
+
+    expect(salesDataOf(w.db)).toEqual(before);
+    expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0); // verifying does not create a Mentoring value
+    expect(verified(w)[0]).toMatchObject({ fieldKey: 'parent.primaryPhone', verifiedValue: SALES_PHONE, verifiedByUserId: 'mentor-1', note: 'Confirmed on the call' });
+    expect((await read(w)).fieldVerifications).toEqual([
+      expect.objectContaining({ fieldKey: 'parent.primaryPhone', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: expect.any(Date), note: 'Confirmed on the call' }),
+    ]);
+    expect(w.db.rows('mentoringEvent').find((e) => e.type === 'HANDOVER_FIELD_VERIFIED')).toMatchObject({ actorUserId: 'mentor-1', payload: { fieldKey: 'parent.primaryPhone', value: SALES_PHONE } });
+  });
+
+  it('the read-only Sales subjects can be verified too', async () => {
+    const w = world();
+    w.db.rows('enrollmentHandover')[0].transferredFields.push({ field: 'academic.subjects', source: 'REQUIREMENT', value: [{ requirementId: 'r1', subject: 'Maths', curriculum: 'CBSE', grade: 'Grade 8', monthlyHours: '8' }] });
+    await expect(w.workflow.setHandoverFieldVerification('act-1', 'academic.subjects', { verified: true }, 'mentor-1')).resolves.toMatchObject({ verified: true });
+  });
+
+  it('a field with no value cannot be verified', async () => {
+    const w = world();
+    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.relationship', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(verified(w)).toHaveLength(0);
+  });
+
+  it('changing a verified value makes it unverified again, without deleting the earlier confirmation', async () => {
+    const w = world();
+    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', 'parent.primaryPhone', '9876543210', 'mentor-1');
+
+    expect((await read(w)).fieldVerifications).toEqual([expect.objectContaining({ fieldKey: 'parent.primaryPhone', verified: false, changedSinceVerified: true })]);
+    expect(verified(w)).toHaveLength(1); // the earlier confirmation is kept for the record
+
+    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
+    expect(verified(w)).toHaveLength(1);
+    expect((await read(w)).fieldVerifications).toEqual([expect.objectContaining({ verified: true, changedSinceVerified: false })]);
+  });
+
+  it('verifying twice changes nothing; withdrawing removes the confirmation and is recorded', async () => {
+    const w = world();
+    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
+    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1')).resolves.toMatchObject({ changed: false });
+    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: false }, 'mentor-1')).resolves.toMatchObject({ verified: false, changed: true });
+    expect(verified(w)).toHaveLength(0);
+    expect(w.db.rows('mentoringEvent').map((e) => e.type)).toEqual(expect.arrayContaining(['HANDOVER_FIELD_VERIFIED', 'HANDOVER_FIELD_UNVERIFIED']));
+  });
+
+  it('who collected a value is recorded when it is first saved and survives later corrections by someone else', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1');
+    expect(fieldOf(w.db, 'parent.relationship')).toMatchObject({ createdByUserId: 'mentor-1', updatedByUserId: 'mentor-1' });
+    w.db.rows('mentoringActivation')[0].currentMentorUserId = 'mentor-2';
+    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Father', 'mentor-2');
+    expect(fieldOf(w.db, 'parent.relationship')).toMatchObject({ createdByUserId: 'mentor-1', updatedByUserId: 'mentor-2' });
+  });
+
+  it('a value saved before the first-writer column existed falls back to the last writer', async () => {
+    const w = world();
+    w.db.seed('enrollmentHandoverField', { handoverId: 'ho-1', fieldKey: 'student.gender', value: 'Female', origin: 'MENTOR_COLLECTED', salesValue: null, updatedByUserId: 'mentor-1' });
+    expect((await read(w)).fieldValues[0]).toMatchObject({ fieldKey: 'student.gender', collectedByName: 'Mina Mentor', collectedAt: expect.any(Date) });
+  });
+
+  it('only the assigned Mentor can verify; the Head, the CEO and a Counselor cannot', async () => {
+    const w = world();
+    for (const user of ['head-1', 'mentor-2', 'counselor-1', 'ceo-1']) {
+      await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    expect(verified(w)).toHaveLength(0);
+  });
+
+  it('refuses fields that do not exist and a workflow that is on hold', async () => {
+    const w = world();
+    for (const key of ['student.businessId', '__proto__', 'unknown.field']) {
+      await expect(w.workflow.setHandoverFieldVerification('act-1', key, { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
+    }
+    const held = world({ status: 'ACTIVATION_ON_HOLD' });
+    await expect(held.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('a Counselor never sees the verification of a parent contact number', async () => {
+    const w = world();
+    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', 'student.notes', 'Needs help', 'mentor-1');
+    await w.workflow.setHandoverFieldVerification('act-1', 'student.notes', { verified: true }, 'mentor-1');
+    w.db.seed('mentoringTask', { id: 't1', activationId: 'act-1', stageId: null, title: 'x', assigneeUserId: 'counselor-1', status: 'OPEN' });
+    const view = await read(w, 'counselor-1');
+    expect(view.fieldVerifications.map((v: any) => v.fieldKey)).toEqual(['student.notes']);
+  });
+});
+
+describe('Meeting checklist persistence, progress and blocking (Stage 2)', () => {
+  const def = getChecklistDefinition(2);
+  const withFields = def.filter((d) => d.fields);
+  const withoutFields = def.filter((d) => !d.fields);
+  const complete = (w: ReturnType<typeof world>, key: string, input: Parameters<MentoringWorkflowService['updateChecklistItem']>[3] = { state: 'VERIFIED' }, user = 'mentor-1') => w.workflow.updateChecklistItem('act-1', 2, key, input, user);
+  const stage2 = (w: ReturnType<typeof world>) => w.db.rows('mentoringStage').find((s) => s.stageNumber === 2)!;
+  /** Resolves every item: those that depend on information are marked unavailable with a reason. */
   const resolveAll = async (w: ReturnType<typeof world>, except: string[] = []) => {
-    for (const key of keys.filter((k) => !except.includes(k))) await w.workflow.updateChecklistItem('act-1', 1, key, { state: 'VERIFIED' }, 'mentor-1');
+    for (const d of def.filter((x) => !except.includes(x.key))) {
+      await complete(w, d.key, d.fields ? { state: 'UNAVAILABLE', reason: 'Parent could not provide it' } : { state: 'VERIFIED' });
+    }
   };
 
-  it('a completed item is saved with who and when, and is still there after a reload', async () => {
+  it('a completed item is saved with who, when, comment and evidence, and is still there after a reload', async () => {
     const w = world();
-    await w.workflow.updateChecklistItem('act-1', 1, 'student_details_checked', { state: 'VERIFIED', note: 'Checked against the admission form', evidenceRef: 'https://files.example/adm-1' }, 'mentor-1');
+    await complete(w, 'meeting_notes_followups', { state: 'VERIFIED', note: 'Parent asked for a call on Friday', evidenceRef: 'https://files.example/notes-1' });
 
     const fresh = services(w.db);
-    const item = (await fresh.workflow.getWorkspace('act-1', await fresh.scope('head-1'))).stages[0].checklist.find((i: any) => i.key === 'student_details_checked');
+    const item = (await fresh.workflow.getWorkspace('act-1', await fresh.scope('head-1'))).stages[1].checklist.find((i: any) => i.key === 'meeting_notes_followups');
     expect(item).toMatchObject({
-      state: 'VERIFIED', note: 'Checked against the admission form', evidenceRef: 'https://files.example/adm-1',
-      group: 'student_parent_verified', groupLabel: 'Student and parent details verified', mandatory: true,
+      state: 'VERIFIED', note: 'Parent asked for a call on Friday', evidenceRef: 'https://files.example/notes-1', group: 'meeting_conduct', mandatory: true,
       updatedByUserId: 'mentor-1', updatedByName: 'Mina Mentor', updatedAt: expect.any(Date),
     });
   });
 
   it('un-ticking an item puts it back to pending and keeps the history', async () => {
     const w = world();
-    await w.workflow.updateChecklistItem('act-1', 1, 'student_details_checked', { state: 'VERIFIED' }, 'mentor-1');
-    await w.workflow.updateChecklistItem('act-1', 1, 'student_details_checked', { state: 'PENDING_COLLECTION' }, 'mentor-1');
-    expect(w.db.rows('stageChecklistResponse').find((r) => r.itemKey === 'student_details_checked')!.state).toBe('PENDING_COLLECTION');
+    await complete(w, 'methodology_explained');
+    await complete(w, 'methodology_explained', { state: 'PENDING_COLLECTION' });
+    expect(w.db.rows('stageChecklistResponse').find((r) => r.itemKey === 'methodology_explained')!.state).toBe('PENDING_COLLECTION');
     expect(w.db.rows('mentoringEvent').filter((e) => e.type === 'CHECKLIST_UPDATED')).toHaveLength(2);
   });
 
   it('marking unavailable or not applicable needs a reason', async () => {
     const w = world();
-    await expect(w.workflow.updateChecklistItem('act-1', 1, 'previous_marks_collected', { state: 'UNAVAILABLE' }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
-    await expect(w.workflow.updateChecklistItem('act-1', 1, 'previous_marks_collected', { state: 'UNAVAILABLE', reason: 'School has not issued reports' }, 'mentor-1')).resolves.toBeDefined();
+    await expect(complete(w, 'previous_marks_collected', { state: 'UNAVAILABLE' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(complete(w, 'previous_marks_collected', { state: 'UNAVAILABLE', reason: 'School has not issued reports' })).resolves.toBeDefined();
+  });
+
+  it('a requirement that depends on information cannot be completed while that information is missing', async () => {
+    const w = world();
+    await expect(complete(w, 'preferred_language_collected')).rejects.toThrow(/Collect this information first: Preferred Language/);
+    expect(w.db.rows('stageChecklistResponse').find((r) => r.itemKey === 'preferred_language_collected')?.state ?? 'PENDING_COLLECTION').toBe('PENDING_COLLECTION');
+
+    await w.workflow.updateHandoverField('act-1', 'academic.preferredLanguage', 'Tamil', 'mentor-1');
+    await expect(complete(w, 'preferred_language_collected')).resolves.toMatchObject({ item: { state: 'VERIFIED' } });
+  });
+
+  it('a value that is only a placeholder does not satisfy a requirement', async () => {
+    const w = world();
+    w.db.seed('enrollmentHandoverField', { handoverId: 'ho-1', fieldKey: 'academic.preferredLanguage', value: ' - ', origin: 'MENTOR_COLLECTED', salesValue: null, updatedByUserId: 'mentor-1' });
+    await expect(complete(w, 'preferred_language_collected')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('having every value does not complete a requirement or the stage: the Mentor still has to confirm each one', async () => {
+    const w = world();
+    // Collect every value the requirements depend on.
+    const values: Record<string, unknown> = {
+      'student.lastName': 'K', 'student.dateOfBirth': '2015-05-12', 'parent.name': 'Parent One', 'parent.relationship': 'Mother', 'academic.preferredLanguage': 'Tamil',
+      'tutor.requirements': 'Female tutor', 'academic.subjectNotes': 'Algebra focus', 'academic.previousMarks': '78% in term 1',
+      'examination.upcomingDates': [{ subject: 'Maths', date: '2026-12-01' }], 'examination.syllabusPortions': [{ subject: 'Maths', portions: 'Chapters 1 to 4' }],
+      parentExpectations: 'Better exam results', studentEngagement: 'Shy but attentive', 'student.learningConcerns': 'Slow at word problems',
+    };
+    for (const [key, value] of Object.entries(values)) await w.workflow.updateHandoverField('act-1', key, value, 'mentor-1');
+    w.db.rows('enrollmentHandover')[0].transferredFields.push({ field: 'academic.subjects', source: 'REQUIREMENT', value: [{ requirementId: 'r1', subject: 'Maths' }] });
+
+    const view = await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'));
+    for (const item of view.stages[1].checklist.filter((i: any) => i.requires.length > 0)) {
+      expect(item.requires.every((r: any) => r.collected)).toBe(true); // everything is collected...
+      expect(item.state).toBe('PENDING_COLLECTION'); // ...and nothing is completed
+    }
+    expect(stage2(w).status).toBe('IN_PROGRESS');
+    await expect(w.workflow.verifyStage('act-1', 2, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('the workspace tells the page which information each requirement is still waiting for', async () => {
+    const w = world();
+    const view = await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'));
+    const language = view.stages[1].checklist.find((i: any) => i.key === 'preferred_language_collected');
+    expect(language!.requires).toEqual([{ key: 'academic.preferredLanguage', label: 'Preferred Language', collected: false }]);
+    const contact = view.stages[1].checklist.find((i: any) => i.key === 'contact_information_verified');
+    expect(contact!.requires).toEqual([{ key: 'parent.primaryPhone', label: 'Parent Contact Number', collected: true }]); // the Sales number counts
   });
 
   it('verification is blocked while mandatory items are outstanding, and lists them', async () => {
     const w = world();
-    await resolveAll(w, ['follow_up_identified', 'timetable_confirmed']);
-    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).rejects.toMatchObject({
-      response: { message: 'Mandatory checklist items are not resolved', unresolved: ['timetable_confirmed', 'follow_up_identified'] },
+    await resolveAll(w, ['parent_acknowledgement', 'methodology_explained']);
+    await expect(w.workflow.verifyStage('act-1', 2, 'mentor-1')).rejects.toMatchObject({
+      response: { message: 'Mandatory checklist items are not resolved', unresolved: ['methodology_explained', 'parent_acknowledgement'] },
     });
   });
 
   it('items whose rows were never created still block verification (they cannot be skipped)', async () => {
     const w = world();
-    // No checklist rows exist at all yet.
     expect(w.db.rows('stageChecklistResponse')).toHaveLength(0);
-    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('rows left from the old definition neither block nor count', async () => {
-    const w = world();
-    const stage = w.db.rows('mentoringStage').find((s) => s.stageNumber === 1)!;
-    w.db.seed('stageChecklistResponse', { stageId: stage.id, itemKey: 'student_parent_verified', mandatory: true, definitionVersion: 1, state: 'PENDING_COLLECTION', value: null, note: null, reason: null, evidenceRef: null });
-    await resolveAll(w);
-    const done = await w.workflow.verifyStage('act-1', 1, 'mentor-1');
-    expect(done).toBeDefined();
-    expect(w.db.rows('mentoringStage').find((s) => s.stageNumber === 1)!.status).toBe('COMPLETED');
+    await expect(w.workflow.verifyStage('act-1', 2, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('resolving everything moves the stage to review and then it can be verified, by the Mentor only', async () => {
     const w = world();
     await resolveAll(w);
-    expect(w.db.rows('mentoringStage').find((s) => s.stageNumber === 1)!.status).toBe('PENDING_REVIEW');
-    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-2')).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).resolves.toBeDefined();
+    expect(stage2(w).status).toBe('PENDING_REVIEW');
+    await expect(w.workflow.verifyStage('act-1', 2, 'mentor-2')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.workflow.verifyStage('act-1', 2, 'mentor-1')).resolves.toBeDefined();
+    expect(stage2(w).status).toBe('COMPLETED');
+  });
+
+  it('the stage keeps its progress when a requirement is reopened', async () => {
+    const w = world();
+    await resolveAll(w);
+    await complete(w, 'methodology_explained', { state: 'PENDING_COLLECTION' });
+    expect(stage2(w).status).toBe('IN_PROGRESS');
+    const done = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).stages[1].checklist.filter((i: any) => i.state === 'VERIFIED' || i.state === 'UNAVAILABLE');
+    expect(done).toHaveLength(def.length - 1);
   });
 
   it('a Head exception resolves one item, needs a reason, and records who, when and which item', async () => {
     const w = world();
     await resolveAll(w, ['previous_marks_collected']);
-    await expect(w.workflow.authorizeException('act-1', 1, 'previous_marks_collected', '   ', 'head-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(w.workflow.authorizeException('act-1', 2, 'previous_marks_collected', '   ', 'head-1')).rejects.toBeInstanceOf(BadRequestException);
 
-    await w.workflow.authorizeException('act-1', 1, 'previous_marks_collected', 'School is closed until January', 'head-1');
+    await w.workflow.authorizeException('act-1', 2, 'previous_marks_collected', 'School is closed until January', 'head-1');
 
     const row = w.db.rows('workflowException')[0];
     expect(row).toMatchObject({ itemKey: 'previous_marks_collected', reason: 'School is closed until January', authorizedByUserId: 'head-1' });
     expect(row.createdAt).toBeInstanceOf(Date);
-    expect(w.db.rows('mentoringEvent').find((e) => e.type === 'EXCEPTION_AUTHORIZED')).toMatchObject({ actorUserId: 'head-1', reason: 'School is closed until January', payload: { itemKey: 'previous_marks_collected', stageNumber: 1 } });
+    expect(w.db.rows('mentoringEvent').find((e) => e.type === 'EXCEPTION_AUTHORIZED')).toMatchObject({ actorUserId: 'head-1', reason: 'School is closed until January', payload: { itemKey: 'previous_marks_collected', stageNumber: 2 } });
 
-    const item = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).stages[0].checklist.find((i: any) => i.key === 'previous_marks_collected');
+    const item = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).stages[1].checklist.find((i: any) => i.key === 'previous_marks_collected');
     expect(item).toMatchObject({ exception: true, state: 'PENDING_COLLECTION', exceptionDetail: { reason: 'School is closed until January', authorizedByName: 'Hari Head', authorizedByUserId: 'head-1' } });
-    expect(w.db.rows('mentoringStage').find((s) => s.stageNumber === 1)!.status).toBe('PENDING_REVIEW');
+    expect(stage2(w).status).toBe('PENDING_REVIEW');
   });
 
   it('an ordinary tick is not an exception, and an exception does not change the item state', async () => {
     const w = world();
-    await w.workflow.updateChecklistItem('act-1', 1, 'student_details_checked', { state: 'VERIFIED' }, 'mentor-1');
+    await complete(w, 'methodology_explained');
     expect(w.db.rows('workflowException')).toHaveLength(0);
-    await w.workflow.authorizeException('act-1', 1, 'tutor_assignment_confirmed', 'Tutor not yet allocated', 'head-1');
-    expect(w.db.rows('stageChecklistResponse').find((r) => r.itemKey === 'tutor_assignment_confirmed')?.state ?? 'PENDING_COLLECTION').toBe('PENDING_COLLECTION');
+    await w.workflow.authorizeException('act-1', 2, 'tutor_subject_requirements_confirmed', 'Tutor not yet allocated', 'head-1');
+    expect(w.db.rows('stageChecklistResponse').find((r) => r.itemKey === 'tutor_subject_requirements_confirmed')?.state ?? 'PENDING_COLLECTION').toBe('PENDING_COLLECTION');
   });
 
   it('only the assigned Mentor can change items; the Head and a Counselor cannot', async () => {
     const w = world();
     for (const user of ['head-1', 'mentor-2', 'counselor-1', 'ceo-1']) {
-      await expect(w.workflow.updateChecklistItem('act-1', 1, 'student_details_checked', { state: 'VERIFIED' }, user)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(complete(w, 'methodology_explained', { state: 'VERIFIED' }, user)).rejects.toBeInstanceOf(ForbiddenException);
     }
+  });
+
+  it('there are items with and without a dependency on information (guards the definition used above)', () => {
+    expect(withFields).toHaveLength(10);
+    expect(withoutFields).toHaveLength(6);
+  });
+});
+
+describe('Stage 1: reviewing the handover', () => {
+  const stage1 = (w: ReturnType<typeof world>) => w.db.rows('mentoringStage').find((s) => s.stageNumber === 1)!;
+
+  it('the Mentor completes Stage 1 with the single review requirement, without collecting any information', async () => {
+    const w = world({ at: 1 });
+    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).rejects.toBeInstanceOf(ConflictException); // not reviewed yet
+    await w.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, 'mentor-1');
+    expect(stage1(w).status).toBe('PENDING_REVIEW');
+    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).resolves.toMatchObject({ stageNumber: 1, allStagesCompleted: false });
+    expect(stage1(w)).toMatchObject({ status: 'COMPLETED', verifiedByUserId: 'mentor-1' });
+    expect(w.db.rows('mentoringActivation')[0].currentStage).toBe(2);
+    expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0); // nothing was filled in or invented
+  });
+
+  it('a student with the review item resolved in an earlier definition keeps that result', async () => {
+    const w = world({ at: 1 });
+    w.db.seed('stageChecklistResponse', { stageId: stage1(w).id, itemKey: 'missing_info_identified', mandatory: true, definitionVersion: 1, state: 'VERIFIED', note: 'Phone and marks missing', updatedByUserId: 'mentor-1' });
+    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).resolves.toBeDefined();
+  });
+
+  it('exposes the earlier detailed Stage 1 results read-only, with comments and evidence, and never counts them', async () => {
+    const w = world();
+    const s1 = stage1(w);
+    w.db.seed('stageChecklistResponse', { stageId: s1.id, itemKey: 'student_parent_verified', mandatory: true, definitionVersion: 1, state: 'VERIFIED', note: 'Checked admission form', evidenceRef: 'ev-1', updatedByUserId: 'mentor-1' });
+    w.db.seed('stageChecklistResponse', { stageId: s1.id, itemKey: 'contact_details_verified', mandatory: true, definitionVersion: 2, state: 'UNAVAILABLE', reason: 'Parent unreachable', updatedByUserId: 'mentor-1' });
+    w.db.seed('stageChecklistResponse', { stageId: s1.id, itemKey: 'tutor_assignment_confirmed', mandatory: true, definitionVersion: 2, state: 'PENDING_COLLECTION' }); // nothing saved: not listed
+    w.db.seed('stageChecklistResponse', { stageId: s1.id, itemKey: 'unknown_key', mandatory: true, definitionVersion: 2, state: 'VERIFIED' }); // not a known earlier item: not listed
+    w.db.seed('workflowException', { stageId: s1.id, itemKey: 'follow_up_identified', reason: 'Head allowed it', authorizedByUserId: 'head-1' });
+    const before = clone(w.db.rows('stageChecklistResponse'));
+
+    const view = await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'));
+    expect(view.legacyStage1Items.map((i: any) => i.key).sort()).toEqual(['contact_details_verified', 'follow_up_identified', 'student_parent_verified']);
+    expect(view.legacyStage1Items.find((i: any) => i.key === 'student_parent_verified')).toMatchObject({
+      label: 'Student and parent details verified', state: 'VERIFIED', note: 'Checked admission form', evidenceRef: 'ev-1', updatedByName: 'Mina Mentor',
+    });
+    expect(view.legacyStage1Items.find((i: any) => i.key === 'contact_details_verified')).toMatchObject({ state: 'UNAVAILABLE', reason: 'Parent unreachable' });
+    expect(view.legacyStage1Items.find((i: any) => i.key === 'follow_up_identified')).toMatchObject({ exceptionReason: 'Head allowed it' });
+    expect(view.stages[0].checklist.map((i: any) => i.key)).toEqual(['missing_info_identified']);
+    expect(clone(w.db.rows('stageChecklistResponse'))).toEqual(before); // reading changes nothing
   });
 });
 
@@ -407,6 +667,7 @@ describe('Read-only and counselor restrictions on the new routes', () => {
 
   it('editing information and items needs the Mentor stage permission; exceptions need the Head permission', () => {
     expect(required('updateHandoverField')).toEqual(['mentoring.stage.work']);
+    expect(required('setHandoverFieldVerification')).toEqual(['mentoring.stage.work']);
     expect(required('updateItem')).toEqual(['mentoring.stage.work']);
     expect(required('authorizeException')).toEqual(['mentoring.exception.authorize']);
     expect(required('verifyStage')).toEqual(['mentoring.stage.verify']);

@@ -16,14 +16,22 @@ export interface ChecklistItemDefinition {
   /** Requirement this item belongs to (stage 1 groups its items under the seven approved requirements). */
   group?: string;
   groupLabel?: string;
+  /**
+   * Handover field keys this item depends on. The item can only be completed (VERIFIED) once each of these fields has
+   * a real value; otherwise the Mentor marks it unavailable with a reason. Having a value never completes the item.
+   */
+  fields?: readonly string[];
 }
 
 /**
  * Bump when item definitions change; stored on every checklist response row.
- * Version 2 splits each Admission Handover requirement into individual items. Rows written under version 1
- * keep their data but are no longer part of the checklist (they are ignored, never deleted).
+ * Version 3 separates the two stages: Stage 1 (Admission Handover) is a single review requirement and Stage 2
+ * (Meeting with Parents) holds the detailed verification checklist. Rows written under versions 1 and 2 keep their
+ * data and are never deleted. Rows are matched by item key, so an old row whose key is still in the definition keeps
+ * counting. The other old Stage 1 rows no longer count and are shown read-only on the Stage 2 page
+ * (see LEGACY_STAGE1_ITEMS).
  */
-export const CHECKLIST_DEFINITION_VERSION = 2;
+export const CHECKLIST_DEFINITION_VERSION = 3;
 
 export const STAGES: readonly StageDefinition[] = [
   { number: 1, key: 'ADMISSION_HANDOVER', name: 'Admission Handover' },
@@ -37,15 +45,17 @@ export const STAGES: readonly StageDefinition[] = [
 
 const m = (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: true });
 /** Mandatory item that belongs to a named requirement group. */
-const g = (group: string, groupLabel: string) => (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: true, group, groupLabel });
+const g = (group: string, groupLabel: string) => (key: string, label: string, fields?: readonly string[]): ChecklistItemDefinition => ({
+  key,
+  label,
+  mandatory: true,
+  group,
+  groupLabel,
+  ...(fields ? { fields } : {}),
+});
 
-const studentParent = g('student_parent_verified', 'Student and parent details verified');
-const tutorSubject = g('tutor_subject_confirmed', 'Tutor and subject information confirmed');
-const weeklyTimetable = g('weekly_timetable_verified', 'Weekly timetable verified');
-const academicRequirements = g('academic_requirements_recorded', 'Academic requirements recorded');
-const previousMarks = g('previous_marks', 'Previous marks collected or marked unavailable');
-const examination = g('examination_details', 'Examination details recorded or marked pending');
-const parentExpectations = g('parent_expectations', 'Parent expectations and concerns documented');
+const confirmInfo = g('confirm_information', 'Confirmed with the parent');
+const meetingConduct = g('meeting_conduct', 'Meeting and follow-up');
 const a = (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: false });
 
 /**
@@ -55,44 +65,30 @@ const a = (key: string, label: string): ChecklistItemDefinition => ({ key, label
  * evidence on top of the same items in WP4-WP7.
  */
 export const CHECKLIST: Record<number, readonly ChecklistItemDefinition[]> = {
-  // Stage 1 keeps the approved requirements as groups; each is split into the items a Mentor actually ticks off.
-  // Every item is mandatory and can be resolved by completing it, marking it unavailable / not applicable with a
-  // reason, or a Mentoring Head exception.
-  1: [
-    studentParent('student_details_checked', 'Student details checked'),
-    studentParent('parent_details_checked', 'Parent / guardian details checked'),
-    studentParent('contact_details_verified', 'Contact details verified'),
-    studentParent('parent_relationship_recorded', 'Parent relationship recorded'),
-    studentParent('missing_info_identified', 'Missing information identified and addressed or documented'),
-    tutorSubject('tutor_assignment_confirmed', 'Tutor assignment confirmed'),
-    tutorSubject('subject_requirements_confirmed', 'Subject requirements confirmed'),
-    tutorSubject('curriculum_grade_confirmed', 'Curriculum and grade confirmed'),
-    tutorSubject('academic_expectations_reviewed', 'Academic expectations reviewed'),
-    weeklyTimetable('preferred_days_collected', 'Preferred days collected'),
-    weeklyTimetable('preferred_time_slots_collected', 'Preferred time slots collected'),
-    weeklyTimetable('tutor_availability_checked', 'Tutor availability checked'),
-    weeklyTimetable('timetable_confirmed', 'Timetable confirmed'),
-    academicRequirements('learning_requirements_reviewed', 'Learning requirements reviewed'),
-    academicRequirements('subject_academic_needs_recorded', 'Subject-wise academic needs recorded'),
-    academicRequirements('learning_concerns_documented', 'Learning difficulties or concerns documented'),
-    academicRequirements('curriculum_syllabus_reviewed', 'Curriculum and syllabus requirements reviewed'),
-    previousMarks('previous_marks_requested', 'Previous marks requested'),
-    previousMarks('previous_marks_collected', 'Marks collected, or marked unavailable with a reason'),
-    examination('exam_dates_collected', 'Upcoming examination dates collected'),
-    examination('exam_syllabus_collected', 'Syllabus / portions collected'),
-    examination('exam_preparation_recorded', 'Examination preparation requirements recorded'),
-    parentExpectations('parent_expectations_recorded', 'Parent expectations recorded'),
-    parentExpectations('parent_concerns_recorded', 'Parent concerns recorded'),
-    parentExpectations('student_engagement_recorded', 'Student engagement information recorded'),
-    parentExpectations('follow_up_identified', 'Follow-up requirements identified'),
-  ],
+  // Stage 1 is an overview of what Sales handed over. Its only requirement is the Mentor's review of that handover.
+  // The key is the one the original Stage 1 used for "missing information identified", so students who already
+  // resolved it keep their result without any data change.
+  1: [m('missing_info_identified', 'Handover reviewed and missing information identified for the parent meeting')],
+  // Stage 2 is the working stage: the Mentor confirms and collects information with the parent. An item with `fields`
+  // cannot be completed while that information is missing. The last six items are the approved Stage 2 requirements
+  // and keep their keys, so rows saved earlier still count.
   2: [
-    m('additional_info_collected', 'Additional student information collected'),
-    m('methodology_explained', 'Teaching methodology explained and recorded'),
-    m('meet_and_timetable_instructions', 'Google Meet and timetable instructions communicated'),
-    m('admission_info_updated', 'Missing admission information updated'),
-    m('meeting_notes_followups', 'Meeting notes and follow-up actions recorded'),
-    m('parent_acknowledgement', 'Parent acknowledgement recorded (or authorised exception)'),
+    confirmInfo('student_parent_details_verified', 'Student and parent details verified', ['student.firstName', 'student.lastName', 'student.dateOfBirth', 'parent.name']),
+    confirmInfo('parent_relationship_confirmed', 'Parent relationship confirmed', ['parent.relationship']),
+    confirmInfo('contact_information_verified', 'Contact information verified', ['parent.primaryPhone']),
+    confirmInfo('preferred_language_collected', 'Preferred language collected', ['academic.preferredLanguage']),
+    confirmInfo('tutor_subject_requirements_confirmed', 'Tutor and subject requirements confirmed', ['academic.subjects', 'tutor.requirements']),
+    confirmInfo('academic_requirements_recorded', 'Academic requirements recorded', ['academic.subjectNotes']),
+    confirmInfo('previous_marks_collected', 'Previous marks collected, or marked unavailable with a reason', ['academic.previousMarks']),
+    confirmInfo('examination_details_recorded', 'Examination details recorded, or marked pending or unavailable with a reason', ['examination.upcomingDates', 'examination.syllabusPortions']),
+    confirmInfo('parent_expectations_documented', 'Parent expectations and concerns documented', ['parentExpectations']),
+    confirmInfo('student_engagement_discussed', 'Student engagement and learning concerns discussed', ['studentEngagement', 'student.learningConcerns']),
+    meetingConduct('additional_info_collected', 'Additional student information collected'),
+    meetingConduct('methodology_explained', 'Teaching methodology explained and recorded'),
+    meetingConduct('meet_and_timetable_instructions', 'Google Meet and timetable instructions communicated'),
+    meetingConduct('admission_info_updated', 'Missing admission information updated'),
+    meetingConduct('meeting_notes_followups', 'Meeting notes and follow-up actions recorded'),
+    meetingConduct('parent_acknowledgement', 'Parent acknowledgement recorded (or authorised exception)'),
   ],
   3: [
     m('all_subjects_scheduled', 'All enrolled subjects scheduled'),
@@ -145,6 +141,50 @@ export const CHECKLIST: Record<number, readonly ChecklistItemDefinition[]> = {
     m('mentor_verification', 'Mentor verification complete'),
   ],
 };
+
+/**
+ * Stage 1 checklist rows written before definition version 3: the seven requirements of version 1 and the 25 items
+ * of version 2. They no longer count towards Stage 1, but a Mentor may have saved results, comments and evidence on
+ * them, so the Stage 2 page lists them read-only. Nothing is deleted or rewritten.
+ */
+const V1 = 'Original requirement';
+const LEGACY_ROWS: ReadonlyArray<readonly [string, string, string]> = [
+  ['student_parent_verified', 'Student and parent details verified', V1],
+  ['tutor_subject_confirmed', 'Tutor and subject information confirmed', V1],
+  ['weekly_timetable_verified', 'Weekly timetable verified', V1],
+  ['academic_requirements_recorded', 'Academic requirements recorded', V1],
+  ['previous_marks', 'Previous marks collected or marked unavailable', V1],
+  ['examination_details', 'Examination details recorded or marked pending', V1],
+  ['parent_expectations', 'Parent expectations and concerns documented', V1],
+  ['student_details_checked', 'Student details checked', 'Student and parent details verified'],
+  ['parent_details_checked', 'Parent / guardian details checked', 'Student and parent details verified'],
+  ['contact_details_verified', 'Contact details verified', 'Student and parent details verified'],
+  ['parent_relationship_recorded', 'Parent relationship recorded', 'Student and parent details verified'],
+  ['tutor_assignment_confirmed', 'Tutor assignment confirmed', 'Tutor and subject information confirmed'],
+  ['subject_requirements_confirmed', 'Subject requirements confirmed', 'Tutor and subject information confirmed'],
+  ['curriculum_grade_confirmed', 'Curriculum and grade confirmed', 'Tutor and subject information confirmed'],
+  ['academic_expectations_reviewed', 'Academic expectations reviewed', 'Tutor and subject information confirmed'],
+  ['preferred_days_collected', 'Preferred days collected', 'Weekly timetable verified'],
+  ['preferred_time_slots_collected', 'Preferred time slots collected', 'Weekly timetable verified'],
+  ['tutor_availability_checked', 'Tutor availability checked', 'Weekly timetable verified'],
+  ['timetable_confirmed', 'Timetable confirmed', 'Weekly timetable verified'],
+  ['learning_requirements_reviewed', 'Learning requirements reviewed', 'Academic requirements recorded'],
+  ['subject_academic_needs_recorded', 'Subject-wise academic needs recorded', 'Academic requirements recorded'],
+  ['learning_concerns_documented', 'Learning difficulties or concerns documented', 'Academic requirements recorded'],
+  ['curriculum_syllabus_reviewed', 'Curriculum and syllabus requirements reviewed', 'Academic requirements recorded'],
+  ['previous_marks_requested', 'Previous marks requested', 'Previous marks collected or marked unavailable'],
+  ['previous_marks_collected', 'Marks collected, or marked unavailable with a reason', 'Previous marks collected or marked unavailable'],
+  ['exam_dates_collected', 'Upcoming examination dates collected', 'Examination details recorded or marked pending'],
+  ['exam_syllabus_collected', 'Syllabus / portions collected', 'Examination details recorded or marked pending'],
+  ['exam_preparation_recorded', 'Examination preparation requirements recorded', 'Examination details recorded or marked pending'],
+  ['parent_expectations_recorded', 'Parent expectations recorded', 'Parent expectations and concerns documented'],
+  ['parent_concerns_recorded', 'Parent concerns recorded', 'Parent expectations and concerns documented'],
+  ['student_engagement_recorded', 'Student engagement information recorded', 'Parent expectations and concerns documented'],
+  ['follow_up_identified', 'Follow-up requirements identified', 'Parent expectations and concerns documented'],
+];
+export const LEGACY_STAGE1_ITEMS: Readonly<Record<string, { label: string; group: string }>> = Object.fromEntries(
+  LEGACY_ROWS.map(([key, label, group]) => [key, { label, group }]),
+);
 
 export function getStageDefinition(stageNumber: number): StageDefinition | undefined {
   return STAGES.find((s) => s.number === stageNumber);

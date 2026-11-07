@@ -19,10 +19,12 @@ interface Props {
   onSave: (value: unknown) => Promise<void>;
   onCancel: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  /** The editor is always on screen (a pending field). Save and Cancel appear once something has been typed. */
+  alwaysOpen?: boolean;
 }
 
 /** Compact inline editor with an input suited to the field and explicit Save and Cancel. */
-export function FieldEditor({ label, meta, current, onSave, onCancel, onDirtyChange }: Props) {
+export function FieldEditor({ label, meta, current, onSave, onCancel, onDirtyChange, alwaysOpen = false }: Props) {
   const initial = React.useMemo(() => initialEditorValue(meta, current), [meta, current]);
   const [value, setValue] = React.useState<EditorValue>(initial);
   const [error, setError] = React.useState<string | null>(null);
@@ -106,10 +108,12 @@ export function FieldEditor({ label, meta, current, onSave, onCancel, onDirtyCha
       )}
 
       {error && <p role="alert" className="text-xs font-medium text-red-600">{error}</p>}
-      <div className="flex gap-2">
-        <Button type="button" size="sm" isLoading={saving} onClick={save}>Save</Button>
-        <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={onCancel}>Cancel</Button>
-      </div>
+      {(!alwaysOpen || dirty || saving) && (
+        <div className="flex gap-2">
+          <Button type="button" size="sm" isLoading={saving} onClick={save}>Save</Button>
+          <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => { setValue(initial); setError(null); onCancel(); }}>Cancel</Button>
+        </div>
+      )}
     </div>
   );
 }

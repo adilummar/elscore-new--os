@@ -37,6 +37,12 @@ export class UpdateHandoverFieldDto {
   @IsDefined() value!: unknown;
 }
 
+/** Confirm (verified: true) or withdraw the confirmation of one field during the parent meeting. */
+export class SetFieldVerificationDto {
+  @IsBoolean() verified!: boolean;
+  @IsOptional() @IsString() note?: string;
+}
+
 export class PauseDto {
   @IsString() @IsNotEmpty() reason!: string;
   @IsString() @IsNotEmpty() pendingAction!: string;

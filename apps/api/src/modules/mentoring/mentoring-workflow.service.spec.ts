@@ -60,6 +60,12 @@ function seedActivationAtStage(db: FakeDb, n: number, stageStatus: 'IN_PROGRESS'
   return activation;
 }
 
+/** An item the Mentor can complete without any collected information (items that depend on a field need that field first). */
+const pendingItemOf = (n: number) => {
+  const defs = getChecklistDefinition(n);
+  return (defs.filter((d) => !d.fields).pop() ?? defs[0]).key;
+};
+
 const checklistOf = (db: FakeDb) =>
   clone(db.rows('stageChecklistResponse').map(({ stageId, itemKey, state, value, note, reason, evidenceRef, mandatory }) => ({ stageId, itemKey, state, value, note, reason, evidenceRef, mandatory })));
 
@@ -87,7 +93,7 @@ describe('Pause, leave the application, log back in and resume (every stage)', (
 
     // Edits are refused while the workflow is on hold, and refusing them changes nothing.
     await expect(
-      s1.workflow.updateChecklistItem('act-1', n, getChecklistDefinition(n)[3].key, { state: 'VERIFIED' }, 'mentor-1'),
+      s1.workflow.updateChecklistItem('act-1', n, pendingItemOf(n), { state: 'VERIFIED' }, 'mentor-1'),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(checklistOf(db)).toEqual(before.checklist);
 
@@ -114,7 +120,7 @@ describe('Pause, leave the application, log back in and resume (every stage)', (
     expect(clone(db.rows('mentoringTask'))).toEqual(before.tasks);
     expect(db.rows('mentoringStage').find((s) => s.stageNumber === n)!.startedAt).toEqual(startedAt);
     expect(after.stages[n - 1].checklist[0]).toMatchObject({ state: 'VERIFIED', note: `draft note for stage ${n}`, value: { entered: `value-${n}-0` } });
-    expect(after.stages[n - 1].checklist[2].state).toBe('COLLECTED');
+    if (getChecklistDefinition(n).length > 2) expect(after.stages[n - 1].checklist[2].state).toBe('COLLECTED');
 
     const types = db.rows('mentoringEvent').map((e) => e.type);
     expect(types.indexOf('WORKFLOW_PAUSED')).toBeGreaterThan(-1);
@@ -122,7 +128,7 @@ describe('Pause, leave the application, log back in and resume (every stage)', (
 
     // Work continues where it stopped.
     await expect(
-      s3.workflow.updateChecklistItem('act-1', n, getChecklistDefinition(n)[3].key, { state: 'VERIFIED' }, 'mentor-1'),
+      s3.workflow.updateChecklistItem('act-1', n, pendingItemOf(n), { state: 'VERIFIED' }, 'mentor-1'),
     ).resolves.toMatchObject({ item: { state: 'VERIFIED' } });
   });
 
@@ -200,7 +206,7 @@ describe('Stage engine', () => {
 
     await expect(workflow.updateChecklistItem('act-1', 1, defs[0].key, { state: 'UNAVAILABLE' }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
     for (const [i, d] of defs.entries()) {
-      await workflow.updateChecklistItem('act-1', 1, d.key, i === 4 ? { state: 'UNAVAILABLE', reason: 'School has not issued marks' } : { state: 'VERIFIED' }, 'mentor-1');
+      await workflow.updateChecklistItem('act-1', 1, d.key, i === 0 ? { state: 'UNAVAILABLE', reason: 'School has not issued marks' } : { state: 'VERIFIED' }, 'mentor-1');
     }
     expect(db.rows('mentoringStage').find((s) => s.stageNumber === 1)!.status).toBe('PENDING_REVIEW');
 
@@ -229,7 +235,8 @@ describe('Stage engine', () => {
 
     await expect(workflow.authorizeException('act-1', 2, 'parent_acknowledgement', ' ', 'head-1')).rejects.toBeInstanceOf(BadRequestException);
     for (const d of getChecklistDefinition(2).filter((x) => x.key !== 'parent_acknowledgement')) {
-      await workflow.updateChecklistItem('act-1', 2, d.key, { state: 'VERIFIED' }, 'mentor-1');
+      // The handover in this scenario has no collected information, so items that depend on it are marked unavailable.
+      await workflow.updateChecklistItem('act-1', 2, d.key, d.fields ? { state: 'UNAVAILABLE', reason: 'Parent could not provide it' } : { state: 'VERIFIED' }, 'mentor-1');
     }
     expect(db.rows('mentoringStage').find((s) => s.stageNumber === 2)!.status).toBe('IN_PROGRESS');
 

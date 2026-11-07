@@ -14,6 +14,8 @@ export interface ChecklistItemView {
   evidenceRef?: string | null;
   group?: string | null;
   groupLabel?: string | null;
+  /** The information this requirement depends on, and whether each piece has a value yet. */
+  requires?: Array<{ key: string; label: string; collected: boolean }>;
   exception?: boolean;
   exceptionDetail?: { reason: string; authorizedByName: string | null; at: string } | null;
   updatedByName?: string | null;
@@ -110,6 +112,16 @@ export function computeProgress(items: readonly ChecklistItemView[]): ChecklistP
     groupsResolved: groups.filter((g) => g.items.every(isItemResolved)).length,
     percent: total === 0 ? 0 : Math.round((resolved.length / total) * 100),
   };
+}
+
+/** Information a requirement is still waiting for, by name. Empty when it depends on nothing or everything is collected. */
+export function missingInformation(item: ChecklistItemView): string[] {
+  return (item.requires ?? []).filter((r) => !r.collected).map((r) => r.label);
+}
+
+/** The headline above the meeting checklist, for example "5 of 16 requirements completed". */
+export function describeRequirements(progress: ChecklistProgress): string {
+  return `${progress.completed} of ${progress.total} requirements completed`;
 }
 
 /** The sentence shown above a stage checklist, for example "17 of 26 completed · 2 unavailable or excepted". */

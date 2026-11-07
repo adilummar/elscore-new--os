@@ -13,6 +13,7 @@ import {
   ExceptionDto,
   PauseDto,
   ResumeDto,
+  SetFieldVerificationDto,
   StudentListQueryDto,
   UpdateChecklistItemDto,
   UpdateHandoverFieldDto,
@@ -56,6 +57,18 @@ export class MentoringWorkflowController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.workflow.updateHandoverField(id, fieldKey, dto.value, user.id);
+  }
+
+  /** Confirm a field with the parent, or withdraw the confirmation (assigned Mentor). Separate from collecting the value. */
+  @Put(':activationId/handover/fields/:fieldKey/verification')
+  @RequirePermissions('mentoring.stage.work')
+  setHandoverFieldVerification(
+    @Param('activationId') id: string,
+    @Param('fieldKey') fieldKey: string,
+    @Body() dto: SetFieldVerificationDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.workflow.setHandoverFieldVerification(id, fieldKey, dto, user.id);
   }
 
   @Post(':activationId/stages/:stage/start')

@@ -132,13 +132,15 @@ describe('Mentoring workflow (e2e)', () => {
     for (let n = 1; n <= 7; n++) {
       const mentor = await login('mentor@mentoring.test');
       const defs = getChecklistDefinition(n);
+      // Items that depend on collected information (Stage 2) cannot be ticked without it; the stage only needs them resolved.
+      const free = defs.filter((d) => !d.fields);
       const base = `/mentoring/students/${activationId}`;
 
       if (n > 1) expect((await api('post', `${base}/stages/${n}/start`, mentor, {})).status).toBe(201);
 
       // Enter some information, leave the rest pending.
-      await api('patch', `${base}/stages/${n}/items/${defs[0].key}`, mentor, { state: 'VERIFIED', value: `entered-${n}`, note: `note-${n}` });
-      await api('patch', `${base}/stages/${n}/items/${defs[1].key}`, mentor, { state: 'COLLECTED', value: `collected-${n}` });
+      await api('patch', `${base}/stages/${n}/items/${free[0].key}`, mentor, { state: 'VERIFIED', value: `entered-${n}`, note: `note-${n}` });
+      await api('patch', `${base}/stages/${n}/items/${(free[1] ?? free[0]).key}`, mentor, { state: 'COLLECTED', value: `collected-${n}` });
       const saved = (await api('get', base, mentor)).body.data.stages[n - 1].checklist;
 
       const pause = await api('post', `${base}/pause`, mentor, {
@@ -152,7 +154,7 @@ describe('Mentoring workflow (e2e)', () => {
       expect(whileHeld.activation.status).toBe('ACTIVATION_ON_HOLD');
       expect(whileHeld.stages[n - 1].status).toBe('ON_HOLD');
       expect(whileHeld.stages[n - 1].checklist).toEqual(saved);
-      expect((await api('patch', `${base}/stages/${n}/items/${defs[2].key}`, returning, { state: 'VERIFIED' })).status).toBe(409);
+      expect((await api('patch', `${base}/stages/${n}/items/${free[free.length - 1].key}`, returning, { state: 'VERIFIED' })).status).toBe(409);
 
       const resume = await api('post', `${base}/resume`, returning, {});
       expect(resume.status).toBe(201);
@@ -163,7 +165,7 @@ describe('Mentoring workflow (e2e)', () => {
       expect(resumed.stages[n - 1].checklist).toEqual(saved);
 
       // Finish the stage.
-      for (const d of defs) await api('patch', `${base}/stages/${n}/items/${d.key}`, returning, { state: 'VERIFIED' });
+      for (const d of defs) await api('patch', `${base}/stages/${n}/items/${d.key}`, returning, d.fields ? { state: 'UNAVAILABLE', reason: 'Not provided in the e2e scenario' } : { state: 'VERIFIED' });
       expect((await api('post', `${base}/stages/${n}/verify`, returning, {})).status).toBe(201);
     }
     const activation = await prisma.mentoringActivation.findUniqueOrThrow({ where: { id: activationId } });

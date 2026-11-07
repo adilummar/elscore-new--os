@@ -7,11 +7,14 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../../mentoring-client';
-import { computeProgress } from '../../checklist-progress';
-import { describeFieldChange } from '../../handover-presentation';
+import { computeProgress, describeRequirements } from '../../checklist-progress';
+import { describeFieldChange, handoverFieldLabel } from '../../handover-presentation';
 import { PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
 import { ChecklistPanel, ItemUpdate } from './ChecklistPanel';
-import { HandoverSummary } from './HandoverSummary';
+import { EarlierResults } from './EarlierResults';
+import { HandoverOverview } from './HandoverOverview';
+import { HandoverReview } from './HandoverReview';
+import { InformationWorkspace } from './InformationWorkspace';
 
 type Panel = 'checklist' | 'tasks' | 'history';
 
@@ -90,6 +93,16 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const onHold = activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED';
   const base = `/mentoring/students/${activationId}`;
   const progress = computeProgress(checklist);
+  const updateItem = async (itemKey: string, update: ItemUpdate) => {
+    await mentoringApi(`${base}/stages/${stage.number}/items/${itemKey}`, 'PATCH', update);
+    setNotice('Checklist updated.');
+    await load();
+  };
+  const authorizeException = async (itemKey: string, reason: string) => {
+    await mentoringApi(`${base}/stages/${stage.number}/exceptions/${itemKey}`, 'POST', { reason });
+    setNotice('Exception recorded.');
+    await load();
+  };
   const stageOpen = canWork && (stage?.status === 'IN_PROGRESS' || stage?.status === 'PENDING_REVIEW');
 
   return (
@@ -177,36 +190,74 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
             </div>
           )}
 
-          {stage.number === 1 && ws.handover && (
-            <HandoverSummary
-              handover={ws.handover}
-              canEdit={Boolean(viewer.canEditHandover)}
-              onDirtyChange={markDirty}
-              onSave={async (fieldKey, value) => {
-                await mentoringApi(`${base}/handover/fields/${fieldKey}`, 'PUT', { value });
-                setNotice('Information saved.');
-                await load();
-              }}
-            />
+          {stage.number === 1 && (
+            <>
+              {ws.handover && <HandoverOverview handover={ws.handover} />}
+              <HandoverReview
+                item={checklist[0]}
+                editable={Boolean(stageOpen)}
+                onConfirm={async (confirmed) => {
+                  await mentoringApi(`${base}/stages/1/items/${checklist[0].key}`, 'PATCH', { state: confirmed ? 'VERIFIED' : 'PENDING_COLLECTION' });
+                  setNotice(confirmed ? 'Handover review recorded.' : 'Handover review withdrawn.');
+                  await load();
+                }}
+              />
+            </>
           )}
 
-          <ChecklistPanel
-            items={checklist}
-            editable={Boolean(stageOpen)}
-            canAuthorizeException={Boolean(viewer.isHead) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
-            busy={busy}
-            onDirtyChange={markDirty}
-            onUpdate={async (itemKey: string, update: ItemUpdate) => {
-              await mentoringApi(`${base}/stages/${stage.number}/items/${itemKey}`, 'PATCH', update);
-              setNotice('Checklist updated.');
-              await load();
-            }}
-            onAuthorizeException={async (itemKey: string, reason: string) => {
-              await mentoringApi(`${base}/stages/${stage.number}/exceptions/${itemKey}`, 'POST', { reason });
-              setNotice('Exception recorded.');
-              await load();
-            }}
-          />
+          {stage.number === 2 && (
+            <div className="space-y-3">
+              {canWork && stage.status === 'NOT_STARTED' && (
+                <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">Start this stage to collect and verify information with the parent. Until then the information below is read-only.</p>
+              )}
+              <a href="#meeting-checklist" className="text-sm text-brand-700 hover:underline lg:hidden">Go to the checklist, {describeRequirements(progress)}</a>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-start">
+                {ws.handover ? (
+                  <InformationWorkspace
+                    handover={ws.handover}
+                    canEdit={Boolean(viewer.canEditHandover)}
+                    onDirtyChange={markDirty}
+                    onSave={async (fieldKey, value) => {
+                      await mentoringApi(`${base}/handover/fields/${fieldKey}`, 'PUT', { value });
+                      setNotice(`${handoverFieldLabel(fieldKey)} saved.`);
+                      await load();
+                    }}
+                    onVerify={async (fieldKey, verified) => {
+                      await mentoringApi(`${base}/handover/fields/${fieldKey}/verification`, 'PUT', { verified });
+                      setNotice(verified ? `${handoverFieldLabel(fieldKey)} verified.` : `Verification of ${handoverFieldLabel(fieldKey)} withdrawn.`);
+                      await load();
+                    }}
+                  />
+                ) : (
+                  <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">No handover information is available for this student.</p>
+                )}
+                <div id="meeting-checklist" className="min-w-0 space-y-3 lg:sticky lg:top-4">
+                  <ChecklistPanel
+                    items={checklist}
+                    editable={Boolean(stageOpen)}
+                    canAuthorizeException={Boolean(viewer.isHead) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
+                    busy={busy}
+                    onDirtyChange={markDirty}
+                    onUpdate={updateItem}
+                    onAuthorizeException={authorizeException}
+                  />
+                  <EarlierResults items={Array.isArray(ws.legacyStage1Items) ? ws.legacyStage1Items : []} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {stage.number > 2 && (
+            <ChecklistPanel
+              items={checklist}
+              editable={Boolean(stageOpen)}
+              canAuthorizeException={Boolean(viewer.isHead) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
+              busy={busy}
+              onDirtyChange={markDirty}
+              onUpdate={updateItem}
+              onAuthorizeException={authorizeException}
+            />
+          )}
         </div>
       )}
 
@@ -219,7 +270,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
           {events.length === 0 && <p className="p-4 text-slate-500">History is visible to the Mentor and the Mentoring Head.</p>}
           {events.map((e: any) => (
             <div key={e.id} className="p-3">
-              <span className="font-medium">{pretty(e.type)}{e.type === 'HANDOVER_FIELD_UPDATED' ? ` — ${describeFieldChange(e.payload)?.label ?? ''}` : ''}</span>
+              <span className="font-medium">{pretty(e.type)}{e.type.startsWith('HANDOVER_FIELD_') && typeof e.payload?.fieldKey === 'string' ? `: ${handoverFieldLabel(e.payload.fieldKey)}` : ''}</span>
               {e.fromStatus && e.toStatus && <span className="text-slate-500"> · {pretty(e.fromStatus)} → {pretty(e.toStatus)}</span>}
               {e.reason && <span className="text-slate-600"> · {REASON_LABELS[e.reason] ?? e.reason}</span>}
               {e.type === 'HANDOVER_FIELD_UPDATED' && describeFieldChange(e.payload) && (
@@ -312,7 +363,7 @@ function TaskPanel({ ws, stage, counselors, busy, run, showForm, setShowForm }: 
               {t.dueAt && <span className="text-xs text-slate-500">Due {fmt(t.dueAt)}</span>}
             </div>
             {t.returnReason && <p className="text-xs text-red-600">Returned: {t.returnReason}</p>}
-            {t.comments?.map((m: any) => <p key={m.id} className="text-xs text-slate-600">💬 {m.body}</p>)}
+            {t.comments?.map((m: any) => <p key={m.id} className="text-xs text-slate-600">Comment: {m.body}</p>)}
             <div className="flex flex-wrap gap-2">
               {mine && (t.status === 'OPEN' || t.status === 'RETURNED') && <Button size="sm" onClick={() => call(t.id, 'start')}>Start</Button>}
               {mine && open && <Button size="sm" variant="outline" onClick={() => call(t.id, 'submit', {})}>Submit for verification</Button>}
