@@ -612,6 +612,44 @@ describe('Stage 1: reviewing the handover', () => {
     expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0); // nothing was filled in or invented
   });
 
+  it('submitting needs no collected information: every Sales field can be missing and Stage 1 still completes', async () => {
+    const w = world({ at: 1 });
+    w.db.rows('enrollmentHandover')[0].transferredFields = []; // Sales handed over nothing
+    w.db.rows('enrollmentHandover')[0].missingFields = Object.keys(HANDOVER_FIELDS).map((field) => ({ field, reason: 'NOT_COLLECTED_IN_SALES' }));
+    const before = salesDataOf(w.db);
+    await w.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, 'mentor-1');
+    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).resolves.toMatchObject({ stageNumber: 1 });
+    expect(stage1(w).status).toBe('COMPLETED');
+    expect(salesDataOf(w.db)).toEqual(before);
+    expect(w.db.rows('mentoringEvent').map((e) => e.type)).toEqual(expect.arrayContaining(['CHECKLIST_UPDATED', 'STAGE_VERIFIED']));
+  });
+
+  it('only the assigned Mentor can record the review or complete Stage 1: the Head, the CEO, a CO_FOUNDER, another Mentor and a Counselor are refused', async () => {
+    const w = world({ at: 1 });
+    for (const user of ['head-1', 'ceo-1', 'mentor-2', 'counselor-1', 'cofounder-1']) {
+      await expect(w.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, user)).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    expect(w.db.rows('stageChecklistResponse')).toHaveLength(0);
+
+    await w.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, 'mentor-1');
+    for (const user of ['head-1', 'ceo-1', 'mentor-2', 'counselor-1', 'cofounder-1']) {
+      await expect(w.workflow.verifyStage('act-1', 1, user)).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    expect(stage1(w).status).toBe('PENDING_REVIEW'); // nothing the refused users did changed the stage
+  });
+
+  it('the action is refused while the workflow is on hold, and a waiting Counselor task blocks completion without losing the recorded review', async () => {
+    const held = world({ at: 1, status: 'ACTIVATION_ON_HOLD' });
+    await expect(held.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+
+    const w = world({ at: 1 });
+    w.db.seed('mentoringTask', { id: 't-wait', activationId: 'act-1', stageId: stage1(w).id, title: 'Collect marks', assigneeUserId: 'counselor-1', assignedByUserId: 'mentor-1', status: 'SUBMITTED' });
+    await w.workflow.updateChecklistItem('act-1', 1, 'missing_info_identified', { state: 'VERIFIED' }, 'mentor-1');
+    await expect(w.workflow.verifyStage('act-1', 1, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(stage1(w).status).toBe('PENDING_REVIEW'); // the page shows "Review recorded, ready to submit"
+    expect(w.db.rows('stageChecklistResponse')[0]).toMatchObject({ itemKey: 'missing_info_identified', state: 'VERIFIED' });
+  });
+
   it('a student with the review item resolved in an earlier definition keeps that result', async () => {
     const w = world({ at: 1 });
     w.db.seed('stageChecklistResponse', { stageId: stage1(w).id, itemKey: 'missing_info_identified', mandatory: true, definitionVersion: 1, state: 'VERIFIED', note: 'Phone and marks missing', updatedByUserId: 'mentor-1' });

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../../mentoring-client';
-import { computeProgress, describeRequirements } from '../../checklist-progress';
+import { computeProgress, describeRequirements, isItemResolved } from '../../checklist-progress';
+import { buildOverview } from '../../handover-inventory';
 import { describeFieldChange, handoverFieldLabel } from '../../handover-presentation';
 import { PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
 import { ChecklistPanel, ItemUpdate } from './ChecklistPanel';
@@ -93,6 +94,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const onHold = activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED';
   const base = `/mentoring/students/${activationId}`;
   const progress = computeProgress(checklist);
+  const overview = buildOverview(ws.handover);
   const updateItem = async (itemKey: string, update: ItemUpdate) => {
     await mentoringApi(`${base}/stages/${stage.number}/items/${itemKey}`, 'PATCH', update);
     setNotice('Checklist updated.');
@@ -159,7 +161,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
             {canWork && stage.status === 'NOT_STARTED' && (
               <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/start`, 'POST', {}))}>Start stage {stage.number}</Button>
             )}
-            {canWork && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW') && (
+            {/* Stage 1 is submitted from its own panel below, so it has no second completion button here. */}
+            {canWork && stage.number !== 1 && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW') && (
               <Button size="sm" isLoading={busy} disabled={progress.outstandingMandatory.length > 0} title={progress.outstandingMandatory.length > 0 ? 'Resolve every mandatory item first' : undefined}
                 onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/verify`, 'POST', {}))}>Verify and complete stage {stage.number}</Button>
             )}
@@ -195,11 +198,22 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
               {ws.handover && <HandoverOverview handover={ws.handover} />}
               <HandoverReview
                 item={checklist[0]}
+                stageStatus={stage.status}
                 editable={Boolean(stageOpen)}
-                onConfirm={async (confirmed) => {
-                  await mentoringApi(`${base}/stages/1/items/${checklist[0].key}`, 'PATCH', { state: confirmed ? 'VERIFIED' : 'PENDING_COLLECTION' });
-                  setNotice(confirmed ? 'Handover review recorded.' : 'Handover review withdrawn.');
-                  await load();
+                received={overview.received.length}
+                required={overview.required.length}
+                onSubmit={async () => {
+                  try {
+                    // Record the review when it is not recorded yet, then complete the stage. Both calls are checked by the API.
+                    if (checklist[0] && !isItemResolved(checklist[0])) {
+                      await mentoringApi(`${base}/stages/1/items/${checklist[0].key}`, 'PATCH', { state: 'VERIFIED' });
+                    }
+                    await mentoringApi(`${base}/stages/1/verify`, 'POST', {});
+                    setNotice('Handover submitted. Stage 1 is complete and the Meeting with Parents is next.');
+                  } finally {
+                    // Show what was actually saved, including a review that was recorded when the second call was refused.
+                    await load();
+                  }
                 }}
               />
             </>

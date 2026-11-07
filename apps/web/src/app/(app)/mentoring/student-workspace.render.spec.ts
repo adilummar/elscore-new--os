@@ -207,10 +207,10 @@ describe('history and tasks show business wording', () => {
 describe('role restrictions on the page are unchanged', () => {
   const has = (html: string, label: string) => text(html).includes(label);
 
-  it('only the assigned Mentor sees Start/Verify stage actions', () => {
-    expect(has(render(workspace()), 'Verify and complete stage 1')).toBe(true);
+  it('only the assigned Mentor sees the Stage 1 submit action', () => {
+    expect(has(render(workspace()), 'Review and submit handover')).toBe(true);
     for (const viewer of [{ userId: 'head', isMentor: false, isHead: true }, { userId: 'ceo' }, { userId: 'dc', isMentor: false, isHead: false }]) {
-      expect(has(render(workspace({ viewer })), 'Verify and complete stage 1')).toBe(false);
+      expect(has(render(workspace({ viewer })), 'Review and submit handover')).toBe(false);
     }
   });
 
