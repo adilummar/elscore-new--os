@@ -56,7 +56,7 @@ export class MentoringWorkflowController {
     @Body() dto: UpdateHandoverFieldDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.workflow.updateHandoverField(id, fieldKey, dto.value, user.id);
+    return this.workflow.updateHandoverField(id, fieldKey, dto.value, user.id, dto.basedOn);
   }
 
   /** Confirm a field with the parent, or withdraw the confirmation (assigned Mentor). Separate from collecting the value. */

@@ -35,12 +35,19 @@ export class UpdateChecklistItemDto {
 /** One admission-handover field. The value's shape depends on the field and is validated against its definition. */
 export class UpdateHandoverFieldDto {
   @IsDefined() value!: unknown;
+  /**
+   * The value the Mentor was looking at when editing (null when the field was empty). The save is refused if the stored
+   * value has changed since. Omit it to skip the check.
+   */
+  @IsOptional() basedOn?: unknown;
 }
 
 /** Confirm (verified: true) or withdraw the confirmation of one field during the parent meeting. */
 export class SetFieldVerificationDto {
   @IsBoolean() verified!: boolean;
   @IsOptional() @IsString() note?: string;
+  /** The value the Mentor confirmed on screen. Confirming is refused if the stored value has changed since. */
+  @IsOptional() basedOn?: unknown;
 }
 
 export class PauseDto {

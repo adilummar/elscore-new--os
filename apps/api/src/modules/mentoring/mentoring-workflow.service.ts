@@ -93,6 +93,14 @@ export class MentoringWorkflowService {
     }
   }
 
+  /** Refuses a save or confirmation made against a value that someone else has since changed. */
+  private assertNotStale(basedOn: unknown, current: unknown) {
+    const norm = (v: unknown) => (isMeaningfulValue(v) ? stableJson(v) : 'null');
+    if (norm(basedOn) !== norm(current)) {
+      throw new ConflictException('This information was changed by someone else since you opened it. Load the latest value and try again.');
+    }
+  }
+
   /** The value the page shows for each handover field: the Mentoring value when there is one, otherwise the Sales value. */
   private async effectiveHandoverValues(tx: PrismaTxClient, handoverId: string): Promise<Map<string, unknown>> {
     const handover = await tx.enrollmentHandover.findUniqueOrThrow({ where: { id: handoverId }, select: { transferredFields: true } });
@@ -223,7 +231,11 @@ export class MentoringWorkflowService {
    * Only the assigned Mentor can do this, while the workflow is in progress. Every change is added to the
    * Mentoring history (and the audit log) with the previous and new value.
    */
-  async updateHandoverField(activationId: string, fieldKey: string, rawValue: unknown, userId: string) {
+  /**
+   * `basedOn` is the value the Mentor was looking at (null for an empty field). When it is given and the stored value
+   * has changed since, the save is refused instead of silently overwriting someone else's edit.
+   */
+  async updateHandoverField(activationId: string, fieldKey: string, rawValue: unknown, userId: string, basedOn?: unknown) {
     const definition = getHandoverField(fieldKey);
     if (!definition) throw new BadRequestException('This information cannot be edited here');
 
@@ -249,6 +261,7 @@ export class MentoringWorkflowService {
       });
 
       const previous = existing ? existing.value : salesEntry?.value ?? null;
+      if (basedOn !== undefined) this.assertNotStale(basedOn, previous);
       if (previous !== null && JSON.stringify(previous) === JSON.stringify(value)) {
         return { fieldKey, value, changed: false as const };
       }
@@ -271,11 +284,17 @@ export class MentoringWorkflowService {
             },
           });
 
+      // A confirmation covers the value it was given for. Say in the history when this edit ends one.
+      const confirmation = await tx.enrollmentHandoverFieldVerification.findUnique({
+        where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
+      });
+      const verificationInvalidated = !!confirmation && stableJson(confirmation.verifiedValue) === stableJson(previous);
+
       await this.history.record(tx, {
         activationId,
         type: 'HANDOVER_FIELD_UPDATED',
         actorUserId: userId,
-        payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null },
+        payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, verificationInvalidated },
       });
       return { fieldKey, value: saved.value, origin: saved.origin, changed: true as const };
     });
@@ -287,7 +306,7 @@ export class MentoringWorkflowService {
    * confirmation covers the value as it was. If the value changes later the field counts as not verified again.
    * The Sales snapshot and the value itself are never touched.
    */
-  async setHandoverFieldVerification(activationId: string, fieldKey: string, input: { verified: boolean; note?: string | null }, userId: string) {
+  async setHandoverFieldVerification(activationId: string, fieldKey: string, input: { verified: boolean; note?: string | null; basedOn?: unknown }, userId: string) {
     if (!isVerifiableField(fieldKey)) throw new BadRequestException('This information cannot be verified here');
     const note = input.note?.trim() || null;
     if (note && note.length > 1000) throw new BadRequestException('The note must be 1000 characters or fewer');
@@ -318,6 +337,7 @@ export class MentoringWorkflowService {
       if (!isMeaningfulValue(current)) {
         throw new ConflictException('There is nothing to verify yet. Collect this information first.');
       }
+      if (input.basedOn !== undefined) this.assertNotStale(input.basedOn, current);
       if (existing && stableJson(existing.verifiedValue) === stableJson(current)) {
         return { fieldKey, verified: true as const, changed: false as const };
       }

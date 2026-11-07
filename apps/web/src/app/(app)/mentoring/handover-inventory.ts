@@ -152,7 +152,8 @@ export function buildInventory(handover: unknown): Inventory {
     if (!parts) {
       const pending = missingByField.get(fieldKey);
       return {
-        fieldKey, label, value: null, rawValue: null, collection: 'PENDING', sourceText: null, salesValue: null,
+        fieldKey, label, value: null, rawValue: null, collection: 'PENDING',
+        sourceText: pending && pending.hint !== DEFAULT_PENDING_HINT ? 'Not provided by Sales' : 'Not collected by Sales', salesValue: null,
         verification: 'NOT_VERIFIED', verifiedText: null, hint: pending?.hint ?? DEFAULT_PENDING_HINT, editor: pending?.editor ?? editors.get(fieldKey) ?? null,
       };
     }
@@ -204,6 +205,22 @@ export function buildInventory(handover: unknown): Inventory {
     verified,
     unverified: collectedRows.length - verified,
   };
+}
+
+export type RowFilter = 'ALL' | 'PENDING' | 'NOT_VERIFIED' | 'VERIFIED';
+
+/** The rows each Stage 2 filter shows. "Not verified" means collected, and not (or no longer) confirmed. */
+export function matchesFilter(filter: RowFilter, row: Pick<InventoryRow, 'collection' | 'verification'>): boolean {
+  switch (filter) {
+    case 'PENDING':
+      return row.collection === 'PENDING';
+    case 'NOT_VERIFIED':
+      return row.collection !== 'PENDING' && row.verification !== 'VERIFIED';
+    case 'VERIFIED':
+      return row.collection !== 'PENDING' && row.verification === 'VERIFIED';
+    default:
+      return true;
+  }
 }
 
 // ─── Stage 1 overview ──────────────────────────────────────────────────────────

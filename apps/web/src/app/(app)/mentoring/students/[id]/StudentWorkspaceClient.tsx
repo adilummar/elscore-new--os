@@ -238,28 +238,30 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
               {canWork && stage.status === 'NOT_STARTED' && (
                 <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">Start this stage to collect and verify information with the parent. Until then the information below is read-only.</p>
               )}
-              <a href="#meeting-checklist" className="text-sm text-brand-700 hover:underline lg:hidden">Go to the checklist, {describeRequirements(progress)}</a>
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-start">
+              <a href="#meeting-checklist" className="text-sm text-brand-700 hover:underline xl:hidden">Go to the checklist, {describeRequirements(progress)}</a>
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
                 {ws.handover ? (
                   <InformationWorkspace
                     handover={ws.handover}
                     canEdit={Boolean(viewer.canEditHandover)}
                     onDirtyChange={markDirty}
-                    onSave={async (fieldKey, value) => {
-                      await mentoringApi(`${base}/handover/fields/${fieldKey}`, 'PUT', { value });
+                    // basedOn is the value the Mentor was looking at. The API refuses the save if it has changed since.
+                    onSave={async (fieldKey, value, basedOn) => {
+                      await mentoringApi(`${base}/handover/fields/${fieldKey}`, 'PUT', { value, basedOn: basedOn ?? null });
                       setNotice(`${handoverFieldLabel(fieldKey)} saved.`);
                       await load();
                     }}
-                    onVerify={async (fieldKey, verified) => {
-                      await mentoringApi(`${base}/handover/fields/${fieldKey}/verification`, 'PUT', { verified });
+                    onVerify={async (fieldKey, verified, basedOn) => {
+                      await mentoringApi(`${base}/handover/fields/${fieldKey}/verification`, 'PUT', { verified, basedOn: basedOn ?? null });
                       setNotice(verified ? `${handoverFieldLabel(fieldKey)} verified.` : `Verification of ${handoverFieldLabel(fieldKey)} withdrawn.`);
                       await load();
                     }}
+                    onRefresh={load}
                   />
                 ) : (
                   <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">No handover information is available for this student.</p>
                 )}
-                <div id="meeting-checklist" className="min-w-0 space-y-3 lg:sticky lg:top-4">
+                <div id="meeting-checklist" className="min-w-0 space-y-3 xl:sticky xl:top-4">
                   <ChecklistPanel
                     items={checklist}
                     editable={Boolean(stageOpen)}

@@ -1,4 +1,4 @@
-import { ALL_FIELD_KEYS, FIELD_SECTIONS, buildInventory, buildOverview } from './handover-inventory';
+import { ALL_FIELD_KEYS, FIELD_SECTIONS, buildInventory, buildOverview, matchesFilter } from './handover-inventory';
 import { handoverFieldLabel } from './handover-presentation';
 
 const sales = (field: string, value: unknown, source = 'STUDENT') => ({ field, source, value });
@@ -156,5 +156,56 @@ describe('the Stage 1 overview', () => {
     buildOverview(input);
     buildInventory(input);
     expect(JSON.stringify(input)).toBe(frozen);
+  });
+});
+
+describe('the Stage 2 filters', () => {
+  // Pending (relationship), collected from Sales and not verified (first name), verified (date of birth), changed since verified (phone), collected by the Mentor (gender).
+  const handover = base({
+    fieldValues: [mentoring('parent.primaryPhone', '+971501112222', { origin: 'MENTORING_UPDATED', salesValue: '+971500000000' }), mentoring('student.gender', 'Female')],
+    fieldVerifications: [
+      { fieldKey: 'student.dateOfBirth', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:10:00Z' },
+      { fieldKey: 'parent.primaryPhone', verified: false, changedSinceVerified: true, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:05:00Z' },
+    ],
+  });
+  const rows = buildInventory(handover).sections.flatMap((s) => s.rows);
+  const keys = (filter: Parameters<typeof matchesFilter>[0]) => rows.filter((r) => matchesFilter(filter, r)).map((r) => r.fieldKey);
+
+  it('All shows every field', () => {
+    expect(keys('ALL')).toHaveLength(28);
+  });
+
+  it('Pending collection shows only fields with no value', () => {
+    expect(keys('PENDING')).toContain('parent.relationship');
+    expect(keys('PENDING')).not.toContain('student.firstName');
+    expect(keys('PENDING')).toHaveLength(28 - 4);
+  });
+
+  it('Not verified shows collected fields that are not confirmed, including one whose confirmation went stale, and never a pending field', () => {
+    expect(keys('NOT_VERIFIED').sort()).toEqual(['parent.primaryPhone', 'student.firstName', 'student.gender']);
+  });
+
+  it('Verified shows only fields whose current value is confirmed', () => {
+    expect(keys('VERIFIED')).toEqual(['student.dateOfBirth']);
+  });
+
+  it('the filter counts match the summary, and Not verified plus Verified equals Collected', () => {
+    const inventory = buildInventory(handover);
+    expect([inventory.total, inventory.collected, inventory.pending, inventory.verified, inventory.unverified]).toEqual([28, 4, 24, 1, 3]);
+    expect(keys('NOT_VERIFIED').length + keys('VERIFIED').length).toBe(inventory.collected);
+    expect(keys('PENDING').length).toBe(inventory.pending);
+  });
+
+  it('a pending field is never listed as verified, even if a stale confirmation row exists for it', () => {
+    const stale = buildInventory(base({ fieldVerifications: [{ fieldKey: 'parent.relationship', verified: true, changedSinceVerified: false }] })).sections.flatMap((s) => s.rows);
+    expect(stale.filter((r) => matchesFilter('VERIFIED', r)).map((r) => r.fieldKey)).not.toContain('parent.relationship');
+  });
+});
+
+describe('where a pending field says it came from', () => {
+  it('says Sales did not provide it when Sales listed it as left blank, and not collected when Sales never asked', () => {
+    expect(rowOf(base(), 'student.gender').sourceText).toBe('Not provided by Sales');
+    expect(rowOf(base(), 'parent.relationship').sourceText).toBe('Not collected by Sales');
+    expect(rowOf(base(), 'tutor.requirements').sourceText).toBe('Not collected by Sales');
   });
 });
