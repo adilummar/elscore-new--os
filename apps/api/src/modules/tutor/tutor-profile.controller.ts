@@ -1,12 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
-import { ReplaceAvailabilityDto, UpdateTeachingExperienceDto, UpdateTutorProfileDto } from './dto/tutor-profile.dto';
+import { ReplaceAvailabilityDto, TutorExceptionDto, UpdateTeachingExperienceDto, UpdateTutorProfileDto } from './dto/tutor-profile.dto';
 import { TutorAvailabilityService } from './tutor-availability.service';
+import { TutorCalendarService } from './tutor-calendar.service';
+import { TutorExceptionService } from './tutor-exception.service';
 import { TutorProfileService } from './tutor-profile.service';
 
 @ApiTags('Tutor Profiles')
@@ -17,6 +19,8 @@ export class TutorProfileController {
   constructor(
     private readonly tutorProfileService: TutorProfileService,
     private readonly availability: TutorAvailabilityService,
+    private readonly calendars: TutorCalendarService,
+    private readonly exceptions: TutorExceptionService,
   ) {}
 
   @Get('me')
@@ -54,6 +58,43 @@ export class TutorProfileController {
   @ApiOperation({ summary: 'Get tutor profile by Profile ID' })
   async getProfile(@Param('id') id: string) {
     return this.tutorProfileService.findByProfileId(id);
+  }
+
+  /** A tutor's real timetable for a range of dates (at most a month). Who is behind a booked class is shown only to people who may see that student. */
+  @Get(':id/calendar')
+  @RequirePermissions('tutor.profile.read')
+  @ApiOperation({ summary: 'Get a tutor date-wise timetable' })
+  async getCalendar(@Param('id') id: string, @Query('from') from: string, @Query('to') to: string, @CurrentUser() user: RequestUser) {
+    return this.calendars.calendar(id, from, to, user.id);
+  }
+
+  // --- Dates that change the weekly pattern. Literal paths come before :id. ---
+  @Post('holidays')
+  @RequirePermissions('tutor.profile.manage')
+  @ApiOperation({ summary: 'Add a public holiday for every tutor (HR)' })
+  async addHoliday(@Body() dto: TutorExceptionDto, @CurrentUser() user: RequestUser) {
+    return this.exceptions.create(null, { ...dto, kind: 'HOLIDAY' }, user.id);
+  }
+
+  @Delete('exceptions/:exceptionId')
+  @RequirePermissions('tutor.profile.manage')
+  @ApiOperation({ summary: 'Remove a holiday or a tutor date exception (HR)' })
+  async removeException(@Param('exceptionId') exceptionId: string, @CurrentUser() user: RequestUser) {
+    return this.exceptions.deactivate(exceptionId, user.id);
+  }
+
+  @Get(':id/exceptions')
+  @RequirePermissions('tutor.profile.read')
+  @ApiOperation({ summary: 'List a tutor date exceptions in a range' })
+  async listExceptions(@Param('id') id: string, @Query('from') from: string, @Query('to') to: string) {
+    return this.exceptions.list(id, from, to);
+  }
+
+  @Post(':id/exceptions')
+  @RequirePermissions('tutor.profile.manage')
+  @ApiOperation({ summary: 'Add a day off, extra hours or blocked time for one tutor (HR)' })
+  async addException(@Param('id') id: string, @Body() dto: TutorExceptionDto, @CurrentUser() user: RequestUser) {
+    return this.exceptions.create(id, dto, user.id);
   }
 
   @Get(':id/availability')

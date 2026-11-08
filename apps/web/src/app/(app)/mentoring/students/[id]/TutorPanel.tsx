@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { AvailabilityWindow } from '../../tutor-availability';
-import { AssignmentView, CandidateList, SESSION_TONE, TutorSessionView, TutorTools, TutorView, needsHours } from '../../tutor-types';
+import { AssignmentView, CandidateList, SESSION_TONE, STATUS_LABELS, TutorSessionView, TutorTools, TutorView, needsHours } from '../../tutor-types';
 import { NeededTime, TutorAvailabilityEditor } from './TutorAvailabilityEditor';
 
 type Tone = 'green' | 'amber' | 'red' | 'neutral';
@@ -55,6 +55,18 @@ function SessionList({ sessions }: { sessions: TutorSessionView[] }) {
           <span className="font-medium text-slate-800">{s.label}</span>
           <span className={`rounded border px-1.5 py-px ${TONE[SESSION_TONE[s.status]]}`}>{s.statusLabel}</span>
           {s.status !== 'AVAILABLE' && <span className="text-slate-600">{s.reason}</span>}
+          {s.dates && s.status !== 'AVAILABLE' && (
+            <ul role="list" className="mt-1 w-full space-y-0.5 pl-4" data-testid="session-dates">
+              {s.dates.filter((d) => d.status !== 'AVAILABLE').map((d) => (
+                <li key={d.date} className="flex flex-wrap items-baseline gap-x-2" data-date-status={d.status}>
+                  <span aria-hidden className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${DOT[SESSION_TONE[d.status]]}`} />
+                  <span className="font-medium text-slate-800">{d.date}</span>
+                  <span className={`rounded border px-1.5 py-px ${TONE[SESSION_TONE[d.status]]}`}>{STATUS_LABELS[d.status]}</span>
+                  <span className="text-slate-600">{d.reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </li>
       ))}
     </ul>
@@ -87,7 +99,11 @@ function TutorCard({ tutor, tools, busy, onSelect, onUpdateHours }: CardProps) {
           {tutor.isCurrent && <Chip tone="neutral">Current tutor</Chip>}
         </div>
       </div>
-      <p className="mt-1 text-xs text-slate-500">Working hours: {tutor.hours}</p>
+      <p className="mt-1 text-xs text-slate-500">
+        Working hours: {tutor.hours}
+        {tutor.dateTotals && <span className="ml-2 font-medium text-slate-700">{tutor.dateTotals.available} of {tutor.dateTotals.total} class dates free</span>}
+        <a href={`/tutors/${tutor.tutorProfileId}`} target="_blank" rel="noreferrer" className="ml-2 text-brand-700 hover:underline">View timetable</a>
+      </p>
       {tutor.ineligible && <p className="mt-1 text-xs font-medium text-slate-700">{tutor.ineligible}</p>}
       <SessionList sessions={tutor.sessions} />
       <div className="mt-3 flex flex-wrap items-center gap-2">

@@ -36,3 +36,11 @@ export async function getMyAvailabilityAction(): Promise<ActionResult<unknown>> 
 export async function saveMyAvailabilityAction(windows: unknown[]): Promise<ActionResult<unknown>> {
   return toActionResult(() => fetchApi<unknown>('/tutors/profile/me/availability', { method: 'PUT', body: JSON.stringify({ windows }) }));
 }
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A tutor's date-wise timetable. The API checks the permission, limits the range, and hides student names from people who may not see them. */
+export async function getTutorCalendarAction(tutorProfileId: string, from: string, to: string): Promise<ActionResult<unknown>> {
+  if (!ID.test(tutorProfileId) || !DATE.test(from) || !DATE.test(to)) return badTutor();
+  return toActionResult(() => fetchApi<unknown>(`/tutors/profile/${tutorProfileId}/calendar?from=${from}&to=${to}`));
+}

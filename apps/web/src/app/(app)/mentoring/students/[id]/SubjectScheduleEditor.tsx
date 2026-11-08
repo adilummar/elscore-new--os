@@ -72,7 +72,7 @@ interface EditorProps {
 /** Compares what matters for matching a tutor: level, frequency, hours and the classes with their times. */
 function matchKey(s: SubjectSchedule): string {
   const sessions = s.sessions.map((x) => `${x.week ?? ''}|${x.day}|${(x.occurrences ?? []).join('+')}|${x.durationMinutes}|${x.start ?? ''}|${x.end ?? ''}`).sort();
-  return JSON.stringify([s.gradeId, s.frequency, s.totalMinutes, s.distribution, sessions]);
+  return JSON.stringify([s.gradeId, s.frequency, s.totalMinutes, s.distribution, sessions, s.startDate ?? '']);
 }
 
 const SHORT_DAY: Record<Weekday, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
@@ -236,6 +236,24 @@ function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disab
         </div>
       </div>
       {salesHours && <p className="mt-1 text-xs text-slate-500">Sales recorded {salesHours} hours a month for this subject.</p>}
+      <div className="mt-2 block text-xs text-slate-600">
+        <label htmlFor={`${id}-start`}>Classes start on</label>
+        <div className="w-48">
+          <Input
+            id={`${id}-start`}
+            aria-label={`Start date ${index + 1}`}
+            type="date"
+            disabled={disabled}
+            value={subject.startDate ?? ''}
+            onChange={(e) => {
+              const { startDate: _previous, ...rest } = subject;
+              void _previous;
+              onChange(e.target.value ? { ...rest, startDate: e.target.value } : rest);
+            }}
+          />
+        </div>
+        <p className="mt-0.5 text-slate-500">Optional. With a date, tutors are checked on the exact dates, including leave and holidays. Without one, only the weekly pattern is checked.</p>
+      </div>
 
       <div className="mt-3 space-y-2">
         <p className="text-xs font-medium text-slate-700">Preferred days</p>

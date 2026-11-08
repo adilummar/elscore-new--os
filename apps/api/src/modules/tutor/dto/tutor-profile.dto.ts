@@ -1,5 +1,31 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { TutorExceptionKind } from '@prisma/client';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+
+/** A date that changes a tutor's weekly pattern. The rules for each kind are checked by TutorExceptionService. */
+export class TutorExceptionDto {
+  @ApiPropertyOptional({ description: 'YYYY-MM-DD' })
+  @IsString()
+  date!: string;
+
+  @ApiPropertyOptional({ enum: ['HOLIDAY', 'DAY_OFF', 'EXTRA_HOURS', 'BLOCKED'] })
+  @IsEnum(TutorExceptionKind)
+  kind!: TutorExceptionKind;
+
+  @ApiPropertyOptional({ description: 'Minutes from midnight, for extra hours and blocked time' })
+  @IsInt()
+  @IsOptional()
+  startMinute?: number;
+
+  @ApiPropertyOptional()
+  @IsInt()
+  @IsOptional()
+  endMinute?: number;
+
+  @ApiPropertyOptional()
+  @IsString()
+  note!: string;
+}
 
 /** The whole weekly availability. Each range is checked by validateAvailability, which is the single set of rules. */
 export class ReplaceAvailabilityDto {

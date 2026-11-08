@@ -12,6 +12,7 @@
  * A tutor can be assigned only when every session is AVAILABLE. Adding working hours never changes a booking.
  */
 import { AvailabilityWindow, DAY_NAMES, DayNumber, covers, describeAvailability, formatRange, mergedWindowsFor } from '../tutor/tutor-availability';
+import { HORIZON_WEEKS, DateCheck, TutorCalendarInput, addDays, checkWindow, occurrenceDates, resolveDay } from '../tutor/tutor-calendar';
 
 import {
   Frequency,
@@ -118,7 +119,18 @@ export function busyFromDatedBooking(startsAt: Date, endsAt: Date, timeZone: str
   };
 }
 
-export type SessionStatus = 'AVAILABLE' | 'OCCUPIED' | 'NOT_WORKING_DAY' | 'NOT_CONFIGURED';
+export type SessionStatus =
+  | 'AVAILABLE'
+  | 'OCCUPIED'
+  | 'NOT_WORKING_DAY'
+  | 'NOT_CONFIGURED'
+  // These four only come from a date-wise check, where the tutor's real calendar is known.
+  | 'OUTSIDE_HOURS'
+  | 'BREAK'
+  | 'LEAVE'
+  | 'HOLIDAY'
+  | 'DAY_OFF'
+  | 'BLOCKED';
 
 export interface SessionCheck {
   key: string;
@@ -130,6 +142,8 @@ export interface SessionCheck {
   status: SessionStatus;
   /** Why, in words that are safe to show: it never names another student. */
   reason: string;
+  /** Date-wise check only: the result on each real date this class falls on. */
+  dates?: DateCheck[];
 }
 
 export const SESSION_STATUS_LABELS: Readonly<Record<SessionStatus, string>> = {
@@ -137,6 +151,12 @@ export const SESSION_STATUS_LABELS: Readonly<Record<SessionStatus, string>> = {
   OCCUPIED: 'Occupied',
   NOT_WORKING_DAY: 'Not working this day',
   NOT_CONFIGURED: 'Availability not configured',
+  OUTSIDE_HOURS: 'Outside working hours',
+  BREAK: 'Break time',
+  LEAVE: 'On leave',
+  HOLIDAY: 'Public holiday',
+  DAY_OFF: 'Non-working date',
+  BLOCKED: 'Time blocked',
 };
 
 export function checkSession(session: RequiredSession, windows: readonly AvailabilityWindow[], busy: readonly BusyBlock[]): SessionCheck {
@@ -183,6 +203,8 @@ export interface TutorMatch {
   ineligible: string | null;
   /** True only when the tutor is eligible and every session is available. */
   canAssign: boolean;
+  /** Date-wise check only: how many of the real dates are free, across every class. */
+  dateTotals?: { available: number; total: number };
 }
 
 export interface MatchTarget {
@@ -204,6 +226,46 @@ export function evaluateTutor(required: readonly RequiredSession[], tutor: Tutor
 
   const verdict: Verdict = ineligible ? 'NOT_ELIGIBLE' : total > 0 && availableCount === total ? 'FULL' : availableCount > 0 ? 'PARTIAL' : 'NONE';
   return { tutorProfileId: tutor.tutorProfileId, verdict, availableCount, total, sessions, ineligible, canAssign: verdict === 'FULL' };
+}
+
+/**
+ * One class, checked on every date it falls on in the next eight weeks from the start date. It is available only if every
+ * one of those dates is free: the first free date says nothing about the later ones.
+ */
+export function checkSessionDates(session: RequiredSession, input: TutorCalendarInput, startDate: string, weeks = HORIZON_WEEKS): SessionCheck {
+  const to = addDays(startDate, weeks * 7 - 1);
+  const dates = occurrenceDates(
+    { dayNumber: session.dayNumber, frequency: session.frequency, week: session.week ?? null, occurrences: session.occurrences ?? [], startDate, endDate: null },
+    startDate,
+    to,
+  ).map((d) => checkWindow(resolveDay(input, d), session.start, session.end));
+  const bad = dates.filter((d) => d.status !== 'AVAILABLE');
+  const base = { key: session.key, label: session.label, dayNumber: session.dayNumber, startMinute: session.start, endMinute: session.end, dates };
+  if (bad.length === 0) return { ...base, status: 'AVAILABLE', reason: 'Available.' };
+  return { ...base, status: bad[0].status, reason: `${bad.length} of ${dates.length} dates are not available. ${bad[0].reason}` };
+}
+
+/** The same decision as evaluateTutor, made on the tutor's real calendar for the real dates of the schedule. */
+export function evaluateTutorDates(required: readonly RequiredSession[], tutor: TutorFacts, input: TutorCalendarInput, target: MatchTarget, startDate: string): TutorMatch {
+  const sessions = required.map((s) => checkSessionDates(s, input, startDate));
+  const availableCount = sessions.filter((s) => s.status === 'AVAILABLE').length;
+  const total = sessions.length;
+  const allDates = sessions.flatMap((s) => s.dates ?? []);
+  let ineligible: string | null = null;
+  if (!tutor.active) ineligible = 'Not active for new assignments.';
+  else if (!tutor.subjectIds.includes(target.subjectId)) ineligible = `Does not teach ${target.subjectName}.`;
+  else if (!tutor.gradeIds.includes(target.gradeId)) ineligible = `${target.gradeName} is not one of this tutor's levels.`;
+  const verdict: Verdict = ineligible ? 'NOT_ELIGIBLE' : total > 0 && availableCount === total ? 'FULL' : availableCount > 0 ? 'PARTIAL' : 'NONE';
+  return {
+    tutorProfileId: tutor.tutorProfileId,
+    verdict,
+    availableCount,
+    total,
+    sessions,
+    ineligible,
+    canAssign: verdict === 'FULL',
+    dateTotals: { available: allDates.filter((d) => d.status === 'AVAILABLE').length, total: allDates.length },
+  };
 }
 
 const ORDER: Readonly<Record<Verdict, number>> = { FULL: 0, PARTIAL: 1, NONE: 2, NOT_ELIGIBLE: 3 };

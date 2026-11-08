@@ -43,6 +43,12 @@ export interface SubjectSchedule {
   totalMinutes: number;
   distribution: Distribution;
   sessions: ScheduleSession[];
+  /**
+   * The first date the classes run (YYYY-MM-DD). Optional. With it, a tutor is matched against exact dates: Week 1 of a
+   * bi-weekly schedule is the week this date falls in, and "the first Monday" is a real date. Without it, tutors are
+   * matched by week pattern only.
+   */
+  startDate?: string;
 }
 
 export interface ScheduleValue {
@@ -58,6 +64,13 @@ export interface Reference {
 export interface ScheduleReferences {
   subjects: readonly Reference[];
   grades: readonly Reference[];
+}
+
+/** A real calendar date written YYYY-MM-DD. */
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
 /** The department default for one class. A suggestion for planning, never a limit. */
@@ -214,7 +227,7 @@ export function sessionLabel(session: ScheduleSession, frequency: Frequency): st
 
 /** One line per subject for read-only views and the history: "English, Grade 8, weekly, 4 hours per week: Monday 1 hour, ...". */
 export function summariseSubject(subject: SubjectSchedule): string {
-  const head = [subject.subjectName, subject.gradeName, FREQUENCY_LABELS[subject.frequency], `${formatMinutes(subject.totalMinutes)} ${PERIOD_LABELS[subject.frequency]}`].filter(Boolean).join(' · ');
+  const head = [subject.subjectName, subject.gradeName, FREQUENCY_LABELS[subject.frequency], `${formatMinutes(subject.totalMinutes)} ${PERIOD_LABELS[subject.frequency]}`, subject.startDate ? `from ${subject.startDate}` : ''].filter(Boolean).join(' · ');
   const parts = sortSessions(subject.sessions).map((s) => {
     const time = s.start ? ` (${s.start}${s.end ? ` to ${s.end}` : ''})` : '';
     const times = subject.frequency === 'MONTHLY' && classesIn(s, 'MONTHLY') > 1 ? ` x ${classesIn(s, 'MONTHLY')}` : '';
@@ -321,6 +334,7 @@ export function subjectProblem(subject: SubjectSchedule, refs?: ScheduleReferenc
   if (!subject.gradeId) return 'Choose the required level.';
   if (refs && !refs.grades.some((g) => g.id === subject.gradeId)) return 'This level is not in the level list.';
   if (!FREQUENCIES.includes(subject.frequency)) return 'Choose how often the classes happen.';
+  if (subject.startDate !== undefined && !isIsoDate(subject.startDate)) return 'The start date must be a real date.';
   const period = PERIOD_LABELS[subject.frequency];
   if (!Number.isInteger(subject.totalMinutes) || subject.totalMinutes <= 0) return `Enter the total hours required ${period}.`;
   if (subject.totalMinutes % MINUTE_STEP !== 0) return `The total hours must be in steps of ${MINUTE_STEP} minutes.`;
@@ -421,7 +435,7 @@ export function parseSchedule(raw: unknown, refs: ScheduleReferences): ParseResu
   for (let i = 0; i < raw.subjects.length; i++) {
     const item = raw.subjects[i];
     const at = `Subject ${i + 1}`;
-    if (!isRecord(item) || !onlyKeys(item, ['subjectId', 'subjectName', 'gradeId', 'gradeName', 'frequency', 'totalMinutes', 'distribution', 'sessions'])) return fail(`${at} is not in the expected format.`);
+    if (!isRecord(item) || !onlyKeys(item, ['subjectId', 'subjectName', 'gradeId', 'gradeName', 'frequency', 'totalMinutes', 'distribution', 'sessions', 'startDate'])) return fail(`${at} is not in the expected format.`);
     const subjectRef = refs.subjects.find((s) => s.id === item.subjectId);
     if (!subjectRef) return fail(item.subjectId ? `${at}: choose a subject from the subject list.` : `${at}: Choose a subject.`);
     const gradeRef = refs.grades.find((g) => g.id === item.gradeId);
@@ -452,6 +466,11 @@ export function parseSchedule(raw: unknown, refs: ScheduleReferences): ParseResu
       distribution: (item.distribution === 'CUSTOM' ? 'CUSTOM' : item.distribution === 'EQUAL' ? 'EQUAL' : 'invalid') as Distribution,
       sessions: sortSessions(sessions),
     };
+    // An empty start date means "not set": it is left out, never stored as an empty string.
+    if (item.startDate !== undefined && item.startDate !== null && item.startDate !== '') {
+      if (!isIsoDate(item.startDate)) return fail(`${subjectRef.name}: the start date must be a real date.`);
+      subject.startDate = item.startDate;
+    }
     if ((subject.distribution as string) === 'invalid') return fail(`${subjectRef.name}: choose equal or custom class lengths.`);
     subjects.push(subject);
   }

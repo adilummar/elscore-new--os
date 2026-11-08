@@ -20,6 +20,10 @@ const UNIQUE: Record<string, string[][]> = {
 };
 
 const DEFAULTS: Record<string, () => Row> = {
+  tutorAvailabilityException: () => ({ isActive: true, deactivatedAt: null }),
+  tutorSubject: () => ({ isActive: true }),
+  tutorGrade: () => ({ isActive: true }),
+  tutorAvailabilitySlot: () => ({ isActive: true }),
   mentoringStage: () => ({ status: 'NOT_STARTED', startedAt: null, completedAt: null, pendingReviewAt: null, verifiedByUserId: null }),
   stageChecklistResponse: () => ({ state: 'PENDING_COLLECTION', value: null, note: null, reason: null, evidenceRef: null, updatedByUserId: null }),
   mentoringTask: () => ({ status: 'OPEN', priority: 'MEDIUM', statusBeforeHold: null, holdReason: null, evidence: null, returnReason: null, stageId: null, dueAt: null, description: null }),
@@ -39,7 +43,9 @@ function matches(db: FakeDb, table: string, row: Row, where?: Row): boolean {
     if (key === 'AND') return (cond as Row[]).every((w) => matches(db, table, row, w));
     if (key === 'OR') return (cond as Row[]).some((w) => matches(db, table, row, w));
     if (cond === undefined) return true;
-    if (cond instanceof Date || cond === null || typeof cond !== 'object') return row[key] === cond;
+    // Dates are compared by value, as the database does.
+    if (cond instanceof Date) return row[key] instanceof Date ? row[key].getTime() === cond.getTime() : row[key] === cond;
+    if (cond === null || typeof cond !== 'object') return row[key] === cond;
 
     const c = cond as Row;
     if ('in' in c) return (c.in as unknown[]).includes(row[key]);
@@ -52,6 +58,8 @@ function matches(db: FakeDb, table: string, row: Row, where?: Row): boolean {
       return (!('gte' in c) || n(v) >= n(c.gte)) && (!('lte' in c) || n(v) <= n(c.lte)) && (!('gt' in c) || n(v) > n(c.gt)) && (!('lt' in c) || n(v) < n(c.lt));
     }
     if ('contains' in c) return String(row[key] ?? '').toLowerCase().includes(String(c.contains).toLowerCase());
+    if ('startsWith' in c) return String(row[key] ?? '').startsWith(String(c.startsWith));
+    if ('endsWith' in c) return String(row[key] ?? '').endsWith(String(c.endsWith));
 
     // Compound unique selector such as { activationId_stageNumber: { activationId, stageNumber } }.
     if (!(key in row) && key.includes('_')) return matches(db, table, row, c);

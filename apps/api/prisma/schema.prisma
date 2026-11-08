@@ -3975,9 +3975,14 @@ model MentoringTutorAssignment {
   endedByUserId    String?                        @map("ended_by_user_id")
   endedAt          DateTime?                      @map("ended_at")
   endReason        String?                        @map("end_reason")
+  /// The first date the classes run, so "Week 1" and "the first Monday" mean real dates. NULL for assignments made before
+  /// this existed: they keep the earlier week-pattern behaviour.
+  startDate        DateTime?                      @map("start_date") @db.Date
+  endDate          DateTime?                      @map("end_date") @db.Date
 
   activation MentoringActivation            @relation(fields: [activationId], references: [id], onDelete: Restrict)
   sessions   MentoringTutorAssignmentSession[]
+  overrides  MentoringTutorAssignmentOverride[]
 
   @@index([activationId, subjectId])
   @@index([tutorProfileId, status])
@@ -4005,6 +4010,68 @@ model MentoringTutorAssignmentSession {
   @@index([tutorProfileId, dayOfWeek])
   @@index([assignmentId])
   @@map("mentoring_tutor_assignment_sessions")
+}
+
+enum TutorOccurrenceChange {
+  CANCELLED
+  RESCHEDULED
+}
+
+/// One occurrence of a recurring class cancelled or moved, without touching the rule that makes the others. It is
+/// keyed by the assignment, the date and the class's original start time, not by a session row, because session rows
+/// are rewritten whenever a schedule changes and a cancellation must never be lost that way.
+model MentoringTutorAssignmentOverride {
+  id                  String                @id @default(uuid())
+  assignmentId        String                @map("assignment_id")
+  /// The occurrence being changed.
+  date                DateTime              @db.Date
+  originalStartMinute Int                   @map("original_start_minute")
+  kind                TutorOccurrenceChange
+  newDate             DateTime?             @map("new_date") @db.Date
+  newStartMinute      Int?                  @map("new_start_minute")
+  newEndMinute        Int?                  @map("new_end_minute")
+  reason              String
+  createdByUserId     String                @map("created_by_user_id")
+  createdAt           DateTime              @default(now()) @map("created_at")
+
+  assignment MentoringTutorAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, date, originalStartMinute])
+  @@index([assignmentId])
+  @@map("mentoring_tutor_assignment_overrides")
+}
+
+enum TutorExceptionKind {
+  /// A public holiday. tutorProfileId is NULL: it applies to everyone.
+  HOLIDAY
+  /// A special non-working day for one tutor.
+  DAY_OFF
+  /// Additional working hours on one date (a normally non-working day, or extra time).
+  EXTRA_HOURS
+  /// Working hours taken away for part of a date.
+  BLOCKED
+}
+
+/// Dates that change a tutor's weekly pattern. Approved employee leave is read from employee_leave_requests and is not
+/// copied here.
+model TutorAvailabilityException {
+  id              String             @id @default(uuid())
+  /// NULL means the whole organisation (a public holiday).
+  tutorProfileId  String?            @map("tutor_profile_id")
+  date            DateTime           @db.Date
+  kind            TutorExceptionKind
+  /// Minutes from midnight. NULL means the whole day (HOLIDAY, DAY_OFF); required for EXTRA_HOURS and BLOCKED.
+  startMinute     Int?               @map("start_minute")
+  endMinute       Int?               @map("end_minute")
+  note            String
+  createdByUserId String             @map("created_by_user_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  isActive        Boolean            @default(true) @map("is_active")
+  deactivatedAt   DateTime?          @map("deactivated_at")
+
+  @@index([tutorProfileId, date])
+  @@index([date])
+  @@map("tutor_availability_exceptions")
 }
 
 model StageChecklistResponse {

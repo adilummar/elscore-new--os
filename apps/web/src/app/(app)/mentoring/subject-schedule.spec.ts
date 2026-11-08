@@ -456,3 +456,41 @@ describe('validating a whole schedule', () => {
     expect(rebalance(s).sessions.map((x) => x.durationMinutes)).toEqual([60, 90]);
   });
 });
+
+describe('the start date of a subject schedule', () => {
+  const withDate = (startDate: unknown) => JSON.parse(JSON.stringify({ version: 2, subjects: [{ ...english(), startDate }] }));
+
+  it('is optional: a schedule without one is read exactly as before', () => {
+    const parsed = parseSchedule(JSON.parse(JSON.stringify({ version: 2, subjects: [english()] })), refs);
+    expect(parsed.ok && parsed.value.subjects[0].startDate).toBeUndefined();
+  });
+
+  it('is kept when it is a real date, and shown in the read-only summary', () => {
+    const parsed = parseSchedule(withDate('2026-11-09'), refs);
+    expect(parsed.ok && parsed.value.subjects[0].startDate).toBe('2026-11-09');
+    expect(parsed.ok && summariseSchedule(parsed.value)).toContain('English · Grade 8 · Weekly · 4 hours per week · from 2026-11-09');
+  });
+
+  it.each(['2026-02-30', '2026-13-01', '09/11/2026', 'soon', 20261109])('refuses %p as a start date', (bad) => {
+    expect(parseSchedule(withDate(bad), refs)).toEqual({ ok: false, message: 'English: the start date must be a real date.' });
+  });
+
+  it('an empty start date means not set and is never stored as an empty string', () => {
+    for (const empty of ['', null]) {
+      const parsed = parseSchedule(withDate(empty), refs);
+      expect(parsed.ok && 'startDate' in parsed.value.subjects[0]).toBe(false);
+    }
+  });
+
+  it('survives the page editing helpers that rebuild a subject', () => {
+    const base = { ...english(), startDate: '2026-11-09' };
+    expect(setFrequency(base, 'BIWEEKLY').startDate).toBe('2026-11-09');
+    expect(setTotalMinutes(base, 300).startDate).toBe('2026-11-09');
+    expect(toggleDay(base, 'Friday').startDate).toBe('2026-11-09');
+    expect(restoreEqualSplit(base).startDate).toBe('2026-11-09');
+  });
+
+  it('a bad start date is reported by the live check as well', () => {
+    expect(subjectProblem({ ...english(), startDate: '2026-02-30' }, refs)).toBe('The start date must be a real date.');
+  });
+});

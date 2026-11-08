@@ -4,6 +4,8 @@ import { MentoringTutorAssignmentStatus, Prisma } from '@prisma/client';
 
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { AvailabilityWindow, DayNumber, minutesToClock } from '../tutor/tutor-availability';
+import { HORIZON_WEEKS, addDays } from '../tutor/tutor-calendar';
+import { TutorRef, loadCalendars } from '../tutor/tutor-calendar.data';
 
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { assertMeetingStarted, assertWorkable, loadLockedActivation } from './mentoring-guards';
@@ -25,6 +27,7 @@ import {
   describeHours,
   describeMatch,
   evaluateTutor,
+  evaluateTutorDates,
   rankMatches,
   requiredSessions,
   toStoredSessions,
@@ -37,6 +40,7 @@ const DATED_STATUSES = new Set(['SCHEDULED', 'ASSIGNED', 'IN_PROGRESS']);
 
 interface TutorRecord extends TutorFacts {
   userId: string;
+  employeeId: string;
   subjectNames: string[];
   gradeNames: string[];
 }
@@ -61,6 +65,8 @@ export interface TutorView {
   ineligible: string | null;
   canAssign: boolean;
   isCurrent: boolean;
+  /** Date-wise check only: how many of the real class dates are free. */
+  dateTotals: { available: number; total: number } | null;
 }
 
 export interface AssignmentView {
@@ -105,9 +111,12 @@ const initialsOf = (name: string) =>
 const minutesOf = (d: Date) => d.getUTCHours() * 60 + d.getUTCMinutes();
 
 /** The part of a subject schedule a tutor is confirmed against. A change to any of it needs the tutor re-checked. */
-function coreOf(subject: Pick<SubjectSchedule, 'frequency' | 'gradeId'>, sessions: StoredSession[]) {
-  return { frequency: subject.frequency, gradeId: subject.gradeId, sessions };
+function coreOf(subject: Pick<SubjectSchedule, 'frequency' | 'gradeId' | 'startDate'>, sessions: StoredSession[]) {
+  // The start date joins the comparison only when there is one, so assignments made before dates existed compare as before.
+  return { frequency: subject.frequency, gradeId: subject.gradeId, sessions, ...(subject.startDate ? { startDate: subject.startDate } : {}) };
 }
+
+const asDate = (day: string | undefined) => (day ? new Date(`${day}T00:00:00Z`) : null);
 
 /**
  * Tutor selection for a subject of a student's schedule. Everything that decides whether a tutor can teach is decided
@@ -158,6 +167,7 @@ export class MentoringTutorService {
       out.set(p.id, {
         tutorProfileId: p.id,
         userId: employee?.userId ?? '',
+        employeeId: p.employeeId,
         name: employee ? `${employee.firstName} ${employee.lastName}`.trim() : 'Tutor',
         photoUrl: p.profilePhotoUrl ?? null,
         active: p.tutorOperationalStatus === 'ACTIVE' && employee?.employmentStatus === 'ACTIVE',
@@ -230,6 +240,41 @@ export class MentoringTutorService {
     return out;
   }
 
+  /**
+   * Decides, for each tutor, whether they can teach every class of this subject. With a start date the check is made on
+   * the tutor's real calendar for each real date (leave, holidays, extra hours, blocked time and every booked class);
+   * without one it falls back to the week pattern. Every caller goes through here, so the list, the assignment and the
+   * re-check can never disagree.
+   */
+  private async matchTutors(
+    db: PrismaTxClient,
+    tutors: Map<string, TutorRecord>,
+    subject: SubjectSchedule,
+    required: RequiredSession[],
+    target: MatchTarget,
+    ctx: { activationId: string; ignoreAssignmentId?: string },
+  ): Promise<Map<string, TutorMatch>> {
+    const out = new Map<string, TutorMatch>();
+    if (subject.startDate) {
+      const refs: TutorRef[] = [...tutors.values()].map((t) => ({ tutorProfileId: t.tutorProfileId, userId: t.userId, employeeId: t.employeeId, windows: t.windows }));
+      const calendars = await loadCalendars(db, refs, {
+        from: subject.startDate,
+        to: addDays(subject.startDate, HORIZON_WEEKS * 7 - 1),
+        withStudentNames: false,
+        timeZone: process.env.SYSTEM_TIMEZONE ?? 'Asia/Kolkata',
+        forSubject: { activationId: ctx.activationId, subjectId: subject.subjectId, ignoreAssignmentId: ctx.ignoreAssignmentId },
+      });
+      for (const t of tutors.values()) {
+        const calendar = calendars.get(t.tutorProfileId);
+        if (calendar) out.set(t.tutorProfileId, evaluateTutorDates(required, t, calendar, target, subject.startDate));
+      }
+      return out;
+    }
+    const busy = await this.busyFor(db, tutors, { activationId: ctx.activationId, subjectId: subject.subjectId, ignoreAssignmentId: ctx.ignoreAssignmentId });
+    for (const t of tutors.values()) out.set(t.tutorProfileId, evaluateTutor(required, t, busy.get(t.tutorProfileId) ?? [], target));
+    return out;
+  }
+
   /** The saved subject schedule a tutor is matched against, or the reason it cannot be matched yet. */
   private async subjectTarget(
     db: PrismaTxClient,
@@ -266,6 +311,7 @@ export class MentoringTutorService {
       ineligible: match.ineligible,
       canAssign: match.canAssign,
       isCurrent: tutor.tutorProfileId === currentTutorId,
+      dateTotals: match.dateTotals ?? null,
     };
   }
 
@@ -293,9 +339,9 @@ export class MentoringTutorService {
 
     const links = await db.tutorSubject.findMany({ where: { subjectId, isActive: true } });
     const tutors = await this.loadTutors(db, [...new Set(links.map((l) => l.tutorProfileId))]);
-    const busy = await this.busyFor(db, tutors, { activationId, subjectId });
+    const matches = await this.matchTutors(db, tutors, resolved.subject, resolved.required, resolved.target, { activationId });
     const items = [...tutors.values()].map((t) => {
-      const match = evaluateTutor(resolved.required, t, busy.get(t.tutorProfileId) ?? [], resolved.target);
+      const match = matches.get(t.tutorProfileId) as TutorMatch;
       return { name: t.name, match, view: this.viewOf(t, match, current?.tutorProfileId ?? null) };
     });
     return {
@@ -390,8 +436,7 @@ export class MentoringTutorService {
       const tutor = tutors.get(tutorProfileId);
       if (!tutor) throw new NotFoundException('Tutor not found');
 
-      const busy = (await this.busyFor(tx, tutors, { activationId, subjectId })).get(tutorProfileId) ?? [];
-      const match = evaluateTutor(resolved.required, tutor, busy, resolved.target);
+      const match = (await this.matchTutors(tx, tutors, resolved.subject, resolved.required, resolved.target, { activationId })).get(tutorProfileId) as TutorMatch;
       if (!match.canAssign) throw new ConflictException(this.refusal(tutor.name, match));
 
       const stored = toStoredSessions(resolved.required);
@@ -411,6 +456,7 @@ export class MentoringTutorService {
           currentKey: `${activationId}:${subjectId}`,
           scheduleSnapshot: { subjectName: resolved.subject.subjectName, gradeName: resolved.subject.gradeName, core, labels: resolved.required.map((r) => r.label) } as unknown as Prisma.InputJsonValue,
           assignedByUserId: userId,
+          startDate: asDate(resolved.subject.startDate),
         },
       });
       await this.writeSessions(tx, created.id, tutorProfileId, stored);
@@ -492,13 +538,14 @@ export class MentoringTutorService {
     const tutor = tutors.get(a.tutorProfileId);
     if (!tutor) return flag({ reason: 'The tutor could not be found.', sessions: [] });
     const target: MatchTarget = { subjectId: subject.subjectId, subjectName: subject.subjectName, gradeId: subject.gradeId, gradeName: subject.gradeName };
-    const busy = (await this.busyFor(tx, tutors, { activationId, subjectId: a.subjectId, ignoreAssignmentId: a.id })).get(a.tutorProfileId) ?? [];
-    const match = evaluateTutor(required.sessions, tutor, busy, target);
+    const match = (await this.matchTutors(tx, tutors, subject, required.sessions, target, { activationId, ignoreAssignmentId: a.id })).get(a.tutorProfileId) as TutorMatch;
 
     if (!match.canAssign) {
       return flag({
         reason: match.ineligible ?? 'Some sessions no longer fit the tutor.',
-        sessions: match.sessions.filter((s) => s.status !== 'AVAILABLE').map((s) => ({ key: s.key, label: s.label, status: s.status, reason: s.reason })),
+        sessions: match.sessions
+          .filter((s) => s.status !== 'AVAILABLE')
+          .map((s) => ({ key: s.key, label: s.label, status: s.status, reason: s.reason, ...(s.dates ? { dates: s.dates.filter((d) => d.status !== 'AVAILABLE') } : {}) })),
       });
     }
 
@@ -512,6 +559,7 @@ export class MentoringTutorService {
       data: {
         status: 'ACTIVE',
         reviewDetail: Prisma.JsonNull,
+        startDate: asDate(subject.startDate),
         scheduleSnapshot: { subjectName: subject.subjectName, gradeName: subject.gradeName, core, labels: required.sessions.map((r) => r.label) } as unknown as Prisma.InputJsonValue,
       },
     });
@@ -544,11 +592,23 @@ export class MentoringTutorService {
   }
 
   @OnEvent('tutor.availability.changed', { async: true })
-  async onAvailabilityChanged(event: { tutorProfileId: string; actorUserId: string | null }): Promise<void> {
+  async onAvailabilityChanged(event: { tutorProfileId: string | null; actorUserId: string | null }): Promise<void> {
+    let ids: string[] = [];
     try {
-      await this.revalidateForTutor(event.tutorProfileId, event.actorUserId);
+      // A public holiday has no single tutor: every tutor with a class is checked.
+      ids = event.tutorProfileId
+        ? [event.tutorProfileId]
+        : [...new Set((await (this.prisma as unknown as PrismaTxClient).mentoringTutorAssignment.findMany({ where: { status: { in: LIVE } } })).map((a) => a.tutorProfileId))];
     } catch (error) {
-      this.logger.error(`Re-checking tutor assignments after an availability change failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.error(`Finding the tutors to re-check after an availability change failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    // One tutor failing must not stop the others from being checked.
+    for (const id of ids) {
+      try {
+        await this.revalidateForTutor(id, event.actorUserId);
+      } catch (error) {
+        this.logger.error(`Re-checking tutor assignments after an availability change failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 }
