@@ -18,6 +18,7 @@ import { HandoverOverview } from './HandoverOverview';
 import { Check } from 'lucide-react';
 import { COMPLETE_STAGE_1_LABEL, HandoverReview } from './HandoverReview';
 import { InformationWorkspace } from './InformationWorkspace';
+import { TimetablePanel } from './TimetablePanel';
 
 type Panel = 'checklist' | 'tasks' | 'history';
 
@@ -306,6 +307,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
               </div>
             </div>
           )}
+
+          {stage.number === 3 && <TimetablePanel activationId={activation.id} />}
 
           {stage.number > 2 && (
             <ChecklistPanel

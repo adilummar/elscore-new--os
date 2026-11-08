@@ -12,6 +12,7 @@ import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringStaffService } from './mentoring-staff.service';
 import { MentoringTaskController } from './mentoring-task.controller';
 import { MentoringTaskService } from './mentoring-task.service';
+import { MentoringTimetableService } from './mentoring-timetable.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowController } from './mentoring-workflow.controller';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
@@ -27,6 +28,7 @@ import { MentoringWorkflowService } from './mentoring-workflow.service';
     MentoringStaffService,
     MentoringTaskService,
     MentoringTutorService,
+    MentoringTimetableService,
     MentoringWorkflowService,
   ],
   exports: [MentoringHandoverService],

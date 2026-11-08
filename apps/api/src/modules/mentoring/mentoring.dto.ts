@@ -50,6 +50,13 @@ export class SetFieldVerificationDto {
   @IsOptional() basedOn?: unknown;
 }
 
+/** A student's timetable for a range of dates. The rules for the range are checked by the timetable service. */
+export class TimetableQueryDto {
+  @IsString() @IsNotEmpty() view!: string;
+  @IsString() @IsNotEmpty() from!: string;
+  @IsOptional() @IsString() to?: string;
+}
+
 /** Choose the tutor for one subject of the student's schedule. The server checks every session again. */
 export class AssignTutorDto {
   @IsString() @IsNotEmpty() tutorProfileId!: string;

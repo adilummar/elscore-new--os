@@ -140,6 +140,12 @@ export class MentoringTutorService {
     return row && isScheduleValue(row.value) ? row.value : null;
   }
 
+  /** Tutors as calendar references, with their names, for readers that only need a tutor's hours and name. */
+  async refsFor(ids: string[]): Promise<Array<TutorRef & { name: string }>> {
+    const found = await this.loadTutors(this.prisma, ids);
+    return [...found.values()].map((t) => ({ tutorProfileId: t.tutorProfileId, userId: t.userId, employeeId: t.employeeId, windows: t.windows, name: t.name }));
+  }
+
   /** Working hours, subjects, levels and status for the tutors, by profile id. */
   private async loadTutors(db: PrismaTxClient, ids: string[]): Promise<Map<string, TutorRecord>> {
     const out = new Map<string, TutorRecord>();

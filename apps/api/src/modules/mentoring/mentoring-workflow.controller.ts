@@ -5,6 +5,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
+import { MentoringTimetableService } from './mentoring-timetable.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
 import {
@@ -18,6 +19,7 @@ import {
   ResumeDto,
   SetFieldVerificationDto,
   StudentListQueryDto,
+  TimetableQueryDto,
   UpdateChecklistItemDto,
   UpdateHandoverFieldDto,
 } from './mentoring.dto';
@@ -34,6 +36,7 @@ export class MentoringWorkflowController {
     private readonly workflow: MentoringWorkflowService,
     private readonly access: MentoringAccessService,
     private readonly tutors: MentoringTutorService,
+    private readonly timetables: MentoringTimetableService,
   ) {}
 
   @Get()
@@ -44,6 +47,12 @@ export class MentoringWorkflowController {
   @Get(':activationId')
   async workspace(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
     return this.workflow.getWorkspace(id, await this.access.scopeFor(user.id));
+  }
+
+  /** The student's timetable for a range of dates, from the saved schedule and tutor assignments. Read only. */
+  @Get(':activationId/timetable')
+  async timetable(@Param('activationId') id: string, @Query() query: TimetableQueryDto, @CurrentUser() user: RequestUser) {
+    return this.timetables.timetable(id, query, await this.access.scopeFor(user.id));
   }
 
   @Get(':activationId/events')
