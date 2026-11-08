@@ -7,7 +7,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
-import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, getHandoverField, validateHandoverFieldValue } from './mentoring-handover-fields';
+import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, getHandoverField, isVerifiableField, validateHandoverFieldValue } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { MentoringWorkflowController } from './mentoring-workflow.controller';
@@ -59,7 +59,10 @@ function world(over: { status?: string; at?: 1 | 2 } = {}) {
   db.seed('employee', { userId: 'mentor-1', firstName: 'Mina', lastName: 'Mentor' });
   db.seed('employee', { userId: 'head-1', firstName: 'Hari', lastName: 'Head' });
   db.seed('userRole', { userId: 'head-1', role: { code: 'MENTORING_HEAD' }, user: { status: 'ACTIVE' } });
-  db.seed('grade', { name: 'Grade 8' }); db.seed('grade', { name: 'Grade 9' });
+  db.seed('grade', { id: 'g-8', name: 'Grade 8', sortOrder: 8, isActive: true }); db.seed('grade', { id: 'g-9', name: 'Grade 9', sortOrder: 9, isActive: true });
+  db.seed('grade', { id: 'g-old', name: 'Grade 7', sortOrder: 7, isActive: false });
+  for (const [id, name] of [['sub-en', 'English'], ['sub-ma', 'Mathematics'], ['sub-sc', 'Science'], ['sub-ss', 'Social Studies']]) db.seed('subject', { id, name, isActive: true });
+  db.seed('subject', { id: 'sub-old', name: 'Latin', isActive: false });
   db.seed('curriculum', { name: 'CBSE' }); db.seed('curriculum', { name: 'IGCSE' });
   const activation = db.seed('mentoringActivation', {
     id: 'act-1', leadId: 'lead-1', studentId: 'stu-1', handoverId: 'ho-1',
@@ -122,9 +125,8 @@ describe('Adding information Sales did not collect', () => {
 
   it('structured values are kept as structured data', async () => {
     const { db, workflow } = world();
-    const schedule = [{ day: 'monday', start: '16:00', end: '17:30' }, { day: 'Thursday', start: '18:00', end: '19:00' }];
-    await workflow.updateHandoverField('act-1', 'timetable.schedule', schedule, 'mentor-1');
-    expect(fieldOf(db, 'timetable.schedule').value).toEqual([{ day: 'Monday', start: '16:00', end: '17:30' }, { day: 'Thursday', start: '18:00', end: '19:00' }]);
+    await workflow.updateHandoverField('act-1', 'tutor.assignments', [{ subject: 'English', tutor: 'Ravi' }], 'mentor-1');
+    expect(fieldOf(db, 'tutor.assignments').value).toEqual([{ subject: 'English', tutor: 'Ravi' }]);
   });
 });
 
@@ -944,5 +946,336 @@ describe('Who may edit and verify a field, including the CO_FOUNDER', () => {
       await expect(w.workflow.updateHandoverField('act-1', key, bad, 'mentor-1', undefined)).rejects.toBeInstanceOf(BadRequestException);
     }
     expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Subject-wise preferred schedule
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const weekly = (day: string, minutes: number, extra: object = {}) => ({ day, durationMinutes: minutes, ...extra });
+const english = () => ({ subjectId: 'sub-en', subjectName: 'English', gradeId: 'g-8', gradeName: 'Grade 8', frequency: 'WEEKLY', totalMinutes: 240, distribution: 'EQUAL', sessions: [weekly('Monday', 60), weekly('Tuesday', 60), weekly('Thursday', 60), weekly('Saturday', 60)] });
+const maths = () => ({ subjectId: 'sub-ma', subjectName: 'Mathematics', gradeId: 'g-8', gradeName: 'Grade 8', frequency: 'WEEKLY', totalMinutes: 180, distribution: 'EQUAL', sessions: [weekly('Monday', 90), weekly('Wednesday', 90)] });
+const science = () => ({ subjectId: 'sub-sc', subjectName: 'Science', gradeId: 'g-9', gradeName: 'Grade 9', frequency: 'BIWEEKLY', totalMinutes: 240, distribution: 'EQUAL', sessions: [weekly('Tuesday', 60, { week: 1 }), weekly('Thursday', 60, { week: 1 }), weekly('Monday', 60, { week: 2 }), weekly('Friday', 60, { week: 2 })] });
+const social = () => ({ subjectId: 'sub-ss', subjectName: 'Social Studies', gradeId: 'g-8', gradeName: 'Grade 8', frequency: 'MONTHLY', totalMinutes: 360, distribution: 'EQUAL', sessions: [weekly('Tuesday', 90, { occurrences: ['EVERY'] })] });
+const plan = (...subjects: object[]) => ({ version: 2, subjects });
+const KEY = 'timetable.schedule';
+
+describe('Subject-wise preferred schedule: saving and reloading', () => {
+  it('stores several subjects, each with its own frequency, hours, days and class lengths', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths(), science(), social()), 'mentor-1', null);
+    const stored = fieldOf(w.db, KEY).value;
+    expect(stored.version).toBe(2);
+    expect(stored.subjects.map((s: any) => [s.subjectName, s.gradeName, s.frequency, s.totalMinutes])).toEqual([
+      ['English', 'Grade 8', 'WEEKLY', 240], ['Mathematics', 'Grade 8', 'WEEKLY', 180], ['Science', 'Grade 9', 'BIWEEKLY', 240], ['Social Studies', 'Grade 8', 'MONTHLY', 360],
+    ]);
+    expect(stored.subjects[0].sessions.map((s: any) => s.day)).toEqual(['Monday', 'Tuesday', 'Thursday', 'Saturday']);
+    expect(stored.subjects[1].sessions.map((s: any) => s.durationMinutes)).toEqual([90, 90]);
+    expect(stored.subjects[2].sessions.map((s: any) => [s.week, s.day])).toEqual([[1, 'Tuesday'], [1, 'Thursday'], [2, 'Monday'], [2, 'Friday']]);
+    expect(stored.subjects[3].sessions[0]).toEqual({ day: 'Tuesday', durationMinutes: 90, occurrences: ['EVERY'] });
+    expect(fieldOf(w.db, KEY)).toMatchObject({ origin: 'MENTOR_COLLECTED', createdByUserId: 'mentor-1' });
+  });
+
+  it('puts bi-weekly sessions in week order, then weekday order, whatever order they arrive in', async () => {
+    const w = world();
+    const shuffled = { ...science(), sessions: [...science().sessions].reverse() };
+    await w.workflow.updateHandoverField('act-1', KEY, plan(shuffled), 'mentor-1', null);
+    expect(fieldOf(w.db, KEY).value.subjects[0].sessions.map((s: any) => [s.week, s.day])).toEqual([[1, 'Tuesday'], [1, 'Thursday'], [2, 'Monday'], [2, 'Friday']]);
+  });
+
+  it('a brand-new service reads back exactly what was saved, with who collected it', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', null);
+    const fresh = services(w.db);
+    const view = (await fresh.workflow.getWorkspace('act-1', await fresh.scope('head-1'))).handover as any;
+    expect(view.fieldValues).toEqual([expect.objectContaining({ fieldKey: KEY, value: expect.objectContaining({ version: 2 }), origin: 'MENTOR_COLLECTED', collectedByName: 'Mina Mentor' })]);
+    expect(view.fieldValues[0].value.subjects.map((s: any) => s.subjectName)).toEqual(['English', 'Mathematics']);
+  });
+
+  it('start and end times are stored, with the end following the class length; none is invented', async () => {
+    const w = world();
+    const withTimes = { ...maths(), sessions: [weekly('Monday', 90, { start: '16:00' }), weekly('Wednesday', 90)] };
+    await w.workflow.updateHandoverField('act-1', KEY, plan(withTimes), 'mentor-1', null);
+    const sessions = fieldOf(w.db, KEY).value.subjects[0].sessions;
+    expect(sessions[0]).toEqual({ day: 'Monday', durationMinutes: 90, start: '16:00', end: '17:30' });
+    expect(sessions[1]).toEqual({ day: 'Wednesday', durationMinutes: 90 });
+  });
+
+  it('takes the subject and level names from the master lists, not from the request', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan({ ...english(), subjectName: 'Pirate studies', gradeName: 'Grade 99' }), 'mentor-1', null);
+    expect(fieldOf(w.db, KEY).value.subjects[0]).toMatchObject({ subjectName: 'English', gradeName: 'Grade 8' });
+  });
+
+  it('saving the same schedule again, with its keys in another order, changes nothing and adds no history', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    const stored = fieldOf(w.db, KEY).value;
+    const reordered = JSON.parse(JSON.stringify(stored), (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).reverse()) : v));
+    const result = await w.workflow.updateHandoverField('act-1', KEY, reordered, 'mentor-1', stored);
+    expect(result.changed).toBe(false);
+    expect(w.db.rows('mentoringEvent').filter((e) => e.type === 'HANDOVER_FIELD_UPDATED')).toHaveLength(1);
+  });
+});
+
+describe('Subject-wise preferred schedule: what is refused', () => {
+  const refused = async (value: unknown, message?: RegExp) => {
+    const w = world();
+    await expect(w.workflow.updateHandoverField('act-1', KEY, value, 'mentor-1', null)).rejects.toBeInstanceOf(BadRequestException);
+    if (message) await expect(w.workflow.updateHandoverField('act-1', KEY, value, 'mentor-1', null)).rejects.toThrow(message);
+    expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0); // nothing is stored
+    expect(w.db.rows('mentoringEvent').filter((e) => e.type === 'HANDOVER_FIELD_UPDATED')).toHaveLength(0);
+  };
+
+  it('an incomplete plan: no subject, no level, no hours, no days', async () => {
+    await refused(plan(), /Add at least one subject/);
+    await refused(plan({ ...english(), subjectId: '' }), /Subject 1: Choose a subject./);
+    await refused(plan({ ...english(), gradeId: '' }), /English: Choose the required level./);
+    await refused(plan({ ...english(), totalMinutes: 0 }), /Enter the total hours required per week/);
+    await refused(plan({ ...english(), sessions: [] }), /Choose at least one preferred day/);
+  });
+
+  it('hours that do not match the days, with how much is missing or over', async () => {
+    await refused(plan({ ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', 60), weekly('Tuesday', 60), weekly('Thursday', 60), weekly('Saturday', 30)] }), /3 hours 30 minutes per week, but 4 hours are required\. 30 minutes remaining/);
+    await refused(plan({ ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', 120), weekly('Tuesday', 60), weekly('Thursday', 60), weekly('Saturday', 60)] }), /1 hour over/);
+  });
+
+  it('an equal split that is not equal, and zero, negative or tiny class lengths', async () => {
+    await refused(plan({ ...english(), sessions: [weekly('Monday', 90), weekly('Tuesday', 30), weekly('Thursday', 60), weekly('Saturday', 60)] }), /not an equal split/);
+    await refused(plan({ ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', 0), weekly('Tuesday', 120), weekly('Thursday', 60), weekly('Saturday', 60)] }), /more than zero/);
+    await refused(plan({ ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', -60), weekly('Tuesday', 120), weekly('Thursday', 120), weekly('Saturday', 60)] }), /more than zero/);
+    await refused(plan({ ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', 10), weekly('Tuesday', 110), weekly('Thursday', 60), weekly('Saturday', 60)] }), /at least 15 minutes/);
+  });
+
+  it('the same subject twice, and a subject or level that is not in the lists', async () => {
+    await refused(plan(english(), { ...maths(), subjectId: 'sub-en' }), /English is already in this plan/);
+    await refused(plan({ ...english(), subjectId: 'sub-nope' }), /choose a subject from the subject list/);
+    await refused(plan({ ...english(), gradeId: 'g-nope' }), /choose the required level from the level list/);
+    await refused(plan({ ...english(), subjectId: 'sub-old' }), /choose a subject from the subject list/); // switched off
+    await refused(plan({ ...english(), gradeId: 'g-old' }), /choose the required level from the level list/);
+  });
+
+  it('end times: after the start, matching the length, and not without a start', async () => {
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { start: '16:00', end: '15:00' }), weekly('Wednesday', 90)] }), /after the start time/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { start: '16:00', end: '17:00' }), weekly('Wednesday', 90)] }), /must match the class length/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { end: '17:00' }), weekly('Wednesday', 90)] }), /add a start time/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { start: '25:00' }), weekly('Wednesday', 90)] }), /start time must be a time/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { start: '23:00' }), weekly('Wednesday', 90)] }), /past midnight/);
+  });
+
+  it('days and patterns that do not belong to the frequency', async () => {
+    await refused(plan({ ...english(), sessions: [weekly('Funday', 240)] }), /valid day/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90), weekly('Monday', 90)] }), /listed twice/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { week: 1 }), weekly('Wednesday', 90)] }), /weeks only apply to bi-weekly/);
+    await refused(plan({ ...maths(), sessions: [weekly('Monday', 90, { occurrences: ['EVERY'] }), weekly('Wednesday', 90)] }), /monthly patterns only apply to monthly/);
+    await refused(plan({ ...science(), sessions: science().sessions.map((s) => ({ day: s.day, durationMinutes: 60 })) }), /choose Week 1 or Week 2/);
+    await refused(plan({ ...social(), sessions: [weekly('Tuesday', 90, { occurrences: [] })] }), /choose which Tuesdays/);
+    await refused(plan({ ...social(), sessions: [weekly('Tuesday', 90, { occurrences: ['EVERY', 'FIRST'] })] }), /cannot be combined/);
+  });
+
+  it('values in the old day and time rows format, and anything else that is not a schedule', async () => {
+    await refused([{ day: 'Monday', start: '16:00', end: '17:00' }], /not in the expected format/);
+    await refused({ version: 1, subjects: [] }, /not in the expected format/);
+    await refused('Mondays');
+    await refused(null);
+    await refused({ ...plan(english()), admin: true });
+    await refused(plan({ ...english(), secret: 1 }));
+    await refused(plan({ ...english(), sessions: [{ ...weekly('Monday', 240), notes: 'x' }] }));
+  });
+});
+
+describe('Subject-wise preferred schedule: verification and audit', () => {
+  const eventsOf = (w: ReturnType<typeof world>) => w.db.rows('mentoringEvent').filter((e) => e.type.startsWith('HANDOVER_FIELD_'));
+
+  it('saving the schedule does not verify it', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
+    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+    expect(view.fieldVerifications).toEqual([]);
+  });
+
+  it('verification is a separate, explicit action that records who and when', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', null);
+    const stored = fieldOf(w.db, KEY).value;
+    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: stored }, 'mentor-1');
+    expect(w.db.rows('enrollmentHandoverFieldVerification')[0]).toMatchObject({ fieldKey: KEY, verifiedByUserId: 'mentor-1', verifiedValue: stored });
+    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+    expect(view.fieldVerifications).toEqual([expect.objectContaining({ fieldKey: KEY, verified: true, changedSinceVerified: false })]);
+  });
+
+  it('changing any subject, day, length or total after verifying ends the verification and keeps the earlier one on record', async () => {
+    const changes: Array<[string, (p: any) => any]> = [
+      ['a day is added', (p) => { p.subjects[0] = { ...english(), totalMinutes: 300, sessions: [...english().sessions, weekly('Friday', 60)] }; return p; }],
+      ['a class length changes', (p) => { p.subjects[0] = { ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', 90), weekly('Tuesday', 30), weekly('Thursday', 60), weekly('Saturday', 60)] }; return p; }],
+      ['the frequency changes', (p) => { p.subjects[0] = { ...english(), frequency: 'BIWEEKLY', sessions: english().sessions.map((s) => ({ ...s, week: 1 })) }; return p; }],
+      ['a time is set', (p) => { p.subjects[0].sessions[0] = weekly('Monday', 60, { start: '16:00' }); return p; }],
+      ['a subject is removed', (p) => { p.subjects.pop(); return p; }],
+      ['the level changes', (p) => { p.subjects[0] = { ...english(), gradeId: 'g-9' }; return p; }],
+    ];
+    for (const [label, change] of changes) {
+      const w = world();
+      await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', null);
+      const first = fieldOf(w.db, KEY).value;
+      await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: first }, 'mentor-1');
+      await w.workflow.updateHandoverField('act-1', KEY, change(JSON.parse(JSON.stringify(first))), 'mentor-1', first);
+
+      const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+      expect({ label, row: view.fieldVerifications[0] }).toEqual({ label, row: expect.objectContaining({ verified: false, changedSinceVerified: true }) });
+      expect(w.db.rows('enrollmentHandoverFieldVerification')[0].verifiedValue).toEqual(first); // the earlier confirmation is still there
+    }
+  });
+
+  it('after the change it can be verified again, as a new recorded step', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    const first = fieldOf(w.db, KEY).value;
+    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: first }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', first);
+    const second = fieldOf(w.db, KEY).value;
+    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: second }, 'mentor-1');
+    expect(eventsOf(w).map((e) => e.type)).toEqual(['HANDOVER_FIELD_UPDATED', 'HANDOVER_FIELD_VERIFIED', 'HANDOVER_FIELD_UPDATED', 'HANDOVER_FIELD_VERIFIED']);
+    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+    expect(view.fieldVerifications).toEqual([expect.objectContaining({ verified: true, changedSinceVerified: false })]);
+  });
+
+  it('the history holds the whole previous and new schedule, who changed it, and whether a verification ended', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    const first = fieldOf(w.db, KEY).value;
+    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: first }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', first);
+    const [collected, verified, edited] = eventsOf(w);
+    expect(collected.payload).toMatchObject({ fieldKey: KEY, previous: null, verificationInvalidated: false, origin: 'MENTOR_COLLECTED' });
+    expect(collected.payload.next.subjects).toHaveLength(1);
+    expect(verified).toMatchObject({ type: 'HANDOVER_FIELD_VERIFIED', actorUserId: 'mentor-1' });
+    expect(edited).toMatchObject({ actorUserId: 'mentor-1', payload: { fieldKey: KEY, verificationInvalidated: true } });
+    expect(edited.payload.previous.subjects).toHaveLength(1);
+    expect(edited.payload.next.subjects).toHaveLength(2);
+  });
+
+  it('a stale save or verification of the schedule is refused', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    const seen = fieldOf(w.db, KEY).value;
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', seen); // another tab
+    await expect(w.workflow.updateHandoverField('act-1', KEY, plan(english(), science()), 'mentor-1', seen)).rejects.toBeInstanceOf(ConflictException);
+    await expect(w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: seen }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(fieldOf(w.db, KEY).value.subjects).toHaveLength(2);
+  });
+});
+
+describe('Subject-wise preferred schedule: who may use it', () => {
+  it('only the assigned Mentor can save or verify: the Head, CEO, CO_FOUNDER, another Mentor and a Counselor are refused', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    const before = JSON.stringify(w.db.rows('enrollmentHandoverField'));
+    for (const user of ['head-1', 'ceo-1', 'cofounder-1', 'mentor-2', 'counselor-1']) {
+      await expect(w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), user, null)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    expect(JSON.stringify(w.db.rows('enrollmentHandoverField'))).toBe(before);
+    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
+  });
+
+  it('nothing can be saved before the Meeting with Parents is open, or while the workflow is on hold', async () => {
+    const early = world({ at: 1 });
+    await expect(early.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null)).rejects.toBeInstanceOf(ConflictException);
+    const onHold = world({ status: 'ACTIVATION_ON_HOLD' });
+    await expect(onHold.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('the Head, CEO and Demo Counselor hold neither the stage work nor the stage verify permission', () => {
+    for (const user of ['head-1', 'ceo-1', 'counselor-1']) {
+      expect(PERMS[user]).not.toContain('mentoring.stage.work');
+      expect(PERMS[user]).not.toContain('mentoring.stage.verify');
+    }
+  });
+
+  it('the page is given the active subjects and levels, the department default length, and whether the viewer may add a subject', async () => {
+    const w = world();
+    const fields = ((await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any).editableFields;
+    const editor = fields.find((f: any) => f.key === KEY);
+    expect(editor).toMatchObject({ type: 'SCHEDULE', columns: null, options: null });
+    expect(editor.schedule.subjects.map((s: any) => s.name)).toEqual(['English', 'Mathematics', 'Science', 'Social Studies']); // Latin is switched off
+    expect(editor.schedule.grades.map((g: any) => g.name)).toEqual(['Grade 8', 'Grade 9']); // Grade 7 is switched off
+    expect(editor.schedule.subjects[0]).toEqual({ id: 'sub-en', name: 'English' });
+    expect(editor.schedule.defaultSessionMinutes).toBe(60);
+    expect(editor.schedule.canAddSubject).toBe(false); // a Mentor does not hold the reference data permission
+    expect(fields.filter((f: any) => f.schedule !== null)).toHaveLength(1);
+  });
+
+  it('adding a subject to the master list is offered only to a holder of the reference data permission', async () => {
+    const saved = PERMS['mentor-1'];
+    PERMS['mentor-1'] = [...saved, 'reference.manage'];
+    try {
+      const w = world();
+      const editor = ((await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any).editableFields.find((f: any) => f.key === KEY);
+      expect(editor.schedule.canAddSubject).toBe(true);
+    } finally {
+      PERMS['mentor-1'] = saved;
+    }
+    const ceo = world();
+    expect(((await ceo.workflow.getWorkspace('act-1', await ceo.scope('ceo-1'))).handover as any).editableFields.find((f: any) => f.key === KEY).schedule.canAddSubject).toBe(false);
+  });
+
+  it('a subject or level already in the saved plan stays usable after it is switched off', async () => {
+    const w = world();
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
+    w.db.rows('subject').find((s) => s.id === 'sub-en')!.isActive = false;
+    const stored = fieldOf(w.db, KEY).value;
+    const editor = ((await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any).editableFields.find((f: any) => f.key === KEY);
+    expect(editor.schedule.subjects.map((s: any) => s.name)).toContain('English');
+    await w.workflow.updateHandoverField('act-1', KEY, plan({ ...english(), totalMinutes: 300, sessions: [...english().sessions, weekly('Friday', 60)] }), 'mentor-1', stored);
+    // but a switched-off subject cannot be added to a plan that does not already use it
+    await expect(w.workflow.updateHandoverField('act-1', KEY, plan(maths(), { ...science(), subjectId: 'sub-old' }), 'mentor-1', null)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('Subject-wise preferred schedule: timetables saved before it existed', () => {
+  const LEGACY = [{ day: 'Monday', start: '16:00', end: '17:00' }, { day: 'Thursday', start: '18:00', end: '19:00' }];
+  const withLegacy = () => {
+    const w = world();
+    w.db.seed('enrollmentHandoverField', { handoverId: 'ho-1', fieldKey: KEY, value: LEGACY, origin: 'MENTOR_COLLECTED', salesValue: null, createdByUserId: 'mentor-1', updatedByUserId: 'mentor-1' });
+    return w;
+  };
+
+  it('an old timetable is still returned unchanged, so it can be shown', async () => {
+    const w = withLegacy();
+    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+    expect(view.fieldValues[0]).toMatchObject({ fieldKey: KEY, value: LEGACY });
+  });
+
+  it('an old timetable that was verified keeps its verification until it is replaced', async () => {
+    const w = withLegacy();
+    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: LEGACY }, 'mentor-1');
+    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+    expect(view.fieldVerifications).toEqual([expect.objectContaining({ verified: true, changedSinceVerified: false })]);
+  });
+
+  it('replacing it with a subject schedule is allowed, ends that verification, and keeps the old rows in the history', async () => {
+    const w = withLegacy();
+    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: LEGACY }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', LEGACY);
+    expect(fieldOf(w.db, KEY).value.version).toBe(2);
+    const event = w.db.rows('mentoringEvent').find((e) => e.type === 'HANDOVER_FIELD_UPDATED')!;
+    expect(event.payload).toMatchObject({ previous: LEGACY, verificationInvalidated: true });
+    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
+    expect(view.fieldVerifications).toEqual([expect.objectContaining({ verified: false, changedSinceVerified: true })]);
+  });
+
+  it('a page that still sends the old rows is refused with a message to reload, and the old timetable is not touched', async () => {
+    const w = withLegacy();
+    await expect(w.workflow.updateHandoverField('act-1', KEY, LEGACY, 'mentor-1', LEGACY)).rejects.toThrow(/not in the expected format. Reload the page/);
+    expect(fieldOf(w.db, KEY).value).toEqual(LEGACY);
+  });
+
+  it('the schedule field is still registered, verifiable and labelled for the checklist and the page', () => {
+    expect(getHandoverField(KEY)).toEqual({ key: KEY, type: 'SCHEDULE' });
+    expect(HANDOVER_FIELD_LABELS[KEY]).toBe('Preferred Timetable / Schedule');
+    expect(Object.keys(HANDOVER_FIELDS)).toContain(KEY);
+    expect(isVerifiableField(KEY)).toBe(true);
   });
 });

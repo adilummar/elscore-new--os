@@ -7,6 +7,8 @@
  * It only reads the API response; it never changes it.
  */
 
+import { isScheduleValue, summariseSchedule } from './subject-schedule';
+
 /** Presentation labels. Keys are the API's field paths; the API and database names are not renamed. */
 export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
   'student.firstName': 'Student First Name',
@@ -129,12 +131,19 @@ export const HANDOVER_SOURCE_LABELS: Readonly<Record<HandoverSource, string>> = 
 /** Input definition for an editable field, as sent by the API (the API validates every save against it). */
 export interface EditableFieldMeta {
   key: string;
-  type: 'TEXT' | 'PHONE' | 'DATE' | 'SELECT' | 'TEXTAREA' | 'ROWS';
+  type: 'TEXT' | 'PHONE' | 'DATE' | 'SELECT' | 'TEXTAREA' | 'ROWS' | 'SCHEDULE';
   options: string[] | null;
   columns: Array<{ key: string; label: string; type: 'text' | 'date' | 'time' | 'select'; options?: string[]; required: boolean }> | null;
   maxLength: number | null;
   minDate: string | null;
   maxDate: string | null;
+  /** Subject schedule only: what the editor chooses from and what this person may do. */
+  schedule?: {
+    subjects: Array<{ id: string; name: string }>;
+    grades: Array<{ id: string; name: string }>;
+    defaultSessionMinutes: number;
+    canAddSubject: boolean;
+  } | null;
 }
 
 export interface PresentedField {
@@ -248,7 +257,11 @@ export function presentHandover(handover: unknown): PresentedHandover {
   const missing = new Map<string, PresentedField>();
   const collectedKeys = new Set<string>();
 
-  const display = (field: string, value: unknown): string => (Array.isArray(value) && editors.get(field)?.type === 'ROWS' ? formatRowsValue(field, value) : formatHandoverValue(field, value));
+  const display = (field: string, value: unknown): string => {
+    if (isScheduleValue(value)) return summariseSchedule(value);
+    // Timetables saved before subject schedules are a plain list of day and time rows.
+    return Array.isArray(value) && (editors.get(field)?.type === 'ROWS' || field === 'timetable.schedule') ? formatRowsValue(field, value) : formatHandoverValue(field, value);
+  };
 
   const base = (field: string): Omit<PresentedField, 'key' | 'value' | 'status' | 'hint' | 'source' | 'rawValue' | 'salesValue' | 'updatedByName' | 'updatedAt'> => ({
     fieldKey: field,
@@ -336,6 +349,10 @@ export function describeFieldChange(payload: unknown): { label: string; from: st
   if (!payload || typeof payload !== 'object') return null;
   const { fieldKey, previous, next } = payload as { fieldKey?: unknown; previous?: unknown; next?: unknown };
   if (typeof fieldKey !== 'string') return null;
-  const show = (value: unknown) => (isMeaningfulValue(value) ? (Array.isArray(value) ? formatRowsValue(fieldKey, value) : formatHandoverValue(fieldKey, value)).replace(/[\r\n]+/g, '; ') : 'Not collected');
+  const show = (value: unknown) => {
+    if (!isMeaningfulValue(value)) return 'Not collected';
+    const text = isScheduleValue(value) ? summariseSchedule(value) : Array.isArray(value) ? formatRowsValue(fieldKey, value) : formatHandoverValue(fieldKey, value);
+    return text.replace(/[\r\n]+/g, '; ');
+  };
   return { label: handoverFieldLabel(fieldKey), from: show(previous), to: show(next) };
 }

@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { EditorRow, EditorValue, emptyRow } from '../../handover-editing';
 import { EditableFieldMeta } from '../../handover-presentation';
+import { isScheduleValue } from '../../subject-schedule';
+import { ScheduleSuggestion, SubjectScheduleEditor } from './SubjectScheduleEditor';
 
 const AREA_CLASS =
   'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500';
@@ -17,6 +19,10 @@ interface Props {
   value: EditorValue;
   onChange: (value: EditorValue) => void;
   disabled?: boolean;
+  /** Subject schedule only. */
+  previous?: unknown;
+  suggestions?: ScheduleSuggestion[];
+  onCreateSubject?: (name: string) => Promise<void>;
 }
 
 /** Placeholder text per control, so an empty field says what to enter. */
@@ -37,7 +43,7 @@ export function placeholderFor(label: string, meta: EditableFieldMeta): string {
  * The control that suits the field: a date picker for dates, a select for fixed choices, a phone input, a text area
  * for notes, a small table for lists. Nothing is turned into a generic text input.
  */
-export function FieldInput({ id, label, meta, value, onChange, disabled = false }: Props) {
+export function FieldInput({ id, label, meta, value, onChange, disabled = false, previous, suggestions, onCreateSubject }: Props) {
   const text = typeof value === 'string' ? value : '';
   const rows = Array.isArray(value) ? value : [];
   const setRow = (index: number, key: string, cell: string) => onChange(rows.map((row, i) => (i === index ? { ...row, [key]: cell } : row)));
@@ -61,6 +67,10 @@ export function FieldInput({ id, label, meta, value, onChange, disabled = false 
       );
     case 'TEXTAREA':
       return <textarea id={id} aria-label={label} rows={3} placeholder={placeholder} disabled={disabled} maxLength={meta.maxLength ?? undefined} className={AREA_CLASS} value={text} onChange={(e) => onChange(e.target.value)} />;
+    case 'SCHEDULE':
+      return isScheduleValue(value) ? (
+        <SubjectScheduleEditor id={id} label={label} meta={meta} value={value} onChange={onChange} disabled={disabled} previous={previous} suggestions={suggestions} onCreateSubject={onCreateSubject} />
+      ) : null;
     case 'ROWS':
       return (
         <div className="space-y-2" id={id}>

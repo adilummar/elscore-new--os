@@ -17,6 +17,7 @@ import {
 import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { LEGACY_STAGE1_ITEMS, TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
+import { DEFAULT_SESSION_MINUTES, Reference, ScheduleReferences, isScheduleValue } from './subject-schedule';
 
 /** Stage 2 statuses from which the Mentor works with the parent. Collection and verification start here, not in Stage 1. */
 const MEETING_OPEN_STATUSES: ReadonlySet<string> = new Set(['IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED']);
@@ -245,9 +246,6 @@ export class MentoringWorkflowService {
       this.assertWorkable(activation);
       this.assertMeetingStarted(activation);
 
-      const referenceOptions = definition.optionsFrom ? await this.referenceOptions(tx) : undefined;
-      const value = validateHandoverFieldValue(definition, rawValue, { today: new Date(), referenceOptions });
-
       const handover = await tx.enrollmentHandover.findUniqueOrThrow({
         where: { id: activation.handoverId },
         select: { id: true, transferredFields: true },
@@ -261,8 +259,15 @@ export class MentoringWorkflowService {
       });
 
       const previous = existing ? existing.value : salesEntry?.value ?? null;
+
+      const referenceOptions = definition.optionsFrom ? await this.referenceOptions(tx) : undefined;
+      // A subject schedule is checked against the live subject and level lists. A subject or level the plan already uses
+      // stays selectable even if it was switched off since, so an existing plan can still be saved.
+      const scheduleReferences = definition.type === 'SCHEDULE' ? await this.scheduleReferences(tx, previous) : undefined;
+      const value = validateHandoverFieldValue(definition, rawValue, { today: new Date(), referenceOptions, scheduleReferences });
+
       if (basedOn !== undefined) this.assertNotStale(basedOn, previous);
-      if (previous !== null && JSON.stringify(previous) === JSON.stringify(value)) {
+      if (previous !== null && stableJson(previous) === stableJson(value)) {
         return { fieldKey, value, changed: false as const };
       }
 
@@ -358,6 +363,27 @@ export class MentoringWorkflowService {
       });
       return { fieldKey, verified: true as const, changed: true as const, verifiedAt: saved.verifiedAt };
     });
+  }
+
+  /** The active subjects and levels (grades) a subject schedule can use, plus any the stored plan already refers to. */
+  private async scheduleReferences(tx: PrismaTxClient, stored?: unknown): Promise<ScheduleReferences> {
+    const keepSubjects = new Set<string>();
+    const keepGrades = new Set<string>();
+    if (isScheduleValue(stored)) {
+      for (const s of stored.subjects) {
+        if (s && typeof s === 'object') {
+          if (typeof s.subjectId === 'string') keepSubjects.add(s.subjectId);
+          if (typeof s.gradeId === 'string') keepGrades.add(s.gradeId);
+        }
+      }
+    }
+    const [subjects, grades] = await Promise.all([
+      tx.subject.findMany({ select: { id: true, name: true, isActive: true }, orderBy: { name: 'asc' } }),
+      tx.grade.findMany({ select: { id: true, name: true, isActive: true }, orderBy: { sortOrder: 'asc' } }),
+    ]);
+    const usable = (rows: Array<{ id: string; name: string; isActive?: boolean }>, keep: Set<string>): Reference[] =>
+      rows.filter((r) => r.isActive !== false || keep.has(r.id)).map((r) => ({ id: r.id, name: r.name }));
+    return { subjects: usable(subjects, keepSubjects), grades: usable(grades, keepGrades) };
   }
 
   private async referenceOptions(tx: PrismaTxClient) {
@@ -801,7 +827,7 @@ export class MentoringWorkflowService {
     const seeParent = this.access.canSeeParentContact(scope, activation);
     const isMentorOrHead = scope.all || activation.currentMentorUserId === scope.userId;
 
-    const [fieldRows, verificationRows, referenceOptions] = await Promise.all([
+    const [fieldRows, verificationRows, referenceOptions, storedSchedule] = await Promise.all([
       activation.handoverId
         ? this.prisma.enrollmentHandoverField.findMany({ where: { handoverId: activation.handoverId } })
         : Promise.resolve([]),
@@ -809,7 +835,11 @@ export class MentoringWorkflowService {
         ? this.prisma.enrollmentHandoverFieldVerification.findMany({ where: { handoverId: activation.handoverId } })
         : Promise.resolve([]),
       this.referenceOptions(this.prisma as unknown as PrismaTxClient),
+      activation.handoverId
+        ? this.prisma.enrollmentHandoverField.findUnique({ where: { handoverId_fieldKey: { handoverId: activation.handoverId, fieldKey: 'timetable.schedule' } } })
+        : Promise.resolve(null),
     ]);
+    const scheduleReferences = await this.scheduleReferences(this.prisma, storedSchedule?.value);
 
     const [tasks, events, mentor] = await Promise.all([
       this.prisma.mentoringTask.findMany({
@@ -942,6 +972,12 @@ export class MentoringWorkflowService {
         maxLength: d.maxLength ?? null,
         minDate: d.minDate ?? null,
         maxDate: d.maxDate === 'TODAY' ? new Date().toISOString().slice(0, 10) : null,
+        // Subject schedule only: the lists the editor chooses from, the department's usual class length, and whether this
+        // person may add a subject to the master list (the same permission the reference data screen requires).
+        schedule:
+          d.type === 'SCHEDULE'
+            ? { subjects: scheduleReferences.subjects, grades: scheduleReferences.grades, defaultSessionMinutes: DEFAULT_SESSION_MINUTES, canAddSubject: scope.perms.has('reference.manage') }
+            : null,
       })),
     };
 

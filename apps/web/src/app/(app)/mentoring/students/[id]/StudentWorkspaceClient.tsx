@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { mentoringApi } from '../../mentoring-client';
+import { addSubjectToList, mentoringApi } from '../../mentoring-client';
 import { computeProgress, describeRequirements, isItemResolved } from '../../checklist-progress';
 import { buildOverview } from '../../handover-inventory';
 import { describeFieldChange, handoverFieldLabel } from '../../handover-presentation';
@@ -257,6 +257,11 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                       await load();
                     }}
                     onRefresh={load}
+                    // Adds a subject to the shared subject list. The API allows it only for people who manage reference data.
+                    onCreateSubject={async (name) => {
+                      await addSubjectToList(name);
+                      setNotice(`${name.trim()} added to the subject list.`);
+                    }}
                   />
                 ) : (
                   <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">No handover information is available for this student.</p>

@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
+import { ScheduleReferences, parseSchedule } from './subject-schedule';
+
 /**
  * The admission handover fields a Mentor can fill in or correct on the student page, with the input type and
  * validation for each. The API is the single source of truth: it validates every save with these rules and sends the
@@ -10,7 +12,7 @@ import { BadRequestException } from '@nestjs/common';
  * monthly hours), which are locked once a student is handed over. What the Mentor learns about those subjects goes into
  * `academic.subjectNotes`; it never changes the Sales requirement.
  */
-export type HandoverFieldType = 'TEXT' | 'PHONE' | 'DATE' | 'SELECT' | 'TEXTAREA' | 'ROWS';
+export type HandoverFieldType = 'TEXT' | 'PHONE' | 'DATE' | 'SELECT' | 'TEXTAREA' | 'ROWS' | 'SCHEDULE';
 
 export interface RowColumn {
   key: string;
@@ -73,12 +75,9 @@ export const HANDOVER_FIELDS: Readonly<Record<string, HandoverFieldDefinition>> 
       area('tutor.requirements'),
       area('academic.subjectNotes'),
       { key: 'tutor.assignments', type: 'ROWS', maxRows: 20, columns: [col('subject', 'Subject'), col('tutor', 'Tutor')] },
-      {
-        key: 'timetable.schedule',
-        type: 'ROWS',
-        maxRows: 21,
-        columns: [col('day', 'Day', 'select', WEEKDAYS), col('start', 'From', 'time'), col('end', 'To', 'time')],
-      },
+      // One schedule per subject (frequency, hours, days, session lengths and times). Rules live in subject-schedule.ts.
+      // Values saved before this existed are a plain list of day/start/end rows; they stay readable and are replaced on the next save.
+      { key: 'timetable.schedule', type: 'SCHEDULE' },
       {
         key: 'examination.upcomingDates',
         type: 'ROWS',
@@ -167,6 +166,8 @@ export interface ValidationContext {
   today: Date;
   /** Reference-data choices for fields that use `optionsFrom`. */
   referenceOptions?: { GRADES?: readonly string[]; CURRICULA?: readonly string[] };
+  /** The active subject and level lists a subject schedule is checked against. */
+  scheduleReferences?: ScheduleReferences;
 }
 
 // Control characters are exactly what this pattern must detect.
@@ -263,6 +264,11 @@ export function validateHandoverFieldValue(definition: HandoverFieldDefinition, 
         if (out.start && out.end && out.end <= out.start) fail(`Row ${index + 1}: the end time must be after the start time`);
         return out;
       });
+    }
+    case 'SCHEDULE': {
+      const parsed = parseSchedule(raw, context.scheduleReferences ?? { subjects: [], grades: [] });
+      if (!parsed.ok) fail(parsed.message);
+      return parsed.value;
     }
     default:
       return fail(`${label} cannot be edited`);

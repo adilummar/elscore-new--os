@@ -1,11 +1,12 @@
 import { EditableFieldMeta } from './handover-presentation';
+import { ScheduleValue, isScheduleValue, parseSchedule } from './subject-schedule';
 
 /**
  * Input handling for the inline handover editor. These checks give instant feedback; the API repeats every rule
  * (it is the authority), so a value that passes here can still be refused there and the message is shown.
  */
 export type EditorRow = Record<string, string>;
-export type EditorValue = string | EditorRow[];
+export type EditorValue = string | EditorRow[] | ScheduleValue;
 
 export type EditorResult = { ok: true; value: unknown } | { ok: false; message: string };
 
@@ -15,6 +16,10 @@ export function emptyRow(meta: EditableFieldMeta): EditorRow {
 
 /** The starting value for the editor: the current value when there is one, otherwise empty input. */
 export function initialEditorValue(meta: EditableFieldMeta, current: unknown): EditorValue {
+  if (meta.type === 'SCHEDULE') {
+    // A timetable saved before subject schedules is not a schedule; the editor starts empty and shows it as an earlier timetable.
+    return isScheduleValue(current) ? (JSON.parse(JSON.stringify(current)) as ScheduleValue) : { version: 2, subjects: [] };
+  }
   if (meta.type === 'ROWS') {
     const rows = Array.isArray(current)
       ? current
@@ -26,7 +31,18 @@ export function initialEditorValue(meta: EditableFieldMeta, current: unknown): E
   return typeof current === 'string' ? current : '';
 }
 
+/** JSON with sorted keys, so a schedule read back from the database compares equal to the draft it came from. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 export function isEditorDirty(meta: EditableFieldMeta, initial: EditorValue, current: EditorValue): boolean {
+  if (meta.type === 'SCHEDULE') return stableJson(initial) !== stableJson(current);
   if (meta.type === 'ROWS') return JSON.stringify(initial) !== JSON.stringify(current);
   return String(initial).trim() !== String(current).trim();
 }
@@ -50,6 +66,12 @@ function checkText(value: string, label: string, max: number, multiline: boolean
 
 export function validateEditorValue(meta: EditableFieldMeta, value: EditorValue, today: Date = new Date()): EditorResult {
   const fail = (message: string): EditorResult => ({ ok: false, message });
+
+  if (meta.type === 'SCHEDULE') {
+    const lists = meta.schedule ?? { subjects: [], grades: [] };
+    const parsed = parseSchedule(value, { subjects: lists.subjects, grades: lists.grades });
+    return parsed.ok ? { ok: true, value: parsed.value } : fail(parsed.message);
+  }
 
   if (meta.type === 'ROWS') {
     if (!Array.isArray(value) || value.length === 0) return fail('Add at least one row');

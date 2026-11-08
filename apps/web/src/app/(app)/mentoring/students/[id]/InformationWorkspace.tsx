@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { InventoryRow, RowFilter, buildInventory, matchesFilter } from '../../handover-inventory';
 import { isStaleMessage, saveField, setVerification, verifyBlockedReason } from '../../field-actions';
 import { EditorValue, initialEditorValue, isEditorDirty } from '../../handover-editing';
+import { isScheduleValue } from '../../subject-schedule';
 import { FieldInput } from './FieldInput';
+import { ScheduleSuggestion, SubjectScheduleView } from './SubjectScheduleEditor';
 
 type Filter = RowFilter;
 
@@ -20,6 +22,8 @@ interface CardProps {
   onVerify: (fieldKey: string, verified: boolean, basedOn: unknown) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDirtyChange: (id: string, dirty: boolean) => void;
+  suggestions: ScheduleSuggestion[];
+  onCreateSubject?: (name: string) => Promise<void>;
 }
 
 function StatusText({ row, dirty }: { row: InventoryRow; dirty: boolean }) {
@@ -50,7 +54,7 @@ function StatusText({ row, dirty }: { row: InventoryRow; dirty: boolean }) {
   );
 }
 
-function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirtyChange }: CardProps) {
+function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirtyChange, suggestions, onCreateSubject }: CardProps) {
   const meta = row.editor;
   const editable = canEdit && meta !== null;
   const serverSig = JSON.stringify(row.rawValue ?? null);
@@ -88,7 +92,7 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
   }, [saved]);
 
   const pending = row.collection === 'PENDING';
-  const wide = meta?.type === 'TEXTAREA' || meta?.type === 'ROWS';
+  const wide = meta?.type === 'TEXTAREA' || meta?.type === 'ROWS' || meta?.type === 'SCHEDULE';
   const inputId = `field-${row.fieldKey}`;
 
   const save = async () => {
@@ -135,9 +139,21 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
 
       <div className="mt-2">
         {editable && meta ? (
-          <FieldInput id={inputId} label={row.label} meta={meta} value={value} onChange={(next) => { setValue(next); setSaved(false); }} disabled={saving} />
+          <FieldInput
+            id={inputId}
+            label={row.label}
+            meta={meta}
+            value={value}
+            onChange={(next) => { setValue(next); setSaved(false); }}
+            disabled={saving}
+            previous={base}
+            suggestions={suggestions}
+            onCreateSubject={onCreateSubject ? async (name) => { await onCreateSubject(name); await onRefresh(); } : undefined}
+          />
         ) : pending ? (
           <p className="text-sm text-slate-400">No value yet</p>
+        ) : isScheduleValue(row.rawValue) ? (
+          <SubjectScheduleView value={row.rawValue} />
         ) : (
           <p className="whitespace-pre-line break-words text-sm text-slate-900 [overflow-wrap:anywhere]">{row.value}</p>
         )}
@@ -198,6 +214,19 @@ interface Props {
   onVerify?: (fieldKey: string, verified: boolean, basedOn: unknown) => Promise<void>;
   onRefresh?: () => Promise<void>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
+  /** Adds a subject to the master list. Only passed for people who may manage reference data. */
+  onCreateSubject?: (name: string) => Promise<void>;
+}
+
+/** The subject lines Sales entered, offered as quick starting points for the schedule cards. */
+function salesSuggestions(handover: unknown): ScheduleSuggestion[] {
+  const transferred = (handover && typeof handover === 'object' ? (handover as { transferredFields?: unknown }).transferredFields : null);
+  const entry = Array.isArray(transferred) ? transferred.find((e) => e && typeof e === 'object' && (e as { field?: unknown }).field === 'academic.subjects') : null;
+  const lines = entry && Array.isArray((entry as { value?: unknown }).value) ? ((entry as { value: unknown[] }).value) : [];
+  return lines
+    .filter((l): l is Record<string, unknown> => !!l && typeof l === 'object')
+    .map((l) => ({ subject: typeof l.subject === 'string' ? l.subject.trim() : '', grade: typeof l.grade === 'string' ? l.grade.trim() : '', monthlyHours: l.monthlyHours === null || l.monthlyHours === undefined ? null : String(l.monthlyHours).trim() || null }))
+    .filter((l) => l.subject);
 }
 
 const FILTERS: Array<[Filter, string]> = [['ALL', 'All'], ['PENDING', 'Pending collection'], ['NOT_VERIFIED', 'Not verified'], ['VERIFIED', 'Verified']];
@@ -207,8 +236,9 @@ const FILTERS: Array<[Filter, string]> = [['ALL', 'All'], ['PENDING', 'Pending c
  * verifying it are separate actions with separate stored records; a verified value that is edited stops counting as
  * verified until it is confirmed again. All counts come from the stored values and confirmations.
  */
-export function InformationWorkspace({ handover, canEdit = false, onSave, onVerify, onRefresh, onDirtyChange }: Props) {
+export function InformationWorkspace({ handover, canEdit = false, onSave, onVerify, onRefresh, onDirtyChange, onCreateSubject }: Props) {
   const inventory = buildInventory(handover);
+  const suggestions = React.useMemo(() => salesSuggestions(handover), [handover]);
   const [filter, setFilter] = React.useState<Filter>('ALL');
   const save = onSave ?? (async () => undefined);
   const verify = onVerify ?? (async () => undefined);
@@ -266,7 +296,7 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
               {/* Cards are hidden, not removed, when filtered out, so an unsaved draft is never lost by changing the filter. */}
               <ul role="list" className="mt-2 grid gap-2 sm:grid-cols-2">
                 {section.rows.map((row) => (
-                  <FieldCard key={row.fieldKey} row={row} visible={visible(row)} canEdit={canEdit} onSave={save} onVerify={verify} onRefresh={refresh} onDirtyChange={dirty} />
+                  <FieldCard key={row.fieldKey} row={row} visible={visible(row)} canEdit={canEdit} onSave={save} onVerify={verify} onRefresh={refresh} onDirtyChange={dirty} suggestions={suggestions} onCreateSubject={onCreateSubject} />
                 ))}
               </ul>
             </div>
