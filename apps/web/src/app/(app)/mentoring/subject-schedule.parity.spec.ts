@@ -14,6 +14,12 @@ describe('subject schedule rules', () => {
     expect(web).toBe(api);
   });
 
+  it('the tutor availability rules are identical to the API copy', () => {
+    const api = normalise(readFileSync(join(__dirname, '../../../../../api/src/modules/tutor/tutor-availability.ts'), 'utf8'));
+    const web = normalise(readFileSync(join(__dirname, 'tutor-availability.ts'), 'utf8'));
+    expect(web).toBe(api);
+  });
+
   it('the page copy of the rules test is identical to the API copy, so both run the same cases', () => {
     const api = normalise(readFileSync(join(__dirname, '../../../../../api/src/modules/mentoring/subject-schedule.spec.ts'), 'utf8'));
     const web = normalise(readFileSync(join(__dirname, 'subject-schedule.spec.ts'), 'utf8'));

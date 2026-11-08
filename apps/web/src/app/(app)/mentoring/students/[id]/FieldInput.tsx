@@ -7,6 +7,7 @@ import { Select } from '@/components/ui/Select';
 import { EditorRow, EditorValue, emptyRow } from '../../handover-editing';
 import { EditableFieldMeta } from '../../handover-presentation';
 import { isScheduleValue } from '../../subject-schedule';
+import { TutorTools } from '../../tutor-types';
 import { ScheduleSuggestion, SubjectScheduleEditor } from './SubjectScheduleEditor';
 
 const AREA_CLASS =
@@ -23,6 +24,7 @@ interface Props {
   previous?: unknown;
   suggestions?: ScheduleSuggestion[];
   onCreateSubject?: (name: string) => Promise<void>;
+  tutorTools?: TutorTools;
 }
 
 /** Placeholder text per control, so an empty field says what to enter. */
@@ -43,7 +45,7 @@ export function placeholderFor(label: string, meta: EditableFieldMeta): string {
  * The control that suits the field: a date picker for dates, a select for fixed choices, a phone input, a text area
  * for notes, a small table for lists. Nothing is turned into a generic text input.
  */
-export function FieldInput({ id, label, meta, value, onChange, disabled = false, previous, suggestions, onCreateSubject }: Props) {
+export function FieldInput({ id, label, meta, value, onChange, disabled = false, previous, suggestions, onCreateSubject, tutorTools }: Props) {
   const text = typeof value === 'string' ? value : '';
   const rows = Array.isArray(value) ? value : [];
   const setRow = (index: number, key: string, cell: string) => onChange(rows.map((row, i) => (i === index ? { ...row, [key]: cell } : row)));
@@ -69,7 +71,7 @@ export function FieldInput({ id, label, meta, value, onChange, disabled = false,
       return <textarea id={id} aria-label={label} rows={3} placeholder={placeholder} disabled={disabled} maxLength={meta.maxLength ?? undefined} className={AREA_CLASS} value={text} onChange={(e) => onChange(e.target.value)} />;
     case 'SCHEDULE':
       return isScheduleValue(value) ? (
-        <SubjectScheduleEditor id={id} label={label} meta={meta} value={value} onChange={onChange} disabled={disabled} previous={previous} suggestions={suggestions} onCreateSubject={onCreateSubject} />
+        <SubjectScheduleEditor id={id} label={label} meta={meta} value={value} onChange={onChange} disabled={disabled} previous={previous} suggestions={suggestions} onCreateSubject={onCreateSubject} tutorTools={tutorTools} />
       ) : null;
     case 'ROWS':
       return (

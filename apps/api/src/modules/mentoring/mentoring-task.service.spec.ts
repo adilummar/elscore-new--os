@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringTaskService } from './mentoring-task.service';
+import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
 import { getChecklistDefinition } from './mentoring.constants';
 import { FakeDb } from './testing/mentoring-fake-db';
@@ -21,7 +22,7 @@ function setup() {
   const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
   const access = new MentoringAccessService({ getPermissionsForUser: (id: string) => Promise.resolve(new Set(PERMS[id] ?? [])) } as any);
   const tasks = new MentoringTaskService(db as any, history);
-  const workflow = new MentoringWorkflowService(db as any, access, history);
+  const workflow = new MentoringWorkflowService(db as any, access, history, new MentoringTutorService(db as any, history));
   const scope = (id: string) => access.scopeFor(id);
 
   db.seed('student', { id: 'stu-1', businessId: 'STU-0001', firstName: 'Asha', lastName: 'K' });

@@ -10,6 +10,7 @@ import { MentoringAccessService } from './mentoring-access.service';
 import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, getHandoverField, isVerifiableField, validateHandoverFieldValue } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { unresolvedMandatoryItems } from './mentoring-stage.helpers';
+import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowController } from './mentoring-workflow.controller';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
 import { CHECKLIST, LEGACY_STAGE1_ITEMS, getChecklistDefinition } from './mentoring.constants';
@@ -27,7 +28,7 @@ function services(db: FakeDb) {
   const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
   const rbac = { getPermissionsForUser: jest.fn((id: string) => Promise.resolve(new Set(PERMS[id] ?? []))) };
   const access = new MentoringAccessService(rbac as any);
-  const workflow = new MentoringWorkflowService(db as any, access, history);
+  const workflow = new MentoringWorkflowService(db as any, access, history, new MentoringTutorService(db as any, history));
   return { workflow, scope: (id: string) => access.scopeFor(id) };
 }
 

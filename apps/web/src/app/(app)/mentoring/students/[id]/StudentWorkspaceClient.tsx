@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { addSubjectToList, mentoringApi } from '../../mentoring-client';
+import { addSubjectToList, getTutorAvailability, mentoringApi, saveTutorAvailability } from '../../mentoring-client';
+import { AssignmentView, CandidateList, TutorTools } from '../../tutor-types';
 import { computeProgress, describeRequirements, isItemResolved } from '../../checklist-progress';
 import { buildOverview } from '../../handover-inventory';
 import { describeFieldChange, handoverFieldLabel } from '../../handover-presentation';
@@ -98,6 +99,29 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const canHold = Boolean(can.pause) && (viewer.isMentor || viewer.isHead) && activation.status === 'ACTIVATION_IN_PROGRESS';
   const onHold = activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED';
   const base = `/mentoring/students/${activationId}`;
+  // Choosing a tutor for each subject. Every call goes to the API, which checks availability again before it saves.
+  const tutorTools: TutorTools = {
+    assignments: (Array.isArray(ws.tutorAssignments) ? ws.tutorAssignments : []) as AssignmentView[],
+    canAssign: Boolean(viewer.canEditHandover),
+    canManageAvailability: Boolean((viewer as { canManageTutorAvailability?: boolean }).canManageTutorAvailability),
+    loadCandidates: (subjectId) => mentoringApi(`${base}/schedule/subjects/${subjectId}/tutors`) as Promise<CandidateList>,
+    assign: async (subjectId, tutorProfileId) => {
+      await mentoringApi(`${base}/schedule/subjects/${subjectId}/tutor`, 'PUT', { tutorProfileId });
+      setNotice('Tutor assigned.');
+      await load();
+    },
+    remove: async (subjectId, reason) => {
+      await mentoringApi(`${base}/schedule/subjects/${subjectId}/tutor/remove`, 'POST', { reason: reason ?? null });
+      setNotice('Tutor removed.');
+      await load();
+    },
+    loadAvailability: (tutorProfileId) => getTutorAvailability(tutorProfileId),
+    saveAvailability: async (tutorProfileId, windows) => {
+      await saveTutorAvailability(tutorProfileId, windows);
+      setNotice('Tutor availability saved.');
+      await load();
+    },
+  };
   const progress = computeProgress(checklist);
   const overview = buildOverview(ws.handover);
   const updateItem = async (itemKey: string, update: ItemUpdate) => {
@@ -257,6 +281,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                       await load();
                     }}
                     onRefresh={load}
+                    tutorTools={tutorTools}
                     // Adds a subject to the shared subject list. The API allows it only for people who manage reference data.
                     onCreateSubject={async (name) => {
                       await addSubjectToList(name);

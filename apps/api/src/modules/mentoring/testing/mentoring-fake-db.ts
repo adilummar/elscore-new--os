@@ -16,6 +16,7 @@ const UNIQUE: Record<string, string[][]> = {
   enrollmentHandoverField: [['handoverId', 'fieldKey']],
   enrollmentHandoverFieldVerification: [['handoverId', 'fieldKey']],
   notification: [['dedupeKey']],
+  mentoringTutorAssignment: [['currentKey']],
 };
 
 const DEFAULTS: Record<string, () => Row> = {
@@ -25,6 +26,9 @@ const DEFAULTS: Record<string, () => Row> = {
   finalApproval: () => ({ decision: 'PENDING', decidedByUserId: null, decidedAt: null, comment: null, returnToStage: null }),
   workflowHold: () => ({ resolvedAt: null, resolvedByUserId: null, resolution: null, stageId: null, previousStageStatus: null, pendingAction: null, dependency: null }),
 };
+
+/** Prisma's DbNull and JsonNull markers mean "store null"; the fake keeps a plain null. */
+const plain = (data: Row): Row => Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v && typeof v === 'object' && ['DbNull', 'JsonNull', 'AnyNull'].includes((v as object).constructor?.name) ? null : v]));
 
 let counter = 0;
 const nextId = (prefix: string) => `${prefix}-${++counter}`;
@@ -41,6 +45,12 @@ function matches(db: FakeDb, table: string, row: Row, where?: Row): boolean {
     if ('in' in c) return (c.in as unknown[]).includes(row[key]);
     if ('notIn' in c) return !(c.notIn as unknown[]).includes(row[key]);
     if ('not' in c) return row[key] !== c.not;
+    if ('gte' in c || 'lte' in c || 'gt' in c || 'lt' in c) {
+      const v = row[key] as number | Date | null | undefined;
+      if (v === null || v === undefined) return false;
+      const n = (x: unknown) => (x instanceof Date ? x.getTime() : (x as number));
+      return (!('gte' in c) || n(v) >= n(c.gte)) && (!('lte' in c) || n(v) <= n(c.lte)) && (!('gt' in c) || n(v) > n(c.gt)) && (!('lt' in c) || n(v) < n(c.lt));
+    }
     if ('contains' in c) return String(row[key] ?? '').toLowerCase().includes(String(c.contains).toLowerCase());
 
     // Compound unique selector such as { activationId_stageNumber: { activationId, stageNumber } }.
@@ -59,6 +69,8 @@ export class FakeDb {
   tables: Record<string, Row[]> = {};
   $executeRaw = jest.fn().mockResolvedValue(1);
   $transaction: jest.Mock;
+  /** Row locks taken with SELECT ... FOR UPDATE, held until the transaction that took them ends. */
+  private locks = new Map<string, { owner: symbol; released: Promise<void> }>();
 
   // Model accessors are created lazily so tests can use any model name the services touch.
   [model: string]: any;
@@ -71,7 +83,32 @@ export class FakeDb {
       },
     });
     // Transactions hand the callback the proxy so model accessors resolve inside them too.
-    this.$transaction = jest.fn((cb: (tx: any) => unknown) => Promise.resolve(cb(proxy)));
+    this.$transaction = jest.fn(async (cb: (tx: any) => unknown) => {
+      // Each transaction gets its own handle, so a FOR UPDATE lock belongs to it and a second transaction waits for it.
+      const held: Array<() => void> = [];
+      const owner = Symbol('transaction');
+      const tx = Object.create(proxy) as FakeDb;
+      Object.defineProperty(tx, '$executeRaw', {
+        value: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          await this.$executeRaw(strings, ...values);
+          const sql = strings.join('?');
+          if (!/FOR UPDATE/i.test(sql)) return 1;
+          const key = `${sql}${JSON.stringify(values)}`;
+          // Like Postgres, a transaction can lock a row it already holds; only another transaction waits.
+          for (let lock = this.locks.get(key); lock && lock.owner !== owner; lock = this.locks.get(key)) await lock.released;
+          if (this.locks.get(key)?.owner === owner) return 1;
+          let release!: () => void;
+          this.locks.set(key, { owner, released: new Promise<void>((r) => (release = r)) });
+          held.push(() => { this.locks.delete(key); release(); });
+          return 1;
+        },
+      });
+      try {
+        return await cb(tx);
+      } finally {
+        held.forEach((f) => f());
+      }
+    });
     return proxy;
   }
 
@@ -152,7 +189,7 @@ export class FakeDb {
           throw err;
         }
       }
-      const { stages, ...rest } = data;
+      const { stages, ...rest } = plain(data);
       const row = this.seed(table, { ...rest });
       if (stages?.create) for (const s of stages.create) this.seed('mentoringStage', { ...s, activationId: row.id });
       return row;
@@ -174,7 +211,7 @@ export class FakeDb {
       update: jest.fn((args: Row) => {
         const r = find(args);
         if (!r) return Promise.reject(new Error(`${table} not found`));
-        Object.assign(r, args.data, { updatedAt: new Date() });
+        Object.assign(r, plain(args.data), { updatedAt: new Date() });
         return Promise.resolve({ ...r });
       }),
       delete: jest.fn((args: Row) => {
@@ -182,6 +219,11 @@ export class FakeDb {
         if (!r) return Promise.reject(new Error(`${table} not found`));
         this.tables[table] = this.rows(table).filter((x) => x !== r);
         return Promise.resolve({ ...r });
+      }),
+      deleteMany: jest.fn((args: Row = {}) => {
+        const gone = this.rows(table).filter((r) => matches(this, table, r, args.where));
+        this.tables[table] = this.rows(table).filter((r) => !gone.includes(r));
+        return Promise.resolve({ count: gone.length });
       }),
       updateMany: jest.fn((args: Row) => {
         const list = this.rows(table).filter((r) => matches(this, table, r, args.where));

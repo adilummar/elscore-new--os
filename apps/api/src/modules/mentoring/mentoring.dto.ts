@@ -50,6 +50,15 @@ export class SetFieldVerificationDto {
   @IsOptional() basedOn?: unknown;
 }
 
+/** Choose the tutor for one subject of the student's schedule. The server checks every session again. */
+export class AssignTutorDto {
+  @IsString() @IsNotEmpty() tutorProfileId!: string;
+}
+
+export class RemoveTutorDto {
+  @IsOptional() @IsString() reason?: string;
+}
+
 export class PauseDto {
   @IsString() @IsNotEmpty() reason!: string;
   @IsString() @IsNotEmpty() pendingAction!: string;

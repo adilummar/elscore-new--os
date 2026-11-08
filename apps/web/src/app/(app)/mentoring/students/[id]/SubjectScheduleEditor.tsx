@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { EditableFieldMeta } from '../../handover-presentation';
+import { AssignmentView, TutorTools } from '../../tutor-types';
+import { AssignedTutor } from './TutorPanel';
 import {
   FREQUENCIES,
   FREQUENCY_LABELS,
@@ -24,6 +26,7 @@ import {
   formatMinutes,
   hoursMismatch,
   hoursToMinutes,
+  isScheduleValue,
   minutesToHoursText,
   newSubject,
   planTotals,
@@ -62,6 +65,14 @@ interface EditorProps {
   suggestions?: ScheduleSuggestion[];
   /** Adds a subject to the master list. Offered only to people who may manage reference data; the API checks again. */
   onCreateSubject?: (name: string) => Promise<void>;
+  /** Tutor selection for each subject. Omitted where tutors cannot be chosen. */
+  tutorTools?: TutorTools;
+}
+
+/** Compares what matters for matching a tutor: level, frequency, hours and the classes with their times. */
+function matchKey(s: SubjectSchedule): string {
+  const sessions = s.sessions.map((x) => `${x.week ?? ''}|${x.day}|${(x.occurrences ?? []).join('+')}|${x.durationMinutes}|${x.start ?? ''}|${x.end ?? ''}`).sort();
+  return JSON.stringify([s.gradeId, s.frequency, s.totalMinutes, s.distribution, sessions]);
 }
 
 const SHORT_DAY: Record<Weekday, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
@@ -147,11 +158,14 @@ interface CardProps {
   takenIds: ReadonlySet<string>;
   salesHours: string | null;
   disabled?: boolean;
+  tutorTools?: TutorTools;
+  /** This card matches the saved schedule, so tutors can be matched against it. */
+  saved: boolean;
   onChange: (next: SubjectSchedule) => void;
   onRemove: () => void;
 }
 
-function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disabled, onChange, onRemove }: CardProps) {
+function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disabled, tutorTools, saved, onChange, onRemove }: CardProps) {
   const [customizing, setCustomizing] = React.useState(false);
   const id = `${baseId}-subject-${index}`;
   const period = PERIOD_LABELS[subject.frequency];
@@ -308,12 +322,14 @@ function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disab
       </div>
       {mismatch && <p role="alert" className="mt-1 text-xs font-medium text-amber-700">{mismatch}</p>}
       {!mismatch && problem && <p className="mt-1 text-xs text-amber-700">Still needed: {problem}</p>}
+
+      {tutorTools && subject.subjectId && <AssignedTutor subjectId={subject.subjectId} subjectName={subject.subjectName} tools={tutorTools} saved={saved} />}
     </section>
   );
 }
 
 /** Stage 2 editor for the preferred timetable: one card per subject, each with its own frequency, hours and days. */
-export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabled = false, previous, suggestions = [], onCreateSubject }: EditorProps) {
+export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabled = false, previous, suggestions = [], onCreateSubject, tutorTools }: EditorProps) {
   const lists = meta.schedule ?? { subjects: [], grades: [], defaultSessionMinutes: 60, canAddSubject: false };
   const [newName, setNewName] = React.useState('');
   const [adding, setAdding] = React.useState(false);
@@ -325,6 +341,7 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
   const totals = planTotals(subjects);
   const conflicts = findConflicts(subjects);
   const ready = scheduleProblem(value, { subjects: lists.subjects, grades: lists.grades });
+  const storedKeys = new Map((isScheduleValue(previous) ? previous.subjects : []).map((s) => [s.subjectId, matchKey(s)]));
   const legacy = Array.isArray(previous) ? previous.filter((r): r is Record<string, string> => !!r && typeof r === 'object') : [];
 
   const byName = (list: Array<{ id: string; name: string }>, name: string) => list.find((r) => r.name.toLowerCase() === name.trim().toLowerCase());
@@ -375,6 +392,8 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
           takenIds={taken}
           salesHours={salesHoursFor(subject)}
           disabled={disabled}
+          tutorTools={tutorTools}
+          saved={storedKeys.get(subject.subjectId) === matchKey(subject)}
           onChange={(next) => set(subjects.map((s, i) => (i === index ? next : s)))}
           onRemove={() => set(subjects.filter((_, i) => i !== index))}
         />
@@ -432,13 +451,18 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
 }
 
 /** The saved schedule for people who cannot edit it: one block per subject with its classes. */
-export function SubjectScheduleView({ value }: { value: ScheduleValue }) {
+export function SubjectScheduleView({ value, assignments = [] }: { value: ScheduleValue; assignments?: AssignmentView[] }) {
   return (
     <div className="space-y-2" data-testid="schedule-view">
       {value.subjects.map((subject) => (
         <div key={subject.subjectId} className="rounded-md bg-slate-50 px-3 py-2">
           <p className="text-sm font-medium text-slate-900">{subject.subjectName}</p>
           <p className="text-xs text-slate-500">{[subject.gradeName, FREQUENCY_LABELS[subject.frequency], `${minutesToHoursText(subject.totalMinutes)} hours ${PERIOD_LABELS[subject.frequency]}`].join(' · ')}</p>
+          {assignments.filter((a) => a.subjectId === subject.subjectId).map((a) => (
+            <p key={a.id} className="mt-1 text-xs text-slate-700" data-testid="schedule-view-tutor">
+              Tutor: <span className="font-medium text-slate-900">{a.tutorName}</span>{a.status === 'NEEDS_REVIEW' ? ', needs review' : ''}
+            </p>
+          ))}
           <ul role="list" className="mt-1 flex flex-wrap gap-1">
             {subject.sessions.map((s) => (
               <li key={`${s.week ?? 0}-${s.day}`} className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-700">

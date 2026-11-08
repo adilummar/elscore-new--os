@@ -1,5 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString, Min } from 'class-validator';
+
+/** The whole weekly availability. Each range is checked by validateAvailability, which is the single set of rules. */
+export class ReplaceAvailabilityDto {
+  @ApiPropertyOptional({ description: 'Time ranges: { day: 0-6 (0 = Sunday), start: HH:MM, end: HH:MM }' })
+  @IsArray()
+  windows!: unknown[];
+}
 
 export class UpdateTutorProfileDto {
   @ApiPropertyOptional({ description: 'Short bio' })

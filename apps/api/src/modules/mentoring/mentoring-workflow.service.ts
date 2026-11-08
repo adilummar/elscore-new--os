@@ -5,6 +5,7 @@ import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.servic
 
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringAllocationService } from './mentoring-allocation.service';
+import { MEETING_OPEN_STATUSES, assertMeetingStarted, assertWorkable, loadLockedActivation } from './mentoring-guards';
 import {
   HANDOVER_FIELDS,
   HANDOVER_FIELD_LABELS,
@@ -16,11 +17,9 @@ import {
 } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
+import { MentoringTutorService } from './mentoring-tutor.service';
 import { LEGACY_STAGE1_ITEMS, TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
 import { DEFAULT_SESSION_MINUTES, Reference, ScheduleReferences, isScheduleValue } from './subject-schedule';
-
-/** Stage 2 statuses from which the Mentor works with the parent. Collection and verification start here, not in Stage 1. */
-const MEETING_OPEN_STATUSES: ReadonlySet<string> = new Set(['IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED']);
 
 export interface HoldInput {
   reason: string;
@@ -46,15 +45,13 @@ export class MentoringWorkflowService {
     private readonly prisma: PrismaService,
     private readonly access: MentoringAccessService,
     private readonly history: MentoringHistoryService,
+    private readonly tutors: MentoringTutorService,
   ) {}
 
   // ─── Shared helpers ────────────────────────────────────────────────────────
 
   private async loadLocked(tx: PrismaTxClient, activationId: string) {
-    await tx.$executeRaw`SELECT 1 FROM mentoring_activations WHERE id = ${activationId} FOR UPDATE`;
-    const activation = await tx.mentoringActivation.findUnique({ where: { id: activationId }, include: { stages: true } });
-    if (!activation) throw new NotFoundException('Activation not found');
-    return activation;
+    return loadLockedActivation(tx, activationId);
   }
 
   private stageOf(activation: { stages: Array<{ stageNumber: number; id: string; status: MentoringStageStatus }> }, n: number) {
@@ -75,23 +72,12 @@ export class MentoringWorkflowService {
   }
 
   private assertWorkable(activation: { status: string }) {
-    if (activation.status === 'ACTIVATION_ON_HOLD' || activation.status === 'ACTIVATION_BLOCKED') {
-      throw new ConflictException('This student workflow is on hold. Resume it first.');
-    }
-    if (activation.status !== 'ACTIVATION_IN_PROGRESS') {
-      throw new ConflictException(`The workflow is not in progress (${activation.status})`);
-    }
+    assertWorkable(activation);
   }
 
-  /**
-   * Information is collected and confirmed in Stage 2 (Meeting with Parents). Stage 1 only presents the handover,
-   * so nothing can be saved before the Mentor has started Stage 2.
-   */
+  /** Nothing is saved before the Mentor has started Stage 2 (see mentoring-guards.ts). */
   private assertMeetingStarted(activation: { stages: Array<{ stageNumber: number; status: MentoringStageStatus }> }) {
-    const meeting = activation.stages.find((s) => s.stageNumber === 2);
-    if (!meeting || !MEETING_OPEN_STATUSES.has(meeting.status)) {
-      throw new ConflictException('Information is collected in the Meeting with Parents stage. Complete the handover review and start that stage first.');
-    }
+    assertMeetingStarted(activation);
   }
 
   /** Refuses a save or confirmation made against a value that someone else has since changed. */
@@ -301,6 +287,11 @@ export class MentoringWorkflowService {
         actorUserId: userId,
         payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, verificationInvalidated },
       });
+      // A changed schedule may no longer suit the tutors already chosen for its subjects: check each one, and flag any
+      // that no longer fit for review instead of leaving a stale assignment in place.
+      if (fieldKey === 'timetable.schedule') {
+        await this.tutors.revalidateForSchedule(tx, activation, isScheduleValue(value) ? value : null, userId);
+      }
       return { fieldKey, value: saved.value, origin: saved.origin, changed: true as const };
     });
   }
@@ -1045,6 +1036,8 @@ export class MentoringWorkflowService {
       approvals: activation.approvals,
       tasks,
       events,
+      // The tutor chosen for each subject of the schedule, with whether it still fits.
+      tutorAssignments: await this.tutors.assignmentsFor(activationId),
       viewer: {
         userId: scope.userId,
         isMentor: activation.currentMentorUserId === scope.userId,
@@ -1059,6 +1052,8 @@ export class MentoringWorkflowService {
           manageTasks: scope.perms.has('mentoring.task.create') || scope.perms.has('mentoring.task.verify'),
         },
         canEditHandover: activation.currentMentorUserId === scope.userId && activation.status === 'ACTIVATION_IN_PROGRESS' && meetingStarted,
+        // Changing a tutor's working hours is for HR and the tutor, under the existing tutor profile permissions.
+        canManageTutorAvailability: scope.perms.has('tutor.profile.manage'),
       },
     };
   }

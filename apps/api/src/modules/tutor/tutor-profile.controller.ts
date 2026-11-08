@@ -1,11 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
-import { UpdateTeachingExperienceDto, UpdateTutorProfileDto } from './dto/tutor-profile.dto';
+import { ReplaceAvailabilityDto, UpdateTeachingExperienceDto, UpdateTutorProfileDto } from './dto/tutor-profile.dto';
+import { TutorAvailabilityService } from './tutor-availability.service';
 import { TutorProfileService } from './tutor-profile.service';
 
 @ApiTags('Tutor Profiles')
@@ -13,7 +14,10 @@ import { TutorProfileService } from './tutor-profile.service';
 @UseGuards(RbacGuard)
 @Controller('tutors/profile')
 export class TutorProfileController {
-  constructor(private readonly tutorProfileService: TutorProfileService) {}
+  constructor(
+    private readonly tutorProfileService: TutorProfileService,
+    private readonly availability: TutorAvailabilityService,
+  ) {}
 
   @Get('me')
   @RequirePermissions('tutor.self.update') // Tutors have this
@@ -30,11 +34,40 @@ export class TutorProfileController {
     return this.tutorProfileService.updateProfile(profile.id, dto, user.id);
   }
 
+  // --- Weekly availability. These two routes come before :id so "me" is not read as a profile id. ---
+  @Get('me/availability')
+  @RequirePermissions('tutor.self.update')
+  @ApiOperation({ summary: 'Get own weekly availability' })
+  async getMyAvailability(@CurrentUser() user: RequestUser) {
+    return this.availability.get(await this.availability.profileIdForUser(user.id));
+  }
+
+  @Put('me/availability')
+  @RequirePermissions('tutor.self.update')
+  @ApiOperation({ summary: 'Replace own weekly availability' })
+  async replaceMyAvailability(@Body() dto: ReplaceAvailabilityDto, @CurrentUser() user: RequestUser) {
+    return this.availability.replace(await this.availability.profileIdForUser(user.id), dto.windows, user.id);
+  }
+
   @Get(':id')
   @RequirePermissions('tutor.profile.read')
   @ApiOperation({ summary: 'Get tutor profile by Profile ID' })
   async getProfile(@Param('id') id: string) {
     return this.tutorProfileService.findByProfileId(id);
+  }
+
+  @Get(':id/availability')
+  @RequirePermissions('tutor.profile.manage')
+  @ApiOperation({ summary: 'Get a tutor weekly availability (HR)' })
+  async getAvailability(@Param('id') id: string) {
+    return this.availability.get(id);
+  }
+
+  @Put(':id/availability')
+  @RequirePermissions('tutor.profile.manage')
+  @ApiOperation({ summary: 'Replace a tutor weekly availability (HR)' })
+  async replaceAvailability(@Param('id') id: string, @Body() dto: ReplaceAvailabilityDto, @CurrentUser() user: RequestUser) {
+    return this.availability.replace(id, dto.windows, user.id);
   }
 
   // --- HR-Managed Fields ---

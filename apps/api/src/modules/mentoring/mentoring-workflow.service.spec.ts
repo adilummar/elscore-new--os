@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringHistoryService } from './mentoring-history.service';
+import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
 import { getChecklistDefinition } from './mentoring.constants';
 import { clone, FakeDb } from './testing/mentoring-fake-db';
@@ -19,7 +20,7 @@ function services(db: FakeDb) {
   const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
   const rbac = { getPermissionsForUser: jest.fn((id: string) => Promise.resolve(new Set(PERMS[id] ?? []))) };
   const access = new MentoringAccessService(rbac as any);
-  const workflow = new MentoringWorkflowService(db as any, access, history);
+  const workflow = new MentoringWorkflowService(db as any, access, history, new MentoringTutorService(db as any, history));
   return { workflow, access, scope: (id: string) => access.scopeFor(id) };
 }
 

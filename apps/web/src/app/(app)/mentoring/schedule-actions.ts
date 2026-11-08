@@ -11,3 +11,28 @@ import { ActionResult, toActionResult } from '@/lib/api/action-result';
 export async function addSubjectToListAction(code: string, name: string): Promise<ActionResult<unknown>> {
   return toActionResult(() => fetchApi<unknown>('/reference/subjects', { method: 'POST', body: JSON.stringify({ code, name }) }));
 }
+
+const ID = /^[A-Za-z0-9-]{8,64}$/;
+const badTutor = (): ActionResult<unknown> => ({ ok: false, message: 'This tutor could not be found.' });
+
+/**
+ * A tutor's weekly working hours. These forward to the existing tutor profile routes, which allow HR staff to read and
+ * change any tutor and a tutor to read and change their own. A Mentor is refused by the API with its own message.
+ */
+export async function getTutorAvailabilityAction(tutorProfileId: string): Promise<ActionResult<unknown>> {
+  if (!ID.test(tutorProfileId)) return badTutor();
+  return toActionResult(() => fetchApi<unknown>(`/tutors/profile/${tutorProfileId}/availability`));
+}
+
+export async function saveTutorAvailabilityAction(tutorProfileId: string, windows: unknown[]): Promise<ActionResult<unknown>> {
+  if (!ID.test(tutorProfileId)) return badTutor();
+  return toActionResult(() => fetchApi<unknown>(`/tutors/profile/${tutorProfileId}/availability`, { method: 'PUT', body: JSON.stringify({ windows }) }));
+}
+
+export async function getMyAvailabilityAction(): Promise<ActionResult<unknown>> {
+  return toActionResult(() => fetchApi<unknown>('/tutors/profile/me/availability'));
+}
+
+export async function saveMyAvailabilityAction(windows: unknown[]): Promise<ActionResult<unknown>> {
+  return toActionResult(() => fetchApi<unknown>('/tutors/profile/me/availability', { method: 'PUT', body: JSON.stringify({ windows }) }));
+}

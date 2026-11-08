@@ -6,6 +6,7 @@ import { ConflictException } from '@nestjs/common';
 
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringHistoryService } from './mentoring-history.service';
+import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
 import { LEGACY_STAGE1_ITEMS, getChecklistDefinition } from './mentoring.constants';
 import { clone, FakeDb } from './testing/mentoring-fake-db';
@@ -83,7 +84,7 @@ function build(config: {
   const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
   const rbac = { getPermissionsForUser: jest.fn((id: string) => Promise.resolve(new Set(PERMS[id] ?? []))) };
   const access = new MentoringAccessService(rbac as any);
-  const workflow = new MentoringWorkflowService(db as any, access, history);
+  const workflow = new MentoringWorkflowService(db as any, access, history, new MentoringTutorService(db as any, history));
   return { db, workflow, scope: (id: string) => access.scopeFor(id), stage: (n: number) => db.rows('mentoringStage').find((s) => s.stageNumber === n)! };
 }
 

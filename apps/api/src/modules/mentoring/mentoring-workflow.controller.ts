@@ -5,13 +5,16 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
+import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
 import {
   ApprovalDecisionDto,
+  AssignTutorDto,
   BlockDto,
   CancelDto,
   ExceptionDto,
   PauseDto,
+  RemoveTutorDto,
   ResumeDto,
   SetFieldVerificationDto,
   StudentListQueryDto,
@@ -30,6 +33,7 @@ export class MentoringWorkflowController {
   constructor(
     private readonly workflow: MentoringWorkflowService,
     private readonly access: MentoringAccessService,
+    private readonly tutors: MentoringTutorService,
   ) {}
 
   @Get()
@@ -69,6 +73,31 @@ export class MentoringWorkflowController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.workflow.setHandoverFieldVerification(id, fieldKey, dto, user.id);
+  }
+
+  /**
+   * The tutors who teach one subject, ranked against the saved schedule, with the reason for every session that does not
+   * fit. Assigned Mentor only. Nothing here is a decision: assigning checks everything again.
+   */
+  @Get(':activationId/schedule/subjects/:subjectId/tutors')
+  @RequirePermissions('mentoring.stage.work')
+  async tutorCandidates(@Param('activationId') id: string, @Param('subjectId') subjectId: string, @CurrentUser() user: RequestUser) {
+    const scope = await this.access.scopeFor(user.id);
+    return this.tutors.candidates(id, subjectId, user.id, scope.perms.has('tutor.profile.manage'));
+  }
+
+  /** Choose the tutor for a subject (assigned Mentor). Refused unless the tutor is free for every session. */
+  @Put(':activationId/schedule/subjects/:subjectId/tutor')
+  @RequirePermissions('mentoring.stage.work')
+  assignTutor(@Param('activationId') id: string, @Param('subjectId') subjectId: string, @Body() dto: AssignTutorDto, @CurrentUser() user: RequestUser) {
+    return this.tutors.assign(id, subjectId, dto.tutorProfileId, user.id);
+  }
+
+  /** Remove the tutor from a subject (assigned Mentor). The assignment stays in the history. */
+  @Post(':activationId/schedule/subjects/:subjectId/tutor/remove')
+  @RequirePermissions('mentoring.stage.work')
+  removeTutor(@Param('activationId') id: string, @Param('subjectId') subjectId: string, @Body() dto: RemoveTutorDto, @CurrentUser() user: RequestUser) {
+    return this.tutors.unassign(id, subjectId, dto.reason ?? null, user.id);
   }
 
   @Post(':activationId/stages/:stage/start')

@@ -87,6 +87,12 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   HANDOVER_FIELD_VERIFIED: 'Information verified with the parent',
   HANDOVER_FIELD_UNVERIFIED: 'Verification withdrawn',
   CHECKLIST_DEFINITION_MIGRATED: 'Checklist moved to the new format',
+  MENTORING_TUTOR_ASSIGNED: 'Tutor assigned',
+  MENTORING_TUTOR_REASSIGNED: 'Tutor changed',
+  MENTORING_TUTOR_REMOVED: 'Tutor removed',
+  MENTORING_TUTOR_NEEDS_REVIEW: 'Tutor needs review',
+  MENTORING_TUTOR_CONFIRMED: 'Tutor confirmed again',
+  MENTORING_TUTOR_SCHEDULE_UPDATED: 'Tutor booking updated',
 };
 
 /** Reason codes the system writes itself (as opposed to reasons people type). */

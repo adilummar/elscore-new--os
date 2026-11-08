@@ -8,6 +8,7 @@ import { isStaleMessage, saveField, setVerification, verifyBlockedReason } from 
 import { EditorValue, initialEditorValue, isEditorDirty } from '../../handover-editing';
 import { isScheduleValue } from '../../subject-schedule';
 import { FieldInput } from './FieldInput';
+import { TutorTools } from '../../tutor-types';
 import { ScheduleSuggestion, SubjectScheduleView } from './SubjectScheduleEditor';
 
 type Filter = RowFilter;
@@ -24,6 +25,7 @@ interface CardProps {
   onDirtyChange: (id: string, dirty: boolean) => void;
   suggestions: ScheduleSuggestion[];
   onCreateSubject?: (name: string) => Promise<void>;
+  tutorTools?: TutorTools;
 }
 
 function StatusText({ row, dirty }: { row: InventoryRow; dirty: boolean }) {
@@ -54,7 +56,7 @@ function StatusText({ row, dirty }: { row: InventoryRow; dirty: boolean }) {
   );
 }
 
-function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirtyChange, suggestions, onCreateSubject }: CardProps) {
+function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirtyChange, suggestions, onCreateSubject, tutorTools }: CardProps) {
   const meta = row.editor;
   const editable = canEdit && meta !== null;
   const serverSig = JSON.stringify(row.rawValue ?? null);
@@ -149,11 +151,12 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
             previous={base}
             suggestions={suggestions}
             onCreateSubject={onCreateSubject ? async (name) => { await onCreateSubject(name); await onRefresh(); } : undefined}
+            tutorTools={tutorTools}
           />
         ) : pending ? (
           <p className="text-sm text-slate-400">No value yet</p>
         ) : isScheduleValue(row.rawValue) ? (
-          <SubjectScheduleView value={row.rawValue} />
+          <SubjectScheduleView value={row.rawValue} assignments={tutorTools?.assignments} />
         ) : (
           <p className="whitespace-pre-line break-words text-sm text-slate-900 [overflow-wrap:anywhere]">{row.value}</p>
         )}
@@ -216,6 +219,8 @@ interface Props {
   onDirtyChange?: (id: string, dirty: boolean) => void;
   /** Adds a subject to the master list. Only passed for people who may manage reference data. */
   onCreateSubject?: (name: string) => Promise<void>;
+  /** Tutor selection for the subject schedule. */
+  tutorTools?: TutorTools;
 }
 
 /** The subject lines Sales entered, offered as quick starting points for the schedule cards. */
@@ -236,7 +241,7 @@ const FILTERS: Array<[Filter, string]> = [['ALL', 'All'], ['PENDING', 'Pending c
  * verifying it are separate actions with separate stored records; a verified value that is edited stops counting as
  * verified until it is confirmed again. All counts come from the stored values and confirmations.
  */
-export function InformationWorkspace({ handover, canEdit = false, onSave, onVerify, onRefresh, onDirtyChange, onCreateSubject }: Props) {
+export function InformationWorkspace({ handover, canEdit = false, onSave, onVerify, onRefresh, onDirtyChange, onCreateSubject, tutorTools }: Props) {
   const inventory = buildInventory(handover);
   const suggestions = React.useMemo(() => salesSuggestions(handover), [handover]);
   const [filter, setFilter] = React.useState<Filter>('ALL');
@@ -296,7 +301,7 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
               {/* Cards are hidden, not removed, when filtered out, so an unsaved draft is never lost by changing the filter. */}
               <ul role="list" className="mt-2 grid gap-2 sm:grid-cols-2">
                 {section.rows.map((row) => (
-                  <FieldCard key={row.fieldKey} row={row} visible={visible(row)} canEdit={canEdit} onSave={save} onVerify={verify} onRefresh={refresh} onDirtyChange={dirty} suggestions={suggestions} onCreateSubject={onCreateSubject} />
+                  <FieldCard key={row.fieldKey} row={row} visible={visible(row)} canEdit={canEdit} onSave={save} onVerify={verify} onRefresh={refresh} onDirtyChange={dirty} suggestions={suggestions} onCreateSubject={onCreateSubject} tutorTools={tutorTools} />
                 ))}
               </ul>
             </div>

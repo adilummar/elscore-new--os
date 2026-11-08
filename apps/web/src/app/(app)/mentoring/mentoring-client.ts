@@ -1,5 +1,6 @@
 import { mentoringApiAction } from './actions';
-import { addSubjectToListAction } from './schedule-actions';
+import { addSubjectToListAction, getMyAvailabilityAction, getTutorAvailabilityAction, saveMyAvailabilityAction, saveTutorAvailabilityAction } from './schedule-actions';
+import { AvailabilityWindow } from './tutor-availability';
 import { friendlyMentoringError } from './labels';
 
 /**
@@ -21,3 +22,20 @@ export async function addSubjectToList(name: string): Promise<void> {
   const result = await addSubjectToListAction(code, clean);
   if (!result.ok) throw new Error(friendlyMentoringError(result.message));
 }
+
+interface AvailabilityReply {
+  name: string;
+  windows: AvailabilityWindow[];
+}
+
+async function unwrap<T>(result: { ok: true; data: unknown } | { ok: false; message: string }): Promise<T> {
+  if (!result.ok) throw new Error(friendlyMentoringError(result.message));
+  return result.data as T;
+}
+
+/** A tutor's working hours (HR staff), and saving them. The API checks the permission and the ranges again. */
+export const getTutorAvailability = async (tutorProfileId: string) => unwrap<AvailabilityReply>(await getTutorAvailabilityAction(tutorProfileId));
+export const saveTutorAvailability = async (tutorProfileId: string, windows: AvailabilityWindow[]) => unwrap<AvailabilityReply>(await saveTutorAvailabilityAction(tutorProfileId, windows));
+/** The signed-in tutor's own working hours. */
+export const getMyAvailability = async () => unwrap<AvailabilityReply>(await getMyAvailabilityAction());
+export const saveMyAvailability = async (windows: AvailabilityWindow[]) => unwrap<AvailabilityReply>(await saveMyAvailabilityAction(windows));
