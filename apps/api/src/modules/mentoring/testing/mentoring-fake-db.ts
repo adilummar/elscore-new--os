@@ -18,6 +18,10 @@ const UNIQUE: Record<string, string[][]> = {
   notification: [['dedupeKey']],
   mentoringTutorAssignment: [['currentKey']],
   mentoringLearningPlan: [['currentKey']],
+  mentoringSlaItem: [['currentKey']],
+  tutorClassRecord: [['sessionId', 'tutorId']],
+  mentoringSlaPolicy: [['key']],
+  mentoringReminder: [['currentKey']],
   mentoringReviewMeeting: [['currentKey']],
   mentoringLearningPlanSubject: [['planId', 'subjectId']],
   mentoringLearningPlanRevision: [['planId', 'version']],
@@ -25,6 +29,9 @@ const UNIQUE: Record<string, string[][]> = {
 
 const DEFAULTS: Record<string, () => Row> = {
   tutorAvailabilityException: () => ({ isActive: true, deactivatedAt: null }),
+  mentoringReminder: () => ({ status: 'PREPARED', preparedAt: new Date(), scheduledFor: null, sentAt: null, sentByUserId: null, notificationId: null, acknowledgedAt: null }),
+  mentoringSlaItem: () => ({ status: 'OPEN', firstResponseAt: null, completedAt: null }),
+  mentoringClassSession: () => ({ status: 'SCHEDULED', activities: [], conducted: null, actualStartMinute: null, actualEndMinute: null, actualMinutes: null, subjectCovered: null, topicsCovered: null, attendance: null, participation: null, classNotes: null, notConductedReason: null, otherActivity: null, evaluationRemarks: null, coveredRemarks: null, voiceSentAt: null, voiceReceivedAt: null, voiceReceivedByUserId: null, voiceRemarks: null, tutorSubmittedAt: null, tutorSubmittedByUserId: null, mentorRemarks: null, returnedReason: null, returnedKind: null, verifiedAt: null, verifiedByUserId: null, verifiedMinutes: null, tutorClassRecordId: null }),
   tutorSubject: () => ({ isActive: true }),
   tutorGrade: () => ({ isActive: true }),
   tutorAvailabilitySlot: () => ({ isActive: true }),

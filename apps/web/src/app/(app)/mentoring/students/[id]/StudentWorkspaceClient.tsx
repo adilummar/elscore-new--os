@@ -18,10 +18,11 @@ import { HandoverOverview } from './HandoverOverview';
 import { Check } from 'lucide-react';
 import { COMPLETE_STAGE_1_LABEL, HandoverReview } from './HandoverReview';
 import { InformationWorkspace } from './InformationWorkspace';
+import { DailyClassesPanel } from './DailyClassesPanel';
 import { LearningPlanPanel } from './LearningPlanPanel';
 import { TimetablePanel } from './TimetablePanel';
 
-type Panel = 'checklist' | 'tasks' | 'history';
+type Panel = 'checklist' | 'classes' | 'tasks' | 'history';
 
 export function StudentWorkspaceClient({ activationId, initialWorkspace, initialPanel }: { activationId: string; initialWorkspace?: any; initialPanel?: Panel }) {
   const [ws, setWs] = React.useState<any>(initialWorkspace ?? null);
@@ -179,9 +180,9 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
       </div>
 
       <div className="flex gap-4 border-b border-slate-200 text-sm">
-        {(['checklist', 'tasks', 'history'] as Panel[]).map((p) => (
+        {(['checklist', 'classes', 'tasks', 'history'] as Panel[]).map((p) => (
           <button key={p} onClick={() => confirmLeave() && setPanel(p)} className={`pb-2 ${panel === p ? 'border-b-2 border-brand-600 font-semibold' : 'text-slate-500'}`}>
-            {p === 'checklist' ? 'Checklist' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
+            {p === 'checklist' ? 'Checklist' : p === 'classes' ? 'Daily classes' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
           </button>
         ))}
       </div>
@@ -325,6 +326,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
           )}
         </div>
       )}
+
+      {panel === 'classes' && <DailyClassesPanel activationId={activation.id} />}
 
       {panel === 'tasks' && (
         <TaskPanel ws={view} stage={stage ?? { number: 1, checklist: [] }} counselors={counselors} busy={busy} run={run} showForm={form === 'task'} setShowForm={(v: boolean) => setForm(v ? 'task' : null)} />

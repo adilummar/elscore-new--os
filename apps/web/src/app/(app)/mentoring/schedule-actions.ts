@@ -39,6 +39,12 @@ export async function saveMyAvailabilityAction(windows: unknown[]): Promise<Acti
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The signed-in tutor's own classes. The route takes no tutor id: the API starts from who is signed in. */
+export async function getMyCalendarAction(from: string, to: string): Promise<ActionResult<unknown>> {
+  if (!DATE.test(from) || !DATE.test(to)) return { ok: false, message: 'Choose real dates.' };
+  return toActionResult(() => fetchApi<unknown>(`/tutor-portal/calendar?from=${from}&to=${to}`));
+}
+
 /** A tutor's date-wise timetable. The API checks the permission, limits the range, and hides student names from people who may not see them. */
 export async function getTutorCalendarAction(tutorProfileId: string, from: string, to: string): Promise<ActionResult<unknown>> {
   if (!ID.test(tutorProfileId) || !DATE.test(from) || !DATE.test(to)) return badTutor();

@@ -46,7 +46,8 @@ export class TutorCalendarService {
     private readonly rbac: RbacService,
   ) {}
 
-  async calendar(tutorProfileId: string, from: string, to: string, userId: string): Promise<TutorCalendarView> {
+  /** `showStudents` is for a tutor looking at their own calendar: the students behind their own classes are theirs to see. */
+  async calendar(tutorProfileId: string, from: string, to: string, userId: string, options: { showStudents?: boolean } = {}): Promise<TutorCalendarView> {
     if (!isDateString(from) || !isDateString(to)) throw new BadRequestException('Choose real dates, written like 2026-11-09.');
     if (to < from) throw new BadRequestException('The end date cannot be before the start date.');
     if (daysBetween(from, to) + 1 > MAX_CALENDAR_DAYS) throw new BadRequestException(`Choose no more than ${MAX_CALENDAR_DAYS} days at a time.`);
@@ -65,7 +66,7 @@ export class TutorCalendarService {
       db.subject.findMany({ where: { id: { in: subjectLinks.map((l) => l.subjectId) } } }),
       db.grade.findMany({ where: { id: { in: gradeLinks.map((l) => l.gradeId) } } }),
     ]);
-    const canSeeStudents = perms.has('tutor.profile.manage') || perms.has('mentoring.student.read-all');
+    const canSeeStudents = options.showStudents === true || perms.has('tutor.profile.manage') || perms.has('mentoring.student.read-all');
     const windows: AvailabilityWindow[] = slots.map((s) => ({ day: s.dayOfWeek as DayNumber, start: minutesToClock(minutesOf(s.startTime)), end: minutesToClock(minutesOf(s.endTime)) }));
 
     const calendars = await loadCalendars(db, [{ tutorProfileId, userId: employee?.userId ?? '', employeeId: profile.employeeId, windows }], {

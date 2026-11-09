@@ -7,6 +7,8 @@ import { TutorCalendarService } from './tutor-calendar.service';
 import { TutorExceptionService } from './tutor-exception.service';
 import { TutorFeedbackController } from './tutor-feedback.controller';
 import { TutorFeedbackService } from './tutor-feedback.service';
+import { TutorPortalController } from './tutor-portal.controller';
+import { TutorPortalService } from './tutor-portal.service';
 import { TutorProfileController } from './tutor-profile.controller';
 import { TutorProfileService } from './tutor-profile.service';
 import { TutorRateController } from './tutor-rate.controller';
@@ -18,12 +20,14 @@ import { TutorRateService } from './tutor-rate.service';
     TutorProfileController,
     TutorRateController,
     TutorFeedbackController,
+    TutorPortalController,
   ],
   providers: [
     TutorProfileService,
     TutorAvailabilityService,
     TutorCalendarService,
     TutorExceptionService,
+    TutorPortalService,
     TutorRateService,
     TutorFeedbackService,
   ],

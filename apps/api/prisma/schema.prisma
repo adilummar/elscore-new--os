@@ -3804,6 +3804,7 @@ model MentoringActivation {
   tutorAssignments MentoringTutorAssignment[]
   reviewMeetings   MentoringReviewMeeting[]
   learningPlans    MentoringLearningPlan[]
+  classSessions    MentoringClassSession[]
   holds       WorkflowHold[]
   tasks       MentoringTask[]
   approvals   FinalApproval[]
@@ -4175,6 +4176,214 @@ model MentoringLearningPlanRevision {
 
   @@unique([planId, version])
   @@map("mentoring_learning_plan_revisions")
+}
+
+/// A response-time target for one kind of Mentoring work, such as reviewing a class update. The default is two working
+/// hours. Counting working hours only (not calendar hours) is the approved policy; MODE is kept so it can be changed here
+/// instead of in code.
+model MentoringSlaPolicy {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  label           String
+  targetMinutes   Int      @default(120) @map("target_minutes")
+  /// WORKING_HOURS counts only the staff working schedule; CALENDAR counts every minute.
+  mode            String   @default("WORKING_HOURS")
+  /// FIRST_RESPONSE: the clock stops at the first response. COMPLETION: it stops when the work is completed.
+  measure         String   @default("COMPLETION")
+  /// The share of the target after which an open item is "approaching".
+  approachingPercent Int   @default(75) @map("approaching_percent")
+  isActive        Boolean  @default(true) @map("is_active")
+  updatedByUserId String?  @map("updated_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("mentoring_sla_policies")
+}
+
+enum MentoringSlaItemStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+/// One piece of work with a response target. The due time is fixed when the item starts, from the policy then in force.
+model MentoringSlaItem {
+  id                String                 @id @default(uuid())
+  policyKey         String                 @map("policy_key")
+  entityType        String                 @map("entity_type")
+  entityId          String                 @map("entity_id")
+  activationId      String?                @map("activation_id")
+  responsibleUserId String?                @map("responsible_user_id")
+  /// Set while OPEN, so the same work never has two clocks running.
+  currentKey        String?                @unique @map("current_key")
+  status            MentoringSlaItemStatus @default(OPEN)
+  startedAt         DateTime               @map("started_at")
+  dueAt             DateTime               @map("due_at")
+  targetMinutes     Int                    @map("target_minutes")
+  firstResponseAt   DateTime?              @map("first_response_at")
+  completedAt       DateTime?              @map("completed_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  @@index([activationId, status])
+  @@index([policyKey, status, dueAt])
+  @@index([responsibleUserId, status])
+  @@map("mentoring_sla_items")
+}
+
+enum MentoringReminderStatus {
+  PREPARED
+  SENT
+  ACKNOWLEDGED
+  CANCELLED
+}
+
+/// A reminder to one person about one thing. SENT means an in-app notification really exists: notification_id is the
+/// delivery evidence, and the database refuses a SENT reminder without it.
+model MentoringReminder {
+  id               String                  @id @default(uuid())
+  kind             String
+  entityType       String                  @map("entity_type")
+  entityId         String                  @map("entity_id")
+  activationId     String?                 @map("activation_id")
+  recipientUserId  String                  @map("recipient_user_id")
+  status           MentoringReminderStatus @default(PREPARED)
+  /// Set while the reminder is not CANCELLED, so one person is not reminded twice about the same thing.
+  currentKey       String?                 @unique @map("current_key")
+  scheduledFor     DateTime?               @map("scheduled_for")
+  message          String
+  preparedByUserId String                  @map("prepared_by_user_id")
+  preparedAt       DateTime                @default(now()) @map("prepared_at")
+  sentAt           DateTime?               @map("sent_at")
+  sentByUserId     String?                 @map("sent_by_user_id")
+  notificationId   String?                 @map("notification_id")
+  acknowledgedAt   DateTime?               @map("acknowledged_at")
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+
+  @@index([recipientUserId, status])
+  @@index([entityType, entityId])
+  @@index([activationId])
+  @@map("mentoring_reminders")
+}
+
+enum MentoringClassStatus {
+  SCHEDULED
+  RESCHEDULED
+  AWAITING_MENTOR_VERIFICATION
+  RETURNED_FOR_CORRECTION
+  VERIFIED
+  NOT_CONDUCTED
+}
+
+/// One class on one date. It is created the first time something happens to a scheduled class (a reminder, a tutor update),
+/// from the tutor assignment's own recurrence rule, and never otherwise. The key is the assignment plus the date and start
+/// time the rule gave, so the same class can never have two rows even after it is moved. The displayed state (reminder
+/// pending, awaiting the tutor's update, and so on) is worked out from this row, the reminder and the clock.
+model MentoringClassSession {
+  id                  String                @id @default(uuid())
+  activationId        String                @map("activation_id")
+  assignmentId        String                @map("assignment_id")
+  subjectId           String                @map("subject_id")
+  tutorProfileId      String                @map("tutor_profile_id")
+  /// The tutor's user, which is who the class record and payroll are kept against.
+  tutorUserId         String                @map("tutor_user_id")
+  /// The date and start time the recurrence rule gave. They never change, so the row can always be found again.
+  originalDate        DateTime              @map("original_date") @db.Date
+  originalStartMinute Int                   @map("original_start_minute")
+  /// Where the class is now. They differ from the original only after a reschedule.
+  date                DateTime              @db.Date
+  startMinute         Int                   @map("start_minute")
+  endMinute           Int                   @map("end_minute")
+  status              MentoringClassStatus  @default(SCHEDULED)
+
+  // What the tutor reports
+  conducted           Boolean?
+  actualStartMinute   Int?                  @map("actual_start_minute")
+  actualEndMinute     Int?                  @map("actual_end_minute")
+  actualMinutes       Int?                  @map("actual_minutes")
+  subjectCovered      String?               @map("subject_covered")
+  topicsCovered       String?               @map("topics_covered") @db.Text
+  attendance          String?
+  participation       String?
+  classNotes          String?               @map("class_notes") @db.Text
+  notConductedReason  String?               @map("not_conducted_reason") @db.Text
+  activities          String[]
+  otherActivity       String?               @map("other_activity")
+  /// Remarks, class evaluation: understanding, attention, progress, difficulties, effectiveness, what to improve.
+  evaluationRemarks   String?               @map("evaluation_remarks") @db.Text
+  /// Remarks, topics covered in class: topics, chapters, exercises, activities, homework, what remains. Kept apart from the evaluation.
+  coveredRemarks      String?               @map("covered_remarks") @db.Text
+  /// The voice update is a checklist item: the tutor says it was sent, and the Mentor confirms it arrived. No audio is stored.
+  voiceSentAt         DateTime?             @map("voice_sent_at")
+  voiceReceivedAt     DateTime?             @map("voice_received_at")
+  voiceReceivedByUserId String?             @map("voice_received_by_user_id")
+  voiceRemarks        String?               @map("voice_remarks") @db.Text
+  tutorSubmittedAt    DateTime?             @map("tutor_submitted_at")
+  tutorSubmittedByUserId String?            @map("tutor_submitted_by_user_id")
+
+  // What the Mentor decides
+  mentorRemarks       String?               @map("mentor_remarks") @db.Text
+  returnedReason      String?               @map("returned_reason") @db.Text
+  returnedKind        String?               @map("returned_kind")
+  verifiedAt          DateTime?             @map("verified_at")
+  verifiedByUserId    String?               @map("verified_by_user_id")
+  /// What the Mentor confirmed: the minutes that count. Not the scheduled and not necessarily the tutor's own figure.
+  verifiedMinutes     Int?                  @map("verified_minutes")
+  /// The tutor class record made on verification. The payroll flow already reads these.
+  tutorClassRecordId  String?               @map("tutor_class_record_id")
+
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  activation  MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  events      MentoringClassSessionEvent[]
+  adjustments MentoringClassCompensationAdjustment[]
+
+  @@unique([assignmentId, originalDate, originalStartMinute])
+  @@index([activationId, date])
+  @@index([tutorUserId, date])
+  @@index([status, date])
+  @@map("mentoring_class_sessions")
+}
+
+/// Everything that happens to a class, in order: who, when, what it was before and after, and why.
+model MentoringClassSessionEvent {
+  id          String   @id @default(uuid())
+  sessionId   String   @map("session_id")
+  kind        String
+  actorUserId String?  @map("actor_user_id")
+  reason      String?  @db.Text
+  fromStatus  String?  @map("from_status")
+  toStatus    String?  @map("to_status")
+  payload     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("mentoring_class_session_events")
+}
+
+/// A correction to the pay of a class that was already verified. The tutor class record and any payroll that used it are
+/// never rewritten after payroll has taken it: the change is a new row here, so payroll history is kept.
+model MentoringClassCompensationAdjustment {
+  id               String   @id @default(uuid())
+  sessionId        String   @map("session_id")
+  classRecordId    String?  @map("class_record_id")
+  previousMinutes  Int      @map("previous_minutes")
+  newMinutes       Int      @map("new_minutes")
+  deltaMinutes     Int      @map("delta_minutes")
+  reason           String   @db.Text
+  /// True when the class record itself could still be changed (no payroll run had taken it).
+  appliedToRecord  Boolean  @map("applied_to_record")
+  createdByUserId  String   @map("created_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId])
+  @@map("mentoring_class_compensation_adjustments")
 }
 
 model StageChecklistResponse {

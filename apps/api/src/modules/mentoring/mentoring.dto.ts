@@ -57,6 +57,31 @@ export class TimetableQueryDto {
   @IsOptional() @IsString() to?: string;
 }
 
+/** Filters for the daily classes. Each one is checked by the service, which says what is wrong. */
+export class ClassQueryDto {
+  @IsOptional() @IsString() date?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() tutorProfileId?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() activationId?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() limit?: string;
+}
+
+/** Filters for the response-time list. Each one is checked by the service, which says what is wrong. */
+export class SlaQueryDto {
+  @IsOptional() @IsString() policyKey?: string;
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() activationId?: string;
+  @IsOptional() @IsString() responsibleUserId?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() limit?: string;
+}
+
 /** One subject's learning plan. Every field is checked by the learning plan service, which explains what is wrong. */
 export class SaveSubjectPlanDto {
   @IsOptional() description?: unknown;

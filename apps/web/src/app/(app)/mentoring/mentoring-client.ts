@@ -1,5 +1,5 @@
 import { mentoringApiAction } from './actions';
-import { addSubjectToListAction, getMyAvailabilityAction, getTutorAvailabilityAction, getTutorCalendarAction, saveMyAvailabilityAction, saveTutorAvailabilityAction } from './schedule-actions';
+import { addSubjectToListAction, getMyAvailabilityAction, getTutorAvailabilityAction, getMyCalendarAction, getTutorCalendarAction, saveMyAvailabilityAction, saveTutorAvailabilityAction } from './schedule-actions';
 import { AvailabilityWindow } from './tutor-availability';
 import { friendlyMentoringError } from './labels';
 
@@ -39,6 +39,10 @@ export const saveTutorAvailability = async (tutorProfileId: string, windows: Ava
 /** The signed-in tutor's own working hours. */
 export const getMyAvailability = async () => unwrap<AvailabilityReply>(await getMyAvailabilityAction());
 export const saveMyAvailability = async (windows: AvailabilityWindow[]) => unwrap<AvailabilityReply>(await saveMyAvailabilityAction(windows));
+
+/** The signed-in tutor's own classes for a range of dates (at most a month). */
+export const getMyCalendar = async (from: string, to: string) =>
+  unwrap<import('../tutors/[id]/TutorTimetable').TutorCalendar>(await getMyCalendarAction(from, to));
 
 /** A tutor's timetable for a range of dates (at most a month). */
 export const getTutorCalendar = async (tutorProfileId: string, from: string, to: string) =>

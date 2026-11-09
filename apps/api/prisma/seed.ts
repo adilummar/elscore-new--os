@@ -1008,6 +1008,13 @@ const PERMISSIONS: Array<{
     isDelegatable: true,
   },
   {
+    code: 'tutor.portal.read',
+    resource: 'tutor.portal',
+    action: 'read',
+    description: 'Open the tutor portal: the tutor\'s own classes and records, and no one else\'s',
+    isDelegatable: false,
+  },
+  {
     code: 'tutor.profile.manage',
     resource: 'tutor.profile',
     action: 'manage',
@@ -1765,6 +1772,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'department.read',
     'tutor.self.update',
     'tutor.profile.read', // own profile only — service layer enforces ownership
+    'tutor.portal.read', // own classes and records only: the portal never takes a tutor id
     'attendance.student.read',
     'attendance.student.mark',
     'attendance.tutor.read',
