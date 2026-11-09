@@ -3802,6 +3802,8 @@ model MentoringActivation {
   stages   MentoringStage[]
   assignments MentorAssignment[]
   tutorAssignments MentoringTutorAssignment[]
+  reviewMeetings   MentoringReviewMeeting[]
+  learningPlans    MentoringLearningPlan[]
   holds       WorkflowHold[]
   tasks       MentoringTask[]
   approvals   FinalApproval[]
@@ -4072,6 +4074,107 @@ model TutorAvailabilityException {
   @@index([tutorProfileId, date])
   @@index([date])
   @@map("tutor_availability_exceptions")
+}
+
+enum ReviewMeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+/// The monthly review meeting of a student. Scheduled and conducted in the phase after the Individual Learning Plan, which
+/// is the only writer. The Individual Learning Plan only reads the date: it is the end date of every subject plan.
+model MentoringReviewMeeting {
+  id              String              @id @default(uuid())
+  activationId    String              @map("activation_id")
+  kind            String              @default("MONTHLY_REVIEW")
+  scheduledFor    DateTime            @map("scheduled_for") @db.Date
+  status          ReviewMeetingStatus @default(SCHEDULED)
+  /// Set while the meeting is SCHEDULED, so a student has one live meeting of a kind.
+  currentKey      String?             @unique @map("current_key")
+  createdByUserId String              @map("created_by_user_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+
+  @@index([activationId, status])
+  @@map("mentoring_review_meetings")
+}
+
+enum LearningPlanStatus {
+  DRAFT
+  READY_FOR_REVIEW
+  APPROVED
+  SUPERSEDED
+}
+
+/// One overall learning period of a student. Every subject has its own plan inside it, and all of them end on the date of
+/// the next monthly review meeting. The overall status shown on the screen (not started, pending review date, ...) is worked
+/// out from these rows, not stored.
+model MentoringLearningPlan {
+  id               String             @id @default(uuid())
+  activationId     String             @map("activation_id")
+  status           LearningPlanStatus @default(DRAFT)
+  /// Set while the plan is live (not SUPERSEDED), so a student has one live plan.
+  currentKey       String?            @unique @map("current_key")
+  reviewMeetingId  String?            @map("review_meeting_id")
+  /// The review meeting date. NULL until a meeting is scheduled: nothing else ever decides it.
+  endsOn           DateTime?          @map("ends_on") @db.Date
+  createdByUserId  String             @map("created_by_user_id")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedByUserId  String?            @map("updated_by_user_id")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  approvedByUserId String?            @map("approved_by_user_id")
+  approvedAt       DateTime?          @map("approved_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  subjects   MentoringLearningPlanSubject[]
+  revisions  MentoringLearningPlanRevision[]
+
+  @@index([activationId, status])
+  @@map("mentoring_learning_plans")
+}
+
+/// The plan for one subject.
+model MentoringLearningPlanSubject {
+  id              String   @id @default(uuid())
+  planId          String   @map("plan_id")
+  subjectId       String   @map("subject_id")
+  description     String   @db.Text
+  objectives      String   @default("") @db.Text
+  topics          String   @default("") @db.Text
+  outcomes        String   @default("") @db.Text
+  startsOn        DateTime? @map("starts_on") @db.Date
+  /// The review meeting date, or an earlier date the Mentor chose. Never later than the meeting.
+  endsOn          DateTime? @map("ends_on") @db.Date
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedByUserId String?  @map("updated_by_user_id")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  plan MentoringLearningPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, subjectId])
+  @@map("mentoring_learning_plan_subjects")
+}
+
+/// A snapshot of the whole plan each time it is saved, made ready, approved, reopened or moved to a new review date. A
+/// version is never changed or deleted, so an approved plan is never silently overwritten.
+model MentoringLearningPlanRevision {
+  id              String   @id @default(uuid())
+  planId          String   @map("plan_id")
+  version         Int
+  kind            String
+  snapshot        Json
+  reason          String?  @db.Text
+  changedByUserId String?  @map("changed_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  plan MentoringLearningPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, version])
+  @@map("mentoring_learning_plan_revisions")
 }
 
 model StageChecklistResponse {

@@ -17,6 +17,10 @@ const UNIQUE: Record<string, string[][]> = {
   enrollmentHandoverFieldVerification: [['handoverId', 'fieldKey']],
   notification: [['dedupeKey']],
   mentoringTutorAssignment: [['currentKey']],
+  mentoringLearningPlan: [['currentKey']],
+  mentoringReviewMeeting: [['currentKey']],
+  mentoringLearningPlanSubject: [['planId', 'subjectId']],
+  mentoringLearningPlanRevision: [['planId', 'version']],
 };
 
 const DEFAULTS: Record<string, () => Row> = {

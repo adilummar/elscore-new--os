@@ -5,6 +5,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
+import { MentoringLearningPlanService } from './mentoring-learning-plan.service';
 import { MentoringTimetableService } from './mentoring-timetable.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
@@ -17,6 +18,7 @@ import {
   PauseDto,
   RemoveTutorDto,
   ResumeDto,
+  SaveSubjectPlanDto,
   SetFieldVerificationDto,
   StudentListQueryDto,
   TimetableQueryDto,
@@ -37,6 +39,7 @@ export class MentoringWorkflowController {
     private readonly access: MentoringAccessService,
     private readonly tutors: MentoringTutorService,
     private readonly timetables: MentoringTimetableService,
+    private readonly learningPlans: MentoringLearningPlanService,
   ) {}
 
   @Get()
@@ -53,6 +56,30 @@ export class MentoringWorkflowController {
   @Get(':activationId/timetable')
   async timetable(@Param('activationId') id: string, @Query() query: TimetableQueryDto, @CurrentUser() user: RequestUser) {
     return this.timetables.timetable(id, query, await this.access.scopeFor(user.id));
+  }
+
+  /** The Individual Learning Plan: a plan for every subject, ending on the monthly review meeting date. */
+  @Get(':activationId/learning-plan')
+  async learningPlan(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
+    return this.learningPlans.get(id, await this.access.scopeFor(user.id));
+  }
+
+  @Put(':activationId/learning-plan/subjects/:subjectId')
+  @RequirePermissions('mentoring.stage.work')
+  saveSubjectPlan(@Param('activationId') id: string, @Param('subjectId') subjectId: string, @Body() dto: SaveSubjectPlanDto, @CurrentUser() user: RequestUser) {
+    return this.learningPlans.saveSubject(id, subjectId, dto, user.id);
+  }
+
+  @Post(':activationId/learning-plan/ready')
+  @RequirePermissions('mentoring.stage.work')
+  markLearningPlanReady(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
+    return this.learningPlans.markReady(id, user.id);
+  }
+
+  @Post(':activationId/learning-plan/approve')
+  @RequirePermissions('mentoring.stage.work')
+  approveLearningPlan(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
+    return this.learningPlans.approve(id, user.id);
   }
 
   @Get(':activationId/events')

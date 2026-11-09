@@ -9,6 +9,7 @@ import { MentoringAllocationController } from './mentoring-allocation.controller
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { MentoringHandoverService } from './mentoring-handover.service';
 import { MentoringHistoryService } from './mentoring-history.service';
+import { MentoringLearningPlanService } from './mentoring-learning-plan.service';
 import { MentoringStaffService } from './mentoring-staff.service';
 import { MentoringTaskController } from './mentoring-task.controller';
 import { MentoringTaskService } from './mentoring-task.service';
@@ -29,6 +30,7 @@ import { MentoringWorkflowService } from './mentoring-workflow.service';
     MentoringTaskService,
     MentoringTutorService,
     MentoringTimetableService,
+    MentoringLearningPlanService,
     MentoringWorkflowService,
   ],
   exports: [MentoringHandoverService],

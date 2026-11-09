@@ -57,6 +57,17 @@ export class TimetableQueryDto {
   @IsOptional() @IsString() to?: string;
 }
 
+/** One subject's learning plan. Every field is checked by the learning plan service, which explains what is wrong. */
+export class SaveSubjectPlanDto {
+  @IsOptional() description?: unknown;
+  @IsOptional() objectives?: unknown;
+  @IsOptional() topics?: unknown;
+  @IsOptional() outcomes?: unknown;
+  @IsOptional() startsOn?: unknown;
+  @IsOptional() endsOn?: unknown;
+  @IsOptional() reason?: unknown;
+}
+
 /** Choose the tutor for one subject of the student's schedule. The server checks every session again. */
 export class AssignTutorDto {
   @IsString() @IsNotEmpty() tutorProfileId!: string;
