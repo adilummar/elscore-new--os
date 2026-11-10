@@ -211,6 +211,19 @@ export class MentoringExamService {
     };
   }
 
+  /** Exams across the caller's students (or the given ones) in a date range, with their derived state. Used by the dashboard. */
+  async queue(scope: MentoringScope, activationIds: string[] | null, f: { from?: string; to?: string; subjectId?: string; tutorUserId?: string } = {}, now: Date = new Date()): Promise<ExamView[]> {
+    this.access.requireAnyScope(scope);
+    const visible = scope.all ? null : (await this.db.mentoringActivation.findMany({ where: this.access.visibilityWhere(scope) })).map((a) => a.id);
+    const ids = activationIds === null ? visible : visible === null ? activationIds : activationIds.filter((i) => visible.includes(i));
+    if (ids !== null && ids.length === 0) return [];
+    const where: Record<string, unknown> = ids === null ? {} : { activationId: { in: ids } };
+    if (f.subjectId) where.subjectId = f.subjectId;
+    if (f.tutorUserId) where.tutorUserId = f.tutorUserId;
+    if (f.from || f.to) where.date = { ...(f.from ? { gte: asDate(f.from) } : {}), ...(f.to ? { lte: asDate(f.to) } : {}) };
+    return this.build(this.db, (await this.db.mentoringExam.findMany({ where, orderBy: { date: 'asc' } })), now);
+  }
+
   async detail(examId: string, scope: MentoringScope, now: Date = new Date()): Promise<ExamView> {
     this.access.requireAnyScope(scope);
     const row = (await this.db.mentoringExam.findUnique({ where: { id: examId } }));

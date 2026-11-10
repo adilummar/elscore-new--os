@@ -263,6 +263,17 @@ export class MentoringClassService {
     return { date, student: { id: activation.studentId, name: `${activation.student.firstName} ${activation.student.lastName ?? ''}`.trim() }, classes, counts, canWork: activation.currentMentorUserId === scope.userId && scope.perms.has('mentoring.stage.work') };
   }
 
+  /** Classes for a date range across the caller's students (or the given ones), from the tutor assignments. Used by the dashboard. */
+  async range(scope: MentoringScope, from: string, to: string, activationIds: string[] | null, filters: ClassFilters = {}, now: Date = new Date()) {
+    this.access.requireAnyScope(scope);
+    this.checkRange(from, to);
+    const visible = scope.all ? null : (await this.db.mentoringActivation.findMany({ where: this.access.visibilityWhere(scope) })).map((a) => a.id);
+    const ids = activationIds === null ? visible : visible === null ? activationIds : activationIds.filter((i) => visible.includes(i));
+    if (ids !== null && ids.length === 0) return [];
+    const where = ids === null ? {} : { activationId: { in: ids } };
+    return this.applyFilters(await this.classesFor(this.db, where, where, from, to, now), filters);
+  }
+
   /** Stored classes across the caller's students, for the Mentor's review queue: by status, tutor, subject, student and dates. */
   async queue(scope: MentoringScope, filters: ClassFilters = {}, now: Date = new Date()) {
     this.access.requireAnyScope(scope);

@@ -6,6 +6,7 @@ export default async function MentoringHome() {
   const can = (p: string) => !!user?.permissions?.includes(p);
 
   const links = [
+    { href: '/mentoring/dashboard', label: 'Mentor dashboard', show: can('mentoring.student.read-all') || can('mentoring.student.read-assigned') },
     { href: '/mentoring/students', label: 'Students', show: can('mentoring.student.read-all') || can('mentoring.student.read-assigned') },
     { href: '/mentoring/tasks', label: 'Tasks', show: can('mentoring.task.work') || can('mentoring.task.create') },
     { href: '/mentoring/allocation', label: 'Allocation and workload', show: can('mentoring.allocation.read') || can('mentoring.staff.read') },

@@ -81,6 +81,28 @@ export class ExamQueryDto {
   @IsOptional() @IsString() limit?: string;
 }
 
+/** Filters for the Mentor dashboard. Each one is checked by the service, which says what is wrong. */
+export class DashboardQueryDto {
+  @IsOptional() @IsString() studentQuery?: string;
+  @IsOptional() @IsString() activationId?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() tutorProfileId?: string;
+  @IsOptional() @IsString() tutorUserId?: string;
+  @IsOptional() @IsString() period?: string;
+  @IsOptional() @IsString() date?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() classState?: string;
+  @IsOptional() @IsString() examState?: string;
+  @IsOptional() @IsString() meetingState?: string;
+  @IsOptional() @IsString() complaintCategory?: string;
+  @IsOptional() @IsString() complaintStatus?: string;
+  @IsOptional() @IsString() priority?: string;
+  @IsOptional() @IsString() slaState?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() pageSize?: string;
+}
+
 /** Filters for parent complaints. Each one is checked by the service, which says what is wrong. */
 export class ComplaintQueryDto {
   @IsOptional() @IsString() status?: string;

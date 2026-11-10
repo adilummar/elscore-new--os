@@ -11,6 +11,8 @@ import { MentoringClassController } from './mentoring-class.controller';
 import { MentoringClassService } from './mentoring-class.service';
 import { MentoringComplaintController } from './mentoring-complaint.controller';
 import { MentoringComplaintService } from './mentoring-complaint.service';
+import { MentoringDashboardController } from './mentoring-dashboard.controller';
+import { MentoringDashboardService } from './mentoring-dashboard.service';
 import { MentoringExamController, TutorExamsController } from './mentoring-exam.controller';
 import { MentoringExamService } from './mentoring-exam.service';
 import { MentoringHandoverService } from './mentoring-handover.service';
@@ -32,7 +34,7 @@ import { TutorClassesController } from './tutor-classes.controller';
 
 @Module({
   imports: [PrismaModule, AuditModule, RbacModule],
-  controllers: [MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController],
+  controllers: [MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController],
   providers: [
     MentoringHandoverService,
     MentoringAccessService,
@@ -49,6 +51,7 @@ import { TutorClassesController } from './tutor-classes.controller';
     MentoringExamService,
     MentoringReviewService,
     MentoringComplaintService,
+    MentoringDashboardService,
     MentoringWorkflowService,
   ],
   exports: [MentoringHandoverService],
