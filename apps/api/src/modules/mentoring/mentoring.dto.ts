@@ -81,6 +81,21 @@ export class ExamQueryDto {
   @IsOptional() @IsString() limit?: string;
 }
 
+/** Filters for parent complaints. Each one is checked by the service, which says what is wrong. */
+export class ComplaintQueryDto {
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() stage?: string;
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsString() priority?: string;
+  @IsOptional() @IsString() sla?: string;
+  @IsOptional() @IsString() activationId?: string;
+  @IsOptional() @IsString() assignedToUserId?: string;
+  @IsOptional() @IsString() mine?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() limit?: string;
+}
+
 /** Filters for the response-time list. Each one is checked by the service, which says what is wrong. */
 export class SlaQueryDto {
   @IsOptional() @IsString() policyKey?: string;

@@ -3806,6 +3806,7 @@ model MentoringActivation {
   learningPlans    MentoringLearningPlan[]
   classSessions    MentoringClassSession[]
   exams            MentoringExam[]
+  complaints       MentoringComplaint[]
   holds       WorkflowHold[]
   tasks       MentoringTask[]
   approvals   FinalApproval[]
@@ -4254,6 +4255,80 @@ model MentoringReviewEvent {
 
   @@index([meetingId, createdAt])
   @@map("mentoring_review_events")
+}
+
+/// A complaint from a parent, logged by the Mentor on the parent's behalf (parents have no login). Two clocks are kept apart:
+/// the acknowledgement target (a mentoring_sla_items row, started at received_at) and the resolution time, which is only measured.
+/// A complaint cannot be saved as RESOLVED without its explanation: the database refuses it.
+model MentoringComplaint {
+  id                     String    @id @default(uuid())
+  activationId           String    @map("activation_id")
+  title                  String
+  /// TUTOR, TIMETABLE, PAYMENT, ACADEMIC_PROGRESS or OTHER.
+  category               String
+  description            String    @db.Text
+  /// LOW, NORMAL, HIGH or URGENT.
+  priority               String    @default("NORMAL")
+  /// How it reached the Mentor: PHONE, WHATSAPP, EMAIL, IN_PERSON or OTHER.
+  channel                String
+  parentName             String    @map("parent_name")
+  /// When the parent made it. The acknowledgement clock starts here. logged_at is when the Mentor wrote it down.
+  receivedAt             DateTime  @map("received_at")
+  loggedAt               DateTime  @default(now()) @map("logged_at")
+  loggedByUserId         String    @map("logged_by_user_id")
+  subjectId              String?   @map("subject_id")
+  tutorUserId            String?   @map("tutor_user_id")
+  /// What supporting material exists. Files are not stored in the app.
+  supportingNote         String?   @map("supporting_note") @db.Text
+  /// NEW, ACKNOWLEDGED, ASSIGNED, IN_PROGRESS, WAITING_FOR_PARENT, WAITING_FOR_TUTOR, RESOLVED or REOPENED.
+  status                 String    @default("NEW")
+  assignedToUserId       String?   @map("assigned_to_user_id")
+  assignedAt             DateTime? @map("assigned_at")
+  escalatedAt            DateTime? @map("escalated_at")
+  acknowledgedAt         DateTime? @map("acknowledged_at")
+  acknowledgedByUserId   String?   @map("acknowledged_by_user_id")
+  acknowledgedChannel    String?   @map("acknowledged_channel")
+  acknowledgedNote       String?   @map("acknowledged_note") @db.Text
+  /// The first thing the parent was told: the acknowledgement or the first response, whichever came first.
+  firstResponseAt        DateTime? @map("first_response_at")
+  resolvedAt             DateTime? @map("resolved_at")
+  resolvedByUserId       String?   @map("resolved_by_user_id")
+  resolutionDate         DateTime? @map("resolution_date") @db.Date
+  resolutionRemarks      String?   @map("resolution_remarks") @db.Text
+  resolutionHow          String?   @map("resolution_how") @db.Text
+  /// INFORMED, NOT_YET_INFORMED or NOT_REACHABLE.
+  parentCommunication    String?   @map("parent_communication")
+  parentCommunicationNote String?  @map("parent_communication_note") @db.Text
+  reopenCount            Int       @default(0) @map("reopen_count")
+  lastReopenedAt         DateTime? @map("last_reopened_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  entries    MentoringComplaintEntry[]
+
+  @@index([activationId, status])
+  @@index([assignedToUserId, status])
+  @@index([status, receivedAt])
+  @@map("mentoring_complaints")
+}
+
+/// Everything written or done on a complaint, in order. INTERNAL entries are for staff; PARENT entries are what the parent may be
+/// shown as the communication history. Nothing here is ever edited or deleted.
+model MentoringComplaintEntry {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  kind        String
+  visibility  String   @default("INTERNAL")
+  text        String?  @db.Text
+  actorUserId String?  @map("actor_user_id")
+  payload     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint MentoringComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@index([complaintId, createdAt])
+  @@map("mentoring_complaint_entries")
 }
 
 enum LearningPlanStatus {

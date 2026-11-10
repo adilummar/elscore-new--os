@@ -18,13 +18,14 @@ import { HandoverOverview } from './HandoverOverview';
 import { Check } from 'lucide-react';
 import { COMPLETE_STAGE_1_LABEL, HandoverReview } from './HandoverReview';
 import { InformationWorkspace } from './InformationWorkspace';
+import { ComplaintsPanel } from './ComplaintsPanel';
 import { DailyClassesPanel } from './DailyClassesPanel';
 import { ExamsPanel } from './ExamsPanel';
 import { LearningPlanPanel } from './LearningPlanPanel';
 import { MonthlyReviewPanel } from './MonthlyReviewPanel';
 import { TimetablePanel } from './TimetablePanel';
 
-type Panel = 'checklist' | 'classes' | 'exams' | 'review' | 'tasks' | 'history';
+type Panel = 'checklist' | 'classes' | 'exams' | 'review' | 'complaints' | 'tasks' | 'history';
 
 export function StudentWorkspaceClient({ activationId, initialWorkspace, initialPanel }: { activationId: string; initialWorkspace?: any; initialPanel?: Panel }) {
   const [ws, setWs] = React.useState<any>(initialWorkspace ?? null);
@@ -182,9 +183,9 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
       </div>
 
       <div className="flex gap-4 border-b border-slate-200 text-sm">
-        {(['checklist', 'classes', 'exams', 'review', 'tasks', 'history'] as Panel[]).map((p) => (
+        {(['checklist', 'classes', 'exams', 'review', 'complaints', 'tasks', 'history'] as Panel[]).map((p) => (
           <button key={p} onClick={() => confirmLeave() && setPanel(p)} className={`pb-2 ${panel === p ? 'border-b-2 border-brand-600 font-semibold' : 'text-slate-500'}`}>
-            {p === 'checklist' ? 'Checklist' : p === 'classes' ? 'Daily classes' : p === 'exams' ? 'Weekly exams' : p === 'review' ? 'Monthly review' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
+            {p === 'checklist' ? 'Checklist' : p === 'classes' ? 'Daily classes' : p === 'exams' ? 'Weekly exams' : p === 'review' ? 'Monthly review' : p === 'complaints' ? 'Complaints' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
           </button>
         ))}
       </div>
@@ -334,6 +335,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
       {panel === 'exams' && <ExamsPanel activationId={activation.id} />}
 
       {panel === 'review' && <MonthlyReviewPanel activationId={activation.id} />}
+
+      {panel === 'complaints' && <ComplaintsPanel activationId={activation.id} parentName={parent?.name ?? ''} />}
 
       {panel === 'tasks' && (
         <TaskPanel ws={view} stage={stage ?? { number: 1, checklist: [] }} counselors={counselors} busy={busy} run={run} showForm={form === 'task'} setShowForm={(v: boolean) => setForm(v ? 'task' : null)} />

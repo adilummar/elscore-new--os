@@ -128,8 +128,8 @@ describe('CEO: company-wide read-only visibility into Mentoring', () => {
     expect(ROLE_PERMISSIONS.CEO.has('mentoring.handover.retry')).toBe(false);
   });
 
-  it('all 13 operational Mentoring permissions are excluded from the CEO', () => {
-    expect(operationalExclusions.size).toBe(13);
+  it('all 14 operational Mentoring permissions are excluded from the CEO', () => {
+    expect(operationalExclusions.size).toBe(14);
     for (const code of operationalExclusions) {
       expect(catalog.some((p) => p.code === code)).toBe(true);
       expect(ROLE_PERMISSIONS.CEO.has(code)).toBe(false);

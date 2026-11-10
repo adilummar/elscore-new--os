@@ -1365,6 +1365,13 @@ const PERMISSIONS: Array<{
     isDelegatable: false,
   },
   {
+    code: 'mentoring.complaint.handle',
+    resource: 'mentoring.complaint',
+    action: 'handle',
+    description: 'Log, acknowledge, respond to, assign, escalate, resolve and reopen parent complaints',
+    isDelegatable: false,
+  },
+  {
     code: 'mentoring.stage.verify',
     resource: 'mentoring.stage',
     action: 'verify',
@@ -1489,6 +1496,7 @@ const MENTORING_OPERATIONAL_CODES = new Set([
   'mentoring.exception.authorize',
   'mentoring.approval.final',
   'mentoring.activation.cancel',
+  'mentoring.complaint.handle',
 ]);
 
 // Read-only permissions for Co-Founder — all *.read and *.view, no writes
@@ -1670,6 +1678,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'mentoring.exception.authorize',
     'mentoring.approval.final',
     'mentoring.activation.cancel',
+    'mentoring.complaint.handle',
     'mentoring.audit.read',
   ],
 
@@ -1688,6 +1697,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'mentoring.stage.work',
     'mentoring.stage.verify',
     'mentoring.workflow.pause',
+    'mentoring.complaint.handle',
     'employee.read', // scoped to Tutor-role employees at service layer
     'department.read',
     'tutor.profile.read', // scoped: no rate, no recruitment details

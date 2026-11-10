@@ -50,6 +50,11 @@ const DEFAULTS: Record<string, () => Row> = {
   mentoringReviewTutorNote: () => ({ tutorUserId: null }),
   mentoringReviewNextPlan: () => ({ objectives: '', topics: '', outcomes: '' }),
   mentoringReviewEvent: () => ({ actorUserId: null, reason: null, payload: null }),
+  mentoringComplaint: () => ({
+    priority: 'NORMAL', subjectId: null, tutorUserId: null, supportingNote: null, status: 'NEW', assignedToUserId: null, assignedAt: null, escalatedAt: null, acknowledgedAt: null, acknowledgedByUserId: null, acknowledgedChannel: null, acknowledgedNote: null, firstResponseAt: null,
+    resolvedAt: null, resolvedByUserId: null, resolutionDate: null, resolutionRemarks: null, resolutionHow: null, parentCommunication: null, parentCommunicationNote: null, reopenCount: 0, lastReopenedAt: null, loggedAt: new Date(),
+  }),
+  mentoringComplaintEntry: () => ({ visibility: 'INTERNAL', text: null, actorUserId: null, payload: null }),
   tutorSubject: () => ({ isActive: true }),
   tutorGrade: () => ({ isActive: true }),
   tutorAvailabilitySlot: () => ({ isActive: true }),

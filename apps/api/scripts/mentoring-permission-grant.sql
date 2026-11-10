@@ -45,7 +45,7 @@ BEGIN
   END IF;
 
   SELECT string_agg(p, ', ') INTO missing_permissions
-  FROM unnest(ARRAY['mentoring.activation.cancel', 'mentoring.allocation.configure', 'mentoring.allocation.manage', 'mentoring.allocation.read', 'mentoring.approval.final', 'mentoring.audit.read', 'mentoring.exception.authorize', 'mentoring.handover.retry', 'mentoring.staff.manage', 'mentoring.staff.read', 'mentoring.stage.verify', 'mentoring.stage.work', 'mentoring.student.read-all', 'mentoring.student.read-assigned', 'mentoring.task.create', 'mentoring.task.verify', 'mentoring.task.work', 'mentoring.workflow.pause']) AS p
+  FROM unnest(ARRAY['mentoring.activation.cancel', 'mentoring.allocation.configure', 'mentoring.allocation.manage', 'mentoring.allocation.read', 'mentoring.approval.final', 'mentoring.audit.read', 'mentoring.complaint.handle', 'mentoring.exception.authorize', 'mentoring.handover.retry', 'mentoring.staff.manage', 'mentoring.staff.read', 'mentoring.stage.verify', 'mentoring.stage.work', 'mentoring.student.read-all', 'mentoring.student.read-assigned', 'mentoring.task.create', 'mentoring.task.verify', 'mentoring.task.work', 'mentoring.workflow.pause']) AS p
   WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE code = p);
   IF missing_permissions IS NOT NULL THEN
     RAISE EXCEPTION 'Permissions missing: %. Run the approved seed first.', missing_permissions;
@@ -61,6 +61,7 @@ INSERT INTO _wanted (role_code, permission_code) VALUES
   ('MENTORING_HEAD', 'mentoring.allocation.read'),
   ('MENTORING_HEAD', 'mentoring.approval.final'),
   ('MENTORING_HEAD', 'mentoring.audit.read'),
+  ('MENTORING_HEAD', 'mentoring.complaint.handle'),
   ('MENTORING_HEAD', 'mentoring.exception.authorize'),
   ('MENTORING_HEAD', 'mentoring.staff.manage'),
   ('MENTORING_HEAD', 'mentoring.staff.read'),
@@ -69,6 +70,7 @@ INSERT INTO _wanted (role_code, permission_code) VALUES
   ('MENTORING_HEAD', 'mentoring.task.verify'),
   ('MENTORING_HEAD', 'mentoring.workflow.pause'),
   ('MENTOR', 'mentoring.stage.verify'),
+  ('MENTOR', 'mentoring.complaint.handle'),
   ('MENTOR', 'mentoring.stage.work'),
   ('MENTOR', 'mentoring.student.read-assigned'),
   ('MENTOR', 'mentoring.task.create'),
@@ -93,7 +95,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM _wanted WHERE permission_code NOT LIKE 'mentoring.%') THEN
     RAISE EXCEPTION 'This script may only grant mentoring.* permissions';
   END IF;
-  IF EXISTS (SELECT 1 FROM _wanted WHERE role_code = 'CEO' AND permission_code IN ('mentoring.activation.cancel', 'mentoring.allocation.configure', 'mentoring.allocation.manage', 'mentoring.approval.final', 'mentoring.exception.authorize', 'mentoring.handover.retry', 'mentoring.staff.manage', 'mentoring.stage.verify', 'mentoring.stage.work', 'mentoring.task.create', 'mentoring.task.verify', 'mentoring.task.work', 'mentoring.workflow.pause')) THEN
+  IF EXISTS (SELECT 1 FROM _wanted WHERE role_code = 'CEO' AND permission_code IN ('mentoring.activation.cancel', 'mentoring.allocation.configure', 'mentoring.allocation.manage', 'mentoring.approval.final', 'mentoring.complaint.handle', 'mentoring.exception.authorize', 'mentoring.handover.retry', 'mentoring.staff.manage', 'mentoring.stage.verify', 'mentoring.stage.work', 'mentoring.task.create', 'mentoring.task.verify', 'mentoring.task.work', 'mentoring.workflow.pause')) THEN
     RAISE EXCEPTION 'The CEO must not receive operational Mentoring permissions';
   END IF;
   IF EXISTS (SELECT 1 FROM _wanted WHERE permission_code = 'mentoring.handover.retry' AND role_code <> 'SALES_HEAD') THEN
@@ -157,7 +159,7 @@ BEGIN
     SELECT 1 FROM role_permissions rp
     JOIN roles r ON r.id = rp.role_id
     JOIN permissions p ON p.id = rp.permission_id
-    WHERE r.code = 'CEO' AND p.code IN ('mentoring.activation.cancel', 'mentoring.allocation.configure', 'mentoring.allocation.manage', 'mentoring.approval.final', 'mentoring.exception.authorize', 'mentoring.handover.retry', 'mentoring.staff.manage', 'mentoring.stage.verify', 'mentoring.stage.work', 'mentoring.task.create', 'mentoring.task.verify', 'mentoring.task.work', 'mentoring.workflow.pause')
+    WHERE r.code = 'CEO' AND p.code IN ('mentoring.activation.cancel', 'mentoring.allocation.configure', 'mentoring.allocation.manage', 'mentoring.approval.final', 'mentoring.complaint.handle', 'mentoring.exception.authorize', 'mentoring.handover.retry', 'mentoring.staff.manage', 'mentoring.stage.verify', 'mentoring.stage.work', 'mentoring.task.create', 'mentoring.task.verify', 'mentoring.task.work', 'mentoring.workflow.pause')
   ) THEN
     RAISE EXCEPTION 'The CEO holds an operational Mentoring permission';
   END IF;

@@ -110,6 +110,7 @@ export const PRIORITY_LABELS: Record<string, string> = { LOW: 'Low', MEDIUM: 'Me
 export const PERMISSION_PHRASES: Record<string, string> = {
   'mentoring.stage.verify': 'verify stages',
   'mentoring.stage.work': 'work on stages',
+  'mentoring.complaint.handle': 'handle parent complaints',
   'mentoring.workflow.pause': 'pause or resume the workflow',
   'mentoring.approval.final': 'give final activation approval',
   'mentoring.allocation.manage': 'allocate students',
