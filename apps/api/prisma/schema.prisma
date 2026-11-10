@@ -4098,10 +4098,162 @@ model MentoringReviewMeeting {
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
 
+  /// The learning plan this meeting reviews, and the date it was first scheduled for. Both are kept when the meeting moves.
+  planId                 String?   @map("plan_id")
+  originalDate           DateTime? @map("original_date") @db.Date
+  scheduledStartMinute   Int?      @map("scheduled_start_minute")
+  scheduledEndMinute     Int?      @map("scheduled_end_minute")
+  /// What really happened: null until the Mentor records it.
+  conducted              Boolean?
+  conductedAt            DateTime? @map("conducted_at")
+  conductedByUserId      String?   @map("conducted_by_user_id")
+  notConductedReason     String?   @map("not_conducted_reason") @db.Text
+  actualDate             DateTime? @map("actual_date") @db.Date
+  actualStartMinute      Int?      @map("actual_start_minute")
+  actualEndMinute        Int?      @map("actual_end_minute")
+  attendees              String[]
+  /// FULL, PARTIAL or NONE.
+  parentParticipation    String?   @map("parent_participation")
+  parentParticipationNote String?  @map("parent_participation_note") @db.Text
+  examsReviewedAt        DateTime? @map("exams_reviewed_at")
+  examsReviewedByUserId  String?   @map("exams_reviewed_by_user_id")
+  examsReviewNote        String?   @map("exams_review_note") @db.Text
+  /// The Mentor remarks, each in a field of its own.
+  whatImproved           String?   @map("what_improved") @db.Text
+  expHomePractice        String?   @map("exp_home_practice") @db.Text
+  expParentInvolvement   String?   @map("exp_parent_involvement") @db.Text
+  expStudyRoutine        String?   @map("exp_study_routine") @db.Text
+  expAttendanceSupport   String?   @map("exp_attendance_support") @db.Text
+  expOther               String?   @map("exp_other") @db.Text
+  mentorObservations     String?   @map("mentor_observations") @db.Text
+  noImprovementReason    String?   @map("no_improvement_reason") @db.Text
+  /// Recorded after the meeting, kept apart from the Mentor and tutor observations.
+  parentCommunicated     String?   @map("parent_communicated") @db.Text
+  parentConcerns         String?   @map("parent_concerns") @db.Text
+  parentFeedback         String?   @map("parent_feedback") @db.Text
+  agreedActions          String?   @map("agreed_actions") @db.Text
+  additionalSupport      String?   @map("additional_support") @db.Text
+  parentCommitments      String?   @map("parent_commitments") @db.Text
+  followUp               String?   @map("follow_up") @db.Text
+  postMeetingRecordedAt  DateTime? @map("post_meeting_recorded_at")
+  postMeetingRecordedByUserId String? @map("post_meeting_recorded_by_user_id")
+  /// The next plan is approved by the Mentor. Any change to it takes the approval away.
+  nextPlanApprovedAt     DateTime? @map("next_plan_approved_at")
+  nextPlanApprovedByUserId String? @map("next_plan_approved_by_user_id")
+  /// Set when the review is completed: the period that was reviewed, and the plan that followed it.
+  completedAt            DateTime? @map("completed_at")
+  completedByUserId      String?   @map("completed_by_user_id")
+  periodStart            DateTime? @map("period_start") @db.Date
+  periodEnd              DateTime? @map("period_end") @db.Date
+  nextPlanId             String?   @map("next_plan_id")
+
   activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  goals       MentoringReviewGoal[]
+  areas       MentoringReviewImprovementArea[]
+  tutorNotes  MentoringReviewTutorNote[]
+  nextPlans   MentoringReviewNextPlan[]
+  events      MentoringReviewEvent[]
 
   @@index([activationId, status])
   @@map("mentoring_review_meetings")
+}
+
+/// One planned goal of one subject, and how it went. A subject can have many. Its result is set by the Mentor, one goal at a
+/// time: there is no single "goals completed" mark for a subject or a student.
+model MentoringReviewGoal {
+  id               String   @id @default(uuid())
+  meetingId        String   @map("meeting_id")
+  subjectId        String   @map("subject_id")
+  /// PLAN when taken from the subject plan, MENTOR when added by the Mentor.
+  source           String   @default("MENTOR")
+  position         Int      @default(0)
+  goal             String   @db.Text
+  expectedOutcome  String?  @map("expected_outcome") @db.Text
+  actualProgress   String?  @map("actual_progress") @db.Text
+  /// YES, PARTIALLY or NO. Null until the Mentor evaluates it.
+  result           String?
+  evidence         String?  @db.Text
+  improvementAreas String?  @map("improvement_areas") @db.Text
+  remainingGaps    String?  @map("remaining_gaps") @db.Text
+  evaluatedAt      DateTime? @map("evaluated_at")
+  evaluatedByUserId String? @map("evaluated_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  meeting MentoringReviewMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId, subjectId])
+  @@map("mentoring_review_goals")
+}
+
+/// A concept, skill or behaviour that needs more attention: for a subject, or for the student as a whole (no subject).
+model MentoringReviewImprovementArea {
+  id              String   @id @default(uuid())
+  meetingId       String   @map("meeting_id")
+  subjectId       String?  @map("subject_id")
+  area            String   @db.Text
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  meeting MentoringReviewMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId, subjectId])
+  @@map("mentoring_review_improvement_areas")
+}
+
+/// What the subject tutor said about the student for this review, collected and recorded by the Mentor.
+model MentoringReviewTutorNote {
+  id               String   @id @default(uuid())
+  meetingId        String   @map("meeting_id")
+  subjectId        String   @map("subject_id")
+  note             String   @db.Text
+  tutorUserId      String?  @map("tutor_user_id")
+  recordedByUserId String   @map("recorded_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  meeting MentoringReviewMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, subjectId])
+  @@map("mentoring_review_tutor_notes")
+}
+
+/// One subject of the next learning plan, held here until the review is completed. Completing the review turns these rows into
+/// the next Individual Learning Plan; until then the current plan is untouched.
+model MentoringReviewNextPlan {
+  id              String   @id @default(uuid())
+  meetingId       String   @map("meeting_id")
+  subjectId       String   @map("subject_id")
+  /// NEW, CONTINUED or REVISED.
+  kind            String
+  description     String   @db.Text
+  objectives      String   @default("") @db.Text
+  topics          String   @default("") @db.Text
+  outcomes        String   @default("") @db.Text
+  updatedByUserId String   @map("updated_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  meeting MentoringReviewMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, subjectId])
+  @@map("mentoring_review_next_plans")
+}
+
+/// Everything that happens to a monthly review, in order: who, when, what changed, and why.
+model MentoringReviewEvent {
+  id          String   @id @default(uuid())
+  meetingId   String   @map("meeting_id")
+  kind        String
+  actorUserId String?  @map("actor_user_id")
+  reason      String?  @db.Text
+  payload     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  meeting MentoringReviewMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId, createdAt])
+  @@map("mentoring_review_events")
 }
 
 enum LearningPlanStatus {

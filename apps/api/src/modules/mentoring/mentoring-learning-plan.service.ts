@@ -250,40 +250,75 @@ export class MentoringLearningPlanService {
    * that is already scheduled is moved, not duplicated. An approved plan whose date moves goes back to ready for review.
    */
   async scheduleMonthlyReview(activationId: string, date: unknown, userId: string): Promise<{ meetingId: string; date: string; plansUpdated: number }> {
-    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const activation = await loadLockedActivation(tx, activationId);
-      const state = await this.load(tx, activation);
-      const problem = meetingDateProblem(date, [...state.rows.values()].map((r) => r.startsOn).filter((d): d is string => !!d));
-      if (problem) throw new BadRequestException(problem);
-      const next = date as string;
-      const previous = state.meetingDate;
-      if (state.meeting && previous === next) return { meetingId: state.meeting.id, date: next, plansUpdated: 0 };
+    return this.prisma.$transaction((tx: PrismaTxClient) => this.scheduleInTx(tx, activationId, date, userId));
+  }
 
-      const meeting = state.meeting
-        ? await tx.mentoringReviewMeeting.update({ where: { id: state.meeting.id }, data: { scheduledFor: new Date(next + "T00:00:00Z") } })
-        : await tx.mentoringReviewMeeting.create({ data: { activationId, kind: MEETING_KIND, scheduledFor: new Date(next + "T00:00:00Z"), status: 'SCHEDULED', currentKey: `${activationId}:${MEETING_KIND}`, createdByUserId: userId } });
-      await this.history.record(tx, { activationId, type: previous ? 'MENTORING_REVIEW_MEETING_RESCHEDULED' : 'MENTORING_REVIEW_MEETING_SCHEDULED', actorUserId: userId, payload: { meetingId: meeting.id, previousDate: previous, date: next } });
+  /** The same, inside the caller's transaction, so the monthly review can schedule the meeting and record its own details together. */
+  async scheduleInTx(tx: PrismaTxClient, activationId: string, date: unknown, userId: string): Promise<{ meetingId: string; date: string; plansUpdated: number }> {
+    const activation = await loadLockedActivation(tx, activationId);
+    const state = await this.load(tx, activation);
+    const problem = meetingDateProblem(date, [...state.rows.values()].map((r) => r.startsOn).filter((d): d is string => !!d));
+    if (problem) throw new BadRequestException(problem);
+    const next = date as string;
+    const previous = state.meetingDate;
+    if (state.meeting && previous === next) return { meetingId: state.meeting.id, date: next, plansUpdated: 0 };
 
-      let plansUpdated = 0;
-      if (state.plan) {
-        await this.followMeeting(tx, activationId, state, meeting.id, previous, next, userId, previous ? `The monthly review meeting moved from ${previous} to ${next}.` : `The monthly review meeting was scheduled for ${next}.`);
-        plansUpdated = 1;
-      }
-      return { meetingId: meeting.id, date: next, plansUpdated };
-    });
+    const meeting = state.meeting
+      ? await tx.mentoringReviewMeeting.update({ where: { id: state.meeting.id }, data: { scheduledFor: new Date(next + "T00:00:00Z") } })
+      : await tx.mentoringReviewMeeting.create({ data: { activationId, kind: MEETING_KIND, scheduledFor: new Date(next + "T00:00:00Z"), status: 'SCHEDULED', currentKey: `${activationId}:${MEETING_KIND}`, createdByUserId: userId } });
+    await this.history.record(tx, { activationId, type: previous ? 'MENTORING_REVIEW_MEETING_RESCHEDULED' : 'MENTORING_REVIEW_MEETING_SCHEDULED', actorUserId: userId, payload: { meetingId: meeting.id, previousDate: previous, date: next } });
+
+    let plansUpdated = 0;
+    if (state.plan) {
+      await this.followMeeting(tx, activationId, state, meeting.id, previous, next, userId, previous ? `The monthly review meeting moved from ${previous} to ${next}.` : `The monthly review meeting was scheduled for ${next}.`);
+      plansUpdated = 1;
+    }
+    return { meetingId: meeting.id, date: next, plansUpdated };
   }
 
   /** Cancels the scheduled meeting. The plan loses its end date and waits for the next meeting. */
   async cancelMonthlyReview(activationId: string, reason: string, userId: string): Promise<{ cancelled: boolean }> {
-    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const activation = await loadLockedActivation(tx, activationId);
-      const state = await this.load(tx, activation);
-      if (!state.meeting) return { cancelled: false };
-      await tx.mentoringReviewMeeting.update({ where: { id: state.meeting.id }, data: { status: 'CANCELLED', currentKey: null } });
-      await this.history.record(tx, { activationId, type: 'MENTORING_REVIEW_MEETING_CANCELLED', actorUserId: userId, reason, payload: { meetingId: state.meeting.id, date: state.meetingDate } });
-      if (state.plan) await this.followMeeting(tx, activationId, state, null, state.meetingDate, null, userId, `The monthly review meeting on ${state.meetingDate} was cancelled. ${reason}`.trim());
-      return { cancelled: true };
+    return this.prisma.$transaction((tx: PrismaTxClient) => this.cancelInTx(tx, activationId, reason, userId));
+  }
+
+  async cancelInTx(tx: PrismaTxClient, activationId: string, reason: string, userId: string): Promise<{ cancelled: boolean }> {
+    const activation = await loadLockedActivation(tx, activationId);
+    const state = await this.load(tx, activation);
+    if (!state.meeting) return { cancelled: false };
+    await tx.mentoringReviewMeeting.update({ where: { id: state.meeting.id }, data: { status: 'CANCELLED', currentKey: null } });
+    await this.history.record(tx, { activationId, type: 'MENTORING_REVIEW_MEETING_CANCELLED', actorUserId: userId, reason, payload: { meetingId: state.meeting.id, date: state.meetingDate } });
+    if (state.plan) await this.followMeeting(tx, activationId, state, null, state.meetingDate, null, userId, `The monthly review meeting on ${state.meetingDate} was cancelled. ${reason}`.trim());
+    return { cancelled: true };
+  }
+
+  /** The live plan, its subject plans and the scheduled meeting, for the monthly review to read. Nothing is changed. */
+  async period(db: PrismaTxClient, activation: { id: string; handoverId: string | null }) {
+    return this.load(db, activation);
+  }
+
+  /**
+   * Completing a monthly review ends the plan it reviewed and starts the next one. The old plan is kept as it was (superseded,
+   * with a version in its history). The new plan has the same shape, takes the subjects written for the review, is approved
+   * because the Mentor approved it there, and has no end date until the next review meeting is scheduled.
+   */
+  async renewInTx(
+    tx: PrismaTxClient,
+    activation: { id: string; handoverId: string | null },
+    input: { rows: Array<{ subjectId: string; description: string; objectives: string; topics: string; outcomes: string }>; startsOn: string; userId: string; now: Date },
+  ): Promise<{ previousPlanId: string | null; planId: string; version: number }> {
+    const state = await this.load(tx, activation);
+    if (state.plan) {
+      await this.revise(tx, state.plan.id, 'COMPLETED_BY_REVIEW', 'The monthly review was completed. The next plan follows it.', input.userId);
+      await tx.mentoringLearningPlan.update({ where: { id: state.plan.id }, data: { status: 'SUPERSEDED', currentKey: null, updatedByUserId: input.userId } });
+    }
+    const plan = await tx.mentoringLearningPlan.create({
+      data: { activationId: activation.id, status: 'APPROVED', currentKey: activation.id, createdByUserId: input.userId, approvedByUserId: input.userId, approvedAt: input.now, reviewMeetingId: null, endsOn: null },
     });
+    for (const r of input.rows) {
+      await tx.mentoringLearningPlanSubject.create({ data: { planId: plan.id, subjectId: r.subjectId, description: r.description, objectives: r.objectives, topics: r.topics, outcomes: r.outcomes, startsOn: asDate(input.startsOn), endsOn: null, createdByUserId: input.userId } });
+    }
+    const version = await this.revise(tx, plan.id, 'RENEWED', 'Created from the monthly review and approved there.', input.userId);
+    return { previousPlanId: state.plan?.id ?? null, planId: plan.id, version };
   }
 
   private async followMeeting(tx: PrismaTxClient, activationId: string, state: Awaited<ReturnType<MentoringLearningPlanService['load']>>, meetingId: string | null, previous: string | null, next: string | null, userId: string, why: string) {

@@ -27,6 +27,8 @@ const UNIQUE: Record<string, string[][]> = {
   mentoringLearningPlanRevision: [['planId', 'version']],
   mentoringExam: [['dateKey']],
   mentoringExamItem: [['examId', 'kind']],
+  mentoringReviewTutorNote: [['meetingId', 'subjectId']],
+  mentoringReviewNextPlan: [['meetingId', 'subjectId']],
 };
 
 const DEFAULTS: Record<string, () => Row> = {
@@ -37,6 +39,17 @@ const DEFAULTS: Record<string, () => Row> = {
   mentoringExam: () => ({ kind: 'EXAM', originalExamId: null, chapters: [], portion: null, responsibleUserId: null, responsibleName: null, tutorUserId: null, instructions: null, dateKey: null, conducted: null, conductedAt: null, conductedByUserId: null, notConductedReason: null, informedAt: null, informedByUserId: null, informedNote: null, reExamRequired: false, reExamReason: null, marksObtained: null, maxMarks: null, percentage: null, evaluatingTutorUserId: null, evaluationDate: null, marksRecordedAt: null, marksRecordedByUserId: null, weaknesses: null, topicsToImprove: null, tutorSuggestions: null, mentorRemarks: null }),
   mentoringExamItem: () => ({ status: 'PENDING', responsible: null, remarks: null, evidenceRef: null, updatedByUserId: null, doneAt: null }),
   mentoringExamEvent: () => ({ actorUserId: null, reason: null, payload: null }),
+  mentoringReviewMeeting: () => ({
+    kind: 'MONTHLY_REVIEW', status: 'SCHEDULED', planId: null, originalDate: null, scheduledStartMinute: null, scheduledEndMinute: null, conducted: null, conductedAt: null, conductedByUserId: null, notConductedReason: null, actualDate: null, actualStartMinute: null, actualEndMinute: null,
+    attendees: [], parentParticipation: null, parentParticipationNote: null, examsReviewedAt: null, examsReviewedByUserId: null, examsReviewNote: null, whatImproved: null, expHomePractice: null, expParentInvolvement: null, expStudyRoutine: null, expAttendanceSupport: null, expOther: null,
+    mentorObservations: null, noImprovementReason: null, parentCommunicated: null, parentConcerns: null, parentFeedback: null, agreedActions: null, additionalSupport: null, parentCommitments: null, followUp: null, postMeetingRecordedAt: null, postMeetingRecordedByUserId: null,
+    nextPlanApprovedAt: null, nextPlanApprovedByUserId: null, completedAt: null, completedByUserId: null, periodStart: null, periodEnd: null, nextPlanId: null,
+  }),
+  mentoringReviewGoal: () => ({ source: 'MENTOR', position: 0, expectedOutcome: null, actualProgress: null, result: null, evidence: null, improvementAreas: null, remainingGaps: null, evaluatedAt: null, evaluatedByUserId: null }),
+  mentoringReviewImprovementArea: () => ({ subjectId: null }),
+  mentoringReviewTutorNote: () => ({ tutorUserId: null }),
+  mentoringReviewNextPlan: () => ({ objectives: '', topics: '', outcomes: '' }),
+  mentoringReviewEvent: () => ({ actorUserId: null, reason: null, payload: null }),
   tutorSubject: () => ({ isActive: true }),
   tutorGrade: () => ({ isActive: true }),
   tutorAvailabilitySlot: () => ({ isActive: true }),
