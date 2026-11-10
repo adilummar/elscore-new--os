@@ -5,6 +5,7 @@ import { getMyCalendar } from '../mentoring/mentoring-client';
 import { TutorCalendar, TutorTimetable, addDays, mondayOf, todayIso } from '../tutors/[id]/TutorTimetable';
 
 import { MyClasses, MyEarnings } from './TutorClasses';
+import { MyExams } from './TutorExams';
 
 /**
  * The tutor portal. A tutor sees their own classes for a chosen date or week, with the students behind them. There is no
@@ -45,6 +46,7 @@ export default function TutorPortalPage() {
       </header>
       <TutorTimetable calendar={calendar} selected={selected} mode={mode} loading={loading} error={error} onSelect={setSelected} onMode={setMode} />
       <MyClasses from={from} to={to} />
+      <MyExams from={from} to={to} />
       <MyEarnings />
     </div>
   );

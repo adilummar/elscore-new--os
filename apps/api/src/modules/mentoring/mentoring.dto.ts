@@ -70,6 +70,17 @@ export class ClassQueryDto {
   @IsOptional() @IsString() limit?: string;
 }
 
+/** Filters for one student's exams. Each one is checked by the service, which says what is wrong. */
+export class ExamQueryDto {
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() kind?: string;
+  @IsOptional() @IsString() tutorUserId?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() limit?: string;
+}
+
 /** Filters for the response-time list. Each one is checked by the service, which says what is wrong. */
 export class SlaQueryDto {
   @IsOptional() @IsString() policyKey?: string;

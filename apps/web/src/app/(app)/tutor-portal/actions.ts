@@ -5,13 +5,20 @@ import { ActionResult, toActionResult } from '@/lib/api/action-result';
 
 /**
  * Thin server-action bridge to the tutor portal API. It only forwards the signed-in user's own request, and only to the
- * tutor portal routes that read classes and earnings or submit a class update. The API enforces the permission and starts
- * every answer from who is signed in, so nothing here can name another tutor.
+ * tutor portal routes that read classes, exams and earnings or submit a class update, an exam receipt or an exam evaluation.
+ * The API enforces the permission and starts every answer from who is signed in, so nothing here can name another tutor.
  */
-const ALLOWED = [/^\/tutor-portal\/classes\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/, /^\/tutor-portal\/earnings\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/, /^\/tutor-portal\/classes\/[A-Za-z0-9-]{8,64}~\d{4}-\d{2}-\d{2}~\d{1,4}\/update$/];
+const DATE = '\\d{4}-\\d{2}-\\d{2}';
+const READ = [new RegExp(`^/tutor-portal/classes\\?from=${DATE}&to=${DATE}$`), new RegExp(`^/tutor-portal/earnings\\?from=${DATE}&to=${DATE}$`), new RegExp(`^/tutor-portal/exams\\?from=${DATE}&to=${DATE}$`)];
+const WRITE: Array<[RegExp, 'PUT' | 'POST']> = [
+  [/^\/tutor-portal\/classes\/[A-Za-z0-9-]{8,64}~\d{4}-\d{2}-\d{2}~\d{1,4}\/update$/, 'PUT'],
+  [/^\/tutor-portal\/exams\/[A-Za-z0-9-]{8,64}\/receipt$/, 'POST'],
+  [/^\/tutor-portal\/exams\/[A-Za-z0-9-]{8,64}\/evaluation$/, 'PUT'],
+];
 
-export async function tutorPortalApiAction(path: string, method: 'GET' | 'PUT' = 'GET', body?: unknown): Promise<ActionResult<any>> {
-  if (!ALLOWED.some((r) => r.test(path))) return { ok: false, message: 'Invalid tutor portal path' };
-  if ((method === 'PUT') !== /\/update$/.test(path)) return { ok: false, message: 'Invalid tutor portal request' };
+export async function tutorPortalApiAction(path: string, method: 'GET' | 'PUT' | 'POST' = 'GET', body?: unknown): Promise<ActionResult<any>> {
+  const write = WRITE.find(([r]) => r.test(path));
+  if (!write && !READ.some((r) => r.test(path))) return { ok: false, message: 'Invalid tutor portal path' };
+  if (method !== (write ? write[1] : 'GET')) return { ok: false, message: 'Invalid tutor portal request' };
   return toActionResult(() => fetchApi<any>(path, { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }));
 }

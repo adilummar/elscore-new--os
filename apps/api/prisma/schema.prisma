@@ -3805,6 +3805,7 @@ model MentoringActivation {
   reviewMeetings   MentoringReviewMeeting[]
   learningPlans    MentoringLearningPlan[]
   classSessions    MentoringClassSession[]
+  exams            MentoringExam[]
   holds       WorkflowHold[]
   tasks       MentoringTask[]
   approvals   FinalApproval[]
@@ -4384,6 +4385,111 @@ model MentoringClassCompensationAdjustment {
 
   @@index([sessionId])
   @@map("mentoring_class_compensation_adjustments")
+}
+
+/// One exam of one subject for a student: an exam or a re-exam. A student has at most one live exam on a date, whatever the
+/// subject: date_key is "activation:date" while the exam is live and unique, so the database refuses a second exam that day.
+/// More than one chapter of the same subject belongs to the one exam. The original date is kept when an exam is moved.
+model MentoringExam {
+  id                      String    @id @default(uuid())
+  activationId            String    @map("activation_id")
+  subjectId               String    @map("subject_id")
+  /// EXAM or RE_EXAM. A re-exam points at the exam it repeats, and the original is never changed by it.
+  kind                    String    @default("EXAM")
+  originalExamId          String?   @map("original_exam_id")
+  title                   String
+  chapters                String[]
+  portion                 String?   @db.Text
+  date                    DateTime  @db.Date
+  originalDate            DateTime  @map("original_date") @db.Date
+  startMinute             Int       @map("start_minute")
+  endMinute               Int       @map("end_minute")
+  /// Who is responsible for the exam being sat: TUTOR, PARENT or OTHER.
+  responsibleType         String    @map("responsible_type")
+  responsibleUserId       String?   @map("responsible_user_id")
+  responsibleName         String?   @map("responsible_name")
+  /// The tutor assigned to the subject when the exam was made: who evaluates it.
+  tutorUserId             String?   @map("tutor_user_id")
+  instructions            String?   @db.Text
+  /// Live while the exam has not been dropped, so the one-exam-a-day rule is enforced by the database.
+  dateKey                 String?   @unique @map("date_key")
+
+  conducted               Boolean?
+  conductedAt             DateTime? @map("conducted_at")
+  conductedByUserId       String?   @map("conducted_by_user_id")
+  notConductedReason      String?   @map("not_conducted_reason") @db.Text
+  /// The Mentor told the parent or other person by their own means. Recorded as the Mentor's word, not as a delivery.
+  informedAt              DateTime? @map("informed_at")
+  informedByUserId        String?   @map("informed_by_user_id")
+  informedNote            String?   @map("informed_note") @db.Text
+
+  reExamRequired          Boolean   @default(false) @map("re_exam_required")
+  reExamReason            String?   @map("re_exam_reason") @db.Text
+
+  marksObtained           Decimal?  @map("marks_obtained") @db.Decimal(8, 2)
+  maxMarks                Decimal?  @map("max_marks") @db.Decimal(8, 2)
+  percentage              Decimal?  @db.Decimal(5, 2)
+  evaluatingTutorUserId   String?   @map("evaluating_tutor_user_id")
+  evaluationDate          DateTime? @map("evaluation_date") @db.Date
+  marksRecordedAt         DateTime? @map("marks_recorded_at")
+  marksRecordedByUserId   String?   @map("marks_recorded_by_user_id")
+
+  weaknesses              String?   @db.Text
+  topicsToImprove         String?   @map("topics_to_improve") @db.Text
+  tutorSuggestions        String?   @map("tutor_suggestions") @db.Text
+  mentorRemarks           String?   @map("mentor_remarks") @db.Text
+
+  createdByUserId         String    @map("created_by_user_id")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  activation MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
+  items      MentoringExamItem[]
+  events     MentoringExamEvent[]
+
+  @@index([activationId, date])
+  @@index([tutorUserId, date])
+  @@index([originalExamId])
+  @@map("mentoring_exams")
+}
+
+/// One checklist item of an exam: the post-exam list, or the re-exam list when a re-exam is required. An item is done only
+/// when someone with the authority says so, with who and when; nothing ticks itself.
+model MentoringExamItem {
+  id              String    @id @default(uuid())
+  examId          String    @map("exam_id")
+  list            String
+  kind            String
+  status          String    @default("PENDING")
+  responsible     String?
+  remarks         String?   @db.Text
+  /// A reference to the evidence (a paper number, a message, a date). Attachments are not stored in the app.
+  evidenceRef     String?   @map("evidence_ref")
+  updatedByUserId String?   @map("updated_by_user_id")
+  doneAt          DateTime? @map("done_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  exam MentoringExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, kind])
+  @@map("mentoring_exam_items")
+}
+
+/// Everything that happens to an exam, in order: who, when, what changed, and why.
+model MentoringExamEvent {
+  id          String   @id @default(uuid())
+  examId      String   @map("exam_id")
+  kind        String
+  actorUserId String?  @map("actor_user_id")
+  reason      String?  @db.Text
+  payload     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  exam MentoringExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([examId, createdAt])
+  @@map("mentoring_exam_events")
 }
 
 model StageChecklistResponse {
