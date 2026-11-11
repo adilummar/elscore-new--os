@@ -81,6 +81,20 @@ export class ExamQueryDto {
   @IsOptional() @IsString() limit?: string;
 }
 
+/** Filters for the Mentoring overview. Each one is checked by the service, which says what is wrong. */
+export class OverviewQueryDto {
+  @IsOptional() @IsString() period?: string;
+  @IsOptional() @IsString() date?: string;
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsString() mentorUserId?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() sort?: string;
+  @IsOptional() @IsString() dir?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() pageSize?: string;
+}
+
 /** Filters for the Mentor dashboard. Each one is checked by the service, which says what is wrong. */
 export class DashboardQueryDto {
   @IsOptional() @IsString() studentQuery?: string;

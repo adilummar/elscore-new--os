@@ -107,7 +107,7 @@ export function RecordTable({ data, onPage }: { data: Records; onPage: (p: numbe
 }
 
 /** The Mentor dashboard: every card counted by the server, and each opened into the records it counted. */
-export function DashboardClient() {
+export function DashboardClient({ initialCard }: { initialCard?: string } = {}) {
   const [filters, setFilters] = React.useState<DashFilters>(emptyFilters());
   const [summary, setSummary] = React.useState<Summary | null>(null);
   const [selected, setSelected] = React.useState<Card | null>(null);
@@ -121,6 +121,12 @@ export function DashboardClient() {
     mentoringApi(`/mentoring/dashboard${query}`).then((s: Summary) => { if (live) { setSummary(s); setError(null); } }).catch((e: unknown) => { if (live) setError(e instanceof Error && e.message ? e.message : 'The dashboard could not be loaded.'); });
     return () => { live = false; };
   }, [query]);
+  React.useEffect(() => {
+    if (summary && initialCard && !selected) {
+      const c = summary.cards.find((x) => x.key === initialCard);
+      if (c) setSelected(c);
+    }
+  }, [summary, initialCard]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => { setPage(1); }, [query, selected?.key]);
   React.useEffect(() => {
     if (!selected) return;
