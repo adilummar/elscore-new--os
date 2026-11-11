@@ -105,12 +105,16 @@ export function ClassReview({ c, canWork, busy = false, error = null, onClose, o
           {field('Actual time', u.actualStartMinute != null && u.actualEndMinute != null ? `${timeLabel({ startMinute: u.actualStartMinute, endMinute: u.actualEndMinute })} (${hoursText(u.actualMinutes ?? 0)})` : null)}
           {field('Subject covered', u.subjectCovered)}
           {field('Topics covered', u.topicsCovered)}
+          {field('Chapters', (u.chapters ?? []).length ? (u.chapters ?? []).join(', ') : null)}
+          {field('Portions completed', u.portionsCompleted)}
+          {field('Homework or assignments', u.homework)}
           {field('Attendance', u.attendance ? u.attendance.charAt(0) + u.attendance.slice(1).toLowerCase() : null)}
           {field('Participation', u.participation ? u.participation.charAt(0) + u.participation.slice(1).toLowerCase() : null)}
           {field('Post-class activities', u.activities.length ? u.activities.map((a) => (a === 'OTHER' && u.otherActivity ? `Other: ${u.otherActivity}` : activityLabel(a))).join(', ') : null)}
           {field('Remarks, class evaluation', u.evaluationRemarks)}
           {field('Remarks, topics covered in class', u.coveredRemarks)}
-          {field('Class notes', u.classNotes)}
+          {field('Additional remarks', u.classNotes)}
+          {field('Update version', u.version ? String(u.version) : null)}
         </dl>
       )}
       <ul className="mt-3 space-y-0.5 text-sm" aria-label="Review checklist">

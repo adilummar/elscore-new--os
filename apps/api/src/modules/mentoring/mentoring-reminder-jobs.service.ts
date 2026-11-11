@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { addDays } from '../tutor/tutor-calendar';
 
-import { CLASS_REMINDER_ENTITY, MentoringClassService } from './mentoring-class.service';
+import { CLASS_REMINDER_ENTITY, MentoringClassService, UPDATE_DAILY_REMINDERS } from './mentoring-class.service';
 import { MentoringReminderService } from './mentoring-reminder.service';
 import { localMomentOf } from './mentoring-sla';
 import { MentoringSlaService } from './mentoring-sla.service';
@@ -45,8 +45,9 @@ export class MentoringReminderJobsService {
   async run(now: Date = new Date()): Promise<ReminderRunResult> {
     const withdrawn = await this.withdrawNoLongerApplicable();
     const { prepared, late, failed: prepareFailed } = await this.prepareClassReminders(now);
+    const updates = await this.prepareUpdateReminders(now);
     const { sent, failed } = await this.reminders.sendDue(SYSTEM_ACTOR, now);
-    const result = { prepared, late, withdrawn, sent, failed: failed + prepareFailed };
+    const result = { prepared, late, withdrawn, sent, failed: failed + prepareFailed + updates.failed };
     if (result.prepared || result.sent || result.withdrawn || result.failed) this.logger.log(`Mentoring reminders: ${JSON.stringify(result)}`);
     return result;
   }
@@ -71,6 +72,23 @@ export class MentoringReminderJobsService {
       }
     }
     return withdrawn;
+  }
+
+  /** Prepares the pending-update reminders of the classes of the last few days that nobody has reported on. */
+  async prepareUpdateReminders(now: Date): Promise<{ prepared: number; failed: number }> {
+    const today = localMomentOf(now, (await this.sla.workingNow(this.db, now)).timeZone).date;
+    const occurrences = await this.classes.eligibleOccurrences(this.db, addDays(today, -(UPDATE_DAILY_REMINDERS + 2)), today);
+    let prepared = 0;
+    let failed = 0;
+    for (const o of occurrences) {
+      try {
+        const made = await this.prisma.$transaction((tx: PrismaTxClient) => this.classes.prepareUpdateReminders(tx, o, now, SYSTEM_ACTOR));
+        if (made.tutor !== null) prepared += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return { prepared, failed };
   }
 
   /** Prepares the reminder of every class in the next days of every eligible student. */

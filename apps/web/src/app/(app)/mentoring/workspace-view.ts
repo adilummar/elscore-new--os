@@ -13,7 +13,16 @@ export interface VoiceInfo { id: string; fileName: string; size: number; mimeTyp
 export interface ActivityInfo {
   id: string; position: number; title: string; type: string; typeLabel: string; typeDescription: string | null; topic: string; instructions: string; dueDate: string | null;
   sharedAt: string | null; sharedBy: string | null; studentResponse: string | null; respondedAt: string | null; completion: string; completionLabel: string; tutorRemarks: string | null; mentorRemarks: string | null;
+  gradeId?: string | null; gradeName?: string | null; learningLevel?: string | null; learningLevelLabel?: string | null; suitabilityNote?: string | null; optionGroupKey?: string | null; optionLabel?: string | null;
 }
+
+/** One submission of the tutor update, as it was sent, and which fields changed from the one before. */
+export interface VersionInfo { version: number; at: string; by: string | null; resubmission: boolean; reason: string | null; snapshot: Record<string, unknown> | null; changed: string[] }
+export interface FollowUpInfo {
+  id: string; title: string; description: string | null; priority: string; status: string; dueAt: string | null; overdue: boolean;
+  assignee: string | null; assigneeRole: 'TUTOR' | 'MENTOR'; assignedBy: string | null; note: string | null; returnReason: string | null; createdAt: string;
+}
+export interface ActivityOptions { grades: Array<{ id: string; name: string }>; studentGradeId: string | null; levels: Array<{ value: string; label: string }>; maxOptionsPerGroup: number }
 /** The API sends null when no exception has been asked for. */
 export interface ExceptionInfo { status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | null; reason: string | null; requestedBy: string | null; requestedAt: string | null; decidedBy: string | null; decidedAt: string | null; decisionNote: string | null }
 
@@ -23,9 +32,12 @@ export interface WorkspaceData {
   tutorName: string;
   mentorName: string | null;
   before: { targetAt: string; leadMinutes: number; meetLink: string | null; warning: { level: 'amber' | 'red'; text: string } | null; done: boolean; message: MessagePreview };
-  after: { voice: VoiceInfo | null; earlierVoice: number; activities: ActivityInfo[]; minimumActivities: number; messages: MessagePreview[]; canEdit: boolean };
+  after: {
+    voice: VoiceInfo | null; earlierVoice: number; activities: ActivityInfo[]; minimumActivities: number; messages: MessagePreview[]; canEdit: boolean;
+    activityCounts?: { created: number; shared: number }; activityOptions?: ActivityOptions; versions?: VersionInfo[];
+  };
   review: {
-    blockers: string[]; canVerify: boolean; mentorRemarks: string | null; exception: ExceptionInfo;
+    blockers: string[]; canVerify: boolean; mentorRemarks: string | null; exception: ExceptionInfo; followUps?: FollowUpInfo[];
     cancelled: { at: string; by: string | null; reason: string | null } | null; consumption: 'CONSUMED' | 'NOT_CONSUMED';
     minutes: { scheduled: number; reported: number | null; verified: number | null; consumed: number };
   };
@@ -66,21 +78,57 @@ export function audioProblem(file: { name: string; size: number } | null): strin
   return null;
 }
 
-export interface ActivityDraft { title: string; type: string; typeDescription: string; topic: string; instructions: string; dueDate: string }
-export const emptyActivity = (): ActivityDraft => ({ title: '', type: 'WORKSHEET', typeDescription: '', topic: '', instructions: '', dueDate: '' });
-export const draftOfActivity = (a: ActivityInfo): ActivityDraft => ({ title: a.title, type: a.type, typeDescription: a.typeDescription ?? '', topic: a.topic, instructions: a.instructions, dueDate: a.dueDate ?? '' });
-export function activityProblems(d: ActivityDraft): string[] {
+export interface ActivityDraft {
+  title: string; type: string; typeDescription: string; topic: string; instructions: string; dueDate: string;
+  gradeId: string; learningLevel: string; suitabilityNote: string; optionGroupKey: string; optionLabel: string;
+}
+/** A new activity starts on the student's own grade, so a grade that differs is a choice the tutor makes and explains. */
+export const emptyActivity = (studentGradeId: string | null = null): ActivityDraft => ({ title: '', type: 'WORKSHEET', typeDescription: '', topic: '', instructions: '', dueDate: '', gradeId: studentGradeId ?? '', learningLevel: '', suitabilityNote: '', optionGroupKey: '', optionLabel: '' });
+export const draftOfActivity = (a: ActivityInfo): ActivityDraft => ({
+  title: a.title, type: a.type, typeDescription: a.typeDescription ?? '', topic: a.topic ?? '', instructions: a.instructions, dueDate: a.dueDate ?? '',
+  gradeId: a.gradeId ?? '', learningLevel: a.learningLevel ?? '', suitabilityNote: a.suitabilityNote ?? '', optionGroupKey: a.optionGroupKey ?? '', optionLabel: a.optionLabel ?? '',
+});
+/** What a new activity still needs. An older activity (made before grade and level were required) can be edited without them. */
+export function activityProblems(d: ActivityDraft, opts: { studentGradeId?: string | null; legacy?: boolean } = {}): string[] {
   const out: string[] = [];
   if (!d.title.trim()) out.push('a title');
-  if (!d.topic.trim()) out.push('the topic');
+  if (!d.topic.trim() && !opts.legacy) out.push('the topic');
   if (!d.instructions.trim()) out.push('the instructions');
   if (d.type === 'OTHER' && !d.typeDescription.trim()) out.push('a description of the other kind');
+  if (!opts.legacy) {
+    if (!d.gradeId) out.push('the grade it suits');
+    if (!d.learningLevel) out.push('the learning level');
+  }
+  if (d.gradeId && opts.studentGradeId && d.gradeId !== opts.studentGradeId && !d.suitabilityNote.trim()) out.push('why this grade suits the student');
+  if (!!d.optionGroupKey.trim() !== !!d.optionLabel.trim()) out.push('both the option group and the option label');
   return out;
 }
 export const payloadOfActivity = (d: ActivityDraft) => ({
   title: d.title, type: d.type, topic: d.topic, instructions: d.instructions,
   ...(d.type === 'OTHER' ? { typeDescription: d.typeDescription } : {}), ...(d.dueDate ? { dueDate: d.dueDate } : {}),
+  ...(d.gradeId ? { gradeId: d.gradeId } : {}), ...(d.learningLevel ? { learningLevel: d.learningLevel } : {}), ...(d.suitabilityNote.trim() ? { suitabilityNote: d.suitabilityNote } : {}),
+  ...(d.optionGroupKey.trim() ? { optionGroupKey: d.optionGroupKey.trim(), optionLabel: d.optionLabel.trim() } : {}),
 });
+
+export interface FollowUpDraft { title: string; description: string; assignee: 'TUTOR' | 'MENTOR'; priority: string; dueDate: string }
+export const emptyFollowUp = (): FollowUpDraft => ({ title: '', description: '', assignee: 'TUTOR', priority: 'MEDIUM', dueDate: '' });
+export function followUpProblems(d: FollowUpDraft, today: string): string[] {
+  const out: string[] = [];
+  if (!d.title.trim()) out.push('a title');
+  if (!d.dueDate) out.push('a due date');
+  else if (d.dueDate < today) out.push('a due date that is not in the past');
+  return out;
+}
+export const payloadOfFollowUp = (d: FollowUpDraft) => ({ title: d.title, description: d.description, assignee: d.assignee, priority: d.priority, dueDate: d.dueDate });
+export const FOLLOW_UP_PRIORITIES: Array<[string, string]> = [['LOW', 'Low'], ['MEDIUM', 'Medium'], ['HIGH', 'High'], ['URGENT', 'Urgent']];
+export const FOLLOW_UP_STATUS_LABELS: Record<string, string> = { OPEN: 'Open', IN_PROGRESS: 'In progress', SUBMITTED: 'Handed in, waiting for the Mentor', RETURNED: 'Sent back', VERIFIED: 'Verified', CANCELLED: 'Cancelled' };
+
+/** The fields of a tutor update, in words, for the version history. */
+export const UPDATE_FIELD_LABELS: Record<string, string> = {
+  conducted: 'Class conducted', actualStartMinute: 'Actual start', actualEndMinute: 'Actual end', actualMinutes: 'Actual duration', subjectCovered: 'Subject covered', topicsCovered: 'Topics covered', chapters: 'Chapters',
+  portionsCompleted: 'Portions completed', attendance: 'Attendance', participation: 'Participation', homework: 'Homework', classNotes: 'Additional remarks', notConductedReason: 'Reason not conducted',
+  activities: 'Activity kinds', otherActivity: 'Other activity', evaluationRemarks: 'Class evaluation remarks', coveredRemarks: 'Topics covered remarks', voiceSent: 'Voice update sent',
+};
 
 /**
  * The kinds of post-class activity the API accepts, with the words people see. These are the codes the API and the database check, which

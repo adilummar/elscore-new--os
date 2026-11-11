@@ -26,6 +26,11 @@ export interface ClassUpdate {
   coveredRemarks: string | null;
   voice: { sentAt: string | null; receivedAt: string | null; remarks: string | null };
   submittedAt: string | null;
+  homework?: string | null;
+  portionsCompleted?: string | null;
+  chapters?: string[];
+  /** How many times the update was submitted. */
+  version?: number;
 }
 
 export interface ClassItem {
@@ -55,6 +60,10 @@ export interface ClassItem {
   verified: { at: string; minutes: number } | null;
   sla: { state: string; label: string; dueAt: string; overdueMinutes: number } | null;
   consumption?: 'CONSUMED' | 'NOT_CONSUMED';
+  /** Whether the class took place, and whether its paperwork is complete. The two are independent. */
+  classStatus?: string;
+  classStatusLabel?: string;
+  documentation?: { status: string; label: string; missing: string[] };
   /** What still stops this class being verified, as the server counts it. */
   blockers?: string[];
   warnings?: string[];
@@ -114,6 +123,14 @@ export interface UpdateDraft {
   evaluationRemarks: string;
   coveredRemarks: string;
   voiceSent: boolean;
+  portionsCompleted: string;
+  homework: string;
+  /** One chapter to a line. */
+  chapters: string;
+  /** Why the update is sent again. Needed when an update was already submitted. */
+  resubmitReason: string;
+  resubmitting: boolean;
+  expectedVersion: number | null;
 }
 
 /** A draft from what was already submitted, or an empty one. Nothing is filled in on the tutor's behalf. */
@@ -134,6 +151,12 @@ export function draftFromClass(c: Pick<ClassItem, 'update'>): UpdateDraft {
     evaluationRemarks: u?.evaluationRemarks ?? '',
     coveredRemarks: u?.coveredRemarks ?? '',
     voiceSent: u?.voice.sentAt != null,
+    portionsCompleted: u?.portionsCompleted ?? '',
+    homework: u?.homework ?? '',
+    chapters: (u?.chapters ?? []).join('\n'),
+    resubmitReason: '',
+    resubmitting: !!u,
+    expectedVersion: u ? u.version ?? 1 : null,
   };
 }
 
@@ -145,16 +168,24 @@ export function updateProblems(d: UpdateDraft): string[] {
   if (!d.actualStart || !d.actualEnd) out.push('the actual start and end times');
   else if (d.actualEnd <= d.actualStart) out.push('an end time after the start time');
   if (!d.topicsCovered.trim()) out.push('the topics covered');
+  if (!d.portionsCompleted.trim()) out.push('the portions completed');
   if (!d.attendance) out.push('attendance');
+  if (!d.participation) out.push('student participation');
+  if (!d.homework.trim()) out.push('the homework, or None');
+  if (!d.classNotes.trim()) out.push('your additional remarks, or None');
   if (d.activities.includes('OTHER') && !d.otherActivity.trim()) out.push('a description of the other activity');
+  if (d.resubmitting && !d.resubmitReason.trim()) out.push('what you changed');
   return out;
 }
 
 export function payloadOfUpdate(d: UpdateDraft): Record<string, unknown> {
-  if (d.conducted === 'no') return { conducted: false, notConductedReason: d.notConductedReason, voiceSent: d.voiceSent };
+  const again = { ...(d.resubmitting ? { resubmitReason: d.resubmitReason } : {}), ...(d.expectedVersion !== null ? { expectedVersion: d.expectedVersion } : {}) };
+  if (d.conducted === 'no') return { conducted: false, notConductedReason: d.notConductedReason, voiceSent: d.voiceSent, ...again };
   return {
+    ...again,
+    portionsCompleted: d.portionsCompleted, homework: d.homework, chapters: d.chapters.split('\n').map((c) => c.trim()).filter(Boolean),
     conducted: true, actualStart: d.actualStart, actualEnd: d.actualEnd, subjectCovered: d.subjectCovered || undefined, topicsCovered: d.topicsCovered, attendance: d.attendance,
-    participation: d.participation || undefined, classNotes: d.classNotes || undefined, activities: d.activities, otherActivity: d.activities.includes('OTHER') ? d.otherActivity : undefined,
+    participation: d.participation || undefined, classNotes: d.classNotes, activities: d.activities, otherActivity: d.activities.includes('OTHER') ? d.otherActivity : undefined,
     evaluationRemarks: d.evaluationRemarks || undefined, coveredRemarks: d.coveredRemarks || undefined, voiceSent: d.voiceSent,
   };
 }

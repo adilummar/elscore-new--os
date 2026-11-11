@@ -9,17 +9,16 @@ import { STATE_TONE, hoursText, timeLabel } from './class-view';
 import { mentoringApi } from './mentoring-client';
 import { longDayLabel } from './timetable-view';
 import {
-  ACTIVITY_CHOICES, ActivityDraft, ActivityInfo, AUDIO_ACCEPT, COMPLETION_CHOICES, MessagePreview, SHARE_STATE, WorkspaceData, WorkspaceRole, activityProblems, audioProblem, audioUrl, copyText, draftOfActivity, emptyActivity,
+  ACTIVITY_CHOICES, ActivityDraft, ActivityInfo, ActivityOptions, AUDIO_ACCEPT, COMPLETION_CHOICES, MessagePreview, SHARE_STATE, WorkspaceData, WorkspaceRole, activityProblems, audioProblem, audioUrl, copyText, draftOfActivity, emptyActivity,
   exceptionKind, fileSizeText, payloadOfActivity, verifyHint, voiceUploadUrl, workspaceBase,
 } from './workspace-view';
-import { tutorPortalApi } from '../tutor-portal/client';
+import { FollowUps, StatusStrip, VersionHistory } from './ClassWorkspaceExtras';
+import { call } from './workspace-api';
 
 const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 const when = (iso: string | null) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '');
 type Tab = 'before' | 'after' | 'review';
 
-/** One request, through the bridge that belongs to the signed-in role. The API checks who is allowed again. */
-const call = (role: WorkspaceRole, path: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: unknown) => (role === 'TUTOR' ? tutorPortalApi(`${workspaceBase(role)}${path}`, method, body) : mentoringApi(`${workspaceBase(role)}${path}`, method, body));
 
 // ─── A message the person copies and shares themselves ──────────────────────────────────────────────────────────
 interface MessageProps { role: WorkspaceRole; classKey: string; m: MessagePreview; busy: boolean; canAct: boolean; needsLink?: boolean; run: (label: string, fn: () => Promise<unknown>, done: string) => void }
@@ -57,9 +56,10 @@ export function MessageBlock({ role, classKey, m, busy, canAct, needsLink = fals
 }
 
 // ─── Activities ──────────────────────────────────────────────────────────────────────────────────────────────────
-function ActivityForm({ initial, busy, onSave, onCancel, submitLabel }: { initial: ActivityDraft; busy: boolean; submitLabel: string; onSave: (d: ActivityDraft) => void; onCancel?: () => void }) {
+function ActivityForm({ initial, busy, onSave, onCancel, submitLabel, options, legacy = false }: { initial: ActivityDraft; busy: boolean; submitLabel: string; onSave: (d: ActivityDraft) => void; onCancel?: () => void; options?: ActivityOptions; legacy?: boolean }) {
   const [d, setD] = React.useState(initial);
-  const problems = activityProblems(d);
+  const problems = activityProblems(d, { studentGradeId: options?.studentGradeId ?? null, legacy });
+  const differs = !!d.gradeId && !!options?.studentGradeId && d.gradeId !== options.studentGradeId;
   const set = <K extends keyof ActivityDraft>(k: K, v: ActivityDraft[K]) => setD({ ...d, [k]: v });
   return (
     <div className="space-y-2 rounded-md bg-slate-50 p-3" data-testid="activity-form">
@@ -69,9 +69,17 @@ function ActivityForm({ initial, busy, onSave, onCancel, submitLabel }: { initia
           <select className={AREA} value={d.type} onChange={(e) => set('type', e.target.value)}>{ACTIVITY_CHOICES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</select>
         </label>
         {d.type === 'OTHER' && <label className="block text-sm"><span className="mb-1 block text-slate-700">Describe the other kind</span><Input value={d.typeDescription} onChange={(e) => set('typeDescription', e.target.value)} /></label>}
-        <label className="block text-sm"><span className="mb-1 block text-slate-700">Topic</span><Input value={d.topic} onChange={(e) => set('topic', e.target.value)} /></label>
+        <label className="block text-sm"><span className="mb-1 block text-slate-700">Topic{legacy ? '' : <span className="text-red-600"> required</span>}</span><Input value={d.topic} onChange={(e) => set('topic', e.target.value)} /></label>
+        <label className="block text-sm"><span className="mb-1 block text-slate-700">Grade it suits{legacy ? '' : <span className="text-red-600"> required</span>}</span>
+          <select className={AREA} value={d.gradeId} onChange={(e) => set('gradeId', e.target.value)}><option value="">Choose</option>{(options?.grades ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}{g.id === options?.studentGradeId ? ' (the student)' : ''}</option>)}</select></label>
+        <label className="block text-sm"><span className="mb-1 block text-slate-700">Learning level{legacy ? '' : <span className="text-red-600"> required</span>}</span>
+          <select className={AREA} value={d.learningLevel} onChange={(e) => set('learningLevel', e.target.value)}><option value="">Choose</option>{(options?.levels ?? []).map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}</select></label>
+        <label className="block text-sm"><span className="mb-1 block text-slate-700">Option group, if this is one of several options</span><Input value={d.optionGroupKey} placeholder="For example Practice set" onChange={(e) => set('optionGroupKey', e.target.value)} /></label>
+        {d.optionGroupKey.trim() !== '' && <label className="block text-sm"><span className="mb-1 block text-slate-700">Name of this option</span><Input value={d.optionLabel} placeholder="For example Easier version" onChange={(e) => set('optionLabel', e.target.value)} /></label>}
         <label className="block text-sm"><span className="mb-1 block text-slate-700">Due date, if any</span><Input type="date" value={d.dueDate} onChange={(e) => set('dueDate', e.target.value)} /></label>
       </div>
+      {differs && <label className="block text-sm"><span className="mb-1 block text-slate-700">Why does this grade suit the student? <span className="text-red-600">required</span></span><textarea className={AREA} rows={2} value={d.suitabilityNote} onChange={(e) => set('suitabilityNote', e.target.value)} /></label>}
+      {d.optionGroupKey.trim() !== '' && <p className="text-xs text-slate-600">All the options in a group count as one activity. Up to {options?.maxOptionsPerGroup ?? 3} options in a group, and each one must be shared.</p>}
       <label className="block text-sm"><span className="mb-1 block text-slate-700">Instructions for the student</span><textarea className={AREA} rows={3} value={d.instructions} onChange={(e) => set('instructions', e.target.value)} /></label>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" disabled={busy || problems.length > 0} onClick={() => onSave(d)}>{submitLabel}</Button>
@@ -82,7 +90,7 @@ function ActivityForm({ initial, busy, onSave, onCancel, submitLabel }: { initia
   );
 }
 
-function ActivityRow({ a, role, busy, canEdit, canRespond, run }: { a: ActivityInfo; role: WorkspaceRole; busy: boolean; canEdit: boolean; canRespond: boolean; run: (label: string, fn: () => Promise<unknown>, done: string) => void }) {
+function ActivityRow({ a, role, busy, canEdit, canRespond, run, options }: { a: ActivityInfo; role: WorkspaceRole; busy: boolean; canEdit: boolean; canRespond: boolean; run: (label: string, fn: () => Promise<unknown>, done: string) => void; options?: ActivityOptions }) {
   const [editing, setEditing] = React.useState(false);
   const [response, setResponse] = React.useState(a.studentResponse ?? '');
   const [completion, setCompletion] = React.useState(a.completion);
@@ -95,7 +103,9 @@ function ActivityRow({ a, role, busy, canEdit, canRespond, run }: { a: ActivityI
         <Badge variant="default">{a.type === 'OTHER' && a.typeDescription ? `Other: ${a.typeDescription}` : a.typeLabel}</Badge>
         <Badge variant={a.sharedAt ? 'success' : 'warning'}>{a.sharedAt ? 'Sharing recorded' : 'Not shared yet'}</Badge>
       </div>
-      <p className="text-xs text-slate-600">Topic: {a.topic}{a.dueDate ? `. Due ${a.dueDate}.` : ''}</p>
+      <p className="text-xs text-slate-600">Topic: {a.topic || 'not recorded'}{a.gradeName ? `. ${a.gradeName}` : ''}{a.learningLevelLabel ? `, ${a.learningLevelLabel.toLowerCase()}` : ''}{a.dueDate ? `. Due ${a.dueDate}.` : ''}</p>
+      {a.optionGroupKey && <p className="text-xs text-slate-600" data-testid="activity-option">Option {a.optionLabel} in the group {a.optionGroupKey}. The group counts as one activity.</p>}
+      {a.suitabilityNote && <p className="text-xs text-slate-600">Why this grade suits the student: {a.suitabilityNote}</p>}
       <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{a.instructions}</p>
       {a.sharedAt && <p className="text-xs text-slate-600">Shared by {a.sharedBy ?? 'a user'} on {when(a.sharedAt)}.</p>}
       {role === 'TUTOR' && canEdit && !editing && (
@@ -105,7 +115,7 @@ function ActivityRow({ a, role, busy, canEdit, canRespond, run }: { a: ActivityI
           <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => run('remove-activity', () => call(role, `${mine(a.id)}/remove`, 'POST'), 'The activity was removed. It stays in the class history.')}>Remove</Button>
         </div>
       )}
-      {role === 'TUTOR' && editing && <div className="mt-2"><ActivityForm initial={draftOfActivity(a)} busy={busy} submitLabel="Save changes" onCancel={() => setEditing(false)} onSave={(d) => { setEditing(false); run('edit-activity', () => call(role, mine(a.id), 'PUT', payloadOfActivity(d)), a.sharedAt ? 'Saved. Sharing was cleared, so share the changed activity again.' : 'Saved.'); }} /></div>}
+      {role === 'TUTOR' && editing && <div className="mt-2"><ActivityForm initial={draftOfActivity(a)} busy={busy} options={options} legacy={!a.learningLevel} submitLabel="Save changes" onCancel={() => setEditing(false)} onSave={(d) => { setEditing(false); run('edit-activity', () => call(role, mine(a.id), 'PUT', payloadOfActivity(d)), a.sharedAt ? 'Saved. Sharing was cleared, so share the changed activity again.' : 'Saved.'); }} /></div>}
       {canRespond && (
         <details className="mt-2 text-sm"><summary className="cursor-pointer font-medium text-slate-700">What the student did: {a.completionLabel}</summary>
           <div className="mt-2 space-y-2">
@@ -193,6 +203,7 @@ export function ReviewPanel({ w, classKey, busy, run, canWork, onClosed }: { w: 
       <p className="text-sm text-slate-700" data-testid="consumption">{r.consumption === 'CONSUMED' ? 'This class is consumed.' : 'This class is not consumed. It counts only once the Mentor verifies it.'}</p>
       <ul className="space-y-0.5 text-sm" aria-label="Review checklist">{w.class.checklist.map((i) => <li key={i.key} data-done={i.done}><span className="font-medium">{i.label}</span>: {i.detail}</li>)}</ul>
       {waiting && <p className={`rounded-md px-3 py-2 text-sm ${r.blockers.length ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`} data-testid="verify-hint">{verifyHint(r)}</p>}
+      <FollowUps role="MENTOR" classKey={classKey} items={r.followUps ?? []} busy={busy} canWork={canWork} run={run} />
       {r.cancelled && <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">Cancelled by {r.cancelled.by ?? 'a user'} on {when(r.cancelled.at)}. Reason: {r.cancelled.reason}</p>}
 
       {canWork && waiting && sessionId && (
@@ -316,18 +327,21 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged }: { r
         <div role="tabpanel" id="ws-panel-after" aria-labelledby="ws-tab-after" className="space-y-3">
           {!cancelled && (
             <>
+              <StatusStrip c={w.class} />
               <div className="space-y-2">{w.after.messages.map((m) => <MessageBlock key={m.key} role={role} classKey={classKey} m={m} busy={busy} canAct={canWork && w.after.canEdit} run={run} />)}</div>
               <VoicePanel role={role} classKey={classKey} w={w} busy={busy} run={run} />
               <section aria-label="Post-class activities" className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="mr-auto text-sm font-semibold text-slate-900">Post-class activities</h4>
-                  <Badge variant={w.after.activities.length >= w.after.minimumActivities ? 'success' : 'warning'} data-testid="activity-count">{w.after.activities.length} of at least {w.after.minimumActivities} created, {w.after.activities.filter((a) => a.sharedAt).length} shared</Badge>
+                  <Badge variant={(w.after.activityCounts?.created ?? w.after.activities.length) >= w.after.minimumActivities ? 'success' : 'warning'} data-testid="activity-count">{w.after.activityCounts?.created ?? w.after.activities.length} of at least {w.after.minimumActivities} created, {w.after.activityCounts?.shared ?? w.after.activities.filter((a) => a.sharedAt).length} shared. Options of one group count once.</Badge>
                 </div>
-                <ul className="space-y-2" aria-label="Activities">{w.after.activities.map((a) => <ActivityRow key={a.id} a={a} role={role} busy={busy} canEdit={w.after.canEdit} canRespond={canWork} run={run} />)}</ul>
+                <ul className="space-y-2" aria-label="Activities">{w.after.activities.map((a) => <ActivityRow key={a.id} a={a} role={role} busy={busy} canEdit={w.after.canEdit} canRespond={canWork} run={run} options={w.after.activityOptions} />)}</ul>
                 {role === 'TUTOR' && w.after.canEdit && (adding
-                  ? <ActivityForm initial={emptyActivity()} busy={busy} submitLabel="Add activity" onCancel={() => setAdding(false)} onSave={(d) => { setAdding(false); run('add-activity', () => call(role, `/${classKey}/activities`, 'POST', payloadOfActivity(d)), 'The activity was added.'); }} />
+                  ? <ActivityForm initial={emptyActivity(w.after.activityOptions?.studentGradeId ?? null)} options={w.after.activityOptions} busy={busy} submitLabel="Add activity" onCancel={() => setAdding(false)} onSave={(d) => { setAdding(false); run('add-activity', () => call(role, `/${classKey}/activities`, 'POST', payloadOfActivity(d)), 'The activity was added.'); }} />
                   : <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setAdding(true)}>Add an activity</Button>)}
               </section>
+              <VersionHistory versions={w.after.versions ?? []} />
+              {role === 'TUTOR' && <FollowUps role="TUTOR" classKey={classKey} items={w.review.followUps ?? []} busy={busy} canWork run={run} />}
             </>
           )}
         </div>

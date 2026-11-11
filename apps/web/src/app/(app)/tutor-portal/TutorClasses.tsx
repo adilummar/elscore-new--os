@@ -52,9 +52,16 @@ export function ClassUpdateForm({ c, draft, busy = false, error = null, onChange
             <label className="block text-sm" htmlFor={id('topics')}><span className="mb-1 block font-medium text-slate-700">Topics covered <span className="text-red-600">required</span></span><Input id={id('topics')} value={draft.topicsCovered} onChange={(e) => set('topicsCovered', e.target.value)} /></label>
             <label className="block text-sm" htmlFor={id('attendance')}><span className="mb-1 block font-medium text-slate-700">Attendance <span className="text-red-600">required</span></span>
               <select id={id('attendance')} className={AREA} value={draft.attendance} onChange={(e) => set('attendance', e.target.value)}><option value="">Choose</option>{ATTENDANCE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-            <label className="block text-sm" htmlFor={id('participation')}><span className="mb-1 block font-medium text-slate-700">Student participation</span>
-              <select id={id('participation')} className={AREA} value={draft.participation} onChange={(e) => set('participation', e.target.value)}><option value="">Not rated</option>{PARTICIPATION_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+            <label className="block text-sm" htmlFor={id('participation')}><span className="mb-1 block font-medium text-slate-700">Student participation <span className="text-red-600">required</span></span>
+              <select id={id('participation')} className={AREA} value={draft.participation} onChange={(e) => set('participation', e.target.value)}><option value="">Choose</option>{PARTICIPATION_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
           </div>
+
+          <label className="block text-sm" htmlFor={id('chapters')}><span className="mb-1 block font-medium text-slate-700">Chapters covered, one to a line</span>
+            <textarea id={id('chapters')} rows={2} className={AREA} value={draft.chapters} placeholder="Each chapter on its own line. A weekly exam chooses its chapters from these." onChange={(e) => set('chapters', e.target.value)} /></label>
+          <label className="block text-sm" htmlFor={id('portions')}><span className="mb-1 block font-medium text-slate-700">Portions completed <span className="text-red-600">required</span></span>
+            <textarea id={id('portions')} rows={2} className={AREA} value={draft.portionsCompleted} onChange={(e) => set('portionsCompleted', e.target.value)} /></label>
+          <label className="block text-sm" htmlFor={id('homework')}><span className="mb-1 block font-medium text-slate-700">Homework or assignments given <span className="text-red-600">required, write None if there is none</span></span>
+            <textarea id={id('homework')} rows={2} className={AREA} value={draft.homework} onChange={(e) => set('homework', e.target.value)} /></label>
 
           <fieldset>
             <legend className="mb-1 text-sm font-medium text-slate-700">Post-class activities (choose as many as apply)</legend>
@@ -72,8 +79,13 @@ export function ClassUpdateForm({ c, draft, busy = false, error = null, onChange
             <textarea id={id('evaluation')} rows={3} className={AREA} value={draft.evaluationRemarks} placeholder="Understanding, attention and participation, progress, difficulties, how effective the class was, what to improve" onChange={(e) => set('evaluationRemarks', e.target.value)} /></label>
           <label className="block text-sm" htmlFor={id('covered')}><span className="mb-1 block font-medium text-slate-700">Remarks, topics covered in class</span>
             <textarea id={id('covered')} rows={3} className={AREA} value={draft.coveredRemarks} placeholder="Topics taught, chapters, exercises done, activities, homework given, topics remaining" onChange={(e) => set('coveredRemarks', e.target.value)} /></label>
-          <label className="block text-sm" htmlFor={id('notes')}><span className="mb-1 block font-medium text-slate-700">Class notes</span><textarea id={id('notes')} rows={2} className={AREA} value={draft.classNotes} onChange={(e) => set('classNotes', e.target.value)} /></label>
+          <label className="block text-sm" htmlFor={id('notes')}><span className="mb-1 block font-medium text-slate-700">Additional remarks <span className="text-red-600">required, write None if there are none</span></span><textarea id={id('notes')} rows={2} className={AREA} value={draft.classNotes} onChange={(e) => set('classNotes', e.target.value)} /></label>
         </div>
+      )}
+
+      {draft.resubmitting && (
+        <label className="mt-3 block text-sm" htmlFor={id('resubmit')}><span className="mb-1 block font-medium text-slate-700">What did you change? <span className="text-red-600">required</span></span>
+          <textarea id={id('resubmit')} rows={2} className={AREA} value={draft.resubmitReason} onChange={(e) => set('resubmitReason', e.target.value)} /></label>
       )}
 
       {draft.conducted !== '' && (

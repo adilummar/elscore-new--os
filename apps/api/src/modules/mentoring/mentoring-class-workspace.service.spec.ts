@@ -44,10 +44,10 @@ const PERMS: Record<string, string[]> = {
   'narrow-corrector': ['mentoring.student.read-assigned', 'mentoring.record.correct'],
   nobody: [],
 };
-const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
+const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None', resubmitReason: 'Corrected as asked' };
 const mp3 = (n = 200) => Buffer.concat([Buffer.from('ID3\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000', 'latin1'), Buffer.alloc(n, 7)]);
 const audio = (over: Partial<{ originalname: string; mimetype: string; buffer: Buffer }> = {}) => ({ originalname: 'my voice.mp3', mimetype: 'audio/mpeg', buffer: mp3(), ...over });
-const activity = (i: number, over: object = {}) => ({ title: `Activity ${i}`, type: 'WORKSHEET', topic: 'Tenses', instructions: 'Complete the worksheet.', ...over });
+const activity = (i: number, over: object = {}) => ({ title: `Activity ${i}`, type: 'WORKSHEET', topic: 'Tenses', instructions: 'Complete the worksheet.', gradeId: 'g-8', learningLevel: 'ON_GRADE', ...over });
 
 let root = '';
 beforeAll(() => { root = mkdtempSync(join(tmpdir(), 'mentoring-storage-')); process.env.MENTORING_STORAGE_DIR = root; });
@@ -1529,5 +1529,467 @@ describe('the Head returns an update for correction', () => {
     const roles = seed.slice(seed.indexOf('MENTORING_HEAD: ['));
     expect(roles.slice(0, roles.indexOf('\n  ],'))).not.toContain('mentoring.record.correct');
     expect((seed.match(/'mentoring\.record\.correct'/g) ?? []).length).toBe(2); // the exclusion list and nowhere else
+  });
+});
+
+// ─── Stage 1: independent statuses, update fields and versions, activity rules, update reminders, follow-ups ──────
+describe('Stage 1: the class status and the documentation status are independent', () => {
+  const view = async (w: ReturnType<typeof world>, now = AFTER) => (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, now)).class;
+  const both = (c: any) => [c.classStatus, c.documentation.status];
+
+  it('starts as scheduled and not started, and a class that ended with no report is report pending, not documented', async () => {
+    const w = world();
+    expect(both(await view(w, at(MON, '09:00')))).toEqual(['SCHEDULED', 'NOT_STARTED']);
+    expect(both(await view(w, at(MON, '17:00')))).toEqual(['PENDING_REPORT', 'NOT_STARTED']);
+    expect((await view(w, at(MON, '17:00'))).documentation.missing).toContain('The tutor class update has not been submitted.');
+  });
+
+  it('a conducted class is conducted whether or not its paperwork is done, and paperwork never makes a class conducted', async () => {
+    const w = world();
+    await w.submit();
+    expect(both(await view(w))).toEqual(['CONDUCTED', 'IN_PROGRESS']);
+    expect((await view(w)).documentation.missing).toEqual(['The tutor voice recording has not been uploaded.', 'At least 3 post-class activities are needed. 0 created.']);
+    // Paperwork done with no tutor report: documentation is still not complete, and the class is not conducted.
+    const other = world();
+    await other.ws.uploadVoice('u-meera', KEY, audio(), at(MON, '17:00'));
+    await other.ws.confirmVoiceShared('u-meera', KEY, at(MON, '17:00'));
+    await other.prepare();
+    const c = await view(other, at(MON, '17:00'));
+    expect(c.classStatus).toBe('PENDING_REPORT');
+    expect(c.documentation.status).toBe('IN_PROGRESS');
+    expect(c.documentation.missing).toEqual(['The tutor class update has not been submitted.']);
+  });
+
+  it('is complete when the update, the voice and its sharing, and three shared activities are in, while the class is still unverified and not consumed', async () => {
+    const w = world();
+    await w.submit();
+    await w.prepare();
+    const c = await view(w);
+    expect(both(c)).toEqual(['CONDUCTED', 'COMPLETE']);
+    expect(c).toMatchObject({ status: 'AWAITING_MENTOR_VERIFICATION', consumption: 'NOT_CONSUMED' });
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(0); // completing the paperwork pays nothing
+    await w.classes.verify(w.session().id, {}, 'mentor-1', at(MON, '18:00'));
+    const verified = await view(w, at(MON, '18:10'));
+    expect(both(verified)).toEqual(['CONDUCTED', 'COMPLETE']);
+    expect(verified.consumption).toBe('CONSUMED');
+  });
+
+  it('is not required for a class that was not conducted or was cancelled, and is returned when it is sent back', async () => {
+    const a = world();
+    await a.classes.tutorSubmitUpdate('u-meera', KEY, { conducted: false, notConductedReason: 'Student was ill' }, AFTER);
+    expect(both(await view(a))).toEqual(['NOT_CONDUCTED', 'NOT_REQUIRED']);
+    const b = world();
+    await b.classes.cancel(KEY, 'Holiday', 'mentor-1', at(MON, '09:00'));
+    expect(both(await view(b))).toEqual(['CANCELLED', 'NOT_REQUIRED']);
+    const c = world();
+    await c.submit();
+    await c.classes.returnToTutor(c.session().id, 'Please correct', 'CORRECTION', 'mentor-1', at(MON, '17:30'));
+    expect(both(await view(c))).toEqual(['CONDUCTED', 'RETURNED']);
+  });
+
+  it('lets an approved exception lift the voice and activity items only, never the tutor update', async () => {
+    const w = world();
+    await w.submit();
+    await w.ws.requestException('mentor-1', KEY, { reason: 'No data connection' }, AFTER);
+    await w.ws.decideException(await w.scope('head-1'), KEY, { approve: true }, AFTER);
+    expect(both(await view(w))).toEqual(['CONDUCTED', 'COMPLETE']);
+    const none = world();
+    await none.ws.requestException('mentor-1', KEY, { reason: 'No data connection' }, AFTER);
+    await none.ws.decideException(await none.scope('head-1'), KEY, { approve: true }, AFTER);
+    expect((await view(none)).documentation.status).toBe('NOT_STARTED'); // the tutor update is still missing, so nothing is complete
+    expect((await view(none)).documentation.missing).toEqual(['The tutor class update has not been submitted.']);
+  });
+
+  it('shows both statuses to the tutor, the Mentor, the list and the dashboard rows, from the same record', async () => {
+    const w = world();
+    await w.submit();
+    const tutor = (await w.ws.tutorWorkspace('u-meera', KEY, AFTER)).class;
+    const mentor = await view(w);
+    expect(both(tutor)).toEqual(both(mentor));
+    const row = (await w.ws.list(await w.scope('head-1'), { date: MON }, AFTER)).rows.find((r) => r.key === KEY)!;
+    expect([row.classStatus, row.documentation.status]).toEqual(both(mentor));
+    expect((await w.classes.tutorClasses('u-meera', MON, MON, AFTER))[0].documentation.status).toBe('IN_PROGRESS');
+  });
+
+  it('leaves compensation and consumption exactly as before: only a verified class with minutes is consumed and only then is a record made', async () => {
+    const w = world();
+    await w.submit();
+    await w.prepare();
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(0);
+    await w.classes.verify(w.session().id, {}, 'mentor-1', at(MON, '18:00'));
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(1);
+    expect(w.db.rows('tutorClassRecord')[0]).toMatchObject({ workedMinutes: 65, status: 'VERIFIED' });
+  });
+});
+
+describe('Stage 1: the tutor class update fields and its versions', () => {
+  it('saves the homework, the portions completed, the chapters and the remarks, and shows them to the Mentor', async () => {
+    const w = world();
+    await w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, chapters: ['Tenses', ' Nouns ', 'Tenses'], homework: 'Worksheet 4', portionsCompleted: 'Chapters 1 and 2', classNotes: 'Calm class' }, AFTER);
+    expect(w.session()).toMatchObject({ homework: 'Worksheet 4', portionsCompleted: 'Chapters 1 and 2', classNotes: 'Calm class', participation: 'GOOD', updateVersion: 1 });
+    expect(w.db.rows('mentoringClassPortion').map((p) => p.chapter).sort()).toEqual(['Nouns', 'Tenses']);
+    const update = (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER)).after.update!;
+    expect(update).toMatchObject({ homework: 'Worksheet 4', portionsCompleted: 'Chapters 1 and 2', chapters: expect.arrayContaining(['Nouns', 'Tenses']), version: 1 });
+  });
+
+  it('needs the homework, the portions, the additional remarks and the participation, and accepts None', async () => {
+    const w = world();
+    for (const [field, message] of [['homework', 'homework or assignments given'], ['portionsCompleted', 'Say which portions were completed'], ['classNotes', 'additional remarks'], ['participation', 'student participation']] as const) {
+      await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, [field]: '' }, AFTER)).rejects.toThrow(message);
+      await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, [field]: undefined }, AFTER)).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(w.db.rows('mentoringClassSession')[0]?.tutorSubmittedAt ?? null).toBeNull();
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, homework: 'None', classNotes: 'None' }, AFTER)).resolves.toMatchObject({ status: 'AWAITING_MENTOR_VERIFICATION' });
+  });
+
+  it('asks for none of the new fields when the class was not conducted, and checks the chapters', async () => {
+    const w = world();
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { conducted: false, notConductedReason: 'Student was ill' }, AFTER)).resolves.toBeDefined();
+    const x = world();
+    await expect(x.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, chapters: 'Tenses' }, AFTER)).rejects.toThrow('list of text');
+    await expect(x.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, chapters: Array.from({ length: 21 }, (_, i) => `C${i}`) }, AFTER)).rejects.toThrow('at most 20');
+    await expect(x.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, chapters: ['x'.repeat(201)] }, AFTER)).rejects.toThrow('200 characters');
+  });
+
+  it('keeps every submission whole as a version, with who sent it and why, and shows what changed', async () => {
+    const w = world();
+    await w.submit();
+    await w.classes.returnToTutor(w.session().id, 'Fix the end time', 'CORRECTION', 'mentor-1', at(MON, '17:30'));
+    await w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, actualEnd: '16:20', resubmitReason: 'The end time was 16:20' }, at(MON, '18:00'));
+    await w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, actualEnd: '16:20', homework: 'Worksheet 5', resubmitReason: 'Changed the homework' }, at(MON, '18:10'));
+    expect(w.session().updateVersion).toBe(3);
+    const versions = (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, at(MON, '18:20'))).after.versions;
+    expect(versions.map((v) => v.version)).toEqual([1, 2, 3]);
+    expect(versions.map((v) => v.resubmission)).toEqual([false, true, true]);
+    expect(versions[1]).toMatchObject({ by: 'Meera Thomas', reason: 'The end time was 16:20' });
+    expect(versions[0].snapshot).toMatchObject({ actualEndMinute: 970, homework: 'Worksheet 4' }); // the first version is exactly as it was sent
+    expect(versions[1].snapshot).toMatchObject({ actualEndMinute: 980 });
+    expect(versions[1].changed).toEqual(expect.arrayContaining(['actualEndMinute', 'actualMinutes']));
+    expect(versions[2].changed).toEqual(['homework']);
+    expect(w.session().homework).toBe('Worksheet 5');
+  });
+
+  it('needs the reason whenever an update is sent again, whether it was returned or the tutor is correcting it first', async () => {
+    const w = world();
+    await w.submit();
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, resubmitReason: '   ' }, at(MON, '17:30'))).rejects.toThrow('Say what you changed');
+    await w.classes.returnToTutor(w.session().id, 'Please correct', 'CORRECTION', 'mentor-1', at(MON, '17:35'));
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, resubmitReason: undefined }, at(MON, '17:40'))).rejects.toThrow('because the update was returned');
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, resubmitReason: 'y'.repeat(1001) }, at(MON, '17:40'))).rejects.toThrow('1000 characters');
+    expect(w.session().updateVersion).toBe(1);
+  });
+
+  it('refuses a save made on an older version, so nothing is silently overwritten', async () => {
+    const w = world();
+    await w.submit();
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, expectedVersion: 0, resubmitReason: 'x' }, at(MON, '17:30'))).rejects.toThrow('changed since you opened it');
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, expectedVersion: 'one' }, at(MON, '17:30'))).rejects.toThrow('whole number');
+    await expect(w.classes.tutorSubmitUpdate('u-meera', KEY, { ...good, expectedVersion: 1, resubmitReason: 'Corrected' }, at(MON, '17:30'))).resolves.toBeDefined();
+    expect(w.session().updateVersion).toBe(2);
+  });
+
+  it('counts an update made before versions as version 1, and its history still lists', async () => {
+    const w = world();
+    await w.submit();
+    w.session().updateVersion = 0; // as an update submitted before this change
+    const mentor = await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER);
+    expect(mentor.after.update!.version).toBe(1);
+  });
+});
+
+describe('Stage 1: activity topic, grade, level and option groups', () => {
+  const add = (w: ReturnType<typeof world>, i: number, over: object = {}) => w.ws.addActivity('u-meera', KEY, activity(i, over), AFTER);
+
+  it('needs the topic, the grade and the learning level, and a grade that exists', async () => {
+    const w = world();
+    await expect(add(w, 1, { topic: '' })).rejects.toThrow('Say which topic');
+    await expect(add(w, 1, { gradeId: undefined })).rejects.toThrow('Choose the grade');
+    await expect(add(w, 1, { learningLevel: undefined })).rejects.toThrow('Choose the learning level');
+    await expect(add(w, 1, { learningLevel: 'HARD' })).rejects.toThrow('below grade, on grade or above grade');
+    await expect(add(w, 1, { gradeId: 'g-99' })).rejects.toThrow('That grade does not exist.');
+    for (const level of ['BELOW_GRADE', 'ON_GRADE', 'ABOVE_GRADE']) await expect(add(w, 2, { learningLevel: level })).resolves.toBeDefined();
+    expect(w.db.rows('mentoringClassActivity')).toHaveLength(3);
+    expect(w.db.rows('mentoringClassActivity')[0]).toMatchObject({ gradeId: 'g-8', learningLevel: 'BELOW_GRADE', topic: 'Tenses' });
+  });
+
+  it('asks why when the grade is not the student own grade, and accepts it with a reason', async () => {
+    const w = world();
+    w.db.seed('grade', { id: 'g-7', name: 'Grade 7' });
+    await expect(add(w, 1, { gradeId: 'g-7' })).rejects.toThrow('different grade from the student');
+    await expect(add(w, 1, { gradeId: 'g-7', suitabilityNote: 'Revision of an earlier chapter' })).resolves.toBeDefined();
+    expect(w.db.rows('mentoringClassActivity')[0]).toMatchObject({ gradeId: 'g-7', suitabilityNote: 'Revision of an earlier chapter' });
+    await expect(add(w, 2, { gradeId: 'g-8' })).resolves.toBeDefined(); // the student's own grade needs no note
+    await expect(add(w, 3, { suitabilityNote: 'z'.repeat(1001) })).rejects.toThrow('1000 characters');
+  });
+
+  it('counts the options of one group once, so three options of one activity are not three activities', async () => {
+    const w = world();
+    await w.submit();
+    await w.ws.uploadVoice('u-meera', KEY, audio(), AFTER);
+    await w.ws.confirmVoiceShared('u-meera', KEY, AFTER);
+    const ids: string[] = [];
+    for (const label of ['A', 'B', 'C']) ids.push((await add(w, 1, { optionGroupKey: 'Practice', optionLabel: `Option ${label}` })).activityId);
+    for (const id of ids) await w.ws.shareActivity('u-meera', id, AFTER);
+    let counts = (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER)).after.activityCounts;
+    expect(counts).toEqual({ created: 1, shared: 1 });
+    await expect(w.classes.verify(w.session().id, {}, 'mentor-1', at(MON, '18:00'))).rejects.toThrow('At least 3 post-class activities are needed. 1 created.');
+    expect((await w.classes.daily('act-A', MON, {}, await w.scope('mentor-1'), AFTER)).classes[0].activityCounts).toMatchObject({ created: 1, shared: 1 });
+    // Two more separate activities make three.
+    for (const i of [2, 3]) await w.ws.shareActivity('u-meera', (await add(w, i)).activityId, AFTER);
+    counts = (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER)).after.activityCounts;
+    expect(counts).toEqual({ created: 3, shared: 3 });
+    await expect(w.classes.verify(w.session().id, {}, 'mentor-1', at(MON, '18:00'))).resolves.toMatchObject({ status: 'VERIFIED' });
+  });
+
+  it('counts a group as shared only when every option in it is shared', async () => {
+    const w = world();
+    await w.submit();
+    const a = (await add(w, 1, { optionGroupKey: 'G', optionLabel: 'One' })).activityId;
+    await add(w, 1, { optionGroupKey: 'G', optionLabel: 'Two' });
+    await add(w, 2);
+    await add(w, 3);
+    await w.ws.shareActivity('u-meera', a, AFTER);
+    expect((await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER)).after.activityCounts).toEqual({ created: 3, shared: 0 });
+  });
+
+  it('allows at most three options in a group, each with its own label, and needs a group name and a label together', async () => {
+    const w = world();
+    for (const label of ['A', 'B', 'C']) await add(w, 1, { optionGroupKey: 'G', optionLabel: label });
+    await expect(add(w, 1, { optionGroupKey: 'G', optionLabel: 'D' })).rejects.toThrow('at most 3 options');
+    await expect(add(w, 1, { optionGroupKey: 'H', optionLabel: 'a' })).resolves.toBeDefined();
+    await expect(add(w, 1, { optionGroupKey: 'H', optionLabel: 'A' })).rejects.toThrow('already has that label');
+    await expect(add(w, 1, { optionGroupKey: 'H' })).rejects.toThrow('both a group name and its own label');
+    await expect(add(w, 1, { optionLabel: 'x' })).rejects.toThrow('both a group name and its own label');
+    await expect(add(w, 1, { optionGroupKey: 'bad/name', optionLabel: 'x' })).rejects.toThrow('letters, numbers');
+  });
+
+  it('keeps an activity made before grade and level were required: it still counts, and can be edited without them', async () => {
+    const w = world();
+    const legacy = w.db.seed('mentoringClassActivity', { sessionId: (await w.ws.tutorWorkspace('u-meera', KEY, AFTER)).class.sessionId, position: 1, title: 'Old', type: 'WORKSHEET', topic: null, instructions: 'Old instructions', createdByUserId: 'u-meera', sharedAt: AFTER, sharedByUserId: 'u-meera' });
+    expect((await w.ws.tutorWorkspace('u-meera', KEY, AFTER)).after.activityCounts).toEqual({ created: 1, shared: 1 });
+    await expect(w.ws.updateActivity('u-meera', legacy.id, { title: 'Old, edited', type: 'WORKSHEET', instructions: 'Old instructions' })).resolves.toMatchObject({ sharingWithdrawn: true });
+    // A newer activity keeps the new rules when it is edited.
+    const fresh = (await add(w, 2)).activityId;
+    await expect(w.ws.updateActivity('u-meera', fresh, { title: 'x', type: 'WORKSHEET', instructions: 'y' })).rejects.toThrow('Say which topic');
+    await expect(w.ws.updateActivity('u-meera', fresh, activity(2, { title: 'Renamed', optionGroupKey: 'G', optionLabel: 'Only' }))).resolves.toBeDefined();
+    expect(w.db.rows('mentoringClassActivity').find((r) => r.id === fresh)).toMatchObject({ title: 'Renamed', optionGroupKey: 'G' });
+  });
+
+  it('offers the form the grades, the student own grade, the levels and the option limit', async () => {
+    const w = world();
+    const options = (await w.ws.tutorWorkspace('u-meera', KEY, AFTER)).after.activityOptions;
+    expect(options).toMatchObject({ studentGradeId: 'g-8', maxOptionsPerGroup: 3 });
+    expect(options.grades).toEqual(expect.arrayContaining([{ id: 'g-8', name: 'Grade 8' }]));
+    expect(options.levels.map((l) => l.value)).toEqual(['BELOW_GRADE', 'ON_GRADE', 'ABOVE_GRADE']);
+  });
+});
+
+describe('Stage 1: the pending update reminder schedule', () => {
+  const jobs = (w: ReturnType<typeof world>) => new MentoringReminderJobsService(w.db as any, w.classes, new MentoringReminderService(w.db as any), new MentoringSlaService(w.db as any, w.access));
+  const rows = (w: ReturnType<typeof world>, prefix: string, activation = 'act-A') => w.db.rows('mentoringReminder').filter((r) => r.kind.startsWith(prefix) && r.activationId === activation && r.kind.includes(`${MON}:900`));
+  const day = (n: number, time: string) => at(`2026-11-${String(9 + n).padStart(2, '0')}`, time);
+
+  it('sends nothing before 30 minutes after the class ends, then the first reminder to the tutor', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(at(MON, '16:29'));
+    expect(rows(w, 'CLASS_UPDATE_DUE')).toEqual([]);
+    const r = await j.run(at(MON, '16:30'));
+    expect(r.sent).toBeGreaterThanOrEqual(1);
+    const first = rows(w, 'CLASS_UPDATE_DUE');
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ status: 'SENT', recipientUserId: 'u-meera', kind: `CLASS_UPDATE_DUE:${MON}:900:0`, scheduledFor: at(MON, '16:30') });
+    expect(first[0].message).toContain('Class update pending: English with Asha Menon');
+    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'u-meera' && n.entityId === first[0].entityId && n.message.includes('Class update pending'))).toHaveLength(1);
+  });
+
+  it('repeats once a day up to three more times, so four in all, and then stops', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(at(MON, '16:30'));
+    await j.run(at(MON, '23:00'));
+    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(1);
+    await j.run(day(1, '16:30'));
+    await j.run(day(2, '16:30'));
+    await j.run(day(3, '16:30'));
+    expect(rows(w, 'CLASS_UPDATE_DUE').map((r) => r.kind.split(':').pop()).sort()).toEqual(['0', '1', '2', '3']);
+    expect(rows(w, 'CLASS_UPDATE_DUE').every((r) => r.status === 'SENT')).toBe(true);
+    await j.run(day(4, '16:30'));
+    await j.run(day(4, '20:00'));
+    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(4);
+    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'u-meera' && n.message.includes('Class update pending: English with Asha'))).toHaveLength(4);
+  });
+
+  it('tells the Mentor once, 24 hours after the class ended, and not before', async () => {
+    const w = world();
+    w.db.seed('user', { id: 'mentor-1', status: 'ACTIVE' });
+    const j = jobs(w);
+    await j.run(day(1, '15:59'));
+    expect(rows(w, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
+    await j.run(day(1, '16:00'));
+    await j.run(day(1, '18:00'));
+    const esc = rows(w, 'CLASS_UPDATE_ESCALATION');
+    expect(esc).toHaveLength(1);
+    expect(esc[0]).toMatchObject({ status: 'SENT', recipientUserId: 'mentor-1', scheduledFor: day(1, '16:00') });
+    expect(esc[0].message).toContain('The tutor update is still missing for English with Asha Menon');
+    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'mentor-1' && n.message.includes('still missing'))).toHaveLength(1);
+  });
+
+  it('stops when the update is submitted, and a late submission is sent no more reminders', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(at(MON, '16:30'));
+    await w.submit(KEY, 'u-meera');
+    await j.run(day(1, '16:30'));
+    await j.run(day(2, '16:30'));
+    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(1);
+    expect(rows(w, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
+  });
+
+  it('withdraws a prepared reminder when the update arrives first, and sends only the latest one that is due after the job was down', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(day(2, '16:35')); // the job was down for two days
+    const due = rows(w, 'CLASS_UPDATE_DUE');
+    expect(due.map((r) => r.kind.split(':').pop())).toEqual(['2']); // not 0 and 1 as well
+    expect(due[0].scheduledFor).toEqual(day(2, '16:30'));
+    const prepared = world();
+    await prepared.classes.prepareUpdateReminders(prepared.db as any, (await prepared.classes.eligibleOccurrences(prepared.db as any, MON, MON))[0], at(MON, '16:40'), 'system');
+    await prepared.submit();
+    await jobs(prepared).withdrawNoLongerApplicable();
+    expect(rows(prepared, 'CLASS_UPDATE_DUE').every((r) => r.status === 'CANCELLED')).toBe(true);
+  });
+
+  it('sends nothing for a class that was cancelled, a student who is paused, or a student who is not eligible', async () => {
+    const w = world();
+    await w.classes.cancel(KEY, 'Holiday', 'mentor-1', at(MON, '09:00'));
+    await jobs(w).run(day(1, '17:00'));
+    expect(rows(w, 'CLASS_UPDATE_DUE')).toEqual([]);
+    const p = world();
+    p.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.status = 'ACTIVATION_ON_HOLD';
+    await jobs(p).run(day(1, '17:00'));
+    expect(rows(p, 'CLASS_UPDATE_DUE')).toEqual([]);
+    expect(rows(p, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
+  });
+
+  it('can be run again and at the same time with no second reminder or notification', async () => {
+    const w = world();
+    const j = jobs(w);
+    await Promise.all([j.run(at(MON, '16:31')), j.run(at(MON, '16:31')), j.run(at(MON, '16:31'))]);
+    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(1);
+    expect(w.db.rows('notification').filter((n) => n.message.includes('Class update pending: English with Asha'))).toHaveLength(1);
+  });
+});
+
+describe('Stage 1: follow-up tasks of a class', () => {
+  const create = (w: ReturnType<typeof world>, over: object = {}, user = 'mentor-1', now = AFTER) => w.ws.createFollowUp(user, KEY, { title: 'Practise fractions', description: 'Ten questions', dueDate: '2026-11-12', ...over }, now);
+  const tasks = (w: ReturnType<typeof world>) => w.db.rows('mentoringTask');
+
+  it('lets the assigned Mentor give a follow-up to the tutor, as a normal task linked to the class, and tells the tutor', async () => {
+    const w = world();
+    const made = await create(w, { priority: 'HIGH' });
+    expect(made.status).toBe('OPEN');
+    expect(tasks(w)[0]).toMatchObject({ activationId: 'act-A', assigneeUserId: 'u-meera', assignedByUserId: 'mentor-1', sourceType: 'CLASS', sourceId: w.session().id, priority: 'HIGH', status: 'OPEN', title: 'Practise fractions' });
+    expect(tasks(w)[0].dueAt).toEqual(at('2026-11-12', '23:59'));
+    expect(w.db.rows('notification').find((n) => n.type === 'MENTORING_CLASS_FOLLOW_UP')).toMatchObject({ recipientUserId: 'u-meera' });
+    expect(w.events(w.session().id)).toContain('FOLLOW_UP_CREATED');
+    const mentor = (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER)).review.followUps;
+    expect(mentor).toEqual([expect.objectContaining({ title: 'Practise fractions', assignee: 'Meera Thomas', assigneeRole: 'TUTOR', status: 'OPEN', overdue: false })]);
+    expect((await w.ws.tutorWorkspace('u-meera', KEY, AFTER)).review.followUps).toHaveLength(1);
+  });
+
+  it('lets the Mentor keep it for themselves, which tells nobody and which the tutor does not see', async () => {
+    const w = world();
+    await create(w, { assignee: 'MENTOR' });
+    expect(tasks(w)[0].assigneeUserId).toBe('mentor-1');
+    expect(w.db.rows('notification').some((n) => n.type === 'MENTORING_CLASS_FOLLOW_UP')).toBe(false);
+    expect((await w.ws.tutorWorkspace('u-meera', KEY, AFTER)).review.followUps).toEqual([]);
+    expect((await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, AFTER)).review.followUps).toHaveLength(1);
+  });
+
+  it('is only for the assigned Mentor of an eligible student, and needs a title, a priority and a due date that is not in the past', async () => {
+    const w = world();
+    for (const user of ['mentor-2', 'u-meera', 'head-1', 'ceo-1']) await expect(create(w, {}, user)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(create(w, { title: ' ' })).rejects.toThrow('Give the follow-up a title');
+    await expect(create(w, { dueDate: undefined })).rejects.toThrow('Choose a due date');
+    await expect(create(w, { dueDate: '2026-11-08' })).rejects.toThrow('cannot be in the past');
+    await expect(create(w, { priority: 'SOON' })).rejects.toThrow('low, medium, high or urgent');
+    await expect(create(w, { assignee: 'PARENT' })).rejects.toThrow('tutor or keep it yourself');
+    expect(tasks(w)).toHaveLength(0);
+    w.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.status = 'ACTIVATION_ON_HOLD';
+    await expect(create(w)).rejects.toBeInstanceOf(NotFoundException); // not on the schedule any more
+  });
+
+  it('lets the tutor start it and hand it in with a note, and only the tutor it was given to', async () => {
+    const w = await (async () => { const x = world(); await create(x); return x; })();
+    const id = tasks(w)[0].id;
+    await expect(w.ws.tutorUpdateFollowUp('u-rahul', id, { status: 'IN_PROGRESS' })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'SUBMITTED' })).rejects.toThrow('Write what was done');
+    await expect(w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'VERIFIED' })).rejects.toThrow('started it or handed it in');
+    await w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'IN_PROGRESS', note: 'Started' });
+    await w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'SUBMITTED', note: 'Did all ten questions' }, at('2026-11-10', '10:00'));
+    expect(tasks(w)[0]).toMatchObject({ status: 'SUBMITTED', submittedAt: at('2026-11-10', '10:00') });
+    expect(tasks(w)[0].evidence).toEqual({ note: 'Did all ten questions' });
+    expect(w.db.rows('notification').find((n) => n.type === 'MENTORING_CLASS_FOLLOW_UP_DONE')).toMatchObject({ recipientUserId: 'mentor-1' });
+    await expect(w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'IN_PROGRESS' })).rejects.toThrow('already handed in or closed');
+  });
+
+  it('lets the Mentor verify it, send it back with a reason, or cancel it with a reason, and nobody else', async () => {
+    const w = world();
+    await create(w);
+    const id = tasks(w)[0].id;
+    await expect(w.ws.mentorDecideFollowUp('mentor-1', id, { decision: 'VERIFIED' })).rejects.toThrow('Only a follow-up that was handed in can be verified');
+    await w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'SUBMITTED', note: 'Done' });
+    for (const user of ['mentor-2', 'u-meera', 'head-1']) await expect(w.ws.mentorDecideFollowUp(user, id, { decision: 'VERIFIED' })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.ws.mentorDecideFollowUp('mentor-1', id, { decision: 'RETURNED' })).rejects.toThrow('what needs to be done again');
+    await w.ws.mentorDecideFollowUp('mentor-1', id, { decision: 'RETURNED', reason: 'Show the working' });
+    expect(tasks(w)[0]).toMatchObject({ status: 'RETURNED', returnReason: 'Show the working' });
+    expect(w.db.rows('notification').find((n) => n.type === 'MENTORING_CLASS_FOLLOW_UP_DECIDED')!.message).toContain('sent back: Show the working');
+    await w.ws.tutorUpdateFollowUp('u-meera', id, { status: 'SUBMITTED', note: 'With working' });
+    await w.ws.mentorDecideFollowUp('mentor-1', id, { decision: 'VERIFIED' }, at('2026-11-11', '09:00'));
+    expect(tasks(w)[0]).toMatchObject({ status: 'VERIFIED', verifiedByUserId: 'mentor-1', verifiedAt: at('2026-11-11', '09:00') });
+    await expect(w.ws.mentorDecideFollowUp('mentor-1', id, { decision: 'CANCELLED', reason: 'x' })).rejects.toThrow('already closed');
+    expect(w.events(w.session().id)).toEqual(expect.arrayContaining(['FOLLOW_UP_CREATED', 'FOLLOW_UP_SUBMITTED', 'FOLLOW_UP_RETURNED', 'FOLLOW_UP_VERIFIED']));
+  });
+
+  it('can be cancelled with a reason, and a follow-up the Mentor kept can be verified directly', async () => {
+    const w = world();
+    await create(w);
+    await create(w, { title: 'My own', assignee: 'MENTOR' });
+    const [forTutor, own] = tasks(w);
+    await expect(w.ws.mentorDecideFollowUp('mentor-1', forTutor.id, { decision: 'CANCELLED' })).rejects.toThrow('Say why it is cancelled');
+    await w.ws.mentorDecideFollowUp('mentor-1', forTutor.id, { decision: 'CANCELLED', reason: 'No longer needed' });
+    await w.ws.mentorDecideFollowUp('mentor-1', own.id, { decision: 'VERIFIED' });
+    expect(tasks(w).map((t) => t.status)).toEqual(['CANCELLED', 'VERIFIED']);
+  });
+
+  it('shows a follow-up past its due time as overdue, and an old task with no class source is not mistaken for one', async () => {
+    const w = world();
+    await create(w);
+    w.db.seed('mentoringTask', { activationId: 'act-A', title: 'Ordinary task', assigneeUserId: 'mentor-1', assignedByUserId: 'head-1' });
+    const late = (await w.ws.mentorWorkspace(await w.scope('mentor-1'), KEY, at('2026-11-14', '10:00'))).review.followUps;
+    expect(late).toHaveLength(1);
+    expect(late[0].overdue).toBe(true);
+    await expect(w.ws.mentorDecideFollowUp('mentor-1', tasks(w)[1].id, { decision: 'VERIFIED' })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('has routes that need the Mentor work permission and the tutor portal permission', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, (MentoringClassWorkspaceController.prototype as any).createFollowUp)).toEqual(['mentoring.stage.work']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, (MentoringClassWorkspaceController.prototype as any).decideFollowUp)).toEqual(['mentoring.stage.work']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, (TutorClassWorkspaceController.prototype as any).followUp)).toEqual(['tutor.portal.read']);
+  });
+});
+
+describe('Stage 1: pause handling and make-up classes', () => {
+  it('lets the Mentor move a class after the student resumes, and a class inside the pause is not made up by itself', async () => {
+    const w = world();
+    const act = w.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!;
+    act.status = 'ACTIVATION_ON_HOLD';
+    expect((await w.classes.daily('act-A', MON, {}, await w.scope('head-1'), AFTER)).classes).toEqual([]); // dropped during the pause
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(0); // and nothing was created for it
+    act.status = 'ACTIVATED';
+    await expect(w.classes.reschedule(KEY, { newDate: MON, newStart: '18:00', newEnd: '19:00', reason: 'Make-up for the pause' }, 'mentor-1', at(MON, '09:00'))).resolves.toMatchObject({ notified: true });
+    expect(w.session()).toMatchObject({ status: 'RESCHEDULED', startMinute: 1080, originalStartMinute: 900 });
+    expect(w.db.rows('mentoringTutorAssignmentOverride')[0]).toMatchObject({ reason: 'Make-up for the pause' });
   });
 });

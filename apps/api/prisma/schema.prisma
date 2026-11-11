@@ -4563,6 +4563,11 @@ model MentoringClassSession {
   /// The tutor class record made on verification. The payroll flow already reads these.
   tutorClassRecordId  String?               @map("tutor_class_record_id")
 
+  /// Homework or assignments the tutor gave, and the portions completed. Required in an update submitted after Stage 1 (a tutor may write None).
+  homework            String?               @db.Text
+  portionsCompleted   String?               @map("portions_completed") @db.Text
+  /// How many times the tutor has submitted the update. Every submission is also kept whole in the class events, so no version is lost.
+  updateVersion       Int                   @default(0) @map("update_version")
   /// The common Google Meet link of this class, when there is one.
   meetLink            String?               @map("meet_link")
   /// Cancellation: who, when and why. The scheduled slot is kept.
@@ -4587,6 +4592,7 @@ model MentoringClassSession {
   activityItems MentoringClassActivity[]
   attachments   MentoringClassAttachment[]
   shares        MentoringMessageShare[]
+  portions      MentoringClassPortion[]
 
   @@unique([assignmentId, originalDate, originalStartMinute])
   @@index([activationId, date])
@@ -4608,6 +4614,15 @@ model MentoringClassActivity {
   topic                    String?
   instructions             String    @db.Text
   dueDate                  DateTime? @map("due_date") @db.Date
+  /// The grade the activity suits and its learning level. Required for an activity made after Stage 1; older rows have neither.
+  gradeId                  String?   @map("grade_id")
+  /// BELOW_GRADE, ON_GRADE or ABOVE_GRADE.
+  learningLevel            String?   @map("learning_level")
+  /// Why a grade other than the student's own is suitable.
+  suitabilityNote          String?   @map("suitability_note") @db.Text
+  /// Options of one activity share a group key. A group counts once toward the three activities.
+  optionGroupKey           String?   @map("option_group_key")
+  optionLabel              String?   @map("option_label")
   createdByUserId          String    @map("created_by_user_id")
   /// The tutor says they shared it in the existing group. Not a delivery.
   sharedAt                 DateTime? @map("shared_at")
@@ -4630,6 +4645,25 @@ model MentoringClassActivity {
 
   @@index([sessionId, removedAt])
   @@map("mentoring_class_activities")
+}
+
+/// A chapter or portion covered in a class, as the tutor recorded it. Weekly exam chapters are chosen from these.
+model MentoringClassPortion {
+  id           String   @id @default(uuid())
+  sessionId    String   @map("session_id")
+  subjectId    String   @map("subject_id")
+  chapter      String
+  portionNote  String?  @map("portion_note") @db.Text
+  /// TYPED by the tutor, or PLAN when it was offered from the learning plan.
+  source       String   @default("TYPED")
+  createdByUserId String @map("created_by_user_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, chapter])
+  @@index([subjectId])
+  @@map("mentoring_class_portions")
 }
 
 /// The tutor's voice recording of a class, kept in private storage (file_key is a path inside it, never a public address).
@@ -4913,6 +4947,9 @@ model MentoringTask {
   dueAt              DateTime?             @map("due_at")
   assigneeUserId     String                @map("assignee_user_id")
   assignedByUserId   String                @map("assigned_by_user_id")
+  /// What the task follows up: CLASS now, EXAM and MEETING later. Null for tasks made as before.
+  sourceType         String?               @map("source_type")
+  sourceId           String?               @map("source_id")
   evidence           Json?
   submittedAt        DateTime?             @map("submitted_at")
   verifiedByUserId   String?               @map("verified_by_user_id")
@@ -4927,6 +4964,7 @@ model MentoringTask {
 
   @@index([assigneeUserId, status])
   @@index([activationId])
+  @@index([sourceType, sourceId])
   @@map("mentoring_tasks")
 }
 

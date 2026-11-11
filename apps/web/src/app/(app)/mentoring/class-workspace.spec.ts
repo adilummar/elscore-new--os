@@ -7,13 +7,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fetchApi } from '@/lib/api/client';
 
 import { ReviewPanel, MessageBlock } from './ClassWorkspaceDrawer';
+import { FollowUps, StatusStrip, VersionHistory } from './ClassWorkspaceExtras';
 import { classCardHref, CLASS_CARD_KEYS, emptyFilters } from './dashboard-view';
 import { ClassListClient } from './classes/ClassListClient';
 import { CardGrid } from './dashboard/DashboardClient';
-import { ACTIVITIES, STATE_CHOICES, STATE_TONE } from './class-view';
+import { ACTIVITIES, STATE_CHOICES, STATE_TONE, draftFromClass, payloadOfUpdate, updateProblems } from './class-view';
 import { recordLabel } from './timetable-view';
 import {
-  ACTIVITY_CHOICES, MessagePreview, ShareInfo, SHARE_STATE, WorkspaceData, exceptionKind, activityProblems, audioProblem, audioUrl, draftOfActivity, emptyActivity, emptyListFilters, fileSizeText, listQuery, payloadOfActivity, verifyHint, voiceUploadUrl, workspaceBase,
+  ACTIVITY_CHOICES, FollowUpInfo, VersionInfo, emptyFollowUp, followUpProblems, payloadOfFollowUp, MessagePreview, ShareInfo, SHARE_STATE, WorkspaceData, exceptionKind, activityProblems, audioProblem, audioUrl, draftOfActivity, emptyActivity, emptyListFilters, fileSizeText, listQuery, payloadOfActivity, verifyHint, voiceUploadUrl, workspaceBase,
 } from './workspace-view';
 import { tutorPortalApiAction } from '../tutor-portal/actions';
 
@@ -62,11 +63,11 @@ describe('the voice file checks before upload', () => {
 
 describe('the activity form', () => {
   it('names what is missing, needs a description for Other, and sends only what applies', () => {
-    expect(activityProblems(emptyActivity())).toEqual(['a title', 'the topic', 'the instructions']);
-    const d = { ...emptyActivity(), title: 'Tenses', topic: 'Tenses', instructions: 'Do page 4', type: 'OTHER' };
+    expect(activityProblems(emptyActivity())).toEqual(['a title', 'the topic', 'the instructions', 'the grade it suits', 'the learning level']);
+    const d = { ...emptyActivity('g-8'), title: 'Tenses', topic: 'Tenses', instructions: 'Do page 4', type: 'OTHER', learningLevel: 'ON_GRADE' };
     expect(activityProblems(d)).toEqual(['a description of the other kind']);
-    expect(payloadOfActivity({ ...d, typeDescription: 'Role play', dueDate: '2026-11-12' })).toEqual({ title: 'Tenses', type: 'OTHER', topic: 'Tenses', instructions: 'Do page 4', typeDescription: 'Role play', dueDate: '2026-11-12' });
-    expect(payloadOfActivity({ ...d, type: 'WORKSHEET', typeDescription: 'ignored' })).toEqual({ title: 'Tenses', type: 'WORKSHEET', topic: 'Tenses', instructions: 'Do page 4' });
+    expect(payloadOfActivity({ ...d, typeDescription: 'Role play', dueDate: '2026-11-12' })).toEqual({ title: 'Tenses', type: 'OTHER', topic: 'Tenses', instructions: 'Do page 4', typeDescription: 'Role play', dueDate: '2026-11-12', gradeId: 'g-8', learningLevel: 'ON_GRADE' });
+    expect(payloadOfActivity({ ...d, type: 'WORKSHEET', typeDescription: 'ignored' })).toEqual({ title: 'Tenses', type: 'WORKSHEET', topic: 'Tenses', instructions: 'Do page 4', gradeId: 'g-8', learningLevel: 'ON_GRADE' });
     expect(draftOfActivity({ id: 'a', position: 1, title: 'T', type: 'QUIZ', typeLabel: 'Quiz', typeDescription: null, topic: 'X', instructions: 'Y', dueDate: null, sharedAt: null, sharedBy: null, studentResponse: null, respondedAt: null, completion: 'PENDING', completionLabel: 'Not yet done', tutorRemarks: null, mentorRemarks: null })).toMatchObject({ type: 'QUIZ', dueDate: '', typeDescription: '' });
   });
 
@@ -172,7 +173,7 @@ describe('the recording routes', () => {
 });
 
 describe('the words on the workspace screens', () => {
-  const files = ['ClassWorkspaceDrawer.tsx', 'classes/ClassListClient.tsx', 'workspace-view.ts'];
+  const files = ['ClassWorkspaceDrawer.tsx', 'ClassWorkspaceExtras.tsx', 'classes/ClassListClient.tsx', 'workspace-view.ts'];
   const strings = (source: string) => [...source.matchAll(/'([^'\n]{12,})'|>([^<>{}\n]{12,})</g)].map((m) => m[1] ?? m[2]);
 
   it.each(files)('%s has no em dash, en dash, emoji, curly quote or chatbot phrase in what it says', (file) => {
@@ -260,7 +261,7 @@ describe('C2: the activity kinds the form offers are the ones the API accepts', 
 
   it('sends the corrected codes for the two that were wrong, and every offered kind builds a valid request', () => {
     for (const [code] of ACTIVITY_CHOICES) {
-      const d = { ...emptyActivity(), title: 'T', topic: 'X', instructions: 'Do it', type: code, typeDescription: code === 'OTHER' ? 'Role play' : '' };
+      const d = { ...emptyActivity('g-8'), learningLevel: 'ON_GRADE', title: 'T', topic: 'X', instructions: 'Do it', type: code, typeDescription: code === 'OTHER' ? 'Role play' : '' };
       expect(activityProblems(d)).toEqual([]);
       expect(payloadOfActivity(d)).toMatchObject({ type: code });
       expect(apiTypes).toContain((payloadOfActivity(d) as { type: string }).type);
@@ -429,5 +430,197 @@ describe('legacy classes in the review screen', () => {
     expect(panel).toContain('Open the class workspace to add what is missing');
     expect(panel).toContain('(c.blockers ?? []).length > 0');
     expect(panel).toContain('data-testid="verify-blockers"');
+  });
+});
+
+// ─── Stage 1 screens ─────────────────────────────────────────────────────────────────────────────────────────────
+describe('Stage 1: the two statuses, side by side', () => {
+  const cls = (over: object = {}) => ({ classStatus: 'CONDUCTED', classStatusLabel: 'Conducted', documentation: { status: 'IN_PROGRESS', label: 'In progress', missing: ['The tutor voice recording has not been uploaded.'] }, ...over } as unknown as WorkspaceData['class']);
+  const html = (c: WorkspaceData['class']) => renderToStaticMarkup(React.createElement(StatusStrip, { c }));
+
+  it('shows whether the class took place and whether its paperwork is complete as separate facts, with what is missing', () => {
+    const out = html(cls());
+    expect(out).toContain('data-testid="class-status"');
+    expect(out).toContain('Conducted');
+    expect(out).toContain('data-testid="documentation-status"');
+    expect(out).toContain('In progress');
+    expect(out).toContain('The tutor voice recording has not been uploaded.');
+  });
+
+  it('shows a conducted class with complete paperwork, and a class that was not conducted with none required, without a list of missing things', () => {
+    const complete = html(cls({ documentation: { status: 'COMPLETE', label: 'Complete', missing: [] } }));
+    expect(complete).toContain('Complete');
+    expect(complete).not.toContain('documentation-missing');
+    const none = html(cls({ classStatus: 'NOT_CONDUCTED', classStatusLabel: 'Not conducted', documentation: { status: 'NOT_REQUIRED', label: 'Not required', missing: ['ignored'] } }));
+    expect(none).toContain('Not conducted');
+    expect(none).toContain('Not required');
+    expect(none).not.toContain('ignored');
+  });
+
+  it('shows nothing for an answer from an older server that has no statuses', () => {
+    expect(html({} as WorkspaceData['class'])).toBe('');
+  });
+
+  it('puts the same two columns in the daily class list', () => {
+    const list = read('classes/ClassListClient.tsx');
+    expect(list).toContain("'Class', 'Documentation', 'Status'");
+    expect(list).toContain('data-testid="row-class-status"');
+    expect(list).toContain('data-testid="row-documentation-status"');
+  });
+});
+
+describe('Stage 1: the update form', () => {
+  const empty = draftFromClass({ update: null });
+  const good = { ...empty, conducted: 'yes' as const, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None' };
+
+  it('asks for the portions, the participation, the homework and the additional remarks, and takes None', () => {
+    expect(updateProblems(good)).toEqual([]);
+    expect(updateProblems({ ...good, portionsCompleted: ' ' })).toEqual(['the portions completed']);
+    expect(updateProblems({ ...good, participation: '' })).toEqual(['student participation']);
+    expect(updateProblems({ ...good, homework: '' })).toEqual(['the homework, or None']);
+    expect(updateProblems({ ...good, classNotes: '' })).toEqual(['your additional remarks, or None']);
+  });
+
+  it('asks what changed when an update was already submitted, and sends the version the tutor was looking at', () => {
+    const submitted = draftFromClass({ update: { conducted: true, actualStartMinute: 905, actualEndMinute: 970, actualMinutes: 65, subjectCovered: null, topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', classNotes: 'None', notConductedReason: null, activities: [], otherActivity: null, evaluationRemarks: null, coveredRemarks: null, voice: { sentAt: null, receivedAt: null, remarks: null }, submittedAt: '2026-11-09T10:00:00Z', homework: 'Worksheet 4', portionsCompleted: 'Chapter 3', chapters: ['Tenses', 'Nouns'], version: 3 } });
+    expect(submitted).toMatchObject({ resubmitting: true, expectedVersion: 3, homework: 'Worksheet 4', portionsCompleted: 'Chapter 3', chapters: 'Tenses\nNouns', resubmitReason: '' });
+    expect(updateProblems(submitted)).toEqual(['what you changed']);
+    const again = { ...submitted, resubmitReason: 'Fixed the end time' };
+    expect(updateProblems(again)).toEqual([]);
+    expect(payloadOfUpdate(again)).toMatchObject({ resubmitReason: 'Fixed the end time', expectedVersion: 3, chapters: ['Tenses', 'Nouns'], portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None' });
+    expect(payloadOfUpdate(good)).not.toHaveProperty('resubmitReason');
+    expect(payloadOfUpdate(good)).not.toHaveProperty('expectedVersion');
+    expect(payloadOfUpdate({ ...again, conducted: 'no', notConductedReason: 'Ill' })).toEqual({ conducted: false, notConductedReason: 'Ill', voiceSent: false, resubmitReason: 'Fixed the end time', expectedVersion: 3 });
+  });
+
+  it('shows the new fields in the tutor form and the review, in the words of the requirement', () => {
+    const form = read('../tutor-portal/TutorClasses.tsx');
+    for (const label of ['Chapters covered, one to a line', 'Portions completed', 'Homework or assignments given', 'Additional remarks', 'What did you change?']) expect(form).toContain(label);
+    const review = read('students/[id]/DailyClassesPanel.tsx');
+    for (const label of ['Portions completed', 'Homework or assignments', 'Additional remarks', 'Update version']) expect(review).toContain(label);
+  });
+});
+
+describe('Stage 1: update history', () => {
+  const versions = [
+    { version: 1, at: '2026-11-09T10:00:00Z', by: 'Meera Thomas', resubmission: false, reason: null, snapshot: { actualEndMinute: 970, homework: 'Worksheet 4', chapters: ['Tenses'], conducted: true }, changed: [] },
+    { version: 2, at: '2026-11-09T12:00:00Z', by: 'Meera Thomas', resubmission: true, reason: 'The end time was 16:20', snapshot: { actualEndMinute: 980, homework: 'Worksheet 4', chapters: ['Tenses'], conducted: true }, changed: ['actualEndMinute'] },
+  ];
+  const html = (v: VersionInfo[]) => renderToStaticMarkup(React.createElement(VersionHistory, { versions: v }));
+
+  it('lists every version oldest first with who sent it, why, and what changed, and how it was sent', () => {
+    const out = html(versions);
+    expect(out).toContain('Version 1, first submission');
+    expect(out).toContain('Version 2, sent again');
+    expect(out.indexOf('Version 1')).toBeLessThan(out.indexOf('Version 2'));
+    expect(out).toContain('Meera Thomas');
+    expect(out).toContain('Reason: The end time was 16:20');
+    expect(out).toContain('Changed: Actual end.');
+    expect(out).toContain('How it was sent');
+    expect(out).toContain('Worksheet 4');
+    expect(out).toContain('Tenses');
+  });
+
+  it('has no controls to change a version, and shows nothing when there is none', () => {
+    expect(html(versions)).not.toMatch(/<(button|input|textarea)/);
+    expect(html([])).toBe('');
+  });
+});
+
+describe('Stage 1: activities with grade, level and option groups', () => {
+  const base = { ...emptyActivity('g-8'), title: 'Fractions', topic: 'Fractions', instructions: 'Do page 4', learningLevel: 'ON_GRADE' };
+
+  it('asks why when the grade is not the student own grade, and asks for the group and the label together', () => {
+    expect(activityProblems(base, { studentGradeId: 'g-8' })).toEqual([]);
+    expect(activityProblems({ ...base, gradeId: 'g-7' }, { studentGradeId: 'g-8' })).toEqual(['why this grade suits the student']);
+    expect(activityProblems({ ...base, gradeId: 'g-7', suitabilityNote: 'Revision' }, { studentGradeId: 'g-8' })).toEqual([]);
+    expect(activityProblems({ ...base, optionGroupKey: 'Practice' })).toEqual(['both the option group and the option label']);
+    expect(activityProblems({ ...base, optionLabel: 'Easy' })).toEqual(['both the option group and the option label']);
+    expect(activityProblems({ ...base, optionGroupKey: 'Practice', optionLabel: 'Easy' })).toEqual([]);
+  });
+
+  it('lets an older activity be edited without topic, grade and level, and sends the new fields only when they are set', () => {
+    const old = { ...emptyActivity(), title: 'Old', instructions: 'Old text' };
+    expect(activityProblems(old, { legacy: true })).toEqual([]);
+    expect(activityProblems(old)).toEqual(['the topic', 'the grade it suits', 'the learning level']);
+    expect(payloadOfActivity(old)).toEqual({ title: 'Old', type: 'WORKSHEET', topic: '', instructions: 'Old text' });
+    expect(payloadOfActivity({ ...base, gradeId: 'g-7', suitabilityNote: 'Revision', optionGroupKey: ' Practice ', optionLabel: ' Easy ' })).toMatchObject({ gradeId: 'g-7', learningLevel: 'ON_GRADE', suitabilityNote: 'Revision', optionGroupKey: 'Practice', optionLabel: 'Easy' });
+    expect(draftOfActivity({ id: 'a', position: 1, title: 'T', type: 'QUIZ', typeLabel: 'Quiz', typeDescription: null, topic: 'X', instructions: 'Y', dueDate: null, sharedAt: null, sharedBy: null, studentResponse: null, respondedAt: null, completion: 'PENDING', completionLabel: 'Not yet done', tutorRemarks: null, mentorRemarks: null, gradeId: 'g-8', learningLevel: 'ABOVE_GRADE', optionGroupKey: 'G', optionLabel: 'One' })).toMatchObject({ gradeId: 'g-8', learningLevel: 'ABOVE_GRADE', optionGroupKey: 'G', optionLabel: 'One', suitabilityNote: '' });
+  });
+
+  it('starts a new activity on the student own grade, and offers the levels the API accepts', () => {
+    expect(emptyActivity('g-8').gradeId).toBe('g-8');
+    expect(emptyActivity().gradeId).toBe('');
+    const api = readFileSync(join(__dirname, '../../../../../api/src/modules/mentoring/class-workspace.ts'), 'utf8');
+    expect(api).toContain("LEARNING_LEVELS = ['BELOW_GRADE', 'ON_GRADE', 'ABOVE_GRADE']");
+    const drawer = read('ClassWorkspaceDrawer.tsx');
+    expect(drawer).toContain('Learning level');
+    expect(drawer).toContain('Grade it suits');
+    expect(drawer).toContain('Option group, if this is one of several options');
+    expect(drawer).toContain('All the options in a group count as one activity.');
+  });
+});
+
+describe('Stage 1: follow-up tasks', () => {
+  const item = (over: Partial<FollowUpInfo> = {}): FollowUpInfo => ({ id: 'task-1', title: 'Practise fractions', description: 'Ten questions', priority: 'HIGH', status: 'OPEN', dueAt: '2026-11-12T23:59:00Z', overdue: false, assignee: 'Meera Thomas', assigneeRole: 'TUTOR', assignedBy: 'Mira Staff', note: null, returnReason: null, createdAt: '2026-11-09T10:00:00Z', ...over });
+  const html = (role: 'MENTOR' | 'TUTOR', items: FollowUpInfo[], canWork = true) => renderToStaticMarkup(React.createElement(FollowUps, { role, classKey: KEY, items, busy: false, canWork, run: jest.fn() }));
+
+  it('lets the Mentor add a follow-up, and lists them with who does it, when it is due and what state it is in', () => {
+    const out = html('MENTOR', [item()]);
+    expect(out).toContain('Follow-up tasks');
+    expect(out).toContain('Practise fractions');
+    expect(out).toContain('For the tutor, Meera Thomas.');
+    expect(out).toContain('Priority high.');
+    expect(out).toContain('Add follow-up');
+    expect(out).toContain('data-testid="follow-up-form"');
+  });
+
+  it('shows the Mentor the verify, send back and cancel buttons, with the reason box', () => {
+    const out = html('MENTOR', [item({ status: 'SUBMITTED', note: 'Did all ten' })]);
+    for (const label of ['Verify', 'Send back', 'Cancel it', 'Reason, needed to send back or cancel']) expect(out).toContain(label);
+    expect(out).toContain('Handed in: Did all ten');
+    expect(html('MENTOR', [item({ status: 'VERIFIED' })])).not.toContain('Send back');
+    expect(html('MENTOR', [item()], false)).not.toContain('Add follow-up');
+    expect(html('MENTOR', [item()], false)).not.toContain('Verify');
+  });
+
+  it('marks one past its due time as overdue, and says when it was sent back', () => {
+    expect(html('MENTOR', [item({ overdue: true })])).toContain('Open, overdue');
+    expect(html('MENTOR', [item({ status: 'RETURNED', returnReason: 'Show the working' })])).toContain('Sent back: Show the working');
+  });
+
+  it('shows the tutor only what was given to them, with the way to start it and hand it in, and no Mentor controls', () => {
+    const out = html('TUTOR', [item()]);
+    expect(out).toContain('I have started');
+    expect(out).toContain('Hand it in');
+    expect(out).toContain('What was done');
+    for (const forbidden of ['Add follow-up', 'Verify', 'Send back', 'Cancel it']) expect(out).not.toContain(forbidden);
+    expect(html('TUTOR', [])).toBe('');
+    expect(html('TUTOR', [item({ status: 'SUBMITTED' })])).not.toContain('Hand it in');
+  });
+
+  it('checks the form before it asks the server', () => {
+    const today = '2026-11-10';
+    expect(followUpProblems(emptyFollowUp(), today)).toEqual(['a title', 'a due date']);
+    expect(followUpProblems({ ...emptyFollowUp(), title: 'x', dueDate: '2026-11-09' }, today)).toEqual(['a due date that is not in the past']);
+    expect(followUpProblems({ ...emptyFollowUp(), title: 'x', dueDate: today }, today)).toEqual([]);
+    expect(payloadOfFollowUp({ ...emptyFollowUp(), title: 'x', dueDate: today })).toEqual({ title: 'x', description: '', assignee: 'TUTOR', priority: 'MEDIUM', dueDate: today });
+  });
+
+  it('is reached through the tutor bridge for the tutor only, and the Mentor routes need no bridge change', async () => {
+    const mocked = fetchApi as jest.Mock;
+    mocked.mockReset().mockResolvedValue({ ok: true });
+    await expect(tutorPortalApiAction('/tutor-portal/class-workspace/follow-ups/abcdef12345', 'PUT')).resolves.toMatchObject({ ok: true });
+    await expect(tutorPortalApiAction('/tutor-portal/class-workspace/follow-ups/abcdef12345', 'POST')).resolves.toMatchObject({ ok: false });
+    await expect(tutorPortalApiAction('/tutor-portal/class-workspace/follow-ups/abcdef12345/extra', 'PUT')).resolves.toMatchObject({ ok: false });
+    expect(mocked).toHaveBeenCalledTimes(1);
+  });
+
+  it('is shown on the Mentor review tab and in the tutor after-class tab', () => {
+    const drawer = read('ClassWorkspaceDrawer.tsx');
+    expect(drawer).toContain('<FollowUps role="MENTOR"');
+    expect(drawer).toContain('<FollowUps role="TUTOR"');
+    expect(drawer).toContain('<VersionHistory');
+    expect(drawer).toContain('<StatusStrip');
   });
 });

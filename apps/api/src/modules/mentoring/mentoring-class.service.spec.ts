@@ -29,7 +29,7 @@ const MENTOR = scope('mentor-1', ['mentoring.student.read-assigned', 'mentoring.
 const HEAD = scope('head-1', ['mentoring.student.read-all'], true);
 const NOBODY = scope('nobody', []);
 
-const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
+const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None', resubmitReason: 'Corrected as asked' };
 
 function world(opts: { rate?: boolean; extraDays?: boolean } = {}) {
   const db = new FakeDb();

@@ -17,6 +17,7 @@ const WRITE: Array<[RegExp, 'PUT' | 'POST']> = [
   [new RegExp(`^/tutor-portal/class-workspace/shares/${ID}/(copied|confirm)$`), 'POST'],
   [new RegExp(`^/tutor-portal/class-workspace/activities/${ID}/(remove|shared)$`), 'POST'],
   [new RegExp(`^/tutor-portal/class-workspace/activities/${ID}(/response)?$`), 'PUT'],
+  [new RegExp(`^/tutor-portal/class-workspace/follow-ups/${ID}$`), 'PUT'],
   [/^\/tutor-portal\/classes\/[A-Za-z0-9-]{8,64}~\d{4}-\d{2}-\d{2}~\d{1,4}\/update$/, 'PUT'],
   [/^\/tutor-portal\/exams\/[A-Za-z0-9-]{8,64}\/receipt$/, 'POST'],
   [/^\/tutor-portal\/exams\/[A-Za-z0-9-]{8,64}\/evaluation$/, 'PUT'],

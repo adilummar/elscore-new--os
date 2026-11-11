@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import {
-  ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS, CLASS_CARD_KEYS, CardClass, DEFAULT_TEMPLATES, MAX_AUDIO_BYTES, MIN_ACTIVITIES, VerifyFacts, checkActivity, checkAudio, checkMeetLink, checkReason, checkResponse, checkTemplate, classCardsOf, hasVideoTrack, parseRange, placeholdersIn, renderTemplate, safeFileName, sniffAudio,
+  ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS, CLASS_CARD_KEYS, CLASS_CONDUCT_LABELS, CardClass, DEFAULT_TEMPLATES, DOCUMENTATION_LABELS, LEARNING_LEVELS, checkFollowUp, checkFollowUpDecision, checkFollowUpProgress, classConduct, countActivities, documentationStatus, MAX_AUDIO_BYTES, MIN_ACTIVITIES, VerifyFacts, checkActivity, checkAudio, checkMeetLink, checkReason, checkResponse, checkTemplate, classCardsOf, hasVideoTrack, parseRange, placeholdersIn, renderTemplate, safeFileName, sniffAudio,
   verificationBlockers,
 } from './class-workspace';
 
@@ -20,10 +20,10 @@ const AMR = pad('#!AMR\n');
 const PDF = pad('%PDF-1.4');
 
 describe('post-class activities', () => {
-  const good = { title: 'Tenses worksheet', type: 'WORKSHEET', topic: 'Past tense', instructions: 'Complete the first two pages.', dueDate: '2026-11-12' };
+  const good = { title: 'Tenses worksheet', type: 'WORKSHEET', topic: 'Past tense', instructions: 'Complete the first two pages.', dueDate: '2026-11-12', gradeId: 'g-8', learningLevel: 'ON_GRADE' };
 
   it('needs a title, a type, instructions and a real due date when one is given', () => {
-    expect(checkActivity(good)).toEqual({ ok: true, value: { title: 'Tenses worksheet', type: 'WORKSHEET', topic: 'Past tense', instructions: 'Complete the first two pages.', typeDescription: null, dueDate: '2026-11-12' } });
+    expect(checkActivity(good)).toEqual({ ok: true, value: { title: 'Tenses worksheet', type: 'WORKSHEET', topic: 'Past tense', instructions: 'Complete the first two pages.', typeDescription: null, dueDate: '2026-11-12', gradeId: 'g-8', learningLevel: 'ON_GRADE', suitabilityNote: null, optionGroupKey: null, optionLabel: null } });
     expect(checkActivity({ ...good, title: ' ' })).toMatchObject({ ok: false, message: 'Give the activity a title.' });
     expect(checkActivity({ ...good, type: 'DANCE' })).toMatchObject({ ok: false, message: 'Choose the type of activity.' });
     expect(checkActivity({ ...good, instructions: '' })).toMatchObject({ ok: false, message: 'Write the instructions for the student.' });
@@ -257,5 +257,119 @@ describe('the daily class cards, from one definition', () => {
     expect([...CLASS_CARD_KEYS]).toHaveLength(11);
     const dashboard = readFileSync(join(__dirname, 'mentoring-dashboard.service.ts'), 'utf8');
     for (const key of CLASS_CARD_KEYS) expect(dashboard).toContain(`'${key}'`);
+  });
+});
+
+// ─── Stage 1 rules ───────────────────────────────────────────────────────────────────────────────────────────────
+describe('classConduct and documentationStatus (two independent statuses)', () => {
+  const docs = (over: object = {}) => ({ status: 'AWAITING_MENTOR_VERIFICATION', conducted: true as boolean | null, tutorSubmitted: true, voiceUploaded: true, voiceShared: true, activitiesCreated: 3, activitiesShared: 3, exceptionApproved: false, ...over });
+
+  it('reads the class status only from what was recorded about the class', () => {
+    expect(classConduct({ status: 'SCHEDULED', conducted: null, state: 'SCHEDULED' })).toBe('SCHEDULED');
+    expect(classConduct({ status: 'RESCHEDULED', conducted: null, state: 'RESCHEDULED' })).toBe('RESCHEDULED');
+    expect(classConduct({ status: 'SCHEDULED', conducted: null, state: 'AWAITING_TUTOR_UPDATE' })).toBe('PENDING_REPORT');
+    expect(classConduct({ status: 'AWAITING_MENTOR_VERIFICATION', conducted: true, state: 'AWAITING_MENTOR_VERIFICATION' })).toBe('CONDUCTED');
+    expect(classConduct({ status: 'VERIFIED', conducted: true, state: 'VERIFIED' })).toBe('CONDUCTED');
+    expect(classConduct({ status: 'AWAITING_MENTOR_VERIFICATION', conducted: false, state: 'AWAITING_MENTOR_VERIFICATION' })).toBe('NOT_CONDUCTED');
+    expect(classConduct({ status: 'NOT_CONDUCTED', conducted: false, state: 'NOT_CONDUCTED' })).toBe('NOT_CONDUCTED');
+    expect(classConduct({ status: 'CANCELLED', conducted: null, state: 'CANCELLED' })).toBe('CANCELLED');
+    expect(classConduct({ status: 'CANCELLED', conducted: true, state: 'CANCELLED' })).toBe('CANCELLED');
+  });
+
+  it('is complete only with the update, the voice and its sharing, and three shared activities, whatever the class status', () => {
+    expect(documentationStatus(docs())).toEqual({ status: 'COMPLETE', missing: [] });
+    expect(documentationStatus(docs({ conducted: null }))).toEqual({ status: 'COMPLETE', missing: [] }); // paperwork does not depend on conduct
+    for (const [over, status] of [[{ voiceUploaded: false, voiceShared: false }, 'IN_PROGRESS'], [{ voiceShared: false }, 'IN_PROGRESS'], [{ activitiesCreated: 2 }, 'IN_PROGRESS'], [{ activitiesShared: 2 }, 'IN_PROGRESS'], [{ tutorSubmitted: false }, 'IN_PROGRESS']] as const) {
+      const r = documentationStatus(docs(over));
+      expect(r.status).toBe(status);
+      expect(r.missing.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('is not started until something is done, in progress after the first thing, returned when sent back, and not required for a class that did not happen', () => {
+    expect(documentationStatus(docs({ tutorSubmitted: false, voiceUploaded: false, voiceShared: false, activitiesCreated: 0, activitiesShared: 0 })).status).toBe('NOT_STARTED');
+    expect(documentationStatus(docs({ tutorSubmitted: false, voiceUploaded: false, voiceShared: false, activitiesCreated: 1, activitiesShared: 0 })).status).toBe('IN_PROGRESS');
+    expect(documentationStatus(docs({ status: 'RETURNED_FOR_CORRECTION' })).status).toBe('RETURNED');
+    expect(documentationStatus(docs({ status: 'RETURNED_FOR_CORRECTION', voiceUploaded: false })).missing).toEqual(['The tutor voice recording has not been uploaded.']);
+    for (const over of [{ status: 'CANCELLED' }, { conducted: false }, { status: 'NOT_CONDUCTED' }]) expect(documentationStatus(docs(over))).toEqual({ status: 'NOT_REQUIRED', missing: [] });
+  });
+
+  it('lets an approved exception lift the voice and activity items but never the tutor update', () => {
+    expect(documentationStatus(docs({ voiceUploaded: false, voiceShared: false, activitiesCreated: 0, activitiesShared: 0, exceptionApproved: true }))).toEqual({ status: 'COMPLETE', missing: [] });
+    expect(documentationStatus(docs({ tutorSubmitted: false, voiceUploaded: false, voiceShared: false, activitiesCreated: 0, activitiesShared: 0, exceptionApproved: true }))).toEqual({ status: 'NOT_STARTED', missing: ['The tutor class update has not been submitted.'] });
+  });
+
+  it('has a label for every value', () => {
+    for (const k of ['NOT_REQUIRED', 'NOT_STARTED', 'IN_PROGRESS', 'RETURNED', 'COMPLETE'] as const) expect(DOCUMENTATION_LABELS[k]).toBeTruthy();
+    for (const k of ['SCHEDULED', 'RESCHEDULED', 'PENDING_REPORT', 'CONDUCTED', 'NOT_CONDUCTED', 'CANCELLED'] as const) expect(CLASS_CONDUCT_LABELS[k]).toBeTruthy();
+  });
+});
+
+describe('activity grade, level and option groups', () => {
+  const ok = { title: 'T', type: 'WORKSHEET', topic: 'Tenses', instructions: 'Do it', gradeId: 'g-8', learningLevel: 'ON_GRADE' };
+
+  it('needs the topic, grade and level for a new activity, and only the level values it knows', () => {
+    expect(checkActivity(ok)).toMatchObject({ ok: true, value: { gradeId: 'g-8', learningLevel: 'ON_GRADE', topic: 'Tenses' } });
+    expect(checkActivity({ ...ok, topic: '' })).toMatchObject({ ok: false, message: 'Say which topic the activity is about.' });
+    expect(checkActivity({ ...ok, gradeId: '' })).toMatchObject({ ok: false, message: 'Choose the grade the activity suits.' });
+    expect(checkActivity({ ...ok, learningLevel: undefined })).toMatchObject({ ok: false, message: 'Choose the learning level of the activity.' });
+    expect(checkActivity({ ...ok, learningLevel: 'EASY' })).toMatchObject({ ok: false });
+    expect([...LEARNING_LEVELS]).toEqual(['BELOW_GRADE', 'ON_GRADE', 'ABOVE_GRADE']);
+  });
+
+  it('lets an older activity be edited without them, and keeps what is given', () => {
+    const old = { title: 'T', type: 'WORKSHEET', instructions: 'Do it' };
+    expect(checkActivity(old, { strict: false })).toMatchObject({ ok: true, value: { topic: null, gradeId: null, learningLevel: null } });
+    expect(checkActivity(old)).toMatchObject({ ok: false });
+    expect(checkActivity({ ...old, learningLevel: 'EASY' }, { strict: false })).toMatchObject({ ok: false });
+  });
+
+  it('takes an option as a group name with its own label, together', () => {
+    expect(checkActivity({ ...ok, optionGroupKey: 'Practice set', optionLabel: 'Easy' })).toMatchObject({ ok: true, value: { optionGroupKey: 'Practice set', optionLabel: 'Easy' } });
+    expect(checkActivity({ ...ok, optionGroupKey: 'Practice set' })).toMatchObject({ ok: false });
+    expect(checkActivity({ ...ok, optionLabel: 'Easy' })).toMatchObject({ ok: false });
+    expect(checkActivity({ ...ok, optionGroupKey: 'a/b', optionLabel: 'x' })).toMatchObject({ ok: false });
+    expect(checkActivity({ ...ok, optionGroupKey: 'g'.repeat(41), optionLabel: 'x' })).toMatchObject({ ok: false });
+    expect(checkActivity({ ...ok, optionGroupKey: 'g', optionLabel: 'x'.repeat(101) })).toMatchObject({ ok: false });
+  });
+
+  it('counts a group once, shared only when all its options are, and an activity with no group as one', () => {
+    const a = (id: string, group: string | null, shared: boolean) => ({ id, optionGroupKey: group, sharedAt: shared ? new Date() : null });
+    expect(countActivities([])).toEqual({ created: 0, shared: 0 });
+    expect(countActivities([a('1', null, true), a('2', null, false), a('3', null, true)])).toEqual({ created: 3, shared: 2 });
+    expect(countActivities([a('1', 'G', true), a('2', 'G', true), a('3', 'G', true)])).toEqual({ created: 1, shared: 1 });
+    expect(countActivities([a('1', 'G', true), a('2', 'G', false)])).toEqual({ created: 1, shared: 0 });
+    expect(countActivities([a('1', 'G', true), a('2', 'H', true), a('3', null, true)])).toEqual({ created: 3, shared: 3 });
+    expect(countActivities([a('1', 'G', true), a('2', 'G', true), a('3', 'H', true), a('4', 'H', true)])).toEqual({ created: 2, shared: 2 });
+  });
+});
+
+describe('follow-up task rules', () => {
+  const ok = { title: 'Practise', dueDate: '2026-11-12' };
+  const today = '2026-11-10';
+
+  it('needs a title and a due date that is not in the past, and defaults to a medium task for the tutor', () => {
+    expect(checkFollowUp(ok, today)).toEqual({ ok: true, value: { title: 'Practise', description: null, priority: 'MEDIUM', dueDate: '2026-11-12', assignee: 'TUTOR' } });
+    expect(checkFollowUp({ ...ok, dueDate: today }, today)).toMatchObject({ ok: true });
+    expect(checkFollowUp({ ...ok, dueDate: '2026-11-09' }, today)).toMatchObject({ ok: false, message: 'The due date cannot be in the past.' });
+    expect(checkFollowUp({ ...ok, dueDate: undefined }, today)).toMatchObject({ ok: false });
+    expect(checkFollowUp({ ...ok, dueDate: '2026-02-30' }, today)).toMatchObject({ ok: false });
+    expect(checkFollowUp({ ...ok, title: ' ' }, today)).toMatchObject({ ok: false, message: 'Give the follow-up a title.' });
+    expect(checkFollowUp({ ...ok, title: 'x'.repeat(201) }, today)).toMatchObject({ ok: false });
+    expect(checkFollowUp({ ...ok, priority: 'SOON' }, today)).toMatchObject({ ok: false });
+    expect(checkFollowUp({ ...ok, assignee: 'MENTOR', priority: 'URGENT', description: 'Ten questions' }, today)).toMatchObject({ ok: true, value: { assignee: 'MENTOR', priority: 'URGENT', description: 'Ten questions' } });
+    expect(checkFollowUp(null, today)).toMatchObject({ ok: false });
+  });
+
+  it('needs a note when the tutor hands it in, and a reason when the Mentor sends it back or cancels it', () => {
+    expect(checkFollowUpProgress({ status: 'IN_PROGRESS' })).toEqual({ ok: true, value: { status: 'IN_PROGRESS', note: null } });
+    expect(checkFollowUpProgress({ status: 'SUBMITTED' })).toMatchObject({ ok: false });
+    expect(checkFollowUpProgress({ status: 'SUBMITTED', note: 'Done' })).toMatchObject({ ok: true });
+    expect(checkFollowUpProgress({ status: 'VERIFIED' })).toMatchObject({ ok: false });
+    expect(checkFollowUpDecision({ decision: 'VERIFIED' })).toEqual({ ok: true, value: { decision: 'VERIFIED', reason: null } });
+    expect(checkFollowUpDecision({ decision: 'RETURNED' })).toMatchObject({ ok: false });
+    expect(checkFollowUpDecision({ decision: 'CANCELLED', reason: ' ' })).toMatchObject({ ok: false });
+    expect(checkFollowUpDecision({ decision: 'CANCELLED', reason: 'Not needed' })).toMatchObject({ ok: true });
+    expect(checkFollowUpDecision({ decision: 'DONE' })).toMatchObject({ ok: false });
   });
 });

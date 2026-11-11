@@ -26,9 +26,23 @@ export type Checked<T> = { ok: true; value: T } | { ok: false; message: string }
 const text = (v: unknown): string | undefined => (v === undefined || v === null ? '' : typeof v === 'string' ? v.trim() : undefined);
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
-export interface CheckedActivity { title: string; type: ActivityType; topic: string | null; instructions: string; typeDescription: string | null; dueDate: string | null }
-/** One activity as the tutor writes it. Related to the topics of the class, so a topic is expected; Other needs words. */
-export function checkActivity(raw: unknown): Checked<CheckedActivity> {
+export const LEARNING_LEVELS = ['BELOW_GRADE', 'ON_GRADE', 'ABOVE_GRADE'] as const;
+export type LearningLevel = (typeof LEARNING_LEVELS)[number];
+export const LEARNING_LEVEL_LABELS: Record<LearningLevel, string> = { BELOW_GRADE: 'Below grade level', ON_GRADE: 'On grade level', ABOVE_GRADE: 'Above grade level' };
+export const MAX_OPTIONS_PER_GROUP = 3;
+const GROUP_KEY = /^[A-Za-z0-9 _-]{1,40}$/;
+
+export interface CheckedActivity {
+  title: string; type: ActivityType; topic: string | null; instructions: string; typeDescription: string | null; dueDate: string | null;
+  gradeId: string | null; learningLevel: LearningLevel | null; suitabilityNote: string | null; optionGroupKey: string | null; optionLabel: string | null;
+}
+/**
+ * One activity as the tutor writes it. A new activity needs its topic, the grade it suits and its learning level (strict). An activity made
+ * before those fields existed can still be edited without them (not strict). Options of one activity share a group key and each has a label.
+ * Other needs words.
+ */
+export function checkActivity(raw: unknown, opts: { strict?: boolean } = {}): Checked<CheckedActivity> {
+  const strict = opts.strict !== false;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, message: 'Send the activity.' };
   const r = raw as Record<string, unknown>;
   const f = { title: text(r.title), topic: text(r.topic), instructions: text(r.instructions), typeDescription: text(r.typeDescription) };
@@ -39,9 +53,42 @@ export function checkActivity(raw: unknown): Checked<CheckedActivity> {
   if (!f.instructions) return { ok: false, message: 'Write the instructions for the student.' };
   if ((f.instructions).length > TEXT_LIMIT || (f.topic ?? '').length > 200 || (f.typeDescription ?? '').length > 200) return { ok: false, message: 'One of the texts is too long.' };
   if (r.type === 'OTHER' && !f.typeDescription) return { ok: false, message: 'Describe the other kind of activity.' };
+  if (strict && !f.topic) return { ok: false, message: 'Say which topic the activity is about.' };
+  const grade = text(r.gradeId);
+  const level = text(r.learningLevel);
+  const note = text(r.suitabilityNote);
+  const groupKey = text(r.optionGroupKey);
+  const label = text(r.optionLabel);
+  if ([grade, level, note, groupKey, label].some((v) => v === undefined)) return { ok: false, message: 'The grade, level, note and option fields must be text.' };
+  if (strict && !grade) return { ok: false, message: 'Choose the grade the activity suits.' };
+  if (level && !(LEARNING_LEVELS as readonly string[]).includes(level)) return { ok: false, message: 'Choose below grade, on grade or above grade level.' };
+  if (strict && !level) return { ok: false, message: 'Choose the learning level of the activity.' };
+  if ((note ?? '').length > 1000) return { ok: false, message: 'The suitability note must be 1000 characters or fewer.' };
+  if ((groupKey || label) && !(groupKey && label)) return { ok: false, message: 'An option needs both a group name and its own label.' };
+  if (groupKey && !GROUP_KEY.test(groupKey)) return { ok: false, message: 'The option group name may use letters, numbers, spaces, dashes and underscores, up to 40 characters.' };
+  if ((label ?? '').length > 100) return { ok: false, message: 'The option label must be 100 characters or fewer.' };
   const due = r.dueDate === undefined || r.dueDate === null || r.dueDate === '' ? null : r.dueDate;
   if (due !== null && !isDate(due)) return { ok: false, message: 'Choose a real due date, written like 2026-11-12.' };
-  return { ok: true, value: { title: f.title, type: r.type as ActivityType, topic: f.topic || null, instructions: f.instructions, typeDescription: r.type === 'OTHER' ? f.typeDescription || null : null, dueDate: due } };
+  return {
+    ok: true,
+    value: {
+      title: f.title, type: r.type as ActivityType, topic: f.topic || null, instructions: f.instructions, typeDescription: r.type === 'OTHER' ? f.typeDescription || null : null, dueDate: due,
+      gradeId: grade || null, learningLevel: (level || null) as LearningLevel | null, suitabilityNote: note || null, optionGroupKey: groupKey || null, optionLabel: label || null,
+    },
+  };
+}
+
+/**
+ * How many of the three activities are made and shared. The options of one group count once: a group is created when it has any option,
+ * and shared only when every one of its options has been shared. An activity with no group counts as a group of its own.
+ */
+export function countActivities(rows: ReadonlyArray<{ id: string; optionGroupKey?: string | null; sharedAt?: unknown }>): { created: number; shared: number } {
+  const groups = new Map<string, boolean>();
+  for (const r of rows) {
+    const key = r.optionGroupKey ? `group:${r.optionGroupKey}` : `one:${r.id}`;
+    groups.set(key, (groups.get(key) ?? true) && !!r.sharedAt);
+  }
+  return { created: groups.size, shared: [...groups.values()].filter(Boolean).length };
 }
 
 export interface CheckedResponse { response: string | null; completion: Completion; tutorRemarks: string | null; mentorRemarks: string | null; hasTutorRemarks: boolean; hasMentorRemarks: boolean }
@@ -280,4 +327,92 @@ export function classCardsOf(k: CardClass, today: string): ClassCardKey[] {
   if (k.update?.conducted && !closed && !waived && !(k.activityCounts.created >= MIN_ACTIVITIES && k.activityCounts.shared >= MIN_ACTIVITIES)) out.push('classes_awaiting_activities');
   if (k.state === 'CANCELLED') out.push('classes_cancelled');
   return out;
+}
+
+// ─── Two independent statuses: was the class conducted, and is its documentation complete ──────────────────────────
+export type ClassConduct = 'SCHEDULED' | 'RESCHEDULED' | 'PENDING_REPORT' | 'CONDUCTED' | 'NOT_CONDUCTED' | 'CANCELLED';
+export const CLASS_CONDUCT_LABELS: Record<ClassConduct, string> = {
+  SCHEDULED: 'Scheduled', RESCHEDULED: 'Rescheduled', PENDING_REPORT: 'Report pending', CONDUCTED: 'Conducted', NOT_CONDUCTED: 'Not conducted', CANCELLED: 'Cancelled',
+};
+/**
+ * Whether the class took place. Read only from what is recorded: the tutor's report and the Mentor's confirmation. Completing the
+ * paperwork never makes a class conducted, and a conducted class is not thereby documented.
+ */
+export function classConduct(f: { status: string; conducted: boolean | null; state: string }): ClassConduct {
+  if (f.status === 'CANCELLED') return 'CANCELLED';
+  if (f.conducted === true) return 'CONDUCTED';
+  if (f.conducted === false || f.status === 'NOT_CONDUCTED') return 'NOT_CONDUCTED';
+  if (f.state === 'AWAITING_TUTOR_UPDATE') return 'PENDING_REPORT';
+  return f.status === 'RESCHEDULED' ? 'RESCHEDULED' : 'SCHEDULED';
+}
+
+export type DocumentationStatus = 'NOT_REQUIRED' | 'NOT_STARTED' | 'IN_PROGRESS' | 'RETURNED' | 'COMPLETE';
+export const DOCUMENTATION_LABELS: Record<DocumentationStatus, string> = {
+  NOT_REQUIRED: 'Not required', NOT_STARTED: 'Not started', IN_PROGRESS: 'In progress', RETURNED: 'Returned for correction', COMPLETE: 'Complete',
+};
+export interface DocumentationFacts {
+  status: string; conducted: boolean | null; tutorSubmitted: boolean; voiceUploaded: boolean; voiceShared: boolean;
+  activitiesCreated: number; activitiesShared: number; exceptionApproved: boolean;
+}
+/**
+ * Whether the paperwork is complete: the tutor update submitted, the voice recording uploaded and its sharing confirmed, and three
+ * activities created and their sharing confirmed, unless the Mentoring Head approved an exception (which lifts only the voice and
+ * activity items, never the tutor update). It does not depend on whether the class was conducted, except that a class that was not
+ * conducted or was cancelled needs no documentation. It is not the same as verification, which stays the Mentor's action.
+ */
+export function documentationStatus(f: DocumentationFacts): { status: DocumentationStatus; missing: string[] } {
+  if (f.status === 'CANCELLED' || f.conducted === false || f.status === 'NOT_CONDUCTED') return { status: 'NOT_REQUIRED', missing: [] };
+  const missing = verificationBlockers({ conducted: true, tutorSubmitted: f.tutorSubmitted, voiceUploaded: f.voiceUploaded, voiceShared: f.voiceShared, activitiesCreated: f.activitiesCreated, activitiesShared: f.activitiesShared, exceptionApproved: f.exceptionApproved });
+  if (f.status === 'RETURNED_FOR_CORRECTION') return { status: 'RETURNED', missing };
+  if (f.tutorSubmitted && missing.length === 0) return { status: 'COMPLETE', missing };
+  const started = f.tutorSubmitted || f.voiceUploaded || f.activitiesCreated > 0;
+  return { status: started ? 'IN_PROGRESS' : 'NOT_STARTED', missing };
+}
+
+// ─── Follow-up tasks of a class ──────────────────────────────────────────────────────────────────────────────────
+export const FOLLOW_UP_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type FollowUpPriority = (typeof FOLLOW_UP_PRIORITIES)[number];
+export interface CheckedFollowUp { title: string; description: string | null; priority: FollowUpPriority; dueDate: string; assignee: 'TUTOR' | 'MENTOR' }
+
+/** A follow-up task about a class: a title, who does it, and a due date that is not in the past. */
+export function checkFollowUp(raw: unknown, today: string): Checked<CheckedFollowUp> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, message: 'Send the follow-up.' };
+  const r = raw as Record<string, unknown>;
+  const title = text(r.title);
+  const description = text(r.description);
+  if (title === undefined || description === undefined) return { ok: false, message: 'The title and description must be text.' };
+  if (!title) return { ok: false, message: 'Give the follow-up a title.' };
+  if (title.length > 200) return { ok: false, message: 'The title must be 200 characters or fewer.' };
+  if (description.length > TEXT_LIMIT) return { ok: false, message: `The description must be ${TEXT_LIMIT} characters or fewer.` };
+  const priority = r.priority === undefined || r.priority === null || r.priority === '' ? 'MEDIUM' : r.priority;
+  if (!(FOLLOW_UP_PRIORITIES as readonly unknown[]).includes(priority)) return { ok: false, message: 'Choose low, medium, high or urgent priority.' };
+  const assignee = r.assignee === undefined || r.assignee === null || r.assignee === '' ? 'TUTOR' : r.assignee;
+  if (assignee !== 'TUTOR' && assignee !== 'MENTOR') return { ok: false, message: 'Give the follow-up to the tutor or keep it yourself.' };
+  if (!isDate(r.dueDate)) return { ok: false, message: 'Choose a due date, written like 2026-11-12.' };
+  if (r.dueDate < today) return { ok: false, message: 'The due date cannot be in the past.' };
+  return { ok: true, value: { title, description: description || null, priority: priority as FollowUpPriority, dueDate: r.dueDate, assignee } };
+}
+
+/** The tutor starts a follow-up, or hands it in. Handing in needs a note, so the Mentor knows what was done. */
+export function checkFollowUpProgress(raw: unknown): Checked<{ status: 'IN_PROGRESS' | 'SUBMITTED'; note: string | null }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, message: 'Send the progress.' };
+  const r = raw as Record<string, unknown>;
+  if (r.status !== 'IN_PROGRESS' && r.status !== 'SUBMITTED') return { ok: false, message: 'Say whether you have started it or handed it in.' };
+  const note = text(r.note);
+  if (note === undefined) return { ok: false, message: 'The note must be text.' };
+  if (note.length > 1000) return { ok: false, message: 'The note must be 1000 characters or fewer.' };
+  if (r.status === 'SUBMITTED' && !note) return { ok: false, message: 'Write what was done, so the Mentor can check it.' };
+  return { ok: true, value: { status: r.status, note: note || null } };
+}
+
+/** The Mentor verifies, sends back or cancels. Sending back and cancelling need a reason. */
+export function checkFollowUpDecision(raw: unknown): Checked<{ decision: 'VERIFIED' | 'RETURNED' | 'CANCELLED'; reason: string | null }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, message: 'Send the decision.' };
+  const r = raw as Record<string, unknown>;
+  if (r.decision !== 'VERIFIED' && r.decision !== 'RETURNED' && r.decision !== 'CANCELLED') return { ok: false, message: 'Choose verify, send back or cancel.' };
+  const reason = text(r.reason);
+  if (reason === undefined) return { ok: false, message: 'The reason must be text.' };
+  if (reason.length > 1000) return { ok: false, message: 'The reason must be 1000 characters or fewer.' };
+  if (r.decision !== 'VERIFIED' && !reason) return { ok: false, message: r.decision === 'RETURNED' ? 'Say what needs to be done again.' : 'Say why it is cancelled.' };
+  return { ok: true, value: { decision: r.decision, reason: reason || null } };
 }

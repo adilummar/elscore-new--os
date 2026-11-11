@@ -7,7 +7,7 @@ import { formatRange } from '../tutor/tutor-availability';
 import { isDateString } from '../tutor/tutor-calendar';
 
 import {
-  ACTIVITY_TYPE_LABELS, CLASS_CARD_KEYS, COMPLETION_LABELS, DEFAULT_TEMPLATES, MIN_ACTIVITIES, TEMPLATE_KEYS, checkActivity, checkAudio, checkMeetLink, checkReason, checkResponse, checkTemplate, classCardsOf, parseRange, renderTemplate, safeFileName, verificationBlockers,
+  ACTIVITY_TYPE_LABELS, CLASS_CARD_KEYS, LEARNING_LEVEL_LABELS, MAX_OPTIONS_PER_GROUP, countActivities, COMPLETION_LABELS, DEFAULT_TEMPLATES, MIN_ACTIVITIES, TEMPLATE_KEYS, checkActivity, checkAudio, checkMeetLink, checkReason, checkResponse, checkFollowUp, checkFollowUpDecision, checkFollowUpProgress, checkTemplate, classCardsOf, parseRange, renderTemplate, safeFileName, verificationBlockers,
 } from './class-workspace';
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { ClassView, MentoringClassService, SessionRow } from './mentoring-class.service';
@@ -173,7 +173,13 @@ export class MentoringClassWorkspaceService {
       const r = renderTemplate(t.body, this.values(session, view, f, sorted, over));
       return { key, name: t.name, ok: r.ok, text: r.ok ? r.text : null, missing: r.ok ? [] : r.missing, message: r.ok ? null : r.message, placeholders: t.placeholders, share: shareView(lastShare(key)) };
     };
-    const blockers = verificationBlockers({ conducted: session.conducted, tutorSubmitted: !!session.tutorSubmittedAt, voiceUploaded: !!current, voiceShared: !!current?.sharedAt, activitiesCreated: sorted.length, activitiesShared: sorted.filter((a) => a.sharedAt).length, exceptionApproved: session.exceptionStatus === 'APPROVED' });
+    const counted = countActivities(sorted);
+    const grades = await db.grade.findMany({});
+    const gradeName = (id: string | null) => (id ? grades.find((g) => g.id === id)?.name ?? null : null);
+    const studentGradeId = await this.studentGradeOf(db, session);
+    const versions = await this.versionsOf(db, session.id, nm);
+    const followUps = await this.followUpsOf(db, session, role, scope, now, nm);
+    const blockers = verificationBlockers({ conducted: session.conducted, tutorSubmitted: !!session.tutorSubmittedAt, voiceUploaded: !!current, voiceShared: !!current?.sharedAt, activitiesCreated: counted.created, activitiesShared: counted.shared, exceptionApproved: session.exceptionStatus === 'APPROVED' });
     const scopeOk = role === 'MENTOR' && !!scope;
     return {
       class: role === 'TUTOR' ? { ...view, sla: null } : view,
@@ -191,10 +197,14 @@ export class MentoringClassWorkspaceService {
         earlierVoice: attachments.filter((a) => a.supersededAt).length,
         activities: sorted.map((a) => ({
           id: a.id, position: a.position, title: a.title, type: a.type, typeLabel: ACTIVITY_TYPE_LABELS[a.type as keyof typeof ACTIVITY_TYPE_LABELS] ?? a.type, typeDescription: a.typeDescription, topic: a.topic, instructions: a.instructions, dueDate: dayOf(a.dueDate),
+          gradeId: a.gradeId ?? null, gradeName: gradeName(a.gradeId ?? null), learningLevel: a.learningLevel ?? null, learningLevelLabel: a.learningLevel ? LEARNING_LEVEL_LABELS[a.learningLevel as keyof typeof LEARNING_LEVEL_LABELS] ?? a.learningLevel : null, suitabilityNote: a.suitabilityNote ?? null, optionGroupKey: a.optionGroupKey ?? null, optionLabel: a.optionLabel ?? null,
           sharedAt: a.sharedAt?.toISOString() ?? null, sharedBy: nm(a.sharedByUserId), studentResponse: a.studentResponse, respondedAt: a.respondedAt?.toISOString() ?? null, completion: a.completion, completionLabel: COMPLETION_LABELS[a.completion as keyof typeof COMPLETION_LABELS] ?? a.completion,
           tutorRemarks: a.tutorRemarks, mentorRemarks: a.mentorRemarks,
         })),
         minimumActivities: MIN_ACTIVITIES,
+        activityCounts: counted,
+        activityOptions: { grades: grades.map((g) => ({ id: g.id, name: g.name })), studentGradeId, levels: Object.entries(LEARNING_LEVEL_LABELS).map(([value, label]) => ({ value, label })), maxOptionsPerGroup: MAX_OPTIONS_PER_GROUP },
+        versions,
         messages: [preview('CLASS_UPDATE'), preview('POST_CLASS_ACTIVITIES')],
         canEdit: view.status !== 'VERIFIED' && view.status !== 'NOT_CONDUCTED' && view.status !== 'CANCELLED',
       },
@@ -202,9 +212,38 @@ export class MentoringClassWorkspaceService {
         blockers, canVerify: scopeOk && view.status === 'AWAITING_MENTOR_VERIFICATION' && blockers.length === 0, mentorRemarks: session.mentorRemarks,
         exception: { status: session.exceptionStatus ?? null, reason: session.exceptionReason, requestedBy: nm(session.exceptionRequestedByUserId), requestedAt: session.exceptionRequestedAt?.toISOString() ?? null, decidedBy: nm(session.exceptionDecidedByUserId), decidedAt: session.exceptionDecidedAt?.toISOString() ?? null, decisionNote: session.exceptionDecisionNote },
         cancelled: session.cancelledAt ? { at: session.cancelledAt.toISOString(), by: nm(session.cancelledByUserId), reason: session.cancelReason } : null,
+        followUps,
         consumption: view.consumption, minutes: { scheduled: view.scheduledMinutes, reported: view.update?.actualMinutes ?? null, verified: view.verified?.minutes ?? null, consumed: view.consumption === 'CONSUMED' ? view.verified?.minutes ?? 0 : 0 },
       },
     };
+  }
+
+  /** Every submission of the tutor update, oldest first, as it was sent, and what changed from the one before. */
+  private async versionsOf(db: PrismaTxClient, sessionId: string, nm: (id: string | null | undefined) => string | null) {
+    const events = (await db.mentoringClassSessionEvent.findMany({ where: { sessionId, kind: { in: ['TUTOR_SUBMITTED', 'TUTOR_RESUBMITTED'] } } })).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const people = await this.people(db, events.map((e) => e.actorUserId));
+    let before: Record<string, unknown> | null = null;
+    return events.map((e, i) => {
+      const payload = (e.payload ?? {}) as { version?: number; snapshot?: Record<string, unknown> };
+      const snapshot = payload.snapshot ?? null;
+      const changed = snapshot && before ? Object.keys(snapshot).filter((k) => JSON.stringify(snapshot[k]) !== JSON.stringify(before?.[k])) : [];
+      before = snapshot ?? before;
+      return { version: payload.version ?? i + 1, at: e.createdAt.toISOString(), by: e.actorUserId ? people.get(e.actorUserId) ?? nm(e.actorUserId) : null, resubmission: e.kind === 'TUTOR_RESUBMITTED', reason: e.reason ?? null, snapshot, changed };
+    });
+  }
+
+  /** The follow-up tasks of this class. A Mentor sees all of them, the tutor only the ones given to them. */
+  private async followUpsOf(db: PrismaTxClient, session: SessionRow, role: 'TUTOR' | 'MENTOR', scope: MentoringScope | undefined, now: Date, nm: (id: string | null | undefined) => string | null) {
+    const rows = await db.mentoringTask.findMany({ where: { sourceType: 'CLASS', sourceId: session.id } });
+    const mine = role === 'TUTOR' ? rows.filter((t) => t.assigneeUserId === session.tutorUserId) : rows;
+    const people = await this.people(db, mine.flatMap((t) => [t.assigneeUserId, t.assignedByUserId]));
+    void scope;
+    return mine.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((t) => ({
+      id: t.id, title: t.title, description: t.description ?? null, priority: t.priority, status: t.status, dueAt: t.dueAt?.toISOString() ?? null,
+      overdue: !!t.dueAt && t.dueAt.getTime() < now.getTime() && !['VERIFIED', 'CANCELLED'].includes(t.status),
+      assignee: people.get(t.assigneeUserId) ?? nm(t.assigneeUserId), assigneeRole: t.assigneeUserId === session.tutorUserId ? 'TUTOR' : 'MENTOR', assignedBy: people.get(t.assignedByUserId) ?? nm(t.assignedByUserId),
+      note: (t.evidence as { note?: string } | null)?.note ?? null, returnReason: t.returnReason ?? null, createdAt: t.createdAt.toISOString(),
+    }));
   }
 
   /** The tutor's view of one of their own classes. */
@@ -302,6 +341,31 @@ export class MentoringClassWorkspaceService {
   }
 
   // ─── After class: the activities ───────────────────────────────────────────────────────────────────────────────
+  /** The grade this student has for the subject, from the saved schedule. Null when the schedule does not say. */
+  private async studentGradeOf(tx: PrismaTxClient, session: SessionRow): Promise<string | null> {
+    const activation = await tx.mentoringActivation.findUnique({ where: { id: session.activationId } });
+    if (!activation) return null;
+    const field = await tx.enrollmentHandoverField.findFirst({ where: { handoverId: activation.handoverId, fieldKey: 'timetable.schedule' } });
+    const subjects = (field?.value as { subjects?: Array<{ subjectId?: string; gradeId?: string }> } | null)?.subjects ?? [];
+    return subjects.find((s) => s.subjectId === session.subjectId)?.gradeId ?? null;
+  }
+
+  /** The grade must exist, and a grade other than the student's own needs a reason. The level is checked by the rule itself. */
+  private async checkSuitability(tx: PrismaTxClient, session: SessionRow, v: { gradeId: string | null; suitabilityNote: string | null }) {
+    if (!v.gradeId) return;
+    if (!(await tx.grade.findUnique({ where: { id: v.gradeId } }))) throw new BadRequestException('That grade does not exist.');
+    const own = await this.studentGradeOf(tx, session);
+    if (own && v.gradeId !== own && !v.suitabilityNote) throw new BadRequestException('This activity is for a different grade from the student. Say why it suits them.');
+  }
+
+  /** At most three options in a group, each with its own label. The activity being edited is left out of the count. */
+  private checkOptionGroup(others: Array<{ id: string; optionGroupKey: string | null; optionLabel: string | null }>, v: { optionGroupKey: string | null; optionLabel: string | null }, selfId: string | null) {
+    if (!v.optionGroupKey) return;
+    const group = others.filter((o) => o.optionGroupKey === v.optionGroupKey && o.id !== selfId);
+    if (group.length >= MAX_OPTIONS_PER_GROUP) throw new ConflictException(`A group can have at most ${MAX_OPTIONS_PER_GROUP} options.`);
+    if (group.some((o) => (o.optionLabel ?? '').toLowerCase() === (v.optionLabel ?? '').toLowerCase())) throw new BadRequestException('Another option in this group already has that label.');
+  }
+
   async addActivity(userId: string, key: string, body: unknown, now: Date = new Date()) {
     const checked = checkActivity(body);
     if (!checked.ok) throw new BadRequestException(checked.message);
@@ -312,9 +376,16 @@ export class MentoringClassWorkspaceService {
       const have = await tx.mentoringClassActivity.findMany({ where: { sessionId: session.id, removedAt: null } });
       if (have.length >= MAX_ACTIVITIES) throw new ConflictException(`A class can have at most ${MAX_ACTIVITIES} activities.`);
       const v = checked.value;
-      const made = await tx.mentoringClassActivity.create({ data: { sessionId: session.id, position: have.length + 1, title: v.title, type: v.type, typeDescription: v.typeDescription, topic: v.topic, instructions: v.instructions, dueDate: v.dueDate ? new Date(`${v.dueDate}T00:00:00Z`) : null, createdByUserId: userId } });
-      await this.classes.logEvent(tx, session.id, 'ACTIVITY_ADDED', userId, { payload: { activityId: made.id, type: v.type } });
-      return { activityId: made.id, created: have.length + 1 };
+      await this.checkSuitability(tx, session, v);
+      this.checkOptionGroup(have, v, null);
+      const made = await tx.mentoringClassActivity.create({
+        data: {
+          sessionId: session.id, position: have.length + 1, title: v.title, type: v.type, typeDescription: v.typeDescription, topic: v.topic, instructions: v.instructions, dueDate: v.dueDate ? new Date(`${v.dueDate}T00:00:00Z`) : null,
+          gradeId: v.gradeId, learningLevel: v.learningLevel, suitabilityNote: v.suitabilityNote, optionGroupKey: v.optionGroupKey, optionLabel: v.optionLabel, createdByUserId: userId,
+        },
+      });
+      await this.classes.logEvent(tx, session.id, 'ACTIVITY_ADDED', userId, { payload: { activityId: made.id, type: v.type, gradeId: v.gradeId, learningLevel: v.learningLevel, optionGroupKey: v.optionGroupKey } });
+      return { activityId: made.id, created: countActivities([...have, made]).created };
     });
   }
 
@@ -330,14 +401,24 @@ export class MentoringClassWorkspaceService {
   }
 
   async updateActivity(userId: string, activityId: string, body: unknown) {
-    const checked = checkActivity(body);
-    if (!checked.ok) throw new BadRequestException(checked.message);
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const { a, session } = await this.activityOf(tx, activityId);
       this.tutorOwns(session, userId);
       this.open(session);
+      // An activity made before grade and level were required can still be edited without them (C11). A newer one keeps the rules.
+      const checked = checkActivity(body, { strict: a.learningLevel !== null });
+      if (!checked.ok) throw new BadRequestException(checked.message);
       const v = checked.value;
-      await tx.mentoringClassActivity.update({ where: { id: activityId }, data: { title: v.title, type: v.type, typeDescription: v.typeDescription, topic: v.topic, instructions: v.instructions, dueDate: v.dueDate ? new Date(`${v.dueDate}T00:00:00Z`) : null, ...(a.sharedAt ? { sharedAt: null, sharedByUserId: null } : {}) } });
+      await this.checkSuitability(tx, session, v);
+      this.checkOptionGroup(await tx.mentoringClassActivity.findMany({ where: { sessionId: session.id, removedAt: null } }), v, activityId);
+      await tx.mentoringClassActivity.update({
+        where: { id: activityId },
+        data: {
+          title: v.title, type: v.type, typeDescription: v.typeDescription, topic: v.topic, instructions: v.instructions, dueDate: v.dueDate ? new Date(`${v.dueDate}T00:00:00Z`) : null,
+          gradeId: v.gradeId, learningLevel: v.learningLevel, suitabilityNote: v.suitabilityNote, optionGroupKey: v.optionGroupKey, optionLabel: v.optionLabel,
+          ...(a.sharedAt ? { sharedAt: null, sharedByUserId: null } : {}),
+        },
+      });
       await this.classes.logEvent(tx, session.id, 'ACTIVITY_CHANGED', userId, { payload: { activityId, sharingWithdrawn: !!a.sharedAt } });
       return { activityId, sharingWithdrawn: !!a.sharedAt };
     });
@@ -452,6 +533,79 @@ export class MentoringClassWorkspaceService {
     if (range.kind === 'unsatisfiable') return { ...base, stream: null, status: 416, start: 0, end: 0 };
     if (range.kind === 'ok') return { ...base, stream: await this.storage.readStream(att.fileKey, { start: range.start, end: range.end }), status: 206, start: range.start, end: range.end };
     return { ...base, stream: await this.storage.readStream(att.fileKey), status: 200, start: 0, end: att.fileSize - 1 };
+  }
+
+  // ─── Follow-up tasks of a class ─────────────────────────────────────────────────────────────────────────────────
+  /** A Mentor gives a follow-up task about this class to the tutor or keeps it. It is an ordinary Mentoring task with its source set. */
+  async createFollowUp(userId: string, key: string, body: unknown, now: Date = new Date()) {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const tz = (await this.sla.workingNow(tx, now)).timeZone;
+      const today = localMomentOf(now, tz).date;
+      const checked = checkFollowUp(body, today);
+      if (!checked.ok) throw new BadRequestException(checked.message);
+      const v = checked.value;
+      const { session, activation } = await this.mentorCtx(tx, userId, key);
+      const assigneeUserId = v.assignee === 'TUTOR' ? session.tutorUserId : userId;
+      const task = await tx.mentoringTask.create({
+        data: {
+          activationId: activation.id, title: v.title, description: v.description, priority: v.priority, status: 'OPEN', dueAt: zonedInstant(v.dueDate, 24 * 60 - 1, tz),
+          assigneeUserId, assignedByUserId: userId, sourceType: 'CLASS', sourceId: session.id,
+        },
+      });
+      if (assigneeUserId !== userId) await tx.notification.create({ data: { recipientUserId: assigneeUserId, type: 'MENTORING_CLASS_FOLLOW_UP', entityType: ENTITY, entityId: session.id, action: '/tutor-portal', message: `A follow-up was given to you about the class on ${dayOf(session.date)}: ${v.title}`, dedupeKey: `class-follow-up:${task.id}` } });
+      await this.classes.logEvent(tx, session.id, 'FOLLOW_UP_CREATED', userId, { payload: { taskId: task.id, assignee: v.assignee, dueDate: v.dueDate } });
+      await this.history.record(tx, { activationId: activation.id, type: 'MENTORING_CLASS_FOLLOW_UP_CREATED', actorUserId: userId, payload: { sessionId: session.id, taskId: task.id } });
+      return { taskId: task.id, status: 'OPEN' as const };
+    });
+  }
+
+  private async followUpOf(tx: PrismaTxClient, taskId: string) {
+    const task = await tx.mentoringTask.findUnique({ where: { id: taskId } });
+    if (!task || task.sourceType !== 'CLASS' || !task.sourceId) throw new NotFoundException('Follow-up not found');
+    const session = (await tx.mentoringClassSession.findUnique({ where: { id: task.sourceId } }));
+    if (!session) throw new NotFoundException('Follow-up not found');
+    return { task, session };
+  }
+
+  /** The tutor starts a follow-up, or hands it in with a note for the Mentor. Only the tutor it was given to. */
+  async tutorUpdateFollowUp(userId: string, taskId: string, body: unknown, now: Date = new Date()) {
+    const checked = checkFollowUpProgress(body);
+    if (!checked.ok) throw new BadRequestException(checked.message);
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const { task, session } = await this.followUpOf(tx, taskId);
+      if (task.assigneeUserId !== userId || session.tutorUserId !== userId) throw new ForbiddenException('This follow-up is not yours.');
+      const activation = await loadLockedActivation(tx, session.activationId);
+      this.classes.requireEligible(activation);
+      if (!['OPEN', 'IN_PROGRESS', 'RETURNED'].includes(task.status)) throw new ConflictException('This follow-up is already handed in or closed.');
+      const v = checked.value;
+      await tx.mentoringTask.update({ where: { id: taskId }, data: { status: v.status, ...(v.note ? { evidence: { note: v.note } } : {}), ...(v.status === 'SUBMITTED' ? { submittedAt: now, returnReason: null } : {}) } });
+      if (v.status === 'SUBMITTED' && activation.currentMentorUserId) await tx.notification.create({ data: { recipientUserId: activation.currentMentorUserId, type: 'MENTORING_CLASS_FOLLOW_UP_DONE', entityType: ENTITY, entityId: session.id, action: `/mentoring/students/${activation.id}`, message: `A follow-up was handed in for the class on ${dayOf(session.date)}: ${task.title}`, dedupeKey: `class-follow-up-done:${taskId}:${now.getTime()}` } });
+      await this.classes.logEvent(tx, session.id, v.status === 'SUBMITTED' ? 'FOLLOW_UP_SUBMITTED' : 'FOLLOW_UP_STARTED', userId, { payload: { taskId } });
+      return { taskId, status: v.status };
+    });
+  }
+
+  /** The Mentor verifies a follow-up, sends it back with a reason, or cancels it with a reason. */
+  async mentorDecideFollowUp(userId: string, taskId: string, body: unknown, now: Date = new Date()) {
+    const checked = checkFollowUpDecision(body);
+    if (!checked.ok) throw new BadRequestException(checked.message);
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const { task, session } = await this.followUpOf(tx, taskId);
+      const activation = await this.classes.mentorGuard(tx, session.activationId, userId);
+      const v = checked.value;
+      if (['VERIFIED', 'CANCELLED'].includes(task.status)) throw new ConflictException('This follow-up is already closed.');
+      const own = task.assigneeUserId === userId;
+      if (v.decision === 'RETURNED' && task.status !== 'SUBMITTED') throw new ConflictException('Only a follow-up that was handed in can be sent back.');
+      if (v.decision === 'VERIFIED' && task.status !== 'SUBMITTED' && !own) throw new ConflictException('Only a follow-up that was handed in can be verified.');
+      await tx.mentoringTask.update({
+        where: { id: taskId },
+        data: v.decision === 'VERIFIED' ? { status: 'VERIFIED', verifiedByUserId: userId, verifiedAt: now } : v.decision === 'RETURNED' ? { status: 'RETURNED', returnReason: v.reason } : { status: 'CANCELLED', returnReason: v.reason },
+      });
+      if (v.decision !== 'VERIFIED' && task.assigneeUserId !== userId) await tx.notification.create({ data: { recipientUserId: task.assigneeUserId, type: 'MENTORING_CLASS_FOLLOW_UP_DECIDED', entityType: ENTITY, entityId: session.id, action: '/tutor-portal', message: `Your follow-up was ${v.decision === 'RETURNED' ? 'sent back' : 'cancelled'}: ${v.reason}`, dedupeKey: `class-follow-up-decided:${taskId}:${now.getTime()}` } });
+      await this.classes.logEvent(tx, session.id, `FOLLOW_UP_${v.decision}`, userId, { reason: v.reason, payload: { taskId } });
+      await this.history.record(tx, { activationId: activation.id, type: `MENTORING_CLASS_FOLLOW_UP_${v.decision}`, actorUserId: userId, reason: v.reason, payload: { sessionId: session.id, taskId } });
+      return { taskId, status: v.decision };
+    });
   }
 
   // ─── The Mentor: exceptions and the daily list ─────────────────────────────────────────────────────────────────

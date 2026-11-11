@@ -19,7 +19,7 @@ const PAGE_MAX = 100;
 export type Group = 'students' | 'classes' | 'exams' | 'meetings' | 'complaints' | 'sla';
 export type CardKey =
   | 'students_total' | 'students_active'
-  | 'classes_today' | 'classes_upcoming' | 'classes_awaiting_update' | 'classes_awaiting_verification' | 'classes_verified' | 'classes_not_conducted' | 'classes_rescheduled' | 'classes_voice_pending' | 'classes_conducted' | 'classes_awaiting_activities' | 'classes_cancelled'
+  | 'classes_today' | 'classes_upcoming' | 'classes_awaiting_update' | 'classes_awaiting_verification' | 'classes_verified' | 'classes_not_conducted' | 'classes_rescheduled' | 'classes_voice_pending' | 'classes_conducted' | 'classes_awaiting_activities' | 'classes_cancelled' | 'followups_open' | 'followups_overdue'
   | 'exams_upcoming' | 'exams_awaiting_evaluation' | 'exams_marks_pending' | 'exams_reexam'
   | 'meetings_upcoming' | 'meetings_pending_completion' | 'meetings_overdue' | 'meetings_not_conducted' | 'plans_awaiting_date'
   | 'complaints_new' | 'complaints_open' | 'complaints_resolved' | 'complaints_approaching' | 'complaints_breached'
@@ -39,6 +39,8 @@ export const CARDS: ReadonlyArray<{ key: CardKey; group: Group; label: string }>
   { key: 'classes_conducted', group: 'classes', label: 'Classes conducted' },
   { key: 'classes_awaiting_activities', group: 'classes', label: 'Waiting for post-class activities' },
   { key: 'classes_cancelled', group: 'classes', label: 'Classes cancelled' },
+  { key: 'followups_open', group: 'classes', label: 'Class follow-ups open' },
+  { key: 'followups_overdue', group: 'classes', label: 'Class follow-ups overdue' },
   { key: 'exams_upcoming', group: 'exams', label: 'Upcoming exams' },
   { key: 'exams_awaiting_evaluation', group: 'exams', label: 'Exams waiting for evaluation' },
   { key: 'exams_marks_pending', group: 'exams', label: 'Exams with marks pending' },
@@ -85,7 +87,7 @@ export interface DashFilters {
 
 export interface DashRow {
   id: string;
-  kind: 'STUDENT' | 'CLASS' | 'EXAM' | 'MEETING' | 'PLAN' | 'COMPLAINT' | 'SLA';
+  kind: 'STUDENT' | 'CLASS' | 'TASK' | 'EXAM' | 'MEETING' | 'PLAN' | 'COMPLAINT' | 'SLA';
   activationId: string | null;
   studentName: string;
   studentId: string | null;
@@ -203,6 +205,13 @@ export class MentoringDashboardService {
     for (const k of classes) {
       const r = this.row(c, { id: k.key, kind: 'CLASS', activationId: k.activationId, title: `${k.subjectName}, ${k.studentName}`, subjectName: k.subjectName, tutorName: k.tutorName, date: k.date, status: k.stateLabel, slaState: k.sla?.state ?? null, panel: 'classes' });
       for (const card of classCardsOf(k, c.today)) out[card].push(r);
+    }
+    // Follow-up tasks raised from a class that are still open, and the ones past their due time.
+    const followUps = await (this.prisma as unknown as PrismaTxClient).mentoringTask.findMany({ where: { sourceType: 'CLASS', activationId: { in: ids }, status: { notIn: ['VERIFIED', 'CANCELLED'] } } });
+    for (const t of followUps) {
+      const r = this.row(c, { id: t.id, kind: 'TASK', activationId: t.activationId, title: t.title, date: t.dueAt ? t.dueAt.toISOString().slice(0, 10) : null, status: t.status === 'SUBMITTED' ? 'Handed in, waiting for you' : t.status === 'RETURNED' ? 'Sent back' : 'Open', panel: 'classes' });
+      out.followups_open.push(r);
+      if (t.dueAt && t.dueAt.getTime() < c.now.getTime()) out.followups_overdue.push(r);
     }
     // Classes still waiting on the Mentor or the tutor whatever their date: the queue is not limited to the window.
     const queue = await this.classes.queue(c.scope, { subjectId: f.subjectId, tutorProfileId: f.tutorProfileId, state: f.classState }, c.now);

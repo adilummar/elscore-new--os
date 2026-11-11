@@ -63,9 +63,44 @@ describe('which classes happen on which dates', () => {
   });
 });
 
+describe('the tutor class update: Stage 1 fields', () => {
+  const ctx = { subjectName: 'English' };
+  const base = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None' };
+
+  it('needs the portions completed, the homework, the additional remarks and the participation, and takes None', () => {
+    expect(checkTutorUpdate(base, ctx)).toMatchObject({ ok: true, value: { homework: 'Worksheet 4', portionsCompleted: 'Chapter 3', classNotes: 'None', participation: 'GOOD', chapters: [], resubmitReason: null, expectedVersion: null } });
+    expect(checkTutorUpdate({ ...base, portionsCompleted: ' ' }, ctx)).toMatchObject({ ok: false, message: 'Say which portions were completed.' });
+    expect(checkTutorUpdate({ ...base, homework: '' }, ctx)).toMatchObject({ ok: false, message: 'Write the homework or assignments given, or write None.' });
+    expect(checkTutorUpdate({ ...base, classNotes: undefined }, ctx)).toMatchObject({ ok: false, message: 'Write your additional remarks, or write None.' });
+    expect(checkTutorUpdate({ ...base, participation: undefined }, ctx)).toMatchObject({ ok: false, message: 'Record the student participation: excellent, good, fair or poor.' });
+    expect(checkTutorUpdate({ ...base, participation: 'AWFUL' }, ctx)).toMatchObject({ ok: false });
+    expect(checkTutorUpdate({ ...base, homework: 5 }, ctx)).toMatchObject({ ok: false });
+    expect(checkTutorUpdate({ ...base, homework: 'h'.repeat(2001) }, ctx)).toMatchObject({ ok: false });
+  });
+
+  it('asks for none of them when the class was not conducted', () => {
+    expect(checkTutorUpdate({ conducted: false, notConductedReason: 'Student was ill' }, ctx)).toMatchObject({ ok: true, value: { homework: null, portionsCompleted: null, chapters: [] } });
+  });
+
+  it('takes a list of chapters, trimmed and without repeats, up to twenty', () => {
+    expect(checkTutorUpdate({ ...base, chapters: [' Tenses ', 'Nouns', 'Tenses', ''] }, ctx)).toMatchObject({ ok: true, value: { chapters: ['Tenses', 'Nouns'] } });
+    expect(checkTutorUpdate({ ...base, chapters: 'Tenses' }, ctx)).toMatchObject({ ok: false });
+    expect(checkTutorUpdate({ ...base, chapters: [1] }, ctx)).toMatchObject({ ok: false });
+    expect(checkTutorUpdate({ ...base, chapters: Array.from({ length: 21 }, (_, i) => `C${i}`) }, ctx)).toMatchObject({ ok: false });
+  });
+
+  it('needs the reason for sending it again when resubmitting, and reads the version the tutor was looking at', () => {
+    expect(checkTutorUpdate(base, { ...ctx, resubmitting: true })).toMatchObject({ ok: false, message: 'Say what you changed, because the update was returned.' });
+    expect(checkTutorUpdate({ ...base, resubmitReason: 'Fixed the end time' }, { ...ctx, resubmitting: true })).toMatchObject({ ok: true, value: { resubmitReason: 'Fixed the end time' } });
+    expect(checkTutorUpdate({ ...base, resubmitReason: 'Ignored the first time' }, ctx)).toMatchObject({ ok: true, value: { resubmitReason: null } });
+    expect(checkTutorUpdate({ ...base, expectedVersion: 2 }, ctx)).toMatchObject({ ok: true, value: { expectedVersion: 2 } });
+    for (const bad of [-1, 1.5, '2']) expect(checkTutorUpdate({ ...base, expectedVersion: bad }, ctx)).toMatchObject({ ok: false });
+  });
+});
+
 describe('the tutor class update', () => {
   const ctx = { subjectName: 'English' };
-  const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
+  const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None', resubmitReason: 'Corrected as asked' };
 
   it('takes a conducted class with the actual times and works out the actual duration', () => {
     const r = checkTutorUpdate({ ...good, participation: 'GOOD', classNotes: 'Calm', activities: ['QUIZ', 'WORKSHEET'], evaluationRemarks: 'Understands well', coveredRemarks: 'Chapter 3, exercise 2', voiceSent: true }, ctx);
@@ -74,6 +109,7 @@ describe('the tutor class update', () => {
       value: {
         conducted: true, actualStartMinute: 905, actualEndMinute: 970, actualMinutes: 65, subjectCovered: 'English', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', classNotes: 'Calm', notConductedReason: null,
         activities: ['QUIZ', 'WORKSHEET'], otherActivity: null, evaluationRemarks: 'Understands well', coveredRemarks: 'Chapter 3, exercise 2', voiceSent: true,
+        homework: 'Worksheet 4', portionsCompleted: 'Chapter 3', chapters: [], resubmitReason: null, expectedVersion: null,
       },
     });
   });

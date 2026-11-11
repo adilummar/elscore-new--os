@@ -84,9 +84,21 @@ export class MentoringClassWorkspaceController {
     return this.workspace.recordResponse(user.id, 'MENTOR', activityId, body);
   }
 
+  @Put('follow-ups/:taskId')
+  @RequirePermissions('mentoring.stage.work')
+  decideFollowUp(@Param('taskId') taskId: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
+    return this.workspace.mentorDecideFollowUp(user.id, taskId, body);
+  }
+
   @Get(':key')
   async one(@Param('key') key: string, @CurrentUser() user: RequestUser) {
     return this.workspace.mentorWorkspace(await this.access.scopeFor(user.id), key);
+  }
+
+  @Post(':key/follow-ups')
+  @RequirePermissions('mentoring.stage.work')
+  createFollowUp(@Param('key') key: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
+    return this.workspace.createFollowUp(user.id, key, body);
   }
 
   @Post(':key/shares')
@@ -166,6 +178,12 @@ export class TutorClassWorkspaceController {
   @RequirePermissions('tutor.portal.read')
   response(@Param('activityId') activityId: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
     return this.workspace.recordResponse(user.id, 'TUTOR', activityId, body);
+  }
+
+  @Put('follow-ups/:taskId')
+  @RequirePermissions('tutor.portal.read')
+  followUp(@Param('taskId') taskId: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
+    return this.workspace.tutorUpdateFollowUp(user.id, taskId, body);
   }
 
   @Get(':key')

@@ -23,7 +23,7 @@ const m = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3,
 const slot = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00Z`);
 const MON = '2026-11-09';
 const NOW = at(MON, '12:00');
-const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
+const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None', resubmitReason: 'Corrected as asked' };
 const PERMS: Record<string, string[]> = {
   'mentor-1': ['mentoring.student.read-assigned', 'mentoring.stage.work'],
   'mentor-2': ['mentoring.student.read-assigned', 'mentoring.stage.work'],

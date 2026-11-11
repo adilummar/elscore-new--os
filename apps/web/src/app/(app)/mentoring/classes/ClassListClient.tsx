@@ -92,7 +92,7 @@ export function ClassListClient({ initialDate = '', initialFrom = '', initialTo 
         <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
           <table className="min-w-full text-left text-sm" data-testid="class-table">
             <caption className="sr-only">Classes from {f.from || f.date} to {f.to || f.date}</caption>
-            <thead className="bg-slate-50 text-xs text-slate-600"><tr>{['Time', 'Student', 'Subject', 'Tutor', 'Mentor', 'Status', 'Consumption', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+            <thead className="bg-slate-50 text-xs text-slate-600"><tr>{['Time', 'Student', 'Subject', 'Tutor', 'Mentor', 'Class', 'Documentation', 'Status', 'Consumption', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
             <tbody>
               {data.rows.map((r) => (
                 <tr key={r.key} className="border-t border-slate-100" data-testid="class-row" data-state={r.state}>
@@ -101,6 +101,8 @@ export function ClassListClient({ initialDate = '', initialFrom = '', initialTo 
                   <td className="px-2 py-1.5">{r.subjectName}</td>
                   <td className="px-2 py-1.5">{r.tutorName}</td>
                   <td className="px-2 py-1.5">{r.mentorName ?? 'Not assigned'}</td>
+                  <td className="px-2 py-1.5" data-testid="row-class-status">{r.classStatusLabel ?? ''}</td>
+                  <td className="px-2 py-1.5" data-testid="row-documentation-status">{r.documentation?.label ?? ''}</td>
                   <td className="px-2 py-1.5"><Badge variant={STATE_TONE[r.state] ?? 'default'}>{r.stateLabel}</Badge></td>
                   <td className="px-2 py-1.5">{r.consumption === 'CONSUMED' ? 'Consumed' : 'Not consumed'}</td>
                   <td className="px-2 py-1.5 text-right"><Button type="button" size="sm" variant="outline" onClick={() => setOpen(open === r.key ? null : r.key)}>{open === r.key ? 'Close' : 'Open'}</Button></td>

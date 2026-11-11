@@ -87,7 +87,7 @@ describe('the Mentor review of a class', () => {
 
   it("shows the tutor's update, the activities, and the two remarks as separate fields", () => {
     const t = text(review(submitted()));
-    for (const part of ['Class conducted Yes', 'Actual time 3:05 PM to 4:10 PM (1 h 5 min)', 'Topics covered Tenses', 'Attendance Present', 'Participation Good', 'Quiz, Other: Role play', 'Remarks, class evaluation Attentive, needs practice', 'Remarks, topics covered in class Chapter 3, exercise 2', 'Class notes Calm class']) expect(t).toContain(part);
+    for (const part of ['Class conducted Yes', 'Actual time 3:05 PM to 4:10 PM (1 h 5 min)', 'Topics covered Tenses', 'Attendance Present', 'Participation Good', 'Quiz, Other: Role play', 'Remarks, class evaluation Attentive, needs practice', 'Remarks, topics covered in class Chapter 3, exercise 2', 'Additional remarks Calm class']) expect(t).toContain(part);
   });
 
   it('shows the checklist, the warnings before verifying, and every decision the Mentor can make', () => {
@@ -139,7 +139,7 @@ describe('the reschedule form', () => {
 describe('the tutor class update form', () => {
   const empty = draftFromClass({ update: null });
   const form = (d: UpdateDraft, error: string | null = null) => renderToStaticMarkup(React.createElement(ClassUpdateForm, { c: item(), draft: d, error, onChange: noop, onSubmit: noop, onCancel: noop }));
-  const good: UpdateDraft = { ...empty, conducted: 'yes', actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
+  const good: UpdateDraft = { ...empty, conducted: 'yes', actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None' };
 
   it('starts empty and asks first whether the class was conducted, filling nothing in for the tutor', () => {
     expect(empty).toMatchObject({ conducted: '', actualStart: '', actualEnd: '', topicsCovered: '', activities: [] });
@@ -159,7 +159,7 @@ describe('the tutor class update form', () => {
 
   it('for a conducted class shows every field, with the duration worked out from the times', () => {
     const t = text(form(good));
-    for (const part of ['Actual start time', 'Actual end time', 'Actual teaching duration 1 h 5 min', 'Subject covered', 'Topics covered', 'Attendance', 'Student participation', 'Post-class activities', 'Class notes']) expect(t).toContain(part);
+    for (const part of ['Actual start time', 'Actual end time', 'Actual teaching duration 1 h 5 min', 'Subject covered', 'Topics covered', 'Attendance', 'Student participation', 'Post-class activities', 'Additional remarks', 'Portions completed', 'Homework or assignments given', 'Chapters covered']) expect(t).toContain(part);
     expect(form(good)).not.toMatch(/<button[^>]*\sdisabled=""[^>]*>Submit class update/);
   });
 
@@ -202,7 +202,8 @@ describe('the tutor class update form', () => {
 
   it('turns the draft into the request the server expects', () => {
     expect(payloadOfUpdate({ ...good, activities: ['QUIZ', 'OTHER'], otherActivity: 'Role play', evaluationRemarks: 'Fine', coveredRemarks: 'Ch 3', voiceSent: true })).toEqual({
-      conducted: true, actualStart: '15:05', actualEnd: '16:10', subjectCovered: undefined, topicsCovered: 'Tenses', attendance: 'PRESENT', participation: undefined, classNotes: undefined,
+      conducted: true, actualStart: '15:05', actualEnd: '16:10', subjectCovered: undefined, topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', classNotes: 'None',
+      portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', chapters: [],
       activities: ['QUIZ', 'OTHER'], otherActivity: 'Role play', evaluationRemarks: 'Fine', coveredRemarks: 'Ch 3', voiceSent: true,
     });
     expect(payloadOfUpdate({ ...empty, conducted: 'no', notConductedReason: 'Unwell' })).toEqual({ conducted: false, notConductedReason: 'Unwell', voiceSent: false });

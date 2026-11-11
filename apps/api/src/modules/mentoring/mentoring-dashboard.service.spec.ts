@@ -22,7 +22,7 @@ const m = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3,
 const slot = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00Z`);
 const MON = '2026-11-09';
 const NOW = at(MON, '12:00');
-const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
+const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT', participation: 'GOOD', portionsCompleted: 'Chapter 3', homework: 'Worksheet 4', classNotes: 'None', resubmitReason: 'Corrected as asked' };
 const PERMS: Record<string, string[]> = {
   'mentor-1': ['mentoring.student.read-assigned', 'mentoring.stage.work', 'mentoring.complaint.handle'],
   'mentor-2': ['mentoring.student.read-assigned', 'mentoring.stage.work', 'mentoring.complaint.handle'],
@@ -283,5 +283,36 @@ describe('the routes', () => {
     expect(controller).toContain('scopeFor(user.id)');
     const service = readFileSync(join(__dirname, 'mentoring-dashboard.service.ts'), 'utf8');
     expect(service).not.toMatch(/\.(create|update|delete|upsert)\(/);
+  });
+});
+
+describe('class follow-up cards (Stage 1)', () => {
+  const task = (w: ReturnType<typeof world>, over: object = {}) => w.db.seed('mentoringTask', { activationId: 'act-A', title: 'Practise fractions', assigneeUserId: 'u-meera', assignedByUserId: 'mentor-1', sourceType: 'CLASS', sourceId: 'sess-1', status: 'OPEN', dueAt: new Date(NOW.getTime() + 86_400_000), ...over });
+
+  it('counts the open follow-ups of a class and the ones past their due time, for the students the Mentor may see', async () => {
+    const w = world();
+    task(w);
+    task(w, { dueAt: new Date(NOW.getTime() - 3_600_000), status: 'IN_PROGRESS' });
+    task(w, { status: 'SUBMITTED', dueAt: new Date(NOW.getTime() - 86_400_000) });
+    task(w, { status: 'VERIFIED', dueAt: new Date(NOW.getTime() - 86_400_000) });
+    task(w, { status: 'CANCELLED' });
+    task(w, { sourceType: null, sourceId: null, title: 'An ordinary task' });
+    task(w, { activationId: 'act-B' });
+    expect(await w.count('mentor-1', 'followups_open')).toBe(3);
+    expect(await w.count('mentor-1', 'followups_overdue')).toBe(2);
+    expect(await w.count('head-1', 'followups_open')).toBe(4);
+    expect(await w.count('mentor-2', 'followups_open')).toBe(1);
+  });
+
+  it('opens each card on the records it counted, as the other cards do', async () => {
+    const w = world();
+    task(w);
+    task(w, { dueAt: new Date(NOW.getTime() - 3_600_000) });
+    for (const key of ['followups_open', 'followups_overdue']) {
+      const r = await w.records('mentor-1', key);
+      expect(r.total).toBe(await w.count('mentor-1', key));
+      expect(r.rows.every((x) => x.kind === 'TASK' && x.panel === 'classes')).toBe(true);
+    }
+    expect((await w.records('mentor-1', 'followups_open')).rows.map((x) => x.status).sort()).toEqual(['Open', 'Open']);
   });
 });

@@ -107,18 +107,39 @@ export interface CheckedUpdate {
   evaluationRemarks: string | null;
   coveredRemarks: string | null;
   voiceSent: boolean;
+  /** Homework or assignments given, and the portions completed. Required for a conducted class (a tutor may write None). */
+  homework: string | null;
+  portionsCompleted: string | null;
+  /** The chapters covered, one per entry. The topics text above stays; these are what an exam chapter can later be chosen from. */
+  chapters: string[];
+  /** Why the update is being sent again, required when the Mentor or Head had returned it. */
+  resubmitReason: string | null;
+  /** The version of the update the tutor was looking at, when it was sent. A newer one on the server refuses the save. */
+  expectedVersion: number | null;
 }
+export const MAX_CHAPTERS = 20;
 export type Checked<T> = { ok: true; value: T } | { ok: false; message: string };
 
 const str = (v: unknown): string | undefined => (v === undefined || v === null ? '' : typeof v === 'string' ? v.trim() : undefined);
 const tooLong = (label: string, v: string, max = TEXT_LIMIT) => (v.length > max ? `The ${label} must be ${max} characters or fewer.` : null);
 
 /** Checks a tutor's class update. A class that was not conducted needs only the reason. */
-export function checkTutorUpdate(raw: unknown, ctx: { subjectName: string }): Checked<CheckedUpdate> {
+export function checkTutorUpdate(raw: unknown, ctx: { subjectName: string; resubmitting?: boolean }): Checked<CheckedUpdate> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, message: 'Send the class update.' };
   const r = raw as Record<string, unknown>;
   if (typeof r.conducted !== 'boolean') return { ok: false, message: 'Say whether the class was conducted.' };
-  const blank: CheckedUpdate = { conducted: r.conducted, actualStartMinute: null, actualEndMinute: null, actualMinutes: null, subjectCovered: null, topicsCovered: null, attendance: null, participation: null, classNotes: null, notConductedReason: null, activities: [], otherActivity: null, evaluationRemarks: null, coveredRemarks: null, voiceSent: r.voiceSent === true };
+  const blank: CheckedUpdate = { conducted: r.conducted, actualStartMinute: null, actualEndMinute: null, actualMinutes: null, subjectCovered: null, topicsCovered: null, attendance: null, participation: null, classNotes: null, notConductedReason: null, activities: [], otherActivity: null, evaluationRemarks: null, coveredRemarks: null, voiceSent: r.voiceSent === true, homework: null, portionsCompleted: null, chapters: [], resubmitReason: null, expectedVersion: null };
+  if (r.expectedVersion !== undefined && r.expectedVersion !== null) {
+    if (typeof r.expectedVersion !== 'number' || !Number.isInteger(r.expectedVersion) || r.expectedVersion < 0) return { ok: false, message: 'The version of the update must be a whole number.' };
+    blank.expectedVersion = r.expectedVersion;
+  }
+  if (ctx.resubmitting) {
+    const why = str(r.resubmitReason);
+    if (why === undefined) return { ok: false, message: 'The reason for sending the update again must be text.' };
+    if (!why) return { ok: false, message: 'Say what you changed, because the update was returned.' };
+    if (why.length > 1000) return { ok: false, message: 'The reason for sending the update again must be 1000 characters or fewer.' };
+    blank.resubmitReason = why;
+  }
 
   if (!r.conducted) {
     const reason = str(r.notConductedReason);
@@ -142,7 +163,19 @@ export function checkTutorUpdate(raw: unknown, ctx: { subjectName: string }): Ch
   const other = str(r.otherActivity);
   if ([topics, subject, notes, evaluation, covered, other].some((v) => v === undefined)) return { ok: false, message: 'The topics, notes and remarks must be text.' };
   if (!topics) return { ok: false, message: 'Say which topics were covered.' };
-  for (const [label, v, max] of [['topics covered', topics, TEXT_LIMIT], ['subject covered', subject ?? '', 200], ['class notes', notes ?? '', TEXT_LIMIT], ['evaluation remarks', evaluation ?? '', TEXT_LIMIT], ['topics covered remarks', covered ?? '', TEXT_LIMIT]] as const) {
+  const homework = str(r.homework);
+  const portions = str(r.portionsCompleted);
+  if ([homework, portions].some((v) => v === undefined)) return { ok: false, message: 'The homework and the portions completed must be text.' };
+  if (!portions) return { ok: false, message: 'Say which portions were completed.' };
+  if (!homework) return { ok: false, message: 'Write the homework or assignments given, or write None.' };
+  if (!notes) return { ok: false, message: 'Write your additional remarks, or write None.' };
+  if (!r.participation) return { ok: false, message: 'Record the student participation: excellent, good, fair or poor.' };
+  const chapterList = r.chapters === undefined || r.chapters === null ? [] : Array.isArray(r.chapters) ? r.chapters : null;
+  if (chapterList === null || chapterList.some((c) => typeof c !== 'string')) return { ok: false, message: 'The chapters must be a list of text.' };
+  const chapters = [...new Set((chapterList as string[]).map((c) => c.trim()).filter(Boolean))];
+  if (chapters.length > MAX_CHAPTERS) return { ok: false, message: `List at most ${MAX_CHAPTERS} chapters.` };
+  if (chapters.some((c) => c.length > 200)) return { ok: false, message: 'Each chapter must be 200 characters or fewer.' };
+  for (const [label, v, max] of [['portions completed', portions, TEXT_LIMIT], ['homework', homework ?? '', TEXT_LIMIT], ['topics covered', topics, TEXT_LIMIT], ['subject covered', subject ?? '', 200], ['class notes', notes ?? '', TEXT_LIMIT], ['evaluation remarks', evaluation ?? '', TEXT_LIMIT], ['topics covered remarks', covered ?? '', TEXT_LIMIT]] as const) {
     const long = tooLong(label, v, max);
     if (long) return { ok: false, message: long };
   }
@@ -160,7 +193,7 @@ export function checkTutorUpdate(raw: unknown, ctx: { subjectName: string }): Ch
     value: {
       ...blank, actualStartMinute: start, actualEndMinute: end, actualMinutes: end - start, subjectCovered: subject || ctx.subjectName, topicsCovered: topics, attendance: r.attendance as CheckedUpdate['attendance'],
       participation: r.participation ? (r.participation as CheckedUpdate['participation']) : null, classNotes: notes || null, activities, otherActivity: activities.includes('OTHER') ? other ?? null : null,
-      evaluationRemarks: evaluation || null, coveredRemarks: covered || null,
+      evaluationRemarks: evaluation || null, coveredRemarks: covered || null, homework, portionsCompleted: portions, chapters,
     },
   };
 }

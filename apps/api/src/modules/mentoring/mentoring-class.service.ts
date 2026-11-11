@@ -10,7 +10,7 @@ import {
   ChecklistItem, ClassStatus, DisplayState, Occurrence, ReminderState, STATE_LABELS, TUTOR_CAN_UPDATE, CAN_REMIND, MENTOR_CAN_REVIEW, checkMentorNotes, checkTutorUpdate, checklistOf, displayState,
   occurrencesBetween, parseClassKey, payableAmount, verificationWarnings, MAX_CLASS_MINUTES, CAN_RESCHEDULE,
  OverrideRow, RuleRow } from './class-session';
-import { checkReason, verificationBlockers } from './class-workspace';
+import { CLASS_CONDUCT_LABELS, ClassConduct, DOCUMENTATION_LABELS, DocumentationStatus, checkReason, classConduct, countActivities, documentationStatus, verificationBlockers } from './class-workspace';
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { loadLockedActivation } from './mentoring-guards';
@@ -24,6 +24,10 @@ const LIVE_ASSIGNMENT = ['ACTIVE', 'NEEDS_REVIEW'] as const;
 /** A reminder belongs to one slot: a class that is moved needs a new reminder for its new time. */
 /** The tutor is reminded this long before a class starts. */
 export const CLASS_REMINDER_LEAD_MINUTES = 45;
+/** A pending class update: the first reminder this long after the class ends, then one a day up to this many more, and the Mentor after this many hours. */
+export const UPDATE_FIRST_REMINDER_MINUTES = 30;
+export const UPDATE_DAILY_REMINDERS = 3;
+export const UPDATE_ESCALATION_HOURS = 24;
 export const CLASS_REMINDER_ENTITY = 'ClassSession';
 const slotKind = (date: string, startMinute: number) => `CLASS_REMINDER:${date}:${startMinute}`;
 const ENTITY = 'ClassSession';
@@ -49,6 +53,11 @@ export interface ClassView {
   status: ClassStatus;
   state: DisplayState;
   stateLabel: string;
+  /** Whether the class took place. Independent of the documentation status below. */
+  classStatus: ClassConduct;
+  classStatusLabel: string;
+  /** Whether the paperwork is complete: update, voice recording and sharing, and three shared activities. Independent of the class status. */
+  documentation: { status: DocumentationStatus; label: string; missing: string[] };
   reminder: { status: ReminderState; sentAt: string | null; acknowledgedAt: string | null } | null;
   /** Whether the tutor has acknowledged the reminder. */
   tutorConfirmation: 'ACKNOWLEDGED' | 'SENT' | 'NOT_SENT';
@@ -89,7 +98,16 @@ export interface UpdateView {
   coveredRemarks: string | null;
   voice: { sentAt: string | null; receivedAt: string | null; remarks: string | null };
   submittedAt: string | null;
+  homework: string | null;
+  portionsCompleted: string | null;
+  /** The chapters the tutor listed. */
+  chapters: string[];
+  /** How many times the update was submitted. Every version is kept whole in the class history. */
+  version: number;
 }
+
+/** The version of the update on a class: stored, or 1 for an update submitted before versions were counted. */
+export const versionOf = (s: { updateVersion?: number | null; tutorSubmittedAt?: Date | null }) => Math.max(s.updateVersion ?? 0, s.tutorSubmittedAt ? 1 : 0);
 
 export interface ClassFilters { subjectId?: string; tutorProfileId?: string; status?: string; state?: string; activationId?: string; from?: string; to?: string; limit?: number | string }
 
@@ -178,9 +196,10 @@ export class MentoringClassService {
       db.subject.findMany({ where: { id: { in: subjectIds } } }),
       db.tutorProfile.findMany({ where: { id: { in: profileIds } } }),
     ]);
-    const [attachments, activityRows] = await Promise.all([
+    const [attachments, activityRows, portionRows] = await Promise.all([
       sessionIds.length ? db.mentoringClassAttachment.findMany({ where: { sessionId: { in: sessionIds }, supersededAt: null } }) : [],
       sessionIds.length ? db.mentoringClassActivity.findMany({ where: { sessionId: { in: sessionIds }, removedAt: null } }) : [],
+      sessionIds.length ? db.mentoringClassPortion.findMany({ where: { sessionId: { in: sessionIds } } }) : [],
     ]);
     const [students, employees] = await Promise.all([db.student.findMany({ where: { id: { in: activations.map((a) => a.studentId) } } }), db.employee.findMany({ where: { id: { in: profiles.map((p) => p.employeeId) } } })]);
     const studentName = (activationId: string) => {
@@ -215,7 +234,10 @@ export class MentoringClassService {
       const sla = item && item.status === 'OPEN' ? await slaView(item) : null;
       const att = s ? attachments.find((x) => x.sessionId === s.id) ?? null : null;
       const acts = s ? activityRows.filter((x) => x.sessionId === s.id) : [];
-      const workspace = { voiceUploaded: !!att, voiceShared: !!att?.sharedAt, activitiesCreated: acts.length, activitiesShared: acts.filter((x) => x.sharedAt).length, exceptionStatus: s?.exceptionStatus ?? null };
+      const counted = countActivities(acts);
+      const workspace = { voiceUploaded: !!att, voiceShared: !!att?.sharedAt, activitiesCreated: counted.created, activitiesShared: counted.shared, exceptionStatus: s?.exceptionStatus ?? null };
+      const conduct = classConduct({ status, conducted: s?.conducted ?? null, state });
+      const docs = documentationStatus({ status, conducted: s?.conducted ?? null, tutorSubmitted: !!s?.tutorSubmittedAt, voiceUploaded: workspace.voiceUploaded, voiceShared: workspace.voiceShared, activitiesCreated: workspace.activitiesCreated, activitiesShared: workspace.activitiesShared, exceptionApproved: s?.exceptionStatus === 'APPROVED' });
       const blockers = s && s.tutorSubmittedAt && s.conducted === true && status === 'AWAITING_MENTOR_VERIFICATION'
         ? verificationBlockers({ conducted: s.conducted, tutorSubmitted: true, voiceUploaded: workspace.voiceUploaded, voiceShared: workspace.voiceShared, activitiesCreated: workspace.activitiesCreated, activitiesShared: workspace.activitiesShared, exceptionApproved: s.exceptionStatus === 'APPROVED' })
         : [];
@@ -226,7 +248,8 @@ export class MentoringClassService {
         reminder: reminder ? { status: reminder.status as ReminderState, sentAt: reminder.sentAt?.toISOString() ?? null, acknowledgedAt: reminder.acknowledgedAt?.toISOString() ?? null } : null,
         tutorConfirmation: reminder?.status === 'ACKNOWLEDGED' ? 'ACKNOWLEDGED' : reminder?.status === 'SENT' ? 'SENT' : 'NOT_SENT',
         mentorVerification: status === 'VERIFIED' ? 'VERIFIED' : status === 'NOT_CONDUCTED' ? 'NOT_CONDUCTED' : 'PENDING',
-        update: s && s.tutorSubmittedAt ? this.updateView(s) : null,
+        classStatus: conduct, classStatusLabel: CLASS_CONDUCT_LABELS[conduct], documentation: { status: docs.status, label: DOCUMENTATION_LABELS[docs.status], missing: docs.missing },
+        update: s && s.tutorSubmittedAt ? this.updateView(s, portionRows.filter((p) => p.sessionId === s.id).map((p) => p.chapter)) : null,
         checklist: checklistOf(
           s ? { ...s, workspace } : { tutorSubmittedAt: null, voiceSentAt: null, voiceReceivedAt: null, activities: [], evaluationRemarks: null, coveredRemarks: null, status, workspace },
           { status: (reminder?.status as ReminderState) ?? null, sentAt: reminder?.sentAt ?? null, acknowledgedAt: reminder?.acknowledgedAt ?? null },
@@ -238,7 +261,7 @@ export class MentoringClassService {
         meetLink: s?.meetLink ?? null,
         cancelled: s?.cancelledAt && s.cancelReason ? { at: s.cancelledAt.toISOString(), reason: s.cancelReason } : null,
         voice: { uploaded: !!att, shared: !!att?.sharedAt, sharedAt: att?.sharedAt?.toISOString() ?? null, attachmentId: att?.id ?? null, fileName: att?.fileName ?? null, uploadedAt: att?.createdAt.toISOString() ?? null, mentorVerifiedAt: att?.mentorVerifiedAt?.toISOString() ?? null },
-        activityCounts: { created: acts.length, shared: workspace.activitiesShared, completed: acts.filter((x) => x.completion === 'COMPLETED').length },
+        activityCounts: { created: workspace.activitiesCreated, shared: workspace.activitiesShared, completed: acts.filter((x) => x.completion === 'COMPLETED').length },
         exception: { status: s?.exceptionStatus ?? null, reason: s?.exceptionReason ?? null, decisionNote: s?.exceptionDecisionNote ?? null },
         consumption: status === 'VERIFIED' && (s?.verifiedMinutes ?? 0) > 0 ? 'CONSUMED' : 'NOT_CONSUMED',
         blockers,
@@ -247,8 +270,9 @@ export class MentoringClassService {
     return out;
   }
 
-  private updateView(s: SessionRow): UpdateView {
+  private updateView(s: SessionRow, chapters: string[] = []): UpdateView {
     return {
+      homework: s.homework ?? null, portionsCompleted: s.portionsCompleted ?? null, chapters, version: versionOf(s),
       conducted: s.conducted, actualStartMinute: s.actualStartMinute, actualEndMinute: s.actualEndMinute, actualMinutes: s.actualMinutes, subjectCovered: s.subjectCovered, topicsCovered: s.topicsCovered,
       attendance: s.attendance, participation: s.participation, classNotes: s.classNotes, notConductedReason: s.notConductedReason, activities: s.activities, otherActivity: s.otherActivity,
       evaluationRemarks: s.evaluationRemarks, coveredRemarks: s.coveredRemarks, voice: { sentAt: s.voiceSentAt?.toISOString() ?? null, receivedAt: s.voiceReceivedAt?.toISOString() ?? null, remarks: s.voiceRemarks },
@@ -359,6 +383,41 @@ export class MentoringClassService {
   requireEligible(activation: { status: string; stages?: Array<{ stageNumber: number; status: string }> }) {
     const e = classEligibility(activation, activation.stages ?? []);
     if (!e.eligible) throw new ConflictException(ineligibleMessage(e.reason as EligibilityReason, 'classes'));
+  }
+
+  /** Who and what a class is, for the words of a reminder. */
+  private async classWords(tx: PrismaTxClient, o: Occurrence, session: SessionRow) {
+    const [subject, activation] = await Promise.all([tx.subject.findUnique({ where: { id: o.subjectId } }), tx.mentoringActivation.findUnique({ where: { id: o.activationId } })]);
+    const student = activation ? await tx.student.findUnique({ where: { id: activation.studentId } }) : null;
+    const { formatRange } = await import('../tutor/tutor-availability');
+    return { text: `${subject?.name ?? 'Class'} with ${student ? `${student.firstName} ${student.lastName ?? ''}`.trim() : 'your student'} on ${dayOf(session.date)}, ${formatRange(session.startMinute, session.endMinute)}`, mentorUserId: activation?.currentMentorUserId ?? null };
+  }
+
+  /**
+   * The reminders for a class whose update is still missing: the first 30 minutes after the class ends, then one a day, up to three more
+   * (four in all), all for the tutor, and one for the Mentor once 24 hours have passed. Each is keyed by the class and its number, so
+   * running this again changes nothing, and a job that was down sends only the latest one that is due, not all that were missed. They are
+   * withdrawn by the reminder job when the update is submitted, the class is cancelled or the student is not eligible.
+   */
+  async prepareUpdateReminders(tx: PrismaTxClient, o: Occurrence, now: Date, actor: string): Promise<{ tutor: number | null; mentor: boolean }> {
+    const session = await this.ensureSession(tx, o);
+    if (!CAN_REMIND.includes(session.status) || session.tutorSubmittedAt) return { tutor: null, mentor: false };
+    const tz = (await this.sla.workingNow(tx, now)).timeZone;
+    const date = dayOf(session.date) as string;
+    const end = zonedInstant(date, session.endMinute, tz);
+    const first = new Date(end.getTime() + UPDATE_FIRST_REMINDER_MINUTES * 60_000);
+    if (now.getTime() < first.getTime()) return { tutor: null, mentor: false };
+    const day = 24 * 60 * 60_000;
+    const n = Math.min(UPDATE_DAILY_REMINDERS, Math.floor((now.getTime() - first.getTime()) / day));
+    const words = await this.classWords(tx, o, session);
+    await this.reminders.prepare(tx, { kind: `CLASS_UPDATE_DUE:${date}:${session.startMinute}:${n}`, entityType: ENTITY, entityId: session.id, activationId: o.activationId, recipientUserId: session.tutorUserId, message: `Class update pending: ${words.text}. Please submit it.`, scheduledFor: new Date(first.getTime() + n * day) }, actor);
+    let mentor = false;
+    const escalateAt = new Date(end.getTime() + UPDATE_ESCALATION_HOURS * 60 * 60_000);
+    if (words.mentorUserId && now.getTime() >= escalateAt.getTime()) {
+      await this.reminders.prepare(tx, { kind: `CLASS_UPDATE_ESCALATION:${date}:${session.startMinute}`, entityType: ENTITY, entityId: session.id, activationId: o.activationId, recipientUserId: words.mentorUserId, message: `The tutor update is still missing for ${words.text}, more than ${UPDATE_ESCALATION_HOURS} hours after the class.`, scheduledFor: escalateAt }, actor);
+      mentor = true;
+    }
+    return { tutor: n, mentor };
   }
 
   /** The activations whose classes are operational now. Everything else is not generated, listed or reminded. */
@@ -477,24 +536,36 @@ export class MentoringClassService {
       const working = await this.sla.workingNow(tx, now);
       if ((dayOf(session.date) as string) > localMomentOf(now, working.timeZone).date) throw new ConflictException('This class has not happened yet.');
       const subject = await tx.subject.findUnique({ where: { id: session.subjectId } });
-      const checked = checkTutorUpdate(body, { subjectName: subject?.name ?? 'the subject' });
-      if (!checked.ok) throw new BadRequestException(checked.message);
-      const v = checked.value;
       const previous = session.status;
       const returned = previous === 'RETURNED_FOR_CORRECTION';
+      // Any update that is sent again says what was changed, whether the Mentor returned it or the tutor is correcting it first.
+      const resubmitting = returned || (!!session.tutorSubmittedAt && previous === 'AWAITING_MENTOR_VERIFICATION');
+      const checked = checkTutorUpdate(body, { subjectName: subject?.name ?? 'the subject', resubmitting });
+      if (!checked.ok) throw new BadRequestException(checked.message);
+      const v = checked.value;
+      const currentVersion = versionOf(session);
+      // A save made on an older version than the one on the server is refused, so one version never silently overwrites another.
+      if (v.expectedVersion !== null && v.expectedVersion !== currentVersion) throw new ConflictException('This update was changed since you opened it. Reload it, then make your changes again.');
+      const version = currentVersion + 1;
       await tx.mentoringClassSession.update({
         where: { id: session.id },
         data: {
           conducted: v.conducted, actualStartMinute: v.actualStartMinute, actualEndMinute: v.actualEndMinute, actualMinutes: v.actualMinutes, subjectCovered: v.subjectCovered, topicsCovered: v.topicsCovered,
           attendance: v.attendance, participation: v.participation, classNotes: v.classNotes, notConductedReason: v.notConductedReason, activities: v.activities, otherActivity: v.otherActivity,
           evaluationRemarks: v.evaluationRemarks, coveredRemarks: v.coveredRemarks, voiceSentAt: v.voiceSent ? session.voiceSentAt ?? now : session.voiceSentAt, tutorSubmittedAt: now, tutorSubmittedByUserId: userId,
+          homework: v.homework, portionsCompleted: v.portionsCompleted, updateVersion: version,
           status: 'AWAITING_MENTOR_VERIFICATION', returnedReason: null, returnedKind: null,
         },
       });
+      // The chapters listed in this version replace the ones before. The earlier list stays whole in the version history.
+      await tx.mentoringClassPortion.deleteMany({ where: { sessionId: session.id } });
+      for (const chapter of v.chapters) await tx.mentoringClassPortion.create({ data: { sessionId: session.id, subjectId: session.subjectId, chapter, source: 'TYPED', createdByUserId: userId } });
       // The Mentor now has two working hours: to review a new update, or to act on one the tutor has corrected.
       if (returned && (session.conducted !== v.conducted || session.actualStartMinute !== v.actualStartMinute || session.actualEndMinute !== v.actualEndMinute)) await this.invalidateException(tx, session, userId, 'The corrected update changed whether or when the class took place.');
       await this.sla.start(tx, { policyKey: returned ? 'RETURNED_UPDATE_ACTION' : 'CLASS_UPDATE_REVIEW', entityType: ENTITY, entityId: session.id, activationId: o.activationId, startedAt: now });
-      await this.logEvent(tx, session.id, returned ? 'TUTOR_RESUBMITTED' : 'TUTOR_SUBMITTED', userId, { from: previous, to: 'AWAITING_MENTOR_VERIFICATION', payload: { conducted: v.conducted, actualMinutes: v.actualMinutes } });
+      // Every submission is kept whole, so the history shows each version as it was sent.
+      const snapshot = { conducted: v.conducted, actualStartMinute: v.actualStartMinute, actualEndMinute: v.actualEndMinute, actualMinutes: v.actualMinutes, subjectCovered: v.subjectCovered, topicsCovered: v.topicsCovered, chapters: v.chapters, portionsCompleted: v.portionsCompleted, attendance: v.attendance, participation: v.participation, homework: v.homework, classNotes: v.classNotes, notConductedReason: v.notConductedReason, activities: v.activities, otherActivity: v.otherActivity, evaluationRemarks: v.evaluationRemarks, coveredRemarks: v.coveredRemarks, voiceSent: v.voiceSent };
+      await this.logEvent(tx, session.id, resubmitting ? 'TUTOR_RESUBMITTED' : 'TUTOR_SUBMITTED', userId, { from: previous, to: 'AWAITING_MENTOR_VERIFICATION', reason: v.resubmitReason, payload: { version, conducted: v.conducted, actualMinutes: v.actualMinutes, snapshot } });
       if (activation.currentMentorUserId) await this.notify(tx, activation.currentMentorUserId, 'MENTORING_CLASS_UPDATE', session.id, `A class update is waiting for your review: ${subject?.name ?? 'class'} on ${dayOf(session.date)}.`, `class-update:${session.id}:${await this.seq(tx, session.id)}`, `/mentoring/students/${o.activationId}`);
       await this.history.record(tx, { activationId: o.activationId, type: 'MENTORING_CLASS_UPDATE_SUBMITTED', actorUserId: userId, payload: { sessionId: session.id, conducted: v.conducted } });
       return { sessionId: session.id, status: 'AWAITING_MENTOR_VERIFICATION' as const };
@@ -694,7 +765,8 @@ export class MentoringClassService {
   async workspaceFacts(tx: PrismaTxClient, session: { id: string }) {
     const att = (await tx.mentoringClassAttachment.findMany({ where: { sessionId: session.id, supersededAt: null } }))[0] ?? null;
     const acts = await tx.mentoringClassActivity.findMany({ where: { sessionId: session.id, removedAt: null } });
-    return { voiceUploaded: !!att, voiceShared: !!att?.sharedAt, activitiesCreated: acts.length, activitiesShared: acts.filter((a) => a.sharedAt).length };
+    const counted = countActivities(acts);
+    return { voiceUploaded: !!att, voiceShared: !!att?.sharedAt, activitiesCreated: counted.created, activitiesShared: counted.shared };
   }
 
   // ─── Cancelling a class ─────────────────────────────────────────────────────────────────────────────────────────
