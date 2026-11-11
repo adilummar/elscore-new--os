@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { isDateString } from '../tutor/tutor-calendar';
 
+import { EligibilityReason, ineligibleMessage, studentEligibility } from './class-eligibility';
 import {
   CheckedExam, EXAM_STATE_LABELS, ExamFacts, ExamState, ReminderState, checkExam, checkItem, checkMarks, checkRemarks, checkReschedule, completionProblems, dateKey, examState, POST_EXAM_ITEMS, RE_EXAM_ITEMS,
 } from './exam';
@@ -16,7 +17,6 @@ import { MentoringSlaService } from './mentoring-sla.service';
 import { isScheduleValue } from './subject-schedule';
 
 const ENTITY = 'Exam';
-const OPERATIONAL = new Set(['ACTIVATION_IN_PROGRESS', 'ACTIVATED']);
 const dayOf = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 const asDate = (d: string) => new Date(`${d}T00:00:00Z`);
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -65,6 +65,12 @@ export interface ExamView {
  */
 @Injectable()
 export class MentoringExamService {
+  /** Exams are operational only for an Active student. A paused or cancelled student keeps every earlier exam. */
+  private requireActive(activation: { status: string }) {
+    const e = studentEligibility(activation);
+    if (!e.eligible) throw new ConflictException(ineligibleMessage(e.reason as EligibilityReason, 'exams'));
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: MentoringAccessService,
@@ -85,7 +91,7 @@ export class MentoringExamService {
   private async mentorGuard(tx: PrismaTxClient, activationId: string, userId: string) {
     const activation = await loadLockedActivation(tx, activationId);
     MentoringAllocationService.assertAssignedMentor(activation, userId);
-    if (!OPERATIONAL.has(activation.status)) throw new ConflictException("This student's workflow is not running, so exams cannot be changed.");
+    this.requireActive(activation);
     return activation;
   }
 
@@ -512,7 +518,8 @@ export class MentoringExamService {
     const exam = (await tx.mentoringExam.findUnique({ where: { id: examId } }));
     if (!exam || exam.tutorUserId !== userId) throw new ForbiddenException('This exam is not yours.');
     const activation = await tx.mentoringActivation.findUnique({ where: { id: exam.activationId } });
-    if (!activation || !OPERATIONAL.has(activation.status)) throw new ConflictException("This student's workflow is not running.");
+    if (!activation) throw new ConflictException("This student's workflow is not running.");
+    this.requireActive(activation);
     return exam;
   }
 

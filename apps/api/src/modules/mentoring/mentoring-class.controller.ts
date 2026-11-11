@@ -77,6 +77,13 @@ export class MentoringClassController {
     return this.classes.returnToTutor(sessionId, body.reason, body.kind === 'INCOMPLETE' ? 'INCOMPLETE' : 'CORRECTION', user.id);
   }
 
+  /** The Mentoring Head returns an update for correction, with a reason. Needs the correction permission, which no role holds until it is granted. */
+  @Post('classes/:sessionId/head-return')
+  @RequirePermissions('mentoring.record.correct')
+  async headReturn(@Param('sessionId') sessionId: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
+    return this.classes.returnToTutorAsHead(sessionId, body.reason, body.kind === 'INCOMPLETE' ? 'INCOMPLETE' : 'CORRECTION', await this.access.scopeFor(user.id));
+  }
+
   @Post('classes/:sessionId/adjust')
   @RequirePermissions('mentoring.stage.work')
   adjust(@Param('sessionId') sessionId: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {

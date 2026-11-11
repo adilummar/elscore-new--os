@@ -17,7 +17,6 @@ import { localMomentOf, zonedInstant } from './mentoring-sla';
 import { MentoringSlaService } from './mentoring-sla.service';
 import { MentoringStorageService } from './mentoring-storage.service';
 
-const OPERATIONAL = new Set(['ACTIVATION_IN_PROGRESS', 'ACTIVATED']);
 const ENTITY = 'ClassSession';
 const REMINDER_LEAD_MINUTES = 45;
 const MAX_ACTIVITIES = 20;
@@ -61,7 +60,7 @@ export class MentoringClassWorkspaceService {
     const profile = await this.classes.tutorProfileOf(tx, userId);
     if (o.tutorProfileId !== profile.id) throw new ForbiddenException('This class is not yours.');
     const activation = await loadLockedActivation(tx, o.activationId);
-    if (!OPERATIONAL.has(activation.status)) throw new ConflictException("This student's workflow is not running, so classes cannot be changed.");
+    this.classes.requireEligible(activation);
     const session = await this.classes.ensureSession(tx, o);
     if (session.tutorUserId !== userId) throw new ForbiddenException('This class is not yours.');
     return { o, session, activation };

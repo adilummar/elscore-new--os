@@ -33,7 +33,8 @@ function world() {
   for (const [id, mentor] of [['A', 'mentor-1'], ['B', 'mentor-2']] as const) {
     db.seed('lead', { id: `lead-${id}` });
     db.seed('student', { id: `stu-${id}`, firstName: 'Synthetic', lastName: `Student ${id}` });
-    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATION_IN_PROGRESS', currentMentorUserId: mentor });
+    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', currentMentorUserId: mentor });
+    db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });
     db.seed('enrollmentHandoverField', { handoverId: `ho-${id}`, fieldKey: 'timetable.schedule', value: SCHEDULE, origin: 'MENTOR_COLLECTED', updatedByUserId: mentor });
   }
   for (const [key, first, last] of [['meera', 'Meera', 'Thomas'], ['rahul', 'Rahul', 'Nair']] as const) {
@@ -608,5 +609,30 @@ describe('the routes', () => {
     expect(source.match(/status:\s*'DONE'/g) ?? []).toHaveLength(2);
     expect(source).toMatch(/'TUTOR_RECEIPT', \{ status: 'DONE'/);
     expect(source).toMatch(/'TUTOR_EVALUATION', \{ status: 'DONE'/);
+  });
+});
+
+describe('exams need an Active student (step 1 eligibility)', () => {
+  const setStatus = (w: ReturnType<typeof world>, status: string) => { w.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.status = status; };
+
+  it('refuses to schedule an exam for a student who is not Active, says why, and keeps the exams already recorded', async () => {
+    const w = world();
+    await w.make();
+    const cases: Array<[string, string]> = [['AWAITING_ALLOCATION', 'has not been activated yet'], ['ACTIVATION_IN_PROGRESS', 'has not been activated yet'], ['PENDING_FINAL_APPROVAL', 'has not been activated yet'], ['ACTIVATION_ON_HOLD', 'is paused'], ['ACTIVATION_BLOCKED', 'is paused'], ['CANCELLED', 'was cancelled']];
+    for (const [status, why] of cases) {
+      setStatus(w, status);
+      await expect(w.service.create('act-A', exam({ date: '2026-11-17' }), 'mentor-1', NOW)).rejects.toThrow(why);
+    }
+    expect(w.db.rows('mentoringExam')).toHaveLength(1);
+  });
+
+  it('refuses changes to an exam while the student is not Active, and works again when they are', async () => {
+    const w = world();
+    const id = await w.make();
+    setStatus(w, 'ACTIVATION_ON_HOLD');
+    const after = at(THU, '12:00');
+    await expect(w.service.recordConducted(id, { conducted: true }, 'mentor-1', after)).rejects.toThrow('is paused');
+    setStatus(w, 'ACTIVATED');
+    await expect(w.service.recordConducted(id, { conducted: true }, 'mentor-1', after)).resolves.toBeDefined();
   });
 });

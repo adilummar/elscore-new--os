@@ -12,8 +12,11 @@ import { MAX_AUDIO_BYTES } from './class-workspace';
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
 import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
+import { MentoringClassController } from './mentoring-class.controller';
 import { MentoringClassService } from './mentoring-class.service';
 import { MentoringHistoryService } from './mentoring-history.service';
+import { MentoringReminderJobsService } from './mentoring-reminder-jobs.service';
+import { MentoringReminderProcessor, MentoringReminderScheduler, automaticRemindersEnabled } from './mentoring-reminder.processor';
 import { MentoringReminderService } from './mentoring-reminder.service';
 import { MentoringSlaService } from './mentoring-sla.service';
 import { MentoringStorageService } from './mentoring-storage.service';
@@ -37,6 +40,8 @@ const PERMS: Record<string, string[]> = {
   'head-1': ['mentoring.student.read-all', 'mentoring.exception.authorize', 'mentoring.allocation.manage', 'mentoring.stage.work', 'mentoring.student.read-assigned'],
   'template-admin': ['mentoring.student.read-all', 'mentoring.template.manage'],
   'ceo-1': ['mentoring.student.read-all'],
+  corrector: ['mentoring.student.read-all', 'mentoring.record.correct'],
+  'narrow-corrector': ['mentoring.student.read-assigned', 'mentoring.record.correct'],
   nobody: [],
 };
 const good = { conducted: true, actualStart: '15:05', actualEnd: '16:10', topicsCovered: 'Tenses', attendance: 'PRESENT' };
@@ -66,8 +71,8 @@ function world() {
   const student = (id: string, first: string, last: string, mentor: string, tp: string, start: string, end: string) => {
     db.seed('lead', { id: `lead-${id}` });
     db.seed('student', { id: `stu-${id}`, firstName: first, lastName: last, businessId: `STU-000${id === 'A' ? 1 : id === 'B' ? 2 : 3}` });
-    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATION_IN_PROGRESS', currentStage: 3, currentMentorUserId: mentor });
-    db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'IN_PROGRESS' });
+    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', currentStage: 3, currentMentorUserId: mentor });
+    db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });
     db.seed('enrollmentHandoverField', { handoverId: `ho-${id}`, fieldKey: 'timetable.schedule', value: { version: 2, subjects: [{ subjectId: 'sub-en', subjectName: 'English', gradeId: 'g-8', gradeName: 'Grade 8', frequency: 'WEEKLY', totalMinutes: 60, distribution: 'EQUAL', sessions: [{ day: 'Monday', durationMinutes: m(end) - m(start), start, end }], startDate: MON }] }, origin: 'MENTOR_COLLECTED', updatedByUserId: mentor });
     const a = db.seed('mentoringTutorAssignment', { id: `as-class-${id}`, activationId: `act-${id}`, subjectId: 'sub-en', tutorProfileId: `tp-${tp}`, status: 'ACTIVE', currentKey: `act-${id}:sub-en`, startDate: day(MON), endDate: null, scheduleSnapshot: {} });
     db.seed('mentoringTutorAssignmentSession', { assignmentId: a.id, tutorProfileId: `tp-${tp}`, dayOfWeek: 1, frequency: 'WEEKLY', week: null, occurrences: [], startMinute: m(start), endMinute: m(end) });
@@ -1146,5 +1151,383 @@ describe('legacy classes (no voice upload, no activities) with strict verificati
     await w.prepare();
     await w.submit();
     await expect(w.classes.verify(w.session().id, {}, 'mentor-1', at(MON, '18:30'))).resolves.toMatchObject({ status: 'VERIFIED' });
+  });
+});
+
+// ─── Step 1: who is eligible for operational classes (activation, approved timetable, pause) ───────────────────────
+describe('eligibility: classes exist only for an Active student with an approved timetable', () => {
+  const setStatus = (w: ReturnType<typeof world>, id: string, status: string) => { w.db.rows('mentoringActivation').find((a) => a.id === id)!.status = status; };
+  const setStage = (w: ReturnType<typeof world>, id: string, status: string | null) => {
+    const rows = w.db.rows('mentoringStage');
+    const found = rows.find((s) => s.activationId === id && s.stageNumber === 3);
+    if (status === null) { if (found) rows.splice(rows.indexOf(found), 1); } else if (found) found.status = status; else w.db.seed('mentoringStage', { activationId: id, stageNumber: 3, key: 'TIMETABLE_CREATION', status });
+  };
+  const listed = async (w: ReturnType<typeof world>, id = 'act-A') => (await w.classes.daily(id, MON, {}, await w.scope('head-1'), AFTER)).classes.map((c) => c.key);
+
+  it('lists and generates classes in no status but Active, and only once the timetable stage is completed', async () => {
+    for (const status of ['AWAITING_ALLOCATION', 'ACTIVATION_IN_PROGRESS', 'PENDING_FINAL_APPROVAL', 'ACTIVATION_ON_HOLD', 'ACTIVATION_BLOCKED', 'CANCELLED']) {
+      const w = world();
+      setStatus(w, 'act-A', status);
+      expect(await listed(w)).toEqual([]);
+    }
+    const w = world();
+    expect(await listed(w)).toEqual([KEY]);
+    setStage(w, 'act-A', 'IN_PROGRESS');
+    expect(await listed(w)).toEqual([]); // Active, but the timetable is not approved
+    setStage(w, 'act-A', null);
+    expect(await listed(w)).toEqual([]);
+    setStage(w, 'act-A', 'COMPLETED');
+    expect(await listed(w)).toEqual([KEY]);
+  });
+
+  it('does not show a student awaiting activation in the operational list, the Head list or the dashboard cards', async () => {
+    const w = world();
+    setStatus(w, 'act-B', 'PENDING_FINAL_APPROVAL');
+    expect((await w.ws.list(await w.scope('head-1'), { date: MON }, AFTER)).rows.map((r) => r.studentName)).toEqual(['Asha Menon', 'Hema Pillai']);
+    expect((await w.ws.list(await w.scope('mentor-2'), { date: MON }, AFTER)).rows).toEqual([]);
+    expect(await w.ws.list(await w.scope('head-1'), { from: MON, to: MON, card: 'classes_today' }, AFTER)).toMatchObject({ total: 2 });
+  });
+
+  it('refuses every operational action on a class of a student who is not eligible', async () => {
+    const w = world();
+    await w.submit();
+    const id = w.session().id;
+    setStatus(w, 'act-A', 'ACTIVATION_IN_PROGRESS');
+    // By class key the class is simply not on the schedule, so nothing can be reminded, updated or changed.
+    await expect(w.submit()).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.ws.addActivity('u-meera', KEY, activity(1), AFTER)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.ws.uploadVoice('u-meera', KEY, audio(), AFTER)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.ws.setMeetLink('mentor-1', KEY, { link: 'https://meet.google.com/a-b-c' })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.classes.cancel(KEY, 'x', 'mentor-1', AFTER)).rejects.toBeInstanceOf(NotFoundException);
+    // By a stored class the reason is given.
+    await expect(w.classes.verify(id, {}, 'mentor-1', AFTER)).rejects.toThrow('This student has not been activated yet, so classes cannot be changed.');
+    await expect(w.classes.returnToTutor(id, 'x', 'CORRECTION', 'mentor-1', AFTER)).rejects.toThrow('has not been activated yet');
+    setStatus(w, 'act-A', 'ACTIVATION_ON_HOLD');
+    await expect(w.classes.verify(id, {}, 'mentor-1', AFTER)).rejects.toThrow('This student is paused, so classes cannot be changed.');
+    setStatus(w, 'act-A', 'ACTIVATED');
+    setStage(w, 'act-A', 'IN_PROGRESS');
+    await expect(w.classes.verify(id, {}, 'mentor-1', AFTER)).rejects.toThrow('does not have an approved timetable yet');
+    expect(w.session().status).toBe('AWAITING_MENTOR_VERIFICATION');
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(0);
+  });
+
+  it('keeps a paused or cancelled student history, and shows a class that was only scheduled again on resume with no duplicate', async () => {
+    const w = world();
+    await w.submit(); // Asha has a reported class (history)
+    await w.classes.prepareReminder(KEY_H, 'head-1'); // Hema's class gets a stored row, still only scheduled
+    const stored = w.db.rows('mentoringClassSession').length;
+    for (const status of ['ACTIVATION_ON_HOLD', 'CANCELLED']) {
+      setStatus(w, 'act-A', status);
+      setStatus(w, 'act-H', status);
+      expect(await listed(w, 'act-A')).toEqual([KEY]); // reported class stays as history
+      expect(await listed(w, 'act-H')).toEqual([]); // a class that was only scheduled is not operational
+      expect(w.db.rows('mentoringClassSession')).toHaveLength(stored); // nothing deleted
+    }
+    setStatus(w, 'act-H', 'ACTIVATED');
+    expect(await listed(w, 'act-H')).toEqual([KEY_H]);
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(stored); // the same stored row, no duplicate
+  });
+
+  it('creates no class rows when activation is approved, twice or at once', async () => {
+    const w = world();
+    setStatus(w, 'act-A', 'PENDING_FINAL_APPROVAL');
+    expect(await listed(w)).toEqual([]);
+    setStatus(w, 'act-A', 'ACTIVATED');
+    const before = w.db.rows('mentoringClassSession').length;
+    await Promise.all([listed(w), listed(w), listed(w)]);
+    setStatus(w, 'act-A', 'ACTIVATED');
+    await listed(w);
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(before);
+    expect(await listed(w)).toEqual([KEY]);
+  });
+
+  it('refuses a class by its key for a student who is not eligible, so nothing can be reminded, updated or verified', async () => {
+    const w = world();
+    setStatus(w, 'act-A', 'ACTIVATION_IN_PROGRESS');
+    await expect(w.classes.prepareReminder(KEY, 'mentor-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.ws.tutorWorkspace('u-meera', KEY, AFTER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(0);
+  });
+});
+
+// ─── Step 1: the automatic 45 minute class reminder ─────────────────────────────────────────────────────────────────
+describe('automatic class reminders', () => {
+  const jobs = (w: ReturnType<typeof world>) => new MentoringReminderJobsService(w.db as any, w.classes, new MentoringReminderService(w.db as any), new MentoringSlaService(w.db as any, w.access));
+  const reminders = (w: ReturnType<typeof world>) => w.db.rows('mentoringReminder');
+  const setStatus = (w: ReturnType<typeof world>, id: string, status: string) => { w.db.rows('mentoringActivation').find((a) => a.id === id)!.status = status; };
+  const EARLY = at(MON, '09:00');
+
+  it('prepares one reminder for each class in the next days of an eligible student, 45 minutes before it starts, for the tutor', async () => {
+    const w = world();
+    const r = await jobs(w).run(EARLY);
+    expect(r).toMatchObject({ withdrawn: 0, sent: 0, failed: 0 });
+    const rows = reminders(w);
+    expect(rows.length).toBeGreaterThanOrEqual(3); // A, B and H today, and the same classes a week later
+    const asha = rows.find((x) => x.activationId === 'act-A' && x.kind === `CLASS_REMINDER:${MON}:900`)!;
+    expect(asha).toMatchObject({ status: 'PREPARED', recipientUserId: 'u-meera', entityType: 'ClassSession', preparedByUserId: 'system' });
+    expect(asha.scheduledFor).toEqual(at(MON, '14:15'));
+    expect(rows.find((x) => x.activationId === 'act-H' && x.kind === `CLASS_REMINDER:${MON}:1020`)!.scheduledFor).toEqual(at(MON, '16:15'));
+    expect(rows.find((x) => x.activationId === 'act-B' && x.kind === `CLASS_REMINDER:${MON}:900`)!.recipientUserId).toBe('u-rahul');
+    expect(rows.find((x) => x.kind === `CLASS_REMINDER:2026-11-16:900`)).toBeDefined(); // the next Monday is inside the next seven days
+    expect(rows.every((x) => x.status === 'PREPARED' && x.sentAt === null)).toBe(true); // nothing is sent early
+  });
+
+  it('prepares nothing for a student who is not eligible, and nothing for a class that has started', async () => {
+    const w = world();
+    setStatus(w, 'act-B', 'ACTIVATION_IN_PROGRESS');
+    await jobs(w).run(at(MON, '15:05')); // Asha and Basil started at 15:00, Hema starts at 17:00
+    const rows = reminders(w);
+    expect(rows.filter((x) => x.kind === `CLASS_REMINDER:${MON}:900`)).toEqual([]);
+    expect(rows.find((x) => x.activationId === 'act-H' && x.kind === `CLASS_REMINDER:${MON}:1020`)).toBeDefined();
+    expect(rows.some((x) => x.activationId === 'act-B')).toBe(false);
+  });
+
+  it('sends it when its time comes, once, as an in-app notification, and never earlier', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(EARLY);
+    expect((await j.run(at(MON, '14:14'))).sent).toBe(0);
+    const at1415 = await j.run(at(MON, '14:15'));
+    expect(at1415.sent).toBeGreaterThanOrEqual(2); // Asha and Basil (both 15:00)
+    const sent = reminders(w).filter((x) => x.status === 'SENT');
+    const asha = sent.find((x) => x.activationId === 'act-A' && x.kind.endsWith(`${MON}:900`))!;
+    expect(asha).toMatchObject({ sentAt: at(MON, '14:15'), sentByUserId: 'system' });
+    const notes = w.db.rows('notification').filter((n) => n.recipientUserId === 'u-meera' && n.entityId === asha.entityId);
+    expect(notes).toHaveLength(1);
+    expect(asha.notificationId).toBe(notes[0].id);
+    const again = await j.run(at(MON, '14:30'));
+    expect(again.sent).toBe(0);
+    expect(w.db.rows('notification').filter((n) => n.entityId === asha.entityId)).toHaveLength(1);
+  });
+
+  it('is safe to run again and at the same time: one reminder and one notification per class', async () => {
+    const w = world();
+    const j = jobs(w);
+    await Promise.all([j.run(EARLY), j.run(EARLY), j.run(EARLY)]);
+    const keys = reminders(w).map((x) => x.currentKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    await Promise.all([j.run(at(MON, '14:16')), j.run(at(MON, '14:16'))]);
+    const sent = reminders(w).filter((x) => x.status === 'SENT');
+    expect(w.db.rows('notification').filter((n) => sent.some((s) => s.entityId === n.entityId && n.recipientUserId === s.recipientUserId))).toHaveLength(sent.length);
+  });
+
+  it('reminds a class created less than 45 minutes before it starts at once, once, and says it was late', async () => {
+    const w = world();
+    const j = jobs(w);
+    const r = await j.run(at(MON, '14:50'));
+    expect(r.late).toBeGreaterThanOrEqual(2);
+    expect(r.sent).toBeGreaterThanOrEqual(2);
+    const asha = reminders(w).find((x) => x.activationId === 'act-A' && x.kind.endsWith(`${MON}:900`))!;
+    expect(asha).toMatchObject({ status: 'SENT', sentAt: at(MON, '14:50') });
+    expect((await j.run(at(MON, '14:51'))).sent).toBe(0);
+  });
+
+  it('gives a reminder a Mentor prepared by hand its time, so it goes out by itself, and a Send now afterwards sends nothing twice', async () => {
+    const w = world();
+    await w.classes.prepareReminder(KEY, 'mentor-1'); // no time on it
+    expect(reminders(w)[0].scheduledFor).toBeNull();
+    const j = jobs(w);
+    await j.run(EARLY);
+    expect(reminders(w).filter((x) => x.entityType === 'ClassSession' && x.kind.endsWith(`${MON}:900`) && x.activationId === 'act-A')).toHaveLength(1);
+    await j.run(at(MON, '14:20'));
+    const sent = reminders(w).find((x) => x.activationId === 'act-A' && x.kind.endsWith(`${MON}:900`))!;
+    expect(sent.status).toBe('SENT');
+    const manual = await w.classes.sendReminder(KEY, 'mentor-1', at(MON, '14:25'));
+    expect(manual).toMatchObject({ reminderId: sent.id, status: 'SENT' });
+    expect(w.db.rows('notification').filter((n) => n.entityId === sent.entityId && n.recipientUserId === 'u-meera')).toHaveLength(1);
+  });
+
+  it('withdraws a prepared reminder when the student is paused, and prepares it again on resume', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(EARLY);
+    setStatus(w, 'act-A', 'ACTIVATION_ON_HOLD');
+    const r = await j.run(at(MON, '14:15'));
+    expect(r.withdrawn).toBeGreaterThanOrEqual(2);
+    const asha = reminders(w).filter((x) => x.activationId === 'act-A');
+    expect(asha.every((x) => x.status === 'CANCELLED')).toBe(true);
+    expect(w.db.rows('notification').some((n) => n.recipientUserId === 'u-meera' && n.entityId === w.session().id)).toBe(false);
+    setStatus(w, 'act-A', 'ACTIVATED');
+    await j.run(EARLY);
+    expect(reminders(w).filter((x) => x.activationId === 'act-A' && x.status === 'PREPARED').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('withdraws it when the class is cancelled or reported, and prepares the new slot when a class is moved', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(EARLY);
+    await w.classes.cancel(KEY_B, 'Holiday', 'mentor-2', EARLY);
+    await w.classes.tutorSubmitUpdate('u-meera', KEY, good, at(MON, '17:00'));
+    await j.run(at(MON, '17:01'));
+    const state = (id: string, key: string) => reminders(w).filter((x) => x.activationId === id && x.kind.endsWith(key)).map((x) => x.status);
+    expect(state('act-B', `${MON}:900`)).toEqual(['CANCELLED']);
+    expect(state('act-A', `${MON}:900`)).toEqual(['CANCELLED']);
+
+    const m = world();
+    const jm = jobs(m);
+    await jm.run(EARLY);
+    await m.classes.reschedule(KEY, { newDate: MON, newStart: '18:00', newEnd: '19:00', reason: 'Exam' }, 'mentor-1', EARLY);
+    await jm.run(at(MON, '09:05'));
+    const slots = reminders(m).filter((x) => x.activationId === 'act-A' && x.kind.includes(MON));
+    expect(slots.find((x) => x.kind.endsWith(':900'))!.status).toBe('CANCELLED');
+    expect(slots.find((x) => x.kind.endsWith(':1080'))).toMatchObject({ status: 'PREPARED', scheduledFor: at(MON, '17:15') });
+  });
+
+  it('does nothing for a class that is only history, and leaves a sent reminder alone', async () => {
+    const w = world();
+    const j = jobs(w);
+    await j.run(EARLY);
+    await j.run(at(MON, '14:20'));
+    setStatus(w, 'act-A', 'CANCELLED');
+    const before = reminders(w).filter((x) => x.status === 'SENT').length;
+    await j.run(at(MON, '14:30'));
+    expect(reminders(w).filter((x) => x.status === 'SENT')).toHaveLength(before);
+  });
+
+  it('never goes near WhatsApp, and says so in what it records', () => {
+    const source = readFileSync(join(__dirname, 'mentoring-reminder-jobs.service.ts'), 'utf8') + readFileSync(join(__dirname, 'mentoring-reminder.processor.ts'), 'utf8');
+    expect(source).not.toMatch(/api\.whatsapp|graph\.facebook|twilio|wa\.me|whatsapp-web|sendMessage\(/i);
+    expect(JSON.stringify(reminders(world()))).not.toMatch(/whatsapp/i);
+  });
+});
+
+describe('the reminder job and its schedule', () => {
+  const job = (name: string) => ({ id: '1', name, data: { idempotencyKey: 'mentoring-reminders' }, attemptsMade: 0 }) as any;
+
+  it('runs one pass for its own job only, and not at all when switched off', async () => {
+    const run = jest.fn().mockResolvedValue({});
+    const processor = new MentoringReminderProcessor({ run } as any);
+    await processor.process(job('something-else'));
+    expect(run).not.toHaveBeenCalled();
+    await processor.process(job('mentoring-reminders'));
+    expect(run).toHaveBeenCalledTimes(1);
+    process.env.MENTORING_AUTOMATIC_REMINDERS = 'false';
+    try {
+      await processor.process(job('mentoring-reminders'));
+      expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.MENTORING_AUTOMATIC_REMINDERS;
+    }
+  });
+
+  it('is on unless it says false, and registers one fixed schedule that a restart does not duplicate', async () => {
+    expect(automaticRemindersEnabled({})).toBe(true);
+    expect(automaticRemindersEnabled({ MENTORING_AUTOMATIC_REMINDERS: 'true' })).toBe(true);
+    expect(automaticRemindersEnabled({ MENTORING_AUTOMATIC_REMINDERS: 'FALSE' })).toBe(false);
+    const queue = { upsertJobScheduler: jest.fn().mockResolvedValue(undefined) };
+    const scheduler = new MentoringReminderScheduler(queue as any);
+    await scheduler.onApplicationBootstrap();
+    await new MentoringReminderScheduler(queue as any).onApplicationBootstrap();
+    expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(2);
+    for (const call of queue.upsertJobScheduler.mock.calls) {
+      expect(call[0]).toBe('mentoring-reminders-every-minute');
+      expect(call[1]).toEqual({ pattern: '* * * * *' });
+      expect(call[2]).toMatchObject({ name: 'mentoring-reminders' });
+    }
+  });
+
+  it('does not schedule when switched off, and does not fail the application when the queue is down', async () => {
+    const queue = { upsertJobScheduler: jest.fn().mockRejectedValue(new Error('redis down')) };
+    await expect(new MentoringReminderScheduler(queue as any).onApplicationBootstrap()).resolves.toBeUndefined();
+    process.env.MENTORING_AUTOMATIC_REMINDERS = 'false';
+    try {
+      const off = { upsertJobScheduler: jest.fn() };
+      await new MentoringReminderScheduler(off as any).onApplicationBootstrap();
+      expect(off.upsertJobScheduler).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.MENTORING_AUTOMATIC_REMINDERS;
+    }
+  });
+
+  it('is registered with the Mentoring module and its own queue', () => {
+    const module = readFileSync(join(__dirname, 'mentoring.module.ts'), 'utf8');
+    expect(module).toContain('BullModule.registerQueue({ name: QUEUES.MENTORING })');
+    expect(module).toContain('MentoringReminderProcessor');
+    expect(module).toContain('MentoringReminderScheduler');
+    expect(readFileSync(join(__dirname, '../../common/queue/queue.constants.ts'), 'utf8')).toContain("MENTORING: 'mentoring'");
+  });
+});
+
+// ─── Step 1: the Mentoring Head returns a record for correction (permission mentoring.record.correct) ────────────
+describe('the Head returns an update for correction', () => {
+  const head = async (w: ReturnType<typeof world>, user = 'corrector') => w.access.scopeFor(user);
+  const waiting = async () => { const w = world(); await w.submit(); return w; };
+  const returnAs = (w: ReturnType<typeof world>, scope: any, reason: unknown = 'The end time is wrong', kind: 'CORRECTION' | 'INCOMPLETE' = 'CORRECTION') => w.classes.returnToTutorAsHead(w.session().id, reason, kind, scope, at(MON, '17:30'));
+
+  it('is refused for anyone without the correction permission: the Head as granted today, a Mentor, the CEO, the tutor and a stranger', async () => {
+    const w = await waiting();
+    for (const user of ['head-1', 'mentor-1', 'mentor-2', 'ceo-1', 'nobody']) await expect(returnAs(w, await w.access.scopeFor(user))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(w.session().status).toBe('AWAITING_MENTOR_VERIFICATION');
+  });
+
+  it('needs department wide access as well as the permission', async () => {
+    const w = await waiting();
+    await expect(returnAs(w, await w.access.scopeFor('narrow-corrector'))).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('works on another Mentor student with a reason, tells the tutor it was the Head, and records who did it', async () => {
+    const w = await waiting();
+    await expect(returnAs(w, await head(w))).resolves.toMatchObject({ status: 'RETURNED_FOR_CORRECTION' });
+    expect(w.session()).toMatchObject({ status: 'RETURNED_FOR_CORRECTION', returnedReason: 'The end time is wrong', returnedKind: 'CORRECTION' });
+    expect(w.db.rows('notification').find((n) => n.type === 'MENTORING_CLASS_RETURNED')).toMatchObject({ recipientUserId: 'u-meera' });
+    expect(w.db.rows('notification').find((n) => n.type === 'MENTORING_CLASS_RETURNED')!.message).toContain('by the Mentoring Head');
+    const event = w.db.rows('mentoringClassSessionEvent').find((e) => e.kind === 'RETURNED_FOR_CORRECTION')!;
+    expect(event).toMatchObject({ actorUserId: 'corrector', reason: 'The end time is wrong' });
+    expect(event.payload).toMatchObject({ byHead: true });
+  });
+
+  it('can mark it incomplete, and the tutor can then correct and resubmit', async () => {
+    const w = await waiting();
+    await returnAs(w, await head(w), 'The topics are missing', 'INCOMPLETE');
+    expect(w.session()).toMatchObject({ returnedKind: 'INCOMPLETE' });
+    expect(w.events(w.session().id)).toContain('MARKED_INCOMPLETE');
+    await w.submit();
+    expect(w.session().status).toBe('AWAITING_MENTOR_VERIFICATION');
+  });
+
+  it('needs a reason, and one that is not too long', async () => {
+    const w = await waiting();
+    for (const reason of ['', '   ', null, 42]) await expect(returnAs(w, await head(w), reason)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(returnAs(w, await head(w), 'x'.repeat(1001))).rejects.toThrow('1000 characters');
+    expect(w.session().status).toBe('AWAITING_MENTOR_VERIFICATION');
+  });
+
+  it('is refused for a class that is not waiting for review, for a student who is not eligible, and for a class that does not exist', async () => {
+    const fresh = world();
+    await fresh.classes.prepareReminder(KEY, 'mentor-1');
+    await expect(fresh.classes.returnToTutorAsHead(fresh.session().id, 'x', 'CORRECTION', await head(fresh), AFTER)).rejects.toThrow('Only an update waiting for review can be returned.');
+    const w = await waiting();
+    w.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.status = 'ACTIVATION_ON_HOLD';
+    await expect(returnAs(w, await head(w))).rejects.toThrow('This student is paused');
+    await expect(w.classes.returnToTutorAsHead('no-such-class', 'x', 'CORRECTION', await head(w), AFTER)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('clears an exception that was decided on the update it returns', async () => {
+    const w = await waiting();
+    await w.ws.requestException('mentor-1', KEY, { reason: 'No data connection' }, AFTER);
+    await w.ws.decideException(await w.scope('head-1'), KEY, { approve: true }, AFTER);
+    await returnAs(w, await head(w));
+    expect(w.session().exceptionStatus).toBeNull();
+    expect(w.events(w.session().id)).toContain('EXCEPTION_INVALIDATED');
+  });
+
+  it('leaves the Mentor own return and the compensation rules as they were', async () => {
+    const w = await waiting();
+    await w.classes.returnToTutor(w.session().id, 'Please correct', 'CORRECTION', 'mentor-1', at(MON, '17:30'));
+    expect(w.session().status).toBe('RETURNED_FOR_CORRECTION');
+    expect(w.events(w.session().id).filter((e) => e === 'RETURNED_FOR_CORRECTION')).toHaveLength(1);
+    expect(w.db.rows('mentoringClassSessionEvent').find((e) => e.kind === 'RETURNED_FOR_CORRECTION')!.payload ?? {}).not.toMatchObject({ byHead: true });
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(0);
+  });
+
+  it('has a route that needs exactly the correction permission, and the permission is defined but granted to no role', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, (MentoringClassController.prototype as any).headReturn)).toEqual(['mentoring.record.correct']);
+    const seed = readFileSync(join(__dirname, '../../../prisma/seed.ts'), 'utf8');
+    expect(seed).toContain("code: 'mentoring.record.correct'");
+    const exclusion = seed.slice(seed.indexOf('const MENTORING_OPERATIONAL_CODES'), seed.indexOf(']);', seed.indexOf('const MENTORING_OPERATIONAL_CODES')));
+    expect(exclusion).toContain("'mentoring.record.correct'");
+    const roles = seed.slice(seed.indexOf('MENTORING_HEAD: ['));
+    expect(roles.slice(0, roles.indexOf('\n  ],'))).not.toContain('mentoring.record.correct');
+    expect((seed.match(/'mentoring\.record\.correct'/g) ?? []).length).toBe(2); // the exclusion list and nowhere else
   });
 });

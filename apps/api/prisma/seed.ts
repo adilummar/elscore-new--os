@@ -1380,6 +1380,14 @@ const PERMISSIONS: Array<{
     isDelegatable: false,
   },
   {
+    // Defined here so the catalog and the CEO exclusion agree. No role holds it: it is granted only after a separate approval.
+    code: 'mentoring.record.correct',
+    resource: 'mentoring.record',
+    action: 'correct',
+    description: 'Return a Mentoring class, exam or meeting record for correction, or correct it, with a mandatory reason',
+    isDelegatable: false,
+  },
+  {
     code: 'mentoring.stage.verify',
     resource: 'mentoring.stage',
     action: 'verify',
@@ -1507,6 +1515,8 @@ const MENTORING_OPERATIONAL_CODES = new Set([
   'mentoring.complaint.handle',
   // Editing the shared class message templates is an operational right, not company-wide visibility. Not granted to anyone by this file.
   'mentoring.template.manage',
+  // The Mentoring Head's returns and corrections. An operational right, not company-wide visibility. Not granted to anyone by this file.
+  'mentoring.record.correct',
 ]);
 
 // Read-only permissions for Co-Founder — all *.read and *.view, no writes

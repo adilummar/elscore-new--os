@@ -30,6 +30,12 @@ export const QUEUES = {
    * All jobs must be idempotent; safe to re-run if duplicated.
    */
   HOUSEKEEPING: 'housekeeping',
+
+  /**
+   * Mentoring queue — the automatic in-app reminders of the Mentoring module (class reminders now; update and exam
+   * notices later). Jobs are idempotent: a reminder is keyed by what it is for, so running twice sends once.
+   */
+  MENTORING: 'mentoring',
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
@@ -50,6 +56,10 @@ export const JOBS = {
   ROUND_ROBIN_DAILY_RESET: 'round-robin-daily-reset',
   /** Daily cleanup of distribution history older than 30 days. */
   ROUND_ROBIN_HISTORY_CLEANUP: 'round-robin-history-cleanup',
+
+  // ── MENTORING queue ──────────────────────────────────────────────────────────────────────────────────────────
+  /** Every minute: prepare the next days' reminders, withdraw the ones that no longer apply, send the ones that are due. */
+  MENTORING_REMINDERS: 'mentoring-reminders',
 
   // ── DEADLINE_MONITOR queue ────────────────────────────────────────────────
   /** 10-minute reminder for a specific follow-up. jobId = followup-reminder-{fupId}. */

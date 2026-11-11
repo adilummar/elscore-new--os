@@ -1,15 +1,17 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../../common/audit/audit.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { QUEUES } from '../../common/queue/queue.constants';
 import { RbacModule } from '../../common/rbac/rbac.module';
 
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringAllocationController } from './mentoring-allocation.controller';
 import { MentoringAllocationService } from './mentoring-allocation.service';
-import { MentoringClassController } from './mentoring-class.controller';
 import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
 import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
+import { MentoringClassController } from './mentoring-class.controller';
 import { MentoringClassService } from './mentoring-class.service';
 import { MentoringComplaintController } from './mentoring-complaint.controller';
 import { MentoringComplaintService } from './mentoring-complaint.service';
@@ -23,6 +25,8 @@ import { MentoringLearningPlanService } from './mentoring-learning-plan.service'
 import { MentoringOperationsController } from './mentoring-operations.controller';
 import { MentoringOverviewController } from './mentoring-overview.controller';
 import { MentoringOverviewService } from './mentoring-overview.service';
+import { MentoringReminderJobsService } from './mentoring-reminder-jobs.service';
+import { MentoringReminderProcessor, MentoringReminderScheduler } from './mentoring-reminder.processor';
 import { MentoringReminderService } from './mentoring-reminder.service';
 import { MentoringReviewController } from './mentoring-review.controller';
 import { MentoringReviewService } from './mentoring-review.service';
@@ -38,7 +42,7 @@ import { MentoringWorkflowService } from './mentoring-workflow.service';
 import { TutorClassesController } from './tutor-classes.controller';
 
 @Module({
-  imports: [PrismaModule, AuditModule, RbacModule],
+  imports: [PrismaModule, AuditModule, RbacModule, BullModule.registerQueue({ name: QUEUES.MENTORING })],
   controllers: [MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
   providers: [
     MentoringHandoverService,
@@ -52,6 +56,9 @@ import { TutorClassesController } from './tutor-classes.controller';
     MentoringLearningPlanService,
     MentoringSlaService,
     MentoringReminderService,
+    MentoringReminderJobsService,
+    MentoringReminderProcessor,
+    MentoringReminderScheduler,
     MentoringClassService,
     MentoringExamService,
     MentoringReviewService,

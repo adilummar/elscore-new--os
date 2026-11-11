@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
+import { EligibilityReason, ineligibleMessage, studentEligibility } from './class-eligibility';
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { loadLockedActivation } from './mentoring-guards';
@@ -15,7 +16,6 @@ import {
 } from './review';
 
 const ENTITY = 'MonthlyReview';
-const OPERATIONAL = new Set(['ACTIVATION_IN_PROGRESS', 'ACTIVATED']);
 const asDate = (d: string) => new Date(`${d}T00:00:00Z`);
 const dayOf = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -89,6 +89,12 @@ export interface ReviewView {
  */
 @Injectable()
 export class MentoringReviewService {
+  /** Reviews and meetings are operational only for an Active student. A paused or cancelled student keeps every earlier record. */
+  private requireActive(activation: { status: string }, what: 'meetings' | 'the review' = 'the review') {
+    const e = studentEligibility(activation);
+    if (!e.eligible) throw new ConflictException(ineligibleMessage(e.reason as EligibilityReason, what));
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: MentoringAccessService,
@@ -116,7 +122,7 @@ export class MentoringReviewService {
     if (!found) throw new NotFoundException('Review not found');
     const activation = (await loadLockedActivation(tx, found.activationId)) as unknown as Activation;
     MentoringAllocationService.assertAssignedMentor(activation, userId);
-    if (!OPERATIONAL.has(activation.status)) throw new ConflictException("This student's workflow is not running, so the review cannot be changed.");
+    this.requireActive(activation, 'the review');
     const meeting = (await tx.mentoringReviewMeeting.findUnique({ where: { id: meetingId } })) as MeetingRow;
     if (opts.live !== false && meeting.status !== 'SCHEDULED') throw new ConflictException('This review is already completed or cancelled.');
     return { meeting, activation };
@@ -215,7 +221,7 @@ export class MentoringReviewService {
     const previous = (await db.mentoringReviewMeeting.findMany({ where: { activationId: activation.id, status: 'COMPLETED' }, orderBy: { scheduledFor: 'desc' } })).filter((m) => m.id !== meeting?.id);
     const marksMissing = exams.filter((e) => e.conducted === true && e.marksObtained === null).length;
     const get = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, (meeting as unknown as Record<string, string | null>)?.[k] ?? null])) as Record<K, string | null>;
-    const operational = OPERATIONAL.has(activation.status);
+    const operational = studentEligibility(activation).eligible;
     return {
       student: { id: activation.studentId, name: student ? `${student.firstName} ${student.lastName ?? ''}`.trim() : 'Student' },
       mentorName: mentor ? `${mentor.firstName} ${mentor.lastName}`.trim() : null,
@@ -250,7 +256,7 @@ export class MentoringReviewService {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const activation = (await loadLockedActivation(tx, activationId)) as unknown as Activation;
       MentoringAllocationService.assertAssignedMentor(activation, userId);
-      if (!OPERATIONAL.has(activation.status)) throw new ConflictException("This student's workflow is not running, so a meeting cannot be scheduled.");
+      this.requireActive(activation, 'meetings');
       const checked = checkSchedule(body);
       if (!checked.ok) throw new BadRequestException(checked.message);
       const v = checked.value;

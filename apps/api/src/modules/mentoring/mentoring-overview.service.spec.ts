@@ -49,6 +49,8 @@ function world(extra = 0) {
     db.seed('student', { id: `stu-${id}`, firstName: first, lastName: last, businessId });
     db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status, currentStage: stage, currentMentorUserId: mentor, createdAt: new Date(NOW.getTime() - 5 * 86_400_000) });
     if (status !== 'ACTIVATED') db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: stage, key: 'X', status: 'IN_PROGRESS' });
+    // An Active student has finished every activation stage, including the timetable.
+    if (status === 'ACTIVATED') db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });
     const a = db.seed('mentoringTutorAssignment', { id: `as-class-${id}`, activationId: `act-${id}`, subjectId: subject, tutorProfileId: 'tp-meera', status: 'ACTIVE', currentKey: `act-${id}:${subject}`, startDate: day(MON), endDate: null });
     db.seed('mentoringTutorAssignmentSession', { assignmentId: a.id, tutorProfileId: 'tp-meera', dayOfWeek: 1, frequency: 'WEEKLY', week: null, occurrences: [], startMinute: m('15:00'), endMinute: m('16:00') });
   };
@@ -98,7 +100,7 @@ describe('the summary', () => {
     const w = world();
     const s = await w.overview.summary(await w.scope('head-1'), { period: 'month' }, NOW);
     expect(s.window).toEqual({ from: '2026-11-01', to: '2026-11-30' });
-    expect(s.summary).toMatchObject({ scheduledMinutes: 4 * 4 * 60, consumedMinutes: 0, reportedMinutes: 0 }); // 4 students, 4 Mondays from the 9th
+    expect(s.summary).toMatchObject({ scheduledMinutes: 4 * 60, consumedMinutes: 0, reportedMinutes: 0 }); // one Active student with an approved timetable, 4 Mondays from the 9th
     expect(w.db.rows('mentoringClassSession')).toHaveLength(0); // reading stores nothing
   });
 
@@ -110,7 +112,7 @@ describe('the summary', () => {
     await w.classes.verify(w.db.rows('mentoringClassSession')[0].id, {}, 'mentor-1', at(MON, '18:00'));
     const after = await w.overview.summary(await w.scope('mentor-1'), {}, at(MON, '18:10'));
     expect(after.summary).toMatchObject({ reportedMinutes: 65, consumedMinutes: 65, pendingVerification: 0 });
-    expect(after.summary.scheduledMinutes).toBe(8 * 60); // two students, four Mondays each
+    expect(after.summary.scheduledMinutes).toBe(4 * 60); // only Asha is Active with an approved timetable; Chitra is still in activation
   });
 
   it('takes a week or a month as the window, and refuses anything else', async () => {
@@ -137,7 +139,7 @@ describe('Mentor by Mentor', () => {
     const w = world();
     const r = await w.overview.mentors(await w.scope('head-1'), {}, NOW);
     expect(r.total).toBe(2);
-    expect(r.rows[0]).toMatchObject({ name: 'Mira Mentor', assignedStudents: 2, activeStudents: 1, ongoingActivations: 1, scheduledHours: 8, consumedHours: 0, remainingHours: 8 });
+    expect(r.rows[0]).toMatchObject({ name: 'Mira Mentor', assignedStudents: 2, activeStudents: 1, ongoingActivations: 1, scheduledHours: 4, consumedHours: 0, remainingHours: 4 });
     expect(r.rows[1]).toMatchObject({ name: 'Mohan Mentor', assignedStudents: 2, activeStudents: 0, ongoingActivations: 2 });
   });
 
@@ -154,7 +156,7 @@ describe('Mentor by Mentor', () => {
     const r = await w.overview.mentors(await w.scope('head-1'), {}, at(MON, '17:30'));
     const mira = r.rows.find((x) => x.name === 'Mira Mentor')!;
     expect(mira.pendingVerification).toBe(1);
-    expect(mira.pendingTasks).toBeGreaterThanOrEqual(2); // the verification, and student C whose tutor has not reported
+    expect(mira.pendingTasks).toBeGreaterThanOrEqual(1); // the verification. Student C is still in activation, so has no classes to report
   });
 
   it('searches, sorts and pages on the server', async () => {
@@ -185,7 +187,8 @@ describe('students and their hours', () => {
     const head = await w.scope('head-1');
     expect((await w.overview.students(head, { mentorUserId: 'mentor-2' }, NOW)).rows.map((x) => x.studentName).sort()).toEqual(['Basil Nair', 'Dev Kumar']);
     expect((await w.overview.students(head, { status: 'ACTIVATED' }, NOW)).total).toBe(1);
-    expect((await w.overview.students(head, { subjectId: 'sub-ma' }, NOW)).rows.map((x) => x.studentName)).toEqual(['Chitra Pillai']);
+    expect((await w.overview.students(head, { subjectId: 'sub-ma' }, NOW)).rows.map((x) => x.studentName)).toEqual([]); // Chitra is still in activation: no classes, so no subject hours
+    expect((await w.overview.students(head, { subjectId: 'sub-en' }, NOW)).rows.map((x) => x.studentName)).toContain('Asha Menon');
     expect((await w.overview.students(head, { search: 'stu-0004' }, NOW)).rows.map((x) => x.studentName)).toEqual(['Dev Kumar']);
     const mentor = await w.scope('mentor-1');
     expect((await w.overview.students(mentor, {}, NOW)).rows.map((x) => x.studentName).sort()).toEqual(['Asha Menon', 'Chitra Pillai']);
@@ -236,9 +239,9 @@ describe("today's classes", () => {
   it('lists the day in time order with the Mentor, the stage and whether it counts as consumed', async () => {
     const w = world();
     const r = await w.overview.today(await w.scope('head-1'), {}, NOW);
-    expect(r).toMatchObject({ date: MON, total: 4, consumed: 0 });
+    expect(r).toMatchObject({ date: MON, total: 1, consumed: 0 }); // only Active students with an approved timetable have classes
     expect(r.rows[0]).toMatchObject({ startMinute: 900, consumption: 'NOT_CONSUMED', tutorName: 'Meera Thomas' });
-    expect(r.rows.map((x) => x.mentorName).sort()).toEqual(['Mira Mentor', 'Mira Mentor', 'Mohan Mentor', 'Mohan Mentor']);
+    expect(r.rows.map((x) => x.mentorName).sort()).toEqual(['Mira Mentor']);
   });
 
   it('marks a class consumed only after the Mentor verifies it, and warns about a returned one', async () => {
@@ -255,10 +258,12 @@ describe("today's classes", () => {
   it('filters by Mentor and search, scopes a Mentor to their own, and moves to another date', async () => {
     const w = world();
     const head = await w.scope('head-1');
-    expect((await w.overview.today(head, { mentorUserId: 'mentor-2' }, NOW)).rows).toHaveLength(2);
-    expect((await w.overview.today(head, { search: 'chitra' }, NOW)).rows.map((x) => x.studentName)).toEqual(['Chitra Pillai']);
-    expect((await w.overview.today(await w.scope('mentor-2'), {}, NOW)).rows.map((x) => x.studentName).sort()).toEqual(['Basil Nair', 'Dev Kumar']);
-    expect((await w.overview.today(head, { date: '2026-11-16' }, NOW)).total).toBe(4);
+    expect((await w.overview.today(head, { mentorUserId: 'mentor-2' }, NOW)).rows).toHaveLength(0); // Mohan's students are still in activation
+    expect((await w.overview.today(head, { mentorUserId: 'mentor-1' }, NOW)).rows).toHaveLength(1);
+    expect((await w.overview.today(head, { search: 'chitra' }, NOW)).rows).toEqual([]);
+    expect((await w.overview.today(head, { search: 'asha' }, NOW)).rows.map((x) => x.studentName)).toEqual(['Asha Menon']);
+    expect((await w.overview.today(await w.scope('mentor-2'), {}, NOW)).rows).toEqual([]);
+    expect((await w.overview.today(head, { date: '2026-11-16' }, NOW)).total).toBe(1);
     expect((await w.overview.today(head, { date: '2026-11-10' }, NOW)).total).toBe(0);
   });
 });
@@ -272,7 +277,7 @@ describe('a Mentor with about 40 students', () => {
     const mt = await w.overview.mentors(await w.scope('head-1'), {}, NOW);
     expect(Date.now() - started).toBeLessThan(8000);
     expect(s.summary.activeStudents).toBe(41);
-    expect(t.total).toBe(42);
+    expect(t.total).toBe(41);
     expect(mt.rows.find((x) => x.name === 'Mira Mentor')?.assignedStudents).toBe(42);
     expect((w.db as any).mentoringTutorAssignment.findMany.mock.calls.length).toBeLessThan(40);
   });

@@ -5,6 +5,7 @@ import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.servic
 import { TutorCalendarInput, addDays, checkWindow, isDateString, resolveDay } from '../tutor/tutor-calendar';
 import { loadCalendars } from '../tutor/tutor-calendar.data';
 
+import { EligibilityReason, OPEN_CLASS_STATUSES, TIMETABLE_STAGE, classEligibility, ineligibleMessage } from './class-eligibility';
 import {
   ChecklistItem, ClassStatus, DisplayState, Occurrence, ReminderState, STATE_LABELS, TUTOR_CAN_UPDATE, CAN_REMIND, MENTOR_CAN_REVIEW, checkMentorNotes, checkTutorUpdate, checklistOf, displayState,
   occurrencesBetween, parseClassKey, payableAmount, verificationWarnings, MAX_CLASS_MINUTES, CAN_RESCHEDULE,
@@ -20,8 +21,10 @@ import { MentoringSlaService } from './mentoring-sla.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
 
 const LIVE_ASSIGNMENT = ['ACTIVE', 'NEEDS_REVIEW'] as const;
-const OPERATIONAL = new Set(['ACTIVATION_IN_PROGRESS', 'ACTIVATED']);
 /** A reminder belongs to one slot: a class that is moved needs a new reminder for its new time. */
+/** The tutor is reminded this long before a class starts. */
+export const CLASS_REMINDER_LEAD_MINUTES = 45;
+export const CLASS_REMINDER_ENTITY = 'ClassSession';
 const slotKind = (date: string, startMinute: number) => `CLASS_REMINDER:${date}:${startMinute}`;
 const ENTITY = 'ClassSession';
 const MAX_RANGE_DAYS = 31;
@@ -115,7 +118,10 @@ export class MentoringClassService {
 
   // ─── Finding classes ───────────────────────────────────────────────────────────────────────────────────────────
   private async occurrences(db: PrismaTxClient, where: Record<string, unknown>, from: string, to: string): Promise<Occurrence[]> {
-    const assignments = await db.mentoringTutorAssignment.findMany({ where: { ...where, status: { in: [...LIVE_ASSIGNMENT] } } });
+    const found = await db.mentoringTutorAssignment.findMany({ where: { ...where, status: { in: [...LIVE_ASSIGNMENT] } } });
+    // Classes are generated only for students who are Active with an approved timetable.
+    const eligible = await this.eligibleActivationIds(db, [...new Set(found.map((a) => a.activationId))]);
+    const assignments = found.filter((a) => eligible.has(a.activationId));
     if (assignments.length === 0) return [];
     const ids = assignments.map((a) => a.id);
     const [rules, overrides] = await Promise.all([db.mentoringTutorAssignmentSession.findMany({ where: { assignmentId: { in: ids } } }), db.mentoringTutorAssignmentOverride.findMany({ where: { assignmentId: { in: ids } } })]);
@@ -262,7 +268,9 @@ export class MentoringClassService {
       if (s) used.add(o.key);
       return { occurrence: o, session: s };
     });
-    for (const [k, s] of byKey) if (!used.has(k)) bases.push({ occurrence: null, session: s });
+    // A stored class of a student who is not eligible any more stays as history, but a class that was only scheduled is not operational.
+    const eligibleNow = await this.eligibleActivationIds(db, [...new Set([...byKey.values()].map((s) => s.activationId))]);
+    for (const [k, s] of byKey) if (!used.has(k) && (eligibleNow.has(s.activationId) || !OPEN_CLASS_STATUSES.has(s.status))) bases.push({ occurrence: null, session: s });
     const list = await this.build(db, bases, now);
     return list.sort((a, b) => a.date.localeCompare(b.date) || a.startMinute - b.startMinute || a.studentName.localeCompare(b.studentName));
   }
@@ -343,8 +351,24 @@ export class MentoringClassService {
   async mentorGuard(tx: PrismaTxClient, activationId: string, userId: string) {
     const activation = await loadLockedActivation(tx, activationId);
     MentoringAllocationService.assertAssignedMentor(activation, userId);
-    if (!OPERATIONAL.has(activation.status)) throw new ConflictException('This student\'s workflow is not running, so classes cannot be changed.');
+    this.requireEligible(activation);
     return activation;
+  }
+
+  /** Classes are operational only for an Active student with an approved timetable. History is never touched by this. */
+  requireEligible(activation: { status: string; stages?: Array<{ stageNumber: number; status: string }> }) {
+    const e = classEligibility(activation, activation.stages ?? []);
+    if (!e.eligible) throw new ConflictException(ineligibleMessage(e.reason as EligibilityReason, 'classes'));
+  }
+
+  /** The activations whose classes are operational now. Everything else is not generated, listed or reminded. */
+  async eligibleActivationIds(db: PrismaTxClient, ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const [activations, stages] = await Promise.all([
+      db.mentoringActivation.findMany({ where: { id: { in: ids } } }),
+      db.mentoringStage.findMany({ where: { activationId: { in: ids }, stageNumber: TIMETABLE_STAGE } }),
+    ]);
+    return new Set(activations.filter((a) => classEligibility(a, stages.filter((s) => s.activationId === a.id)).eligible).map((a) => a.id));
   }
 
   private async rateAt(db: PrismaTxClient, tutorProfileId: string, at: Date): Promise<{ id: string; hourlyRate: number; currency: string } | null> {
@@ -381,6 +405,31 @@ export class MentoringClassService {
       await this.logEvent(tx, session.id, 'REMINDER_PREPARED', userId, { payload: { reminderId: reminder.id } });
       return { sessionId: session.id, reminderId: reminder.id, status: reminder.status };
     });
+  }
+
+  /**
+   * The automatic reminder for one class: prepared by the system for 45 minutes before the class starts, for the tutor.
+   * Safe to call again: the reminder is keyed by the class slot, so it is prepared once. A reminder that a Mentor prepared by hand
+   * (with no time) is given its time, so it goes out automatically as well. A class created less than the lead time before it starts
+   * is reminded at once, once. A class that has started or has been reported gets none.
+   */
+  async prepareAutomaticReminder(tx: PrismaTxClient, o: Occurrence, now: Date, actor: string): Promise<{ reminderId: string; scheduledFor: Date; late: boolean } | null> {
+    const session = await this.ensureSession(tx, o);
+    if (!CAN_REMIND.includes(session.status)) return null;
+    const tz = (await this.sla.workingNow(tx, now)).timeZone;
+    const start = zonedInstant(dayOf(session.date) as string, session.startMinute, tz);
+    if (now.getTime() >= start.getTime()) return null;
+    const lead = new Date(start.getTime() - CLASS_REMINDER_LEAD_MINUTES * 60_000);
+    const late = lead.getTime() < now.getTime();
+    const scheduledFor = late ? now : lead;
+    let reminder = await this.reminders.prepare(tx, { kind: slotKind(dayOf(session.date) as string, session.startMinute), entityType: ENTITY, entityId: session.id, activationId: o.activationId, recipientUserId: session.tutorUserId, message: await this.classMessage(tx, o, session), scheduledFor }, actor);
+    if (reminder.status === 'PREPARED' && !reminder.scheduledFor) reminder = await tx.mentoringReminder.update({ where: { id: reminder.id }, data: { scheduledFor } });
+    return { reminderId: reminder.id, scheduledFor: reminder.scheduledFor ?? scheduledFor, late };
+  }
+
+  /** Every class in the dates, for the students who are eligible now. Used by the reminder job; nothing is stored. */
+  eligibleOccurrences(db: PrismaTxClient, from: string, to: string): Promise<Occurrence[]> {
+    return this.occurrences(db, {}, from, to);
   }
 
   /** Sends the tutor reminder as an in-app notification. It counts as sent only once that notification exists. */
@@ -420,7 +469,7 @@ export class MentoringClassService {
       const profile = await this.tutorProfileOf(tx, userId);
       if (o.tutorProfileId !== profile.id) throw new ForbiddenException('This class is not yours.');
       const activation = await loadLockedActivation(tx, o.activationId);
-      if (!OPERATIONAL.has(activation.status)) throw new ConflictException('This student\'s workflow is not running, so classes cannot be updated.');
+      this.requireEligible(activation);
       const session = await this.ensureSession(tx, o);
       if (session.tutorUserId !== userId) throw new ForbiddenException('This class is not yours.');
       if (session.status === 'CANCELLED') throw new ConflictException('This class was cancelled, so it cannot be updated.');
@@ -500,21 +549,44 @@ export class MentoringClassService {
   async returnToTutor(sessionId: string, reason: unknown, kind: 'CORRECTION' | 'INCOMPLETE', userId: string, now: Date = new Date()) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const { session, activation } = await this.sessionForMentor(tx, sessionId, userId);
-      const fromStatus: string = session.status;
-      if (!MENTOR_CAN_REVIEW.includes(session.status)) throw new ConflictException('Only an update waiting for review can be returned.');
-      const why = typeof reason === 'string' ? reason.trim() : '';
-      if (!why) throw new BadRequestException(kind === 'INCOMPLETE' ? 'Say what is missing from the update.' : 'Say what the tutor needs to correct.');
-      if (why.length > 1000) throw new BadRequestException('The reason must be 1000 characters or fewer.');
-      await tx.mentoringClassSession.update({ where: { id: sessionId }, data: { status: 'RETURNED_FOR_CORRECTION', returnedReason: why, returnedKind: kind } });
-      // The update is going to change, so a decision made on the old one no longer stands.
-      await this.invalidateException(tx, session, userId, 'The update was returned for correction.');
-      // The Mentor has acted, so the review clock stops; the tutor's correction starts the next one.
-      for (const key of ['CLASS_UPDATE_REVIEW', 'RETURNED_UPDATE_ACTION']) await this.sla.complete(tx, key, ENTITY, sessionId, now);
-      await this.notify(tx, session.tutorUserId, 'MENTORING_CLASS_RETURNED', sessionId, `Your class update was returned: ${why}`, `class-returned:${sessionId}:${await this.seq(tx, sessionId)}`, '/tutor-portal');
-      await this.logEvent(tx, sessionId, kind === 'INCOMPLETE' ? 'MARKED_INCOMPLETE' : 'RETURNED_FOR_CORRECTION', userId, { reason: why, from: fromStatus, to: 'RETURNED_FOR_CORRECTION' });
-      await this.history.record(tx, { activationId: activation.id, type: 'MENTORING_CLASS_RETURNED', actorUserId: userId, reason: why, payload: { sessionId, kind } });
-      return { sessionId, status: 'RETURNED_FOR_CORRECTION' as const };
+      return this.applyReturn(tx, session, activation, reason, kind, userId, now, false);
     });
+  }
+
+  /**
+   * The Mentoring Head sends an update back for correction on any student's class they can see, with a reason. It needs the
+   * correction permission (held by nobody until it is granted) and department-wide access. Everything else is as when the Mentor does it,
+   * and the record says it was the Head.
+   */
+  async returnToTutorAsHead(sessionId: string, reason: unknown, kind: 'CORRECTION' | 'INCOMPLETE', scope: MentoringScope, now: Date = new Date()) {
+    if (!scope.perms.has('mentoring.record.correct') || !scope.all) throw new ForbiddenException('Only the Mentoring Head can return a record for correction.');
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const found = await tx.mentoringClassSession.findUnique({ where: { id: sessionId } });
+      if (!found) throw new NotFoundException('Class not found');
+      const activation = await loadLockedActivation(tx, found.activationId);
+      if (!(await tx.mentoringActivation.findFirst({ where: { AND: [{ id: found.activationId }, this.access.visibilityWhere(scope)] } }))) throw new NotFoundException('Class not found');
+      this.requireEligible(activation);
+      const session = (await tx.mentoringClassSession.findUnique({ where: { id: sessionId } })) as SessionRow;
+      return this.applyReturn(tx, session, activation, reason, kind, scope.userId, now, true);
+    });
+  }
+
+  private async applyReturn(tx: PrismaTxClient, session: SessionRow, activation: { id: string }, reason: unknown, kind: 'CORRECTION' | 'INCOMPLETE', actorUserId: string, now: Date, byHead: boolean) {
+    const sessionId = session.id;
+    const fromStatus: string = session.status;
+    if (!MENTOR_CAN_REVIEW.includes(session.status)) throw new ConflictException('Only an update waiting for review can be returned.');
+    const why = typeof reason === 'string' ? reason.trim() : '';
+    if (!why) throw new BadRequestException(kind === 'INCOMPLETE' ? 'Say what is missing from the update.' : 'Say what the tutor needs to correct.');
+    if (why.length > 1000) throw new BadRequestException('The reason must be 1000 characters or fewer.');
+    await tx.mentoringClassSession.update({ where: { id: sessionId }, data: { status: 'RETURNED_FOR_CORRECTION', returnedReason: why, returnedKind: kind } });
+    // The update is going to change, so a decision made on the old one no longer stands.
+    await this.invalidateException(tx, session, actorUserId, 'The update was returned for correction.');
+    // The reviewer has acted, so the review clock stops; the tutor's correction starts the next one.
+    for (const key of ['CLASS_UPDATE_REVIEW', 'RETURNED_UPDATE_ACTION']) await this.sla.complete(tx, key, ENTITY, sessionId, now);
+    await this.notify(tx, session.tutorUserId, 'MENTORING_CLASS_RETURNED', sessionId, `Your class update was returned${byHead ? ' by the Mentoring Head' : ''}: ${why}`, `class-returned:${sessionId}:${await this.seq(tx, sessionId)}`, '/tutor-portal');
+    await this.logEvent(tx, sessionId, kind === 'INCOMPLETE' ? 'MARKED_INCOMPLETE' : 'RETURNED_FOR_CORRECTION', actorUserId, { reason: why, from: fromStatus, to: 'RETURNED_FOR_CORRECTION', ...(byHead ? { payload: { byHead: true } } : {}) });
+    await this.history.record(tx, { activationId: activation.id, type: 'MENTORING_CLASS_RETURNED', actorUserId, reason: why, payload: { sessionId, kind, ...(byHead ? { byHead: true } : {}) } });
+    return { sessionId, status: 'RETURNED_FOR_CORRECTION' as const };
   }
 
   /**

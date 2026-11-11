@@ -38,7 +38,7 @@ function world() {
   db.seed('lead', { id: 'lead-1' });
   db.seed('student', { id: 'stu-1', firstName: 'Synthetic', lastName: 'Student A' });
   db.seed('enrollmentHandover', { id: 'ho-1', status: 'COMPLETED' });
-  db.seed('mentoringActivation', { id: 'act-1', leadId: 'lead-1', studentId: 'stu-1', handoverId: 'ho-1', status: 'ACTIVATION_IN_PROGRESS', currentStage: 5, currentMentorUserId: 'mentor-1' });
+  db.seed('mentoringActivation', { id: 'act-1', leadId: 'lead-1', studentId: 'stu-1', handoverId: 'ho-1', status: 'ACTIVATED', currentStage: 5, currentMentorUserId: 'mentor-1' });
   db.seed('mentoringStage', { activationId: 'act-1', stageNumber: 5, key: 'INDIVIDUAL_LEARNING_PLAN', status: 'IN_PROGRESS' });
   db.seed('enrollmentHandoverField', { handoverId: 'ho-1', fieldKey: 'timetable.schedule', value: SCHEDULE, origin: 'MENTOR_COLLECTED', updatedByUserId: 'mentor-1' });
   db.seed('employee', { id: 'e-1', userId: 'mentor-1', firstName: 'Mira', lastName: 'Mentor' });
@@ -53,7 +53,11 @@ function world() {
   const service = new MentoringReviewService(db as any, access, history, plans, sla);
 
   const savePlans = async () => {
+    // The learning plan is written during activation (stage 5); the monthly review runs once the student is Active.
+    const activation = db.rows('mentoringActivation')[0];
+    activation.status = 'ACTIVATION_IN_PROGRESS';
     for (const [id, name] of [['sub-ma', 'Mathematics'], ['sub-en', 'English']]) await plans.saveSubject('act-1', id, plan(name), 'mentor-1');
+    activation.status = 'ACTIVATED';
   };
   const schedule = async (date = MEETING, extra: object = {}) => (await service.schedule('act-1', { date, ...extra }, 'mentor-1', NOW)).meetingId;
   const ready = async () => { await savePlans(); return schedule(); };
@@ -604,5 +608,26 @@ describe('the routes', () => {
     expect(controller).not.toMatch(/tutor-portal|tutor\.portal/);
     const service = readFileSync(join(__dirname, 'mentoring-review.service.ts'), 'utf8');
     expect(service).not.toMatch(/tutorPayable|tutorClassRecord|paymentStatus|mentoringClassSession\.(create|update)/);
+  });
+});
+
+describe('monthly meetings need an Active student (step 1 eligibility)', () => {
+  it('does not schedule a meeting for a student who is not Active, and says why', async () => {
+    for (const [status, why] of [['ACTIVATION_IN_PROGRESS', 'has not been activated yet'], ['PENDING_FINAL_APPROVAL', 'has not been activated yet'], ['ACTIVATION_ON_HOLD', 'is paused'], ['CANCELLED', 'was cancelled']] as Array<[string, string]>) {
+      const w = world();
+      await w.savePlans();
+      w.db.rows('mentoringActivation')[0].status = status;
+      await expect(w.service.schedule('act-1', { date: MEETING }, 'mentor-1', NOW)).rejects.toThrow(why);
+      expect(w.db.rows('mentoringReviewMeeting')).toHaveLength(0);
+    }
+  });
+
+  it('shows an Active student as workable and a paused one as read only, with the records kept', async () => {
+    const w = world();
+    const id = await w.ready();
+    expect((await w.view()).canWork).toBe(true);
+    w.db.rows('mentoringActivation')[0].status = 'ACTIVATION_ON_HOLD';
+    expect((await w.view()).canWork).toBe(false);
+    expect(w.db.rows('mentoringReviewMeeting').map((m) => m.id)).toEqual([id]);
   });
 });

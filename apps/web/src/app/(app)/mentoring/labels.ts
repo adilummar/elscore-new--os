@@ -112,6 +112,7 @@ export const PERMISSION_PHRASES: Record<string, string> = {
   'mentoring.stage.work': 'work on stages',
   'mentoring.complaint.handle': 'handle parent complaints',
   'mentoring.template.manage': 'edit class message templates',
+  'mentoring.record.correct': 'return or correct Mentoring records',
   'mentoring.workflow.pause': 'pause or resume the workflow',
   'mentoring.approval.final': 'give final activation approval',
   'mentoring.allocation.manage': 'allocate students',

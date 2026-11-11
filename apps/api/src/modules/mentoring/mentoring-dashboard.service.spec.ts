@@ -46,7 +46,8 @@ function world(extraStudents = 0) {
   const student = (id: string, first: string, last: string, mentor: string, businessId: string, subject = 'sub-en') => {
     db.seed('lead', { id: `lead-${id}` });
     db.seed('student', { id: `stu-${id}`, firstName: first, lastName: last, businessId });
-    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATION_IN_PROGRESS', currentMentorUserId: mentor });
+    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', currentMentorUserId: mentor });
+    db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });
     db.seed('enrollmentHandoverField', { handoverId: `ho-${id}`, fieldKey: 'timetable.schedule', value: { version: 2, subjects: [{ subjectId: subject, subjectName: subject }] }, origin: 'MENTOR_COLLECTED', updatedByUserId: mentor });
     const a = db.seed('mentoringTutorAssignment', { id: `as-class-${id}`, activationId: `act-${id}`, subjectId: subject, tutorProfileId: 'tp-meera', status: 'ACTIVE', currentKey: `act-${id}:${subject}`, startDate: day(MON), endDate: null });
     db.seed('mentoringTutorAssignmentSession', { assignmentId: a.id, tutorProfileId: 'tp-meera', dayOfWeek: 1, frequency: 'WEEKLY', week: null, occurrences: [], startMinute: m('15:00'), endMinute: m('16:00') });
