@@ -14,6 +14,7 @@ import { MentoringOverviewService } from './mentoring-overview.service';
 import { MentoringReminderService } from './mentoring-reminder.service';
 import { MentoringSlaService } from './mentoring-sla.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
+import { makeVerifyLenient } from './testing/class-workspace-fixture';
 import { FakeDb } from './testing/mentoring-fake-db';
 
 const at = (date: string, time: string) => new Date(`${date}T${time}:00+05:30`);
@@ -64,6 +65,7 @@ function world(extra = 0) {
   let n = 0;
   const ids = { nextIdInTx: jest.fn(() => Promise.resolve(`TCR-${String(++n).padStart(7, '0')}`)) };
   const classes = new MentoringClassService(db as any, access, history, sla, reminders, ids as any, new MentoringTutorService(db as any, history));
+  makeVerifyLenient(classes, db);
   const exams = new MentoringExamService(db as any, access, history, reminders, sla);
   const complaints = new MentoringComplaintService(db as any, access, history, sla);
   const dash = new MentoringDashboardService(db as any, access, classes, exams, complaints, sla);

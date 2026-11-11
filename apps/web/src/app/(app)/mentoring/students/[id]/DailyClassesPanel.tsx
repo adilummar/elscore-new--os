@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/Select';
 import {
   ClassItem, DailyData, STATE_CHOICES, STATE_TONE, TUTOR_CONFIRMATION_LABELS, VERIFICATION_LABELS, activityLabel, hoursText, timeLabel,
 } from '../../class-view';
+import { ClassWorkspaceDrawer } from '../../ClassWorkspaceDrawer';
 import { mentoringApi } from '../../mentoring-client';
 import { addDays, dayLabel, longDayLabel } from '../../timetable-view';
 
@@ -27,9 +28,10 @@ interface CardProps {
   onSend: () => void;
   onReschedule: () => void;
   onReview: () => void;
+  onWorkspace?: () => void;
 }
 
-export function ClassCard({ c, canWork, busy = false, onPrepare, onSend, onReschedule, onReview }: CardProps) {
+export function ClassCard({ c, canWork, busy = false, onPrepare, onSend, onReschedule, onReview, onWorkspace }: CardProps) {
   const remindable = c.status === 'SCHEDULED' || c.status === 'RESCHEDULED' || c.status === 'RETURNED_FOR_CORRECTION';
   const reviewable = c.sessionId !== null && ['AWAITING_MENTOR_VERIFICATION', 'RETURNED_FOR_CORRECTION', 'VERIFIED', 'NOT_CONDUCTED'].includes(c.status);
   return (
@@ -58,6 +60,7 @@ export function ClassCard({ c, canWork, busy = false, onPrepare, onSend, onResch
           {reviewable && <Button type="button" size="sm" disabled={busy} onClick={onReview}>{c.status === 'AWAITING_MENTOR_VERIFICATION' ? 'Review and verify' : 'View update'}</Button>}
         </div>
       )}
+      {onWorkspace && c.status !== 'CANCELLED' && <div className="mt-2"><Button type="button" size="sm" variant="outline" onClick={onWorkspace}>Open class workspace</Button></div>}
       {!canWork && reviewable && <div className="mt-2"><Button type="button" size="sm" variant="outline" onClick={onReview}>View update</Button></div>}
     </article>
   );
@@ -113,6 +116,13 @@ export function ClassReview({ c, canWork, busy = false, error = null, onClose, o
       <ul className="mt-3 space-y-0.5 text-sm" aria-label="Review checklist">
         {c.checklist.map((i) => <li key={i.key} data-done={i.done}><span className="font-medium">{i.label}</span>: {i.detail}</li>)}
       </ul>
+      {(c.blockers ?? []).length > 0 && waiting && (
+        <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900" data-testid="verify-blockers">
+          <p className="mb-0.5 font-medium">This class cannot be verified yet</p>
+          <ul role="list" aria-label="What is missing" className="space-y-0.5">{(c.blockers ?? []).map((b) => <li key={b}>{b}</li>)}</ul>
+          <p className="mt-1">Open the class workspace to add what is missing, or ask the Mentoring Head for an exception.</p>
+        </div>
+      )}
       {(c.warnings ?? []).length > 0 && waiting && (
         <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <p className="mb-0.5 font-medium">Before you verify</p>
@@ -141,7 +151,7 @@ export function ClassReview({ c, canWork, busy = false, error = null, onClose, o
                 </div>
               )}
               <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" isLoading={busy} disabled={busy || (differs && !reason.trim())} onClick={() => onVerify(u.conducted ? Number(minutes) : null, reason)}>{u.conducted ? 'Verify class' : 'Confirm class not conducted'}</Button>
+                <Button type="button" size="sm" isLoading={busy} disabled={busy || (differs && !reason.trim()) || (!!u.conducted && (c.blockers ?? []).length > 0)} onClick={() => onVerify(u.conducted ? Number(minutes) : null, reason)}>{u.conducted ? 'Verify class' : 'Confirm class not conducted'}</Button>
               </div>
               <label className="block text-sm"><span className="mb-1 block font-medium text-slate-700">Reason to send it back</span><textarea className={AREA} rows={2} value={returnReason} onChange={(e) => setReturnReason(e.target.value)} /></label>
               <div className="flex flex-wrap gap-2">
@@ -213,6 +223,7 @@ export function DailyClassesPanel({ activationId }: { activationId: string }) {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [reviewing, setReviewing] = React.useState<ClassItem | null>(null);
   const [moving, setMoving] = React.useState<ClassItem | null>(null);
+  const [workspace, setWorkspace] = React.useState<string | null>(null);
   const base = `/mentoring/students/${activationId}/classes`;
 
   const query = React.useMemo(() => `date=${date}${subjectId ? `&subjectId=${encodeURIComponent(subjectId)}` : ''}${tutorProfileId ? `&tutorProfileId=${encodeURIComponent(tutorProfileId)}` : ''}${state ? `&state=${state}` : ''}`, [date, subjectId, tutorProfileId, state]);
@@ -293,9 +304,11 @@ export function DailyClassesPanel({ activationId }: { activationId: string }) {
             onSend={() => act(c.key, () => mentoringApi('/mentoring/classes/remind/send', 'POST', { key: c.key }), 'Reminder sent to the tutor.')}
             onReschedule={() => { setActionError(null); setMoving(c); }}
             onReview={() => void openReview(c)}
+            onWorkspace={() => setWorkspace(workspace === c.key ? null : c.key)}
           />
         ))}
       </div>
+      {workspace && <ClassWorkspaceDrawer role="MENTOR" classKey={workspace} onClose={() => setWorkspace(null)} onChanged={() => void load()} />}
       {moving && (
         <RescheduleForm c={moving} busy={busy !== null} error={actionError} onCancel={() => setMoving(null)}
           onSubmit={(v) => act(moving.key, () => mentoringApi('/mentoring/classes/reschedule', 'POST', { key: moving.key, ...v }), 'The class was moved and the tutor was told.', async () => setMoving(null))} />

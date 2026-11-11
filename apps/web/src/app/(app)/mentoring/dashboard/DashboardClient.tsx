@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import {
-  COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, CLASS_STATES, Card, DashFilters, DashRow, EXAM_STATES, GROUPS, MEETING_STATES, PERIODS, PRIORITIES, Records, SLA_STATES, Summary, attention, emptyFilters, filtersActive, hrefOf, pageText, queryOf,
+  COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, CLASS_STATES, Card, DashFilters, DashRow, EXAM_STATES, GROUPS, MEETING_STATES, PERIODS, PRIORITIES, Records, SLA_STATES, Summary, attention, classCardHref, emptyFilters, filtersActive, hrefOf, pageText, queryOf,
 } from '../dashboard-view';
 import { mentoringApi } from '../mentoring-client';
 import { dayLabel } from '../timetable-view';
@@ -39,20 +39,30 @@ export function FilterBar({ f, onChange, onClear }: { f: DashFilters; onChange: 
   );
 }
 
-export function CardGrid({ summary, selected, onOpen }: { summary: Summary; selected: string | null; onOpen: (c: Card) => void }) {
+export function CardGrid({ summary, selected, onOpen, filters }: { summary: Summary; selected: string | null; onOpen: (c: Card) => void; filters?: DashFilters }) {
   return (
     <div className="space-y-4" data-testid="card-grid">
       {GROUPS.map(([group, label]) => (
         <section key={group} aria-label={label}>
           <h2 className="mb-1 text-sm font-semibold text-slate-900">{label}</h2>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {summary.cards.filter((c) => c.group === group).map((c) => (
+            {summary.cards.filter((c) => c.group === group).map((c) => {
+              const href = filters ? classCardHref(c, summary, filters) : null;
+              const body = (
+                <>
+                  <span className={`block text-2xl font-semibold ${c.count > 0 && attention(c.key) ? 'text-amber-700' : 'text-slate-900'}`}>{c.count}</span>
+                  <span className="block text-xs text-slate-600">{c.label}</span>
+                </>
+              );
+              // A daily class card opens the Daily classes page on the same dates, card and filters.
+              if (href) return <Link key={c.key} href={href} data-testid="dash-card" data-key={c.key} data-count={c.count} data-href={href} className="rounded-md border border-slate-200 bg-white p-3 text-left hover:border-brand-500">{body}</Link>;
+              return (
               <button key={c.key} type="button" onClick={() => onOpen(c)} aria-pressed={selected === c.key} data-testid="dash-card" data-key={c.key} data-count={c.count}
                 className={`rounded-md border p-3 text-left ${selected === c.key ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-brand-500'}`}>
-                <span className={`block text-2xl font-semibold ${c.count > 0 && attention(c.key) ? 'text-amber-700' : 'text-slate-900'}`}>{c.count}</span>
-                <span className="block text-xs text-slate-600">{c.label}</span>
+                {body}
               </button>
-            ))}
+              );
+            })}
           </div>
         </section>
       ))}
@@ -139,12 +149,13 @@ export function DashboardClient({ initialCard }: { initialCard?: string } = {}) 
     <div className="mx-auto max-w-6xl space-y-4" data-testid="mentor-dashboard">
       <header>
         <h1 className="text-2xl font-bold text-slate-900">Mentor dashboard</h1>
+        <Link href="/mentoring/classes" className="text-sm font-medium text-brand-700 hover:underline" data-testid="daily-class-list-link">Open the daily class list</Link>
         {summary && <p className="text-sm text-slate-600">Today is {dayLabel(summary.today)}.{summary.window ? ` Showing ${dayLabel(summary.window.from)} to ${dayLabel(summary.window.to)}.` : ''} Each number is counted by the server for the students you may see.</p>}
       </header>
       <FilterBar f={filters} onChange={setFilters} onClear={() => setFilters(emptyFilters())} />
       {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {!summary && !error && <p className="text-sm text-slate-500">Loading the dashboard</p>}
-      {summary && <CardGrid summary={summary} selected={selected?.key ?? null} onOpen={(c) => { setRecords(null); setSelected(c); }} />}
+      {summary && <CardGrid summary={summary} selected={selected?.key ?? null} onOpen={(c) => { setRecords(null); setSelected(c); }} filters={filters} />}
       {selected && records && <RecordTable data={records} onPage={setPage} />}
       {summary && <NotRecorded items={summary.notRecorded} />}
     </div>

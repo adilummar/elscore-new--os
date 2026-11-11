@@ -10,7 +10,7 @@ import { mentoringApi } from '../../mentoring-client';
 import { formatRange } from '../../tutor-availability';
 import {
   ASSIGNMENT_LABELS, CLASS_STATUS_LABELS, STATUS_LABELS, TimetableData, TimetableEvent, TimetableViewName, colourFor, countsAsClass, dayLabel, datesOf, eventsOn, hourSpan, hoursText,
-  longDayLabel, monthWeeks, periodTitle, placeDay, shiftDate, weekdayName,
+  longDayLabel, monthWeeks, periodTitle, placeDay, recordLabel, shiftDate, weekdayName,
 } from '../../timetable-view';
 
 const todayIso = () => {
@@ -50,7 +50,7 @@ export function SummaryCards({ data }: { data: TimetableData }) {
 // ─── One class ───────────────────────────────────────────────────────────────────────────────────────────────────
 function EventCard({ e, data, onOpen, compact, selected }: { e: TimetableEvent; data: TimetableData; onOpen: (e: TimetableEvent) => void; compact?: boolean; selected?: boolean }) {
   const colour = colourFor(e.subjectId, subjectIdsOf(data));
-  const gone = !countsAsClass(e);
+  const gone = !countsAsClass(e) || e.classRecordStatus === 'CANCELLED';
   const bad = e.problems.length > 0 && !gone;
   return (
     <button
@@ -66,6 +66,7 @@ function EventCard({ e, data, onOpen, compact, selected }: { e: TimetableEvent; 
       <span className="block">{e.tutorName ?? 'No tutor'}</span>
       <span className="block text-slate-700">{formatRange(e.startMinute, e.endMinute)}{compact ? '' : `, ${hoursText(e.durationMinutes)}`}</span>
       {!compact && <span className="block text-xs text-slate-600">{e.gradeName}{e.classStatus !== 'SCHEDULED' ? `, ${CLASS_STATUS_LABELS[e.classStatus]}` : ''}</span>}
+      {!compact && recordLabel(e) && <span className="block text-xs text-slate-600" data-testid="record-state">{recordLabel(e)}</span>}
       {bad && <span className="block text-xs font-medium text-red-700">{e.overlaps.length ? 'Overlaps another class' : 'Needs attention'}</span>}
     </button>
   );
@@ -186,6 +187,7 @@ export function EventDetails({ e, data, onClose }: { e: TimetableEvent; data: Ti
     ['Tutor assignment', ASSIGNMENT_LABELS[e.assignmentState]],
     ['Tutor availability', e.availability ? (e.availability.status === 'AVAILABLE' ? 'Confirmed for this date' : e.availability.reason) : 'Not checked, no tutor'],
     ['Class status', CLASS_STATUS_LABELS[e.classStatus]],
+    ...(recordLabel(e) ? [['Class record', recordLabel(e)] as [string, React.ReactNode]] : []),
   ];
   return (
     <aside aria-label="Class details" className="rounded-md border border-slate-200 bg-white p-3" data-testid="event-details">

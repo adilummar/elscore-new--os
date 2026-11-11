@@ -29,13 +29,15 @@ const UNIQUE: Record<string, string[][]> = {
   mentoringExamItem: [['examId', 'kind']],
   mentoringReviewTutorNote: [['meetingId', 'subjectId']],
   mentoringReviewNextPlan: [['meetingId', 'subjectId']],
+  mentoringMessageTemplate: [['key']],
+  mentoringClassAttachment: [['fileKey']],
 };
 
 const DEFAULTS: Record<string, () => Row> = {
   tutorAvailabilityException: () => ({ isActive: true, deactivatedAt: null }),
   mentoringReminder: () => ({ status: 'PREPARED', preparedAt: new Date(), scheduledFor: null, sentAt: null, sentByUserId: null, notificationId: null, acknowledgedAt: null }),
   mentoringSlaItem: () => ({ status: 'OPEN', firstResponseAt: null, completedAt: null }),
-  mentoringClassSession: () => ({ status: 'SCHEDULED', activities: [], conducted: null, actualStartMinute: null, actualEndMinute: null, actualMinutes: null, subjectCovered: null, topicsCovered: null, attendance: null, participation: null, classNotes: null, notConductedReason: null, otherActivity: null, evaluationRemarks: null, coveredRemarks: null, voiceSentAt: null, voiceReceivedAt: null, voiceReceivedByUserId: null, voiceRemarks: null, tutorSubmittedAt: null, tutorSubmittedByUserId: null, mentorRemarks: null, returnedReason: null, returnedKind: null, verifiedAt: null, verifiedByUserId: null, verifiedMinutes: null, tutorClassRecordId: null }),
+  mentoringClassSession: () => ({ status: 'SCHEDULED', activities: [], conducted: null, actualStartMinute: null, actualEndMinute: null, actualMinutes: null, subjectCovered: null, topicsCovered: null, attendance: null, participation: null, classNotes: null, notConductedReason: null, otherActivity: null, evaluationRemarks: null, coveredRemarks: null, voiceSentAt: null, voiceReceivedAt: null, voiceReceivedByUserId: null, voiceRemarks: null, tutorSubmittedAt: null, tutorSubmittedByUserId: null, mentorRemarks: null, returnedReason: null, returnedKind: null, verifiedAt: null, verifiedByUserId: null, verifiedMinutes: null, tutorClassRecordId: null, meetLink: null, cancelledAt: null, cancelledByUserId: null, cancelReason: null, exceptionStatus: null, exceptionRequestedAt: null, exceptionRequestedByUserId: null, exceptionReason: null, exceptionDecidedAt: null, exceptionDecidedByUserId: null, exceptionDecisionNote: null }),
   mentoringExam: () => ({ kind: 'EXAM', originalExamId: null, chapters: [], portion: null, responsibleUserId: null, responsibleName: null, tutorUserId: null, instructions: null, dateKey: null, conducted: null, conductedAt: null, conductedByUserId: null, notConductedReason: null, informedAt: null, informedByUserId: null, informedNote: null, reExamRequired: false, reExamReason: null, marksObtained: null, maxMarks: null, percentage: null, evaluatingTutorUserId: null, evaluationDate: null, marksRecordedAt: null, marksRecordedByUserId: null, weaknesses: null, topicsToImprove: null, tutorSuggestions: null, mentorRemarks: null }),
   mentoringExamItem: () => ({ status: 'PENDING', responsible: null, remarks: null, evidenceRef: null, updatedByUserId: null, doneAt: null }),
   mentoringExamEvent: () => ({ actorUserId: null, reason: null, payload: null }),
@@ -54,6 +56,10 @@ const DEFAULTS: Record<string, () => Row> = {
     priority: 'NORMAL', subjectId: null, tutorUserId: null, supportingNote: null, status: 'NEW', assignedToUserId: null, assignedAt: null, escalatedAt: null, acknowledgedAt: null, acknowledgedByUserId: null, acknowledgedChannel: null, acknowledgedNote: null, firstResponseAt: null,
     resolvedAt: null, resolvedByUserId: null, resolutionDate: null, resolutionRemarks: null, resolutionHow: null, parentCommunication: null, parentCommunicationNote: null, reopenCount: 0, lastReopenedAt: null, loggedAt: new Date(),
   }),
+  mentoringClassActivity: () => ({ position: 0, typeDescription: null, topic: null, dueDate: null, sharedAt: null, sharedByUserId: null, studentResponse: null, respondedAt: null, respondedByUserId: null, completion: 'PENDING', completionUpdatedAt: null, completionUpdatedByUserId: null, tutorRemarks: null, mentorRemarks: null, removedAt: null, removedByUserId: null }),
+  mentoringClassAttachment: () => ({ kind: 'VOICE', sharedAt: null, sharedByUserId: null, mentorVerifiedAt: null, mentorVerifiedByUserId: null, mentorRemarks: null, supersededAt: null }),
+  mentoringMessageTemplate: () => ({ isActive: true, placeholders: [] }),
+  mentoringMessageShare: () => ({ copiedAt: null, copiedByUserId: null, confirmedAt: null, confirmedByUserId: null }),
   mentoringComplaintEntry: () => ({ visibility: 'INTERNAL', text: null, actorUserId: null, payload: null }),
   tutorSubject: () => ({ isActive: true }),
   tutorGrade: () => ({ isActive: true }),

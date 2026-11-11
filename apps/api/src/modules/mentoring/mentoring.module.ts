@@ -8,6 +8,8 @@ import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringAllocationController } from './mentoring-allocation.controller';
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { MentoringClassController } from './mentoring-class.controller';
+import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
+import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
 import { MentoringClassService } from './mentoring-class.service';
 import { MentoringComplaintController } from './mentoring-complaint.controller';
 import { MentoringComplaintService } from './mentoring-complaint.service';
@@ -26,6 +28,7 @@ import { MentoringReviewController } from './mentoring-review.controller';
 import { MentoringReviewService } from './mentoring-review.service';
 import { MentoringSlaService } from './mentoring-sla.service';
 import { MentoringStaffService } from './mentoring-staff.service';
+import { MentoringStorageService } from './mentoring-storage.service';
 import { MentoringTaskController } from './mentoring-task.controller';
 import { MentoringTaskService } from './mentoring-task.service';
 import { MentoringTimetableService } from './mentoring-timetable.service';
@@ -36,7 +39,7 @@ import { TutorClassesController } from './tutor-classes.controller';
 
 @Module({
   imports: [PrismaModule, AuditModule, RbacModule],
-  controllers: [MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController],
+  controllers: [MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
   providers: [
     MentoringHandoverService,
     MentoringAccessService,
@@ -55,6 +58,8 @@ import { TutorClassesController } from './tutor-classes.controller';
     MentoringComplaintService,
     MentoringDashboardService,
     MentoringOverviewService,
+    MentoringStorageService,
+    MentoringClassWorkspaceService,
     MentoringWorkflowService,
   ],
   exports: [MentoringHandoverService],

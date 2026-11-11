@@ -52,7 +52,7 @@ export const filtersActive = (f: DashFilters) => Object.values(f).some((v) => v 
 
 export const CLASS_STATES: Array<[string, string]> = [
   ['SCHEDULED', 'Scheduled'], ['REMINDER_PENDING', 'Reminder pending'], ['REMINDER_SENT', 'Reminder sent'], ['AWAITING_TUTOR_UPDATE', 'Awaiting tutor update'], ['AWAITING_MENTOR_VERIFICATION', 'Awaiting Mentor verification'],
-  ['RETURNED_FOR_CORRECTION', 'Returned for correction'], ['VERIFIED', 'Verified'], ['NOT_CONDUCTED', 'Not conducted'], ['RESCHEDULED', 'Rescheduled'],
+  ['RETURNED_FOR_CORRECTION', 'Returned for correction'], ['VERIFIED', 'Verified'], ['NOT_CONDUCTED', 'Not conducted'], ['RESCHEDULED', 'Rescheduled'], ['CANCELLED', 'Cancelled'],
 ];
 export const EXAM_STATES: Array<[string, string]> = [
   ['SCHEDULED', 'Scheduled'], ['REMINDER_PENDING', 'Reminder pending'], ['READY_FOR_EXAM', 'Ready for exam'], ['RESCHEDULED', 'Rescheduled'], ['AWAITING_PAPER_COLLECTION', 'Awaiting paper collection'], ['AWAITING_EVALUATION', 'Awaiting evaluation'],
@@ -64,6 +64,27 @@ export const COMPLAINT_STATUSES: Array<[string, string]> = [['NEW', 'New'], ['AC
 export const PRIORITIES: Array<[string, string]> = [['LOW', 'Low'], ['NORMAL', 'Normal'], ['HIGH', 'High'], ['URGENT', 'Urgent']];
 export const SLA_STATES: Array<[string, string]> = [['WITHIN_SLA', 'Within SLA'], ['APPROACHING', 'Approaching SLA'], ['BREACHED', 'SLA breached'], ['RESOLVED', 'Resolved']];
 export const PERIODS: Array<[string, string]> = [['day', 'Day'], ['week', 'Week'], ['month', 'Month']];
+
+/** The daily class cards. Each opens the Daily classes page on exactly the classes it counted. */
+export const CLASS_CARD_KEYS: readonly string[] = ['classes_today', 'classes_upcoming', 'classes_awaiting_update', 'classes_awaiting_verification', 'classes_verified', 'classes_not_conducted', 'classes_rescheduled', 'classes_voice_pending', 'classes_conducted', 'classes_awaiting_activities', 'classes_cancelled'];
+
+const plusDays = (iso: string, n: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * The Daily classes address for a card: the dates the dashboard counted over (its window, or today and the next seven days when it
+ * has none), the card itself, and the filters the dashboard had, so the list matches the number on the card. Null for any other card.
+ * The Mentor filter is passed on when one is known; the dashboard shows each Mentor their own students and the Head everyone.
+ */
+export function classCardHref(card: Pick<Card, 'key'>, summary: Pick<Summary, 'today' | 'window'>, f: Pick<DashFilters, 'classState' | 'studentQuery'>, mentorUserId = ''): string | null {
+  if (!CLASS_CARD_KEYS.includes(card.key)) return null;
+  const w = summary.window ?? { from: summary.today, to: plusDays(summary.today, 7) };
+  const parts: Array<[string, string]> = [['from', w.from], ['to', w.to], ['card', card.key], ['state', f.classState], ['studentQuery', f.studentQuery], ['mentorUserId', mentorUserId]];
+  return `/mentoring/classes?${parts.filter(([, v]) => v !== '').map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
+}
 
 /** Where a record opens: the student page, on the panel that holds it. */
 export function hrefOf(r: Pick<DashRow, 'activationId' | 'panel'>): string | null {

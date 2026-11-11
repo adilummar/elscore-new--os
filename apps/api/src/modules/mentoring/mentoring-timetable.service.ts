@@ -108,7 +108,13 @@ export class MentoringTimetableService {
       return calendar ? checkWindow(resolveDay(calendar, date), start, end) : null;
     };
 
-    const events = buildEvents({ subjects, assignments, overrides, from: period.from, to: period.to, availabilityOf });
+    const built = buildEvents({ subjects, assignments, overrides, from: period.from, to: period.to, availabilityOf });
+    // Read what happened to each class from the same stored record the tutor's views read, so both always agree on what is consumed.
+    const stored = built.length ? await db.mentoringClassSession.findMany({ where: { activationId, date: { gte: new Date(`${period.from}T00:00:00Z`), lte: new Date(`${period.to}T00:00:00Z`) } } }) : [];
+    const events = built.map((e) => {
+      const rec = stored.find((x) => x.subjectId === e.subjectId && day(x.date) === e.date && x.startMinute === e.startMinute);
+      return { ...e, consumption: rec?.status === 'VERIFIED' && (rec.verifiedMinutes ?? 0) > 0 ? ('CONSUMED' as const) : ('NOT_CONSUMED' as const), classRecordStatus: rec?.status ?? null, sessionId: rec?.id ?? null };
+    });
     const warnings = subjectWarnings(subjects, assignments);
     const summary = summarise(subjects, assignments, events, warnings);
     const stage = activation.stages.find((s) => s.stageNumber === TIMETABLE_STAGE);

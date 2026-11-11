@@ -4502,6 +4502,8 @@ enum MentoringClassStatus {
   RETURNED_FOR_CORRECTION
   VERIFIED
   NOT_CONDUCTED
+  /// A class the Mentor cancelled, with a reason. It stays on the schedule as history and is never consumed.
+  CANCELLED
 }
 
 /// One class on one date. It is created the first time something happens to a scheduled class (a reminder, a tutor update),
@@ -4561,18 +4563,134 @@ model MentoringClassSession {
   /// The tutor class record made on verification. The payroll flow already reads these.
   tutorClassRecordId  String?               @map("tutor_class_record_id")
 
+  /// The common Google Meet link of this class, when there is one.
+  meetLink            String?               @map("meet_link")
+  /// Cancellation: who, when and why. The scheduled slot is kept.
+  cancelledAt         DateTime?             @map("cancelled_at")
+  cancelledByUserId   String?               @map("cancelled_by_user_id")
+  cancelReason        String?               @map("cancel_reason") @db.Text
+  /// An exception to the voice and activity conditions of verification: requested by the Mentor, decided by the Mentoring Head.
+  exceptionStatus     String?               @map("exception_status")
+  exceptionRequestedAt DateTime?            @map("exception_requested_at")
+  exceptionRequestedByUserId String?        @map("exception_requested_by_user_id")
+  exceptionReason     String?               @map("exception_reason") @db.Text
+  exceptionDecidedAt  DateTime?             @map("exception_decided_at")
+  exceptionDecidedByUserId String?          @map("exception_decided_by_user_id")
+  exceptionDecisionNote String?             @map("exception_decision_note") @db.Text
+
   createdAt           DateTime              @default(now()) @map("created_at")
   updatedAt           DateTime              @updatedAt @map("updated_at")
 
   activation  MentoringActivation @relation(fields: [activationId], references: [id], onDelete: Restrict)
   events      MentoringClassSessionEvent[]
   adjustments MentoringClassCompensationAdjustment[]
+  activityItems MentoringClassActivity[]
+  attachments   MentoringClassAttachment[]
+  shares        MentoringMessageShare[]
 
   @@unique([assignmentId, originalDate, originalStartMinute])
   @@index([activationId, date])
   @@index([tutorUserId, date])
   @@index([status, date])
   @@map("mentoring_class_sessions")
+}
+
+/// One post-class activity of one class. A class needs at least three before it can be verified. What the student did with it is
+/// recorded separately and never blocks verification. Removing one keeps the row (removed_at) so history is not lost.
+model MentoringClassActivity {
+  id                       String    @id @default(uuid())
+  sessionId                String    @map("session_id")
+  position                 Int       @default(0)
+  title                    String
+  /// One of the activity types.
+  type                     String
+  typeDescription          String?   @map("type_description")
+  topic                    String?
+  instructions             String    @db.Text
+  dueDate                  DateTime? @map("due_date") @db.Date
+  createdByUserId          String    @map("created_by_user_id")
+  /// The tutor says they shared it in the existing group. Not a delivery.
+  sharedAt                 DateTime? @map("shared_at")
+  sharedByUserId           String?   @map("shared_by_user_id")
+  studentResponse          String?   @map("student_response") @db.Text
+  respondedAt              DateTime? @map("responded_at")
+  respondedByUserId        String?   @map("responded_by_user_id")
+  /// PENDING, IN_PROGRESS, COMPLETED or NOT_COMPLETED.
+  completion               String    @default("PENDING")
+  completionUpdatedAt      DateTime? @map("completion_updated_at")
+  completionUpdatedByUserId String?  @map("completion_updated_by_user_id")
+  tutorRemarks             String?   @map("tutor_remarks") @db.Text
+  mentorRemarks            String?   @map("mentor_remarks") @db.Text
+  removedAt                DateTime? @map("removed_at")
+  removedByUserId          String?   @map("removed_by_user_id")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, removedAt])
+  @@map("mentoring_class_activities")
+}
+
+/// The tutor's voice recording of a class, kept in private storage (file_key is a path inside it, never a public address).
+/// Three separate facts: uploaded (this row), shared (the tutor says they posted it in the group) and verified by the Mentor.
+/// A newer upload supersedes an older one; the older row stays.
+model MentoringClassAttachment {
+  id                     String    @id @default(uuid())
+  sessionId              String    @map("session_id")
+  kind                   String    @default("VOICE")
+  fileKey                String    @unique @map("file_key")
+  fileName               String    @map("file_name")
+  fileSize               Int       @map("file_size")
+  mimeType               String    @map("mime_type")
+  uploadedByUserId       String    @map("uploaded_by_user_id")
+  sharedAt               DateTime? @map("shared_at")
+  sharedByUserId         String?   @map("shared_by_user_id")
+  mentorVerifiedAt       DateTime? @map("mentor_verified_at")
+  mentorVerifiedByUserId String?   @map("mentor_verified_by_user_id")
+  mentorRemarks          String?   @map("mentor_remarks") @db.Text
+  supersededAt           DateTime? @map("superseded_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, supersededAt])
+  @@map("mentoring_class_attachments")
+}
+
+/// A message template, editable by someone with the template permission. A row with the key replaces the built-in one.
+model MentoringMessageTemplate {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  name            String
+  body            String   @db.Text
+  placeholders    String[]
+  isActive        Boolean  @default(true) @map("is_active")
+  updatedByUserId String   @map("updated_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("mentoring_message_templates")
+}
+
+/// A message made from a template for one class, to be pasted by hand into the existing WhatsApp group. Copying is recorded;
+/// sharing is recorded only when a person confirms they did it. There is no delivery record because there is no delivery evidence.
+model MentoringMessageShare {
+  id               String    @id @default(uuid())
+  sessionId        String    @map("session_id")
+  templateKey      String    @map("template_key")
+  text             String    @db.Text
+  preparedByUserId String    @map("prepared_by_user_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  copiedAt         DateTime? @map("copied_at")
+  copiedByUserId   String?   @map("copied_by_user_id")
+  confirmedAt      DateTime? @map("confirmed_at")
+  confirmedByUserId String?  @map("confirmed_by_user_id")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, templateKey])
+  @@map("mentoring_message_shares")
 }
 
 /// Everything that happens to a class, in order: who, when, what it was before and after, and why.

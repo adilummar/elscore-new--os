@@ -81,6 +81,21 @@ export class ExamQueryDto {
   @IsOptional() @IsString() limit?: string;
 }
 
+/** Filters for the daily class list. Each one is checked by the service, which says what is wrong. */
+export class WorkspaceListQueryDto {
+  @IsOptional() @IsString() date?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() card?: string;
+  @IsOptional() @IsString() mentorUserId?: string;
+  @IsOptional() @IsString() studentQuery?: string;
+  @IsOptional() @IsString() tutorProfileId?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() pageSize?: string;
+}
+
 /** Filters for the Mentoring overview. Each one is checked by the service, which says what is wrong. */
 export class OverviewQueryDto {
   @IsOptional() @IsString() period?: string;

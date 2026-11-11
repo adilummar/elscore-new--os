@@ -13,6 +13,7 @@ import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringReminderService } from './mentoring-reminder.service';
 import { MentoringSlaService } from './mentoring-sla.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
+import { makeVerifyLenient } from './testing/class-workspace-fixture';
 import { FakeDb } from './testing/mentoring-fake-db';
 import { TutorClassesController } from './tutor-classes.controller';
 
@@ -68,7 +69,8 @@ function world(opts: { rate?: boolean; extraDays?: boolean } = {}) {
   const service = new MentoringClassService(db as any, access, history, sla, reminders, ids as any, new MentoringTutorService(db as any, history));
   const submit = (date = MON, body: object = good, user = 'u-meera', key = `as-class-1~${date}~${date === MON ? 900 : 900}`, now = at(date, '17:00')) => service.tutorSubmitUpdate(user, key, body, now);
   const session = (id?: string) => db.rows('mentoringClassSession').find((s) => !id || s.id === id)!;
-  return { db, service, sla, reminders, ids, submit, session };
+  const strictVerify = makeVerifyLenient(service, db);
+  return { db, service, sla, reminders, ids, submit, session, strictVerify };
 }
 
 describe("the Mentor's daily class dashboard", () => {
@@ -231,16 +233,18 @@ describe('the tutor class update', () => {
 });
 
 describe('the Mentor review', () => {
-  it('the voice update counts only when the Mentor confirms it arrived, not because the tutor says it was sent', async () => {
+  it('the voice item is done only for a recording that was uploaded and shared, not for a tutor saying it was sent or the Mentor confirming it arrived', async () => {
     const w = world();
     await w.submit(MON, { ...good, voiceSent: true });
-    const before = (await w.service.detail(w.session().id, MENTOR, at(MON, '17:30'))).checklist.find((i) => i.key === 'VOICE')!;
-    expect(before).toMatchObject({ done: false, detail: expect.stringContaining('has not confirmed') });
+    const voice = async (now: string) => (await w.service.detail(w.session().id, MENTOR, at(MON, now))).checklist.find((i) => i.key === 'VOICE')!;
+    expect(await voice('17:30')).toMatchObject({ done: false, detail: 'Not uploaded' });
     await w.service.mentorNotes(w.session().id, { voiceReceived: true, voiceRemarks: 'Clear and complete' }, 'mentor-1', at(MON, '17:40'));
-    const after = (await w.service.detail(w.session().id, MENTOR, at(MON, '17:45'))).checklist.find((i) => i.key === 'VOICE')!;
-    expect(after).toMatchObject({ done: true });
+    expect(await voice('17:45')).toMatchObject({ done: false, detail: 'Not uploaded' });
+    w.db.seed('mentoringClassAttachment', { sessionId: w.session().id, kind: 'VOICE', fileKey: 'k1', fileName: 'v.mp3', fileSize: 10, mimeType: 'audio/mpeg', uploadedByUserId: 'u-meera' });
+    expect(await voice('17:50')).toMatchObject({ done: false, detail: 'Uploaded, sharing in the group not confirmed' });
+    w.db.rows('mentoringClassAttachment')[0].sharedAt = at(MON, '17:55');
+    expect(await voice('18:00')).toMatchObject({ done: true, detail: 'Uploaded and shared in the group' });
     expect(w.session()).toMatchObject({ voiceReceivedByUserId: 'mentor-1', voiceRemarks: 'Clear and complete' });
-    expect(w.session().voiceSentAt).toBeInstanceOf(Date);
   });
 
   it('lets the Mentor add remarks, activities and the two remarks, each on its own, until the class is verified', async () => {

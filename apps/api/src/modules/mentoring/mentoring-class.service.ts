@@ -9,6 +9,7 @@ import {
   ChecklistItem, ClassStatus, DisplayState, Occurrence, ReminderState, STATE_LABELS, TUTOR_CAN_UPDATE, CAN_REMIND, MENTOR_CAN_REVIEW, checkMentorNotes, checkTutorUpdate, checklistOf, displayState,
   occurrencesBetween, parseClassKey, payableAmount, verificationWarnings, MAX_CLASS_MINUTES, CAN_RESCHEDULE,
  OverrideRow, RuleRow } from './class-session';
+import { checkReason, verificationBlockers } from './class-workspace';
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { loadLockedActivation } from './mentoring-guards';
@@ -55,6 +56,17 @@ export interface ClassView {
   returned: { reason: string; kind: string } | null;
   verified: { at: string; minutes: number } | null;
   sla: { state: string; label: string; dueAt: string; overdueMinutes: number } | null;
+  /** The common Meet link of the class, when one was set. */
+  meetLink: string | null;
+  cancelled: { at: string; reason: string } | null;
+  /** The voice recording, in three separate facts: uploaded, shared in the group (a person's word), and verified by the Mentor. */
+  voice: { uploaded: boolean; shared: boolean; sharedAt: string | null; attachmentId: string | null; fileName: string | null; uploadedAt: string | null; mentorVerifiedAt: string | null };
+  activityCounts: { created: number; shared: number; completed: number };
+  exception: { status: string | null; reason: string | null; decisionNote: string | null };
+  /** A class is consumed only after the Mentor verified it. The same row drives the student's and the tutor's views. */
+  consumption: 'CONSUMED' | 'NOT_CONSUMED';
+  /** What stands between this class and its verification. Empty when it can be verified, or when it has not been reported yet. */
+  blockers: string[];
 }
 
 export interface UpdateView {
@@ -78,7 +90,7 @@ export interface UpdateView {
 
 export interface ClassFilters { subjectId?: string; tutorProfileId?: string; status?: string; state?: string; activationId?: string; from?: string; to?: string; limit?: number | string }
 
-type SessionRow = NonNullable<Awaited<ReturnType<PrismaTxClient['mentoringClassSession']['findUnique']>>>;
+export type SessionRow = NonNullable<Awaited<ReturnType<PrismaTxClient['mentoringClassSession']['findUnique']>>>;
 
 /**
  * Daily classes. A class is the tutor assignment's own recurrence for a date; a row is stored only when something happens to
@@ -115,7 +127,7 @@ export class MentoringClassService {
   }
 
   /** The class a key names, only if the assignment's rule really produces it. Nothing else can be reminded, updated or verified. */
-  private async occurrenceForKey(db: PrismaTxClient, key: unknown): Promise<Occurrence> {
+  async occurrenceForKey(db: PrismaTxClient, key: unknown): Promise<Occurrence> {
     const parsed = parseClassKey(key);
     if (!parsed) throw new BadRequestException('That is not a class.');
     const moved = await db.mentoringTutorAssignmentOverride.findMany({ where: { assignmentId: parsed.assignmentId, date: asDate(parsed.originalDate), originalStartMinute: parsed.originalStartMinute } });
@@ -126,7 +138,7 @@ export class MentoringClassService {
     return found;
   }
 
-  private async ensureSession(db: PrismaTxClient, o: Occurrence): Promise<SessionRow> {
+  async ensureSession(db: PrismaTxClient, o: Occurrence): Promise<SessionRow> {
     const existing = await db.mentoringClassSession.findFirst({ where: { assignmentId: o.assignmentId, originalDate: asDate(o.originalDate), originalStartMinute: o.originalStartMinute } });
     if (existing) return existing;
     const profile = await db.tutorProfile.findUnique({ where: { id: o.tutorProfileId } });
@@ -140,7 +152,7 @@ export class MentoringClassService {
     });
   }
 
-  private async logEvent(db: PrismaTxClient, sessionId: string, kind: string, actorUserId: string | null, extra: { reason?: string | null; from?: string | null; to?: string | null; payload?: Record<string, unknown> } = {}) {
+  async logEvent(db: PrismaTxClient, sessionId: string, kind: string, actorUserId: string | null, extra: { reason?: string | null; from?: string | null; to?: string | null; payload?: Record<string, unknown> } = {}) {
     await db.mentoringClassSessionEvent.create({ data: { sessionId, kind, actorUserId, reason: extra.reason ?? null, fromStatus: extra.from ?? null, toStatus: extra.to ?? null, payload: (extra.payload ?? undefined) as never } });
   }
 
@@ -159,6 +171,10 @@ export class MentoringClassService {
       db.mentoringActivation.findMany({ where: { id: { in: activationIds } } }),
       db.subject.findMany({ where: { id: { in: subjectIds } } }),
       db.tutorProfile.findMany({ where: { id: { in: profileIds } } }),
+    ]);
+    const [attachments, activityRows] = await Promise.all([
+      sessionIds.length ? db.mentoringClassAttachment.findMany({ where: { sessionId: { in: sessionIds }, supersededAt: null } }) : [],
+      sessionIds.length ? db.mentoringClassActivity.findMany({ where: { sessionId: { in: sessionIds }, removedAt: null } }) : [],
     ]);
     const [students, employees] = await Promise.all([db.student.findMany({ where: { id: { in: activations.map((a) => a.studentId) } } }), db.employee.findMany({ where: { id: { in: profiles.map((p) => p.employeeId) } } })]);
     const studentName = (activationId: string) => {
@@ -191,6 +207,12 @@ export class MentoringClassService {
       const item = s ? slaItems.filter((i) => i.entityId === s.id).sort((x, y) => y.startedAt.getTime() - x.startedAt.getTime())[0] ?? null : null;
       const state = displayState({ status, date, endMinute }, (reminder?.status as ReminderState) ?? null, now, working);
       const sla = item && item.status === 'OPEN' ? await slaView(item) : null;
+      const att = s ? attachments.find((x) => x.sessionId === s.id) ?? null : null;
+      const acts = s ? activityRows.filter((x) => x.sessionId === s.id) : [];
+      const workspace = { voiceUploaded: !!att, voiceShared: !!att?.sharedAt, activitiesCreated: acts.length, activitiesShared: acts.filter((x) => x.sharedAt).length, exceptionStatus: s?.exceptionStatus ?? null };
+      const blockers = s && s.tutorSubmittedAt && s.conducted === true && status === 'AWAITING_MENTOR_VERIFICATION'
+        ? verificationBlockers({ conducted: s.conducted, tutorSubmitted: true, voiceUploaded: workspace.voiceUploaded, voiceShared: workspace.voiceShared, activitiesCreated: workspace.activitiesCreated, activitiesShared: workspace.activitiesShared, exceptionApproved: s.exceptionStatus === 'APPROVED' })
+        : [];
       out.push({
         key, sessionId: s?.id ?? null, activationId: base.activationId, studentName: studentName(base.activationId), subjectId: base.subjectId, subjectName: subjects.find((x) => x.id === base.subjectId)?.name ?? 'Subject',
         tutorProfileId: base.tutorProfileId, tutorName: tutorName(base.tutorProfileId), date, startMinute, endMinute, scheduledMinutes: endMinute - startMinute, moved: b.occurrence?.moved ?? false,
@@ -200,13 +222,20 @@ export class MentoringClassService {
         mentorVerification: status === 'VERIFIED' ? 'VERIFIED' : status === 'NOT_CONDUCTED' ? 'NOT_CONDUCTED' : 'PENDING',
         update: s && s.tutorSubmittedAt ? this.updateView(s) : null,
         checklist: checklistOf(
-          s ?? { tutorSubmittedAt: null, voiceSentAt: null, voiceReceivedAt: null, activities: [], evaluationRemarks: null, coveredRemarks: null, status },
+          s ? { ...s, workspace } : { tutorSubmittedAt: null, voiceSentAt: null, voiceReceivedAt: null, activities: [], evaluationRemarks: null, coveredRemarks: null, status, workspace },
           { status: (reminder?.status as ReminderState) ?? null, sentAt: reminder?.sentAt ?? null, acknowledgedAt: reminder?.acknowledgedAt ?? null },
         ),
         mentorRemarks: s?.mentorRemarks ?? null,
         returned: s?.returnedReason ? { reason: s.returnedReason, kind: s.returnedKind ?? 'CORRECTION' } : null,
         verified: s?.verifiedAt && s.verifiedMinutes !== null ? { at: s.verifiedAt.toISOString(), minutes: s.verifiedMinutes } : null,
         sla: sla ? { state: sla.state, label: sla.label, dueAt: item?.dueAt.toISOString() ?? '', overdueMinutes: sla.overdueMinutes } : null,
+        meetLink: s?.meetLink ?? null,
+        cancelled: s?.cancelledAt && s.cancelReason ? { at: s.cancelledAt.toISOString(), reason: s.cancelReason } : null,
+        voice: { uploaded: !!att, shared: !!att?.sharedAt, sharedAt: att?.sharedAt?.toISOString() ?? null, attachmentId: att?.id ?? null, fileName: att?.fileName ?? null, uploadedAt: att?.createdAt.toISOString() ?? null, mentorVerifiedAt: att?.mentorVerifiedAt?.toISOString() ?? null },
+        activityCounts: { created: acts.length, shared: workspace.activitiesShared, completed: acts.filter((x) => x.completion === 'COMPLETED').length },
+        exception: { status: s?.exceptionStatus ?? null, reason: s?.exceptionReason ?? null, decisionNote: s?.exceptionDecisionNote ?? null },
+        consumption: status === 'VERIFIED' && (s?.verifiedMinutes ?? 0) > 0 ? 'CONSUMED' : 'NOT_CONSUMED',
+        blockers,
       });
     }
     return out;
@@ -311,7 +340,7 @@ export class MentoringClassService {
   }
 
   // ─── Guards ────────────────────────────────────────────────────────────────────────────────────────────────────
-  private async mentorGuard(tx: PrismaTxClient, activationId: string, userId: string) {
+  async mentorGuard(tx: PrismaTxClient, activationId: string, userId: string) {
     const activation = await loadLockedActivation(tx, activationId);
     MentoringAllocationService.assertAssignedMentor(activation, userId);
     if (!OPERATIONAL.has(activation.status)) throw new ConflictException('This student\'s workflow is not running, so classes cannot be changed.');
@@ -325,11 +354,11 @@ export class MentoringClassService {
   }
 
   /** How many things have happened to this class. It keeps notification keys apart without depending on the clock. */
-  private async seq(tx: PrismaTxClient, sessionId: string) {
+  async seq(tx: PrismaTxClient, sessionId: string) {
     return (await tx.mentoringClassSessionEvent.findMany({ where: { sessionId } })).length;
   }
 
-  private notify(tx: PrismaTxClient, recipientUserId: string, type: string, sessionId: string, message: string, dedupe: string, action: string) {
+  notify(tx: PrismaTxClient, recipientUserId: string, type: string, sessionId: string, message: string, dedupe: string, action: string) {
     return tx.notification.create({ data: { recipientUserId, type, entityType: ENTITY, entityId: sessionId, action, message, dedupeKey: dedupe } });
   }
 
@@ -369,7 +398,7 @@ export class MentoringClassService {
   }
 
   // ─── The tutor ─────────────────────────────────────────────────────────────────────────────────────────────────
-  private async tutorProfileOf(db: PrismaTxClient, userId: string) {
+  async tutorProfileOf(db: PrismaTxClient, userId: string) {
     const employee = await db.employee.findUnique({ where: { userId } });
     const profile = employee ? await db.tutorProfile.findUnique({ where: { employeeId: employee.id } }) : null;
     if (!profile) throw new NotFoundException('You do not have a tutor profile.');
@@ -394,6 +423,7 @@ export class MentoringClassService {
       if (!OPERATIONAL.has(activation.status)) throw new ConflictException('This student\'s workflow is not running, so classes cannot be updated.');
       const session = await this.ensureSession(tx, o);
       if (session.tutorUserId !== userId) throw new ForbiddenException('This class is not yours.');
+      if (session.status === 'CANCELLED') throw new ConflictException('This class was cancelled, so it cannot be updated.');
       if (!TUTOR_CAN_UPDATE.includes(session.status)) throw new ConflictException('This class has already been verified, so it cannot be changed here.');
       const working = await this.sla.workingNow(tx, now);
       if ((dayOf(session.date) as string) > localMomentOf(now, working.timeZone).date) throw new ConflictException('This class has not happened yet.');
@@ -413,6 +443,7 @@ export class MentoringClassService {
         },
       });
       // The Mentor now has two working hours: to review a new update, or to act on one the tutor has corrected.
+      if (returned && (session.conducted !== v.conducted || session.actualStartMinute !== v.actualStartMinute || session.actualEndMinute !== v.actualEndMinute)) await this.invalidateException(tx, session, userId, 'The corrected update changed whether or when the class took place.');
       await this.sla.start(tx, { policyKey: returned ? 'RETURNED_UPDATE_ACTION' : 'CLASS_UPDATE_REVIEW', entityType: ENTITY, entityId: session.id, activationId: o.activationId, startedAt: now });
       await this.logEvent(tx, session.id, returned ? 'TUTOR_RESUBMITTED' : 'TUTOR_SUBMITTED', userId, { from: previous, to: 'AWAITING_MENTOR_VERIFICATION', payload: { conducted: v.conducted, actualMinutes: v.actualMinutes } });
       if (activation.currentMentorUserId) await this.notify(tx, activation.currentMentorUserId, 'MENTORING_CLASS_UPDATE', session.id, `A class update is waiting for your review: ${subject?.name ?? 'class'} on ${dayOf(session.date)}.`, `class-update:${session.id}:${await this.seq(tx, session.id)}`, `/mentoring/students/${o.activationId}`);
@@ -421,8 +452,21 @@ export class MentoringClassService {
     });
   }
 
+  /**
+   * An exception decided on an update that has since been returned or changed no longer applies. The class goes back to having no
+   * exception, so a new request and a new decision by the Mentoring Head are needed. What was asked and decided stays in the class
+   * events and the student history; only the live status is cleared.
+   */
+  async invalidateException(tx: PrismaTxClient, session: SessionRow, actorUserId: string, why: string) {
+    if (session.exceptionStatus !== 'APPROVED' && session.exceptionStatus !== 'REQUESTED') return false;
+    await tx.mentoringClassSession.update({ where: { id: session.id }, data: { exceptionStatus: null, exceptionRequestedAt: null, exceptionRequestedByUserId: null, exceptionReason: null, exceptionDecidedAt: null, exceptionDecidedByUserId: null, exceptionDecisionNote: null } });
+    await this.logEvent(tx, session.id, 'EXCEPTION_INVALIDATED', actorUserId, { reason: why, payload: { was: session.exceptionStatus, requestedBy: session.exceptionRequestedByUserId, requestReason: session.exceptionReason, decidedBy: session.exceptionDecidedByUserId, decisionNote: session.exceptionDecisionNote } });
+    await this.history.record(tx, { activationId: session.activationId, type: 'MENTORING_CLASS_EXCEPTION_INVALIDATED', actorUserId, reason: why, payload: { sessionId: session.id, was: session.exceptionStatus } });
+    return true;
+  }
+
   // ─── The Mentor reviews ────────────────────────────────────────────────────────────────────────────────────────
-  private async sessionForMentor(tx: PrismaTxClient, sessionId: string, userId: string) {
+  async sessionForMentor(tx: PrismaTxClient, sessionId: string, userId: string) {
     const found = await tx.mentoringClassSession.findUnique({ where: { id: sessionId } });
     if (!found) throw new NotFoundException('Class not found');
     const activation = await this.mentorGuard(tx, found.activationId, userId);
@@ -437,7 +481,7 @@ export class MentoringClassService {
       const checked = checkMentorNotes(body);
       if (!checked.ok) throw new BadRequestException(checked.message);
       const n = checked.value;
-      const closed = session.status === 'VERIFIED' || session.status === 'NOT_CONDUCTED';
+      const closed = session.status === 'VERIFIED' || session.status === 'NOT_CONDUCTED' || session.status === 'CANCELLED';
       if (closed && (n.activities !== undefined || n.evaluationRemarks !== undefined || n.coveredRemarks !== undefined)) throw new ConflictException('This class is verified. Only the Mentor remarks and the voice update can be added now.');
       const data: Record<string, unknown> = {};
       if (n.mentorRemarks !== undefined) data.mentorRemarks = n.mentorRemarks || null;
@@ -462,6 +506,8 @@ export class MentoringClassService {
       if (!why) throw new BadRequestException(kind === 'INCOMPLETE' ? 'Say what is missing from the update.' : 'Say what the tutor needs to correct.');
       if (why.length > 1000) throw new BadRequestException('The reason must be 1000 characters or fewer.');
       await tx.mentoringClassSession.update({ where: { id: sessionId }, data: { status: 'RETURNED_FOR_CORRECTION', returnedReason: why, returnedKind: kind } });
+      // The update is going to change, so a decision made on the old one no longer stands.
+      await this.invalidateException(tx, session, userId, 'The update was returned for correction.');
       // The Mentor has acted, so the review clock stops; the tutor's correction starts the next one.
       for (const key of ['CLASS_UPDATE_REVIEW', 'RETURNED_UPDATE_ACTION']) await this.sla.complete(tx, key, ENTITY, sessionId, now);
       await this.notify(tx, session.tutorUserId, 'MENTORING_CLASS_RETURNED', sessionId, `Your class update was returned: ${why}`, `class-returned:${sessionId}:${await this.seq(tx, sessionId)}`, '/tutor-portal');
@@ -477,6 +523,8 @@ export class MentoringClassService {
    */
   async verify(sessionId: string, input: { verifiedMinutes?: unknown; reason?: unknown }, userId: string, now: Date = new Date()) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      // The class row is locked first, so two verifications of one class run one after the other and the second sees the first.
+      await tx.$executeRaw`SELECT 1 FROM mentoring_class_sessions WHERE id = ${sessionId} FOR UPDATE`;
       const { session, activation } = await this.sessionForMentor(tx, sessionId, userId);
       if (session.status === 'VERIFIED' || session.status === 'NOT_CONDUCTED') return { sessionId, status: session.status, classRecordId: session.tutorClassRecordId, warnings: [] as string[], alreadyVerified: true };
       if (!MENTOR_CAN_REVIEW.includes(session.status) || !session.tutorSubmittedAt) throw new ConflictException('Only a submitted update can be verified.');
@@ -491,6 +539,11 @@ export class MentoringClassService {
         return { sessionId, status: 'NOT_CONDUCTED' as const, classRecordId: null, warnings: [] as string[], alreadyVerified: false };
       }
 
+      // Strict verification: the voice, the sharing and three activities are conditions, unless the Mentoring Head approved an exception.
+      const facts = await this.workspaceFacts(tx, session);
+      const blockers = verificationBlockers({ conducted: session.conducted, tutorSubmitted: !!session.tutorSubmittedAt, ...facts, exceptionApproved: session.exceptionStatus === 'APPROVED' });
+      if (blockers.length) throw new ConflictException(`This class cannot be verified yet. ${blockers.join(' ')}`);
+
       const actual = session.actualMinutes ?? 0;
       let minutes = actual;
       if (input.verifiedMinutes !== undefined && input.verifiedMinutes !== null) {
@@ -499,6 +552,7 @@ export class MentoringClassService {
         if (n !== actual && !(typeof input.reason === 'string' && input.reason.trim())) throw new BadRequestException('Say why the verified time differs from the time the tutor reported.');
         minutes = n;
       }
+      if (minutes <= 0) throw new BadRequestException('A conducted class needs more than 0 verified minutes. If the class did not take place, confirm it as not conducted instead.');
       const date = dayOf(session.date) as string;
       const scheduledStart = zonedInstant(date, session.startMinute, working.timeZone);
       const rate = await this.rateAt(tx, session.tutorProfileId, scheduledStart);
@@ -523,6 +577,7 @@ export class MentoringClassService {
         }
       }
       await tx.mentoringClassSession.update({ where: { id: sessionId }, data: { status: 'VERIFIED', verifiedAt: now, verifiedByUserId: userId, verifiedMinutes: minutes, tutorClassRecordId: classRecordId } });
+      for (const a of await tx.mentoringClassAttachment.findMany({ where: { sessionId, supersededAt: null } })) if (!a.mentorVerifiedAt) await tx.mentoringClassAttachment.update({ where: { id: a.id }, data: { mentorVerifiedAt: now, mentorVerifiedByUserId: userId } });
       for (const key of ['CLASS_UPDATE_REVIEW', 'RETURNED_UPDATE_ACTION']) await this.sla.complete(tx, key, ENTITY, sessionId, now);
       await this.logEvent(tx, sessionId, 'MENTOR_VERIFIED', userId, { from: fromStatus, to: 'VERIFIED', reason: typeof input.reason === 'string' ? input.reason.trim() || null : null, payload: { scheduledMinutes: session.endMinute - session.startMinute, actualMinutes: actual, verifiedMinutes: minutes } });
       await this.history.record(tx, { activationId: activation.id, type: 'MENTORING_CLASS_VERIFIED', actorUserId: userId, payload: { sessionId, verifiedMinutes: minutes } });
@@ -555,6 +610,43 @@ export class MentoringClassService {
       await tx.mentoringClassSession.update({ where: { id: sessionId }, data: { verifiedMinutes: n } });
       await this.logEvent(tx, sessionId, 'COMPENSATION_ADJUSTED', userId, { reason: why, payload: { previousMinutes: session.verifiedMinutes, newMinutes: n, appliedToRecord: applied } });
       return { sessionId, previousMinutes: session.verifiedMinutes, newMinutes: n, appliedToRecord: applied };
+    });
+  }
+
+  /** One stored class as the screens show it. */
+  async viewFor(db: PrismaTxClient, session: SessionRow, now: Date): Promise<ClassView> {
+    return (await this.build(db, [{ occurrence: null, session }], now))[0];
+  }
+
+  /** What the class workspace has recorded for this class: the voice and the activities, as separate facts. */
+  async workspaceFacts(tx: PrismaTxClient, session: { id: string }) {
+    const att = (await tx.mentoringClassAttachment.findMany({ where: { sessionId: session.id, supersededAt: null } }))[0] ?? null;
+    const acts = await tx.mentoringClassActivity.findMany({ where: { sessionId: session.id, removedAt: null } });
+    return { voiceUploaded: !!att, voiceShared: !!att?.sharedAt, activitiesCreated: acts.length, activitiesShared: acts.filter((a) => a.sharedAt).length };
+  }
+
+  // ─── Cancelling a class ─────────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * Cancels one class, with a reason. The scheduled slot and its history stay on record, the class is never consumed, the tutor is
+   * told in the app, a reminder not yet sent is withdrawn, and any response clock for it stops. A reported class cannot be cancelled.
+   */
+  async cancel(key: string, reasonInput: unknown, userId: string, now: Date = new Date()) {
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const o = await this.occurrenceForKey(tx, key);
+      await this.mentorGuard(tx, o.activationId, userId);
+      const session = await this.ensureSession(tx, o);
+      if (session.status === 'CANCELLED') throw new ConflictException('This class is already cancelled.');
+      if (!CAN_RESCHEDULE.includes(session.status)) throw new ConflictException('Only a class that has not been reported yet can be cancelled.');
+      const why = checkReason(reasonInput, 'the class is being cancelled');
+      if (!why.ok) throw new BadRequestException(why.message);
+      const from: string = session.status;
+      await tx.mentoringClassSession.update({ where: { id: session.id }, data: { status: 'CANCELLED', cancelledAt: now, cancelledByUserId: userId, cancelReason: why.value } });
+      for (const r of await tx.mentoringReminder.findMany({ where: { entityType: ENTITY, entityId: session.id, status: 'PREPARED' } })) await this.reminders.cancel(tx, r.id);
+      for (const policy of ['CLASS_UPDATE_REVIEW', 'RETURNED_UPDATE_ACTION']) await this.sla.cancel(tx, policy, ENTITY, session.id, now);
+      await this.notify(tx, session.tutorUserId, 'MENTORING_CLASS_CANCELLED', session.id, `A class on ${dayOf(session.date)} was cancelled. Reason: ${why.value}`, `class-cancelled:${session.id}:${await this.seq(tx, session.id)}`, '/tutor-portal');
+      await this.logEvent(tx, session.id, 'CANCELLED', userId, { reason: why.value, from, to: 'CANCELLED', payload: { date: dayOf(session.date), startMinute: session.startMinute, endMinute: session.endMinute } });
+      await this.history.record(tx, { activationId: o.activationId, type: 'MENTORING_CLASS_CANCELLED', actorUserId: userId, reason: why.value, payload: { sessionId: session.id } });
+      return { sessionId: session.id, status: 'CANCELLED' as const };
     });
   }
 

@@ -23,11 +23,11 @@ export const PARTICIPATION = ['EXCELLENT', 'GOOD', 'FAIR', 'POOR'] as const;
 export const MAX_CLASS_MINUTES = 12 * 60;
 export const TEXT_LIMIT = 2000;
 
-export type ClassStatus = 'SCHEDULED' | 'RESCHEDULED' | 'AWAITING_MENTOR_VERIFICATION' | 'RETURNED_FOR_CORRECTION' | 'VERIFIED' | 'NOT_CONDUCTED';
-export type DisplayState = 'SCHEDULED' | 'REMINDER_PENDING' | 'REMINDER_SENT' | 'AWAITING_TUTOR_UPDATE' | 'AWAITING_MENTOR_VERIFICATION' | 'RETURNED_FOR_CORRECTION' | 'VERIFIED' | 'NOT_CONDUCTED' | 'RESCHEDULED';
+export type ClassStatus = 'SCHEDULED' | 'RESCHEDULED' | 'AWAITING_MENTOR_VERIFICATION' | 'RETURNED_FOR_CORRECTION' | 'VERIFIED' | 'NOT_CONDUCTED' | 'CANCELLED';
+export type DisplayState = 'SCHEDULED' | 'REMINDER_PENDING' | 'REMINDER_SENT' | 'AWAITING_TUTOR_UPDATE' | 'AWAITING_MENTOR_VERIFICATION' | 'RETURNED_FOR_CORRECTION' | 'VERIFIED' | 'NOT_CONDUCTED' | 'RESCHEDULED' | 'CANCELLED';
 export const STATE_LABELS: Record<DisplayState, string> = {
   SCHEDULED: 'Scheduled', REMINDER_PENDING: 'Reminder pending', REMINDER_SENT: 'Reminder sent', AWAITING_TUTOR_UPDATE: 'Awaiting tutor update', AWAITING_MENTOR_VERIFICATION: 'Awaiting Mentor verification',
-  RETURNED_FOR_CORRECTION: 'Returned for correction', VERIFIED: 'Verified', NOT_CONDUCTED: 'Not conducted', RESCHEDULED: 'Rescheduled',
+  RETURNED_FOR_CORRECTION: 'Returned for correction', VERIFIED: 'Verified', NOT_CONDUCTED: 'Not conducted', RESCHEDULED: 'Rescheduled', CANCELLED: 'Cancelled',
 };
 
 /** What may happen to a class in each stored status. */
@@ -202,7 +202,7 @@ export type ReminderState = 'PREPARED' | 'SENT' | 'ACKNOWLEDGED' | null;
  * whose time has passed with no tutor update is awaiting that update, whatever reminder was sent.
  */
 export function displayState(s: { status: ClassStatus; date: string; endMinute: number }, reminder: ReminderState, now: Date, working: Pick<WorkingPolicy, 'timeZone'>): DisplayState {
-  if (s.status === 'VERIFIED' || s.status === 'NOT_CONDUCTED' || s.status === 'AWAITING_MENTOR_VERIFICATION' || s.status === 'RETURNED_FOR_CORRECTION') return s.status;
+  if (s.status === 'VERIFIED' || s.status === 'NOT_CONDUCTED' || s.status === 'CANCELLED' || s.status === 'AWAITING_MENTOR_VERIFICATION' || s.status === 'RETURNED_FOR_CORRECTION') return s.status;
   if (zonedInstant(s.date, s.endMinute, working.timeZone).getTime() < now.getTime()) return 'AWAITING_TUTOR_UPDATE';
   if (reminder === 'SENT' || reminder === 'ACKNOWLEDGED') return 'REMINDER_SENT';
   if (reminder === 'PREPARED') return 'REMINDER_PENDING';
@@ -217,6 +217,8 @@ export interface ChecklistInput {
   evaluationRemarks: string | null;
   coveredRemarks: string | null;
   status: ClassStatus;
+  /** What the class workspace has recorded. When present it replaces the older voice and activity flags. */
+  workspace?: { voiceUploaded: boolean; voiceShared: boolean; activitiesCreated: number; activitiesShared: number; exceptionStatus: string | null };
 }
 export interface ChecklistItem { key: string; label: string; done: boolean; detail: string }
 
@@ -226,11 +228,15 @@ export function checklistOf(s: ChecklistInput, reminder: { status: ReminderState
   return [
     { key: 'REMINDER', label: 'Tutor class reminder', done: reminderDone, detail: reminder.status === 'ACKNOWLEDGED' ? 'Sent and acknowledged by the tutor' : reminderDone ? 'Sent, not yet acknowledged' : reminder.status === 'PREPARED' ? 'Prepared, not sent' : 'Not prepared' },
     { key: 'UPDATE', label: 'Class update from the tutor', done: s.tutorSubmittedAt !== null, detail: s.tutorSubmittedAt ? 'Submitted' : 'Not submitted' },
-    { key: 'VOICE', label: 'Tutor voice update', done: s.voiceReceivedAt !== null, detail: s.voiceReceivedAt ? 'Received, confirmed by the Mentor' : s.voiceSentAt ? 'The tutor says it was sent. The Mentor has not confirmed it.' : 'Not received' },
-    { key: 'ACTIVITIES', label: 'Post-class activities', done: s.activities.length > 0, detail: s.activities.length ? `${s.activities.length} selected` : 'None selected' },
+    s.workspace
+      ? { key: 'VOICE', label: 'Tutor voice update', done: s.workspace.voiceUploaded && s.workspace.voiceShared, detail: !s.workspace.voiceUploaded ? 'Not uploaded' : s.workspace.voiceShared ? 'Uploaded and shared in the group' : 'Uploaded, sharing in the group not confirmed' }
+      : { key: 'VOICE', label: 'Tutor voice update', done: s.voiceReceivedAt !== null, detail: s.voiceReceivedAt ? 'Received, confirmed by the Mentor' : s.voiceSentAt ? 'The tutor says it was sent. The Mentor has not confirmed it.' : 'Not received' },
+    s.workspace
+      ? { key: 'ACTIVITIES', label: 'Post-class activities', done: s.workspace.activitiesCreated >= 3 && s.workspace.activitiesShared >= 3, detail: s.workspace.activitiesCreated < 3 ? `${s.workspace.activitiesCreated} of 3 created` : s.workspace.activitiesShared < 3 ? `${s.workspace.activitiesCreated} created, ${s.workspace.activitiesShared} confirmed shared` : `${s.workspace.activitiesCreated} created and shared` }
+      : { key: 'ACTIVITIES', label: 'Post-class activities', done: s.activities.length > 0, detail: s.activities.length ? `${s.activities.length} selected` : 'None selected' },
     { key: 'EVALUATION', label: 'Remarks, class evaluation', done: !!s.evaluationRemarks, detail: s.evaluationRemarks ? 'Written' : 'Not written' },
     { key: 'COVERED', label: 'Remarks, topics covered in class', done: !!s.coveredRemarks, detail: s.coveredRemarks ? 'Written' : 'Not written' },
-    { key: 'MENTOR', label: 'Mentor verification', done: s.status === 'VERIFIED' || s.status === 'NOT_CONDUCTED', detail: s.status === 'VERIFIED' ? 'Verified' : s.status === 'NOT_CONDUCTED' ? 'Confirmed not conducted' : 'Not verified' },
+    { key: 'MENTOR', label: 'Mentor verification', done: s.status === 'VERIFIED' || s.status === 'NOT_CONDUCTED', detail: s.status === 'VERIFIED' ? 'Verified' : s.status === 'NOT_CONDUCTED' ? 'Confirmed not conducted' : s.status === 'CANCELLED' ? 'Cancelled' : 'Not verified' },
   ];
 }
 

@@ -9,6 +9,7 @@ import {
 } from '../mentoring/class-view';
 import { dayLabel, longDayLabel } from '../mentoring/timetable-view';
 
+import { ClassWorkspaceDrawer } from '../mentoring/ClassWorkspaceDrawer';
 import { tutorPortalApi } from './client';
 
 const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500';
@@ -93,7 +94,7 @@ export function ClassUpdateForm({ c, draft, busy = false, error = null, onChange
 const minutesBetween = (a: string, b: string) => Number(b.slice(0, 2)) * 60 + Number(b.slice(3, 5)) - (Number(a.slice(0, 2)) * 60 + Number(a.slice(3, 5)));
 
 // ─── One of my classes ───────────────────────────────────────────────────────────────────────────────────────────
-export function MyClassCard({ c, onUpdate }: { c: ClassItem; onUpdate: () => void }) {
+export function MyClassCard({ c, onUpdate, onWorkspace }: { c: ClassItem; onUpdate: () => void; onWorkspace?: () => void }) {
   const can = ['SCHEDULED', 'RESCHEDULED', 'RETURNED_FOR_CORRECTION', 'AWAITING_MENTOR_VERIFICATION'].includes(c.status);
   return (
     <article aria-label={`${c.subjectName} ${timeLabel(c)}`} className="rounded-md border border-slate-200 bg-white p-3" data-testid="my-class" data-state={c.state}>
@@ -105,6 +106,7 @@ export function MyClassCard({ c, onUpdate }: { c: ClassItem; onUpdate: () => voi
       <p className="mt-1 text-sm text-slate-700">{c.studentName}, {hoursText(c.scheduledMinutes)} scheduled{c.verified ? `, ${hoursText(c.verified.minutes)} verified` : ''}.</p>
       {c.returned && <p role="alert" className="mt-1 rounded-md bg-red-50 px-2 py-1 text-sm text-red-800">Your Mentor returned this update: {c.returned.reason}</p>}
       {can && <div className="mt-2"><Button type="button" size="sm" variant={c.status === 'RETURNED_FOR_CORRECTION' ? 'primary' : 'outline'} onClick={onUpdate}>{c.update ? 'Correct class update' : 'Submit class update'}</Button></div>}
+      {onWorkspace && c.status !== 'CANCELLED' && <div className="mt-2"><Button type="button" size="sm" variant="outline" onClick={onWorkspace}>Class workspace</Button></div>}
     </article>
   );
 }
@@ -114,6 +116,7 @@ export function MyClasses({ from, to }: { from: string; to: string }) {
   const [classes, setClasses] = React.useState<ClassItem[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [open, setOpen] = React.useState<string | null>(null);
+  const [workspace, setWorkspace] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState<UpdateDraft | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
@@ -152,7 +155,8 @@ export function MyClasses({ from, to }: { from: string; to: string }) {
       {classes && classes.length === 0 && <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-500">You have no classes in these dates.</p>}
       {classes?.map((c) => (
         <div key={c.key} className="space-y-2">
-          <MyClassCard c={c} onUpdate={() => { setNotice(null); setFormError(null); setDraft(draftFromClass(c)); setOpen(c.key); }} />
+          <MyClassCard c={c} onUpdate={() => { setNotice(null); setFormError(null); setDraft(draftFromClass(c)); setOpen(c.key); }} onWorkspace={() => setWorkspace(workspace === c.key ? null : c.key)} />
+          {workspace === c.key && <ClassWorkspaceDrawer role="TUTOR" classKey={c.key} onClose={() => setWorkspace(null)} onChanged={() => void load()} />}
           {open === c.key && draft && <ClassUpdateForm c={c} draft={draft} busy={busy} error={formError} onChange={setDraft} onSubmit={() => void submit(c)} onCancel={() => setOpen(null)} />}
         </div>
       ))}

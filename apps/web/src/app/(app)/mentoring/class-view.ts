@@ -5,7 +5,7 @@
 import { formatRange, minutesToClock } from './tutor-availability';
 
 export type ClassState =
-  | 'SCHEDULED' | 'REMINDER_PENDING' | 'REMINDER_SENT' | 'AWAITING_TUTOR_UPDATE' | 'AWAITING_MENTOR_VERIFICATION' | 'RETURNED_FOR_CORRECTION' | 'VERIFIED' | 'NOT_CONDUCTED' | 'RESCHEDULED';
+  | 'SCHEDULED' | 'REMINDER_PENDING' | 'REMINDER_SENT' | 'AWAITING_TUTOR_UPDATE' | 'AWAITING_MENTOR_VERIFICATION' | 'RETURNED_FOR_CORRECTION' | 'VERIFIED' | 'NOT_CONDUCTED' | 'RESCHEDULED' | 'CANCELLED';
 
 export interface ChecklistRow { key: string; label: string; done: boolean; detail: string }
 
@@ -54,6 +54,9 @@ export interface ClassItem {
   returned: { reason: string; kind: string } | null;
   verified: { at: string; minutes: number } | null;
   sla: { state: string; label: string; dueAt: string; overdueMinutes: number } | null;
+  consumption?: 'CONSUMED' | 'NOT_CONSUMED';
+  /** What still stops this class being verified, as the server counts it. */
+  blockers?: string[];
   warnings?: string[];
   history?: Array<{ kind: string; at: string; actorUserId: string | null; reason: string | null; from: string | null; to: string | null }>;
   adjustments?: Array<{ at: string; previousMinutes: number; newMinutes: number; deltaMinutes: number; reason: string; appliedToRecord: boolean }>;
@@ -68,12 +71,12 @@ export interface DailyData {
 }
 
 export const STATE_TONE: Record<ClassState, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
-  SCHEDULED: 'default', REMINDER_PENDING: 'info', REMINDER_SENT: 'info', AWAITING_TUTOR_UPDATE: 'warning', AWAITING_MENTOR_VERIFICATION: 'warning', RETURNED_FOR_CORRECTION: 'danger', VERIFIED: 'success', NOT_CONDUCTED: 'default', RESCHEDULED: 'info',
+  SCHEDULED: 'default', REMINDER_PENDING: 'info', REMINDER_SENT: 'info', AWAITING_TUTOR_UPDATE: 'warning', AWAITING_MENTOR_VERIFICATION: 'warning', RETURNED_FOR_CORRECTION: 'danger', VERIFIED: 'success', NOT_CONDUCTED: 'default', RESCHEDULED: 'info', CANCELLED: 'default',
 };
 /** The states a Mentor can filter by, in the order of a class's life. */
 export const STATE_CHOICES: Array<[ClassState, string]> = [
   ['SCHEDULED', 'Scheduled'], ['REMINDER_PENDING', 'Reminder pending'], ['REMINDER_SENT', 'Reminder sent'], ['AWAITING_TUTOR_UPDATE', 'Awaiting tutor update'], ['AWAITING_MENTOR_VERIFICATION', 'Awaiting Mentor verification'],
-  ['RETURNED_FOR_CORRECTION', 'Returned for correction'], ['VERIFIED', 'Verified'], ['NOT_CONDUCTED', 'Not conducted'], ['RESCHEDULED', 'Rescheduled'],
+  ['RETURNED_FOR_CORRECTION', 'Returned for correction'], ['VERIFIED', 'Verified'], ['NOT_CONDUCTED', 'Not conducted'], ['RESCHEDULED', 'Rescheduled'], ['CANCELLED', 'Cancelled'],
 ];
 
 export const TUTOR_CONFIRMATION_LABELS: Record<ClassItem['tutorConfirmation'], string> = { ACKNOWLEDGED: 'Acknowledged by the tutor', SENT: 'Reminder sent, not acknowledged', NOT_SENT: 'No reminder sent' };

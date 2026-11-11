@@ -75,8 +75,8 @@ describe('the Mentor class card', () => {
 
   it('marks a moved class and names every state', () => {
     expect(text(card(item({ moved: true, status: 'RESCHEDULED', state: 'RESCHEDULED', stateLabel: 'Rescheduled' })))).toContain('Moved');
-    expect(STATE_CHOICES.map((s) => s[1])).toEqual(['Scheduled', 'Reminder pending', 'Reminder sent', 'Awaiting tutor update', 'Awaiting Mentor verification', 'Returned for correction', 'Verified', 'Not conducted', 'Rescheduled']);
-    expect(Object.keys(STATE_TONE)).toHaveLength(9);
+    expect(STATE_CHOICES.map((s) => s[1])).toEqual(['Scheduled', 'Reminder pending', 'Reminder sent', 'Awaiting tutor update', 'Awaiting Mentor verification', 'Returned for correction', 'Verified', 'Not conducted', 'Rescheduled', 'Cancelled']);
+    expect(Object.keys(STATE_TONE)).toHaveLength(10);
     expect(TUTOR_CONFIRMATION_LABELS.ACKNOWLEDGED).toBe('Acknowledged by the tutor');
     expect(VERIFICATION_LABELS.VERIFIED).toBe('Verified');
   });

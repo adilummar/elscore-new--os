@@ -81,6 +81,7 @@ export class MentoringOverviewService {
   private totals(rows: ClassView[]) {
     let scheduled = 0, reported = 0, consumed = 0, remaining = 0, pendingClasses = 0;
     for (const c of rows) {
+      if (c.status === 'CANCELLED') continue; // a cancelled class is neither scheduled nor consumed
       scheduled += c.scheduledMinutes;
       if (c.update?.actualMinutes) reported += c.update.actualMinutes;
       if (c.state === 'VERIFIED') consumed += c.verified?.minutes ?? 0;

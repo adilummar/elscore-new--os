@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { addDays, isDateString } from '../tutor/tutor-calendar';
 
+import { classCardsOf } from './class-workspace';
 import { CATEGORIES, PRIORITIES, STATUSES as COMPLAINT_STATUSES } from './complaint';
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { MentoringClassService } from './mentoring-class.service';
@@ -18,7 +19,7 @@ const PAGE_MAX = 100;
 export type Group = 'students' | 'classes' | 'exams' | 'meetings' | 'complaints' | 'sla';
 export type CardKey =
   | 'students_total' | 'students_active'
-  | 'classes_today' | 'classes_upcoming' | 'classes_awaiting_update' | 'classes_awaiting_verification' | 'classes_verified' | 'classes_not_conducted' | 'classes_rescheduled' | 'classes_voice_pending'
+  | 'classes_today' | 'classes_upcoming' | 'classes_awaiting_update' | 'classes_awaiting_verification' | 'classes_verified' | 'classes_not_conducted' | 'classes_rescheduled' | 'classes_voice_pending' | 'classes_conducted' | 'classes_awaiting_activities' | 'classes_cancelled'
   | 'exams_upcoming' | 'exams_awaiting_evaluation' | 'exams_marks_pending' | 'exams_reexam'
   | 'meetings_upcoming' | 'meetings_pending_completion' | 'meetings_overdue' | 'meetings_not_conducted' | 'plans_awaiting_date'
   | 'complaints_new' | 'complaints_open' | 'complaints_resolved' | 'complaints_approaching' | 'complaints_breached'
@@ -34,7 +35,10 @@ export const CARDS: ReadonlyArray<{ key: CardKey; group: Group; label: string }>
   { key: 'classes_verified', group: 'classes', label: 'Classes verified and consumed' },
   { key: 'classes_not_conducted', group: 'classes', label: 'Classes not conducted' },
   { key: 'classes_rescheduled', group: 'classes', label: 'Classes rescheduled' },
-  { key: 'classes_voice_pending', group: 'classes', label: 'Voice updates not confirmed' },
+  { key: 'classes_voice_pending', group: 'classes', label: 'Waiting for the voice recording' },
+  { key: 'classes_conducted', group: 'classes', label: 'Classes conducted' },
+  { key: 'classes_awaiting_activities', group: 'classes', label: 'Waiting for post-class activities' },
+  { key: 'classes_cancelled', group: 'classes', label: 'Classes cancelled' },
   { key: 'exams_upcoming', group: 'exams', label: 'Upcoming exams' },
   { key: 'exams_awaiting_evaluation', group: 'exams', label: 'Exams waiting for evaluation' },
   { key: 'exams_marks_pending', group: 'exams', label: 'Exams with marks pending' },
@@ -198,14 +202,7 @@ export class MentoringDashboardService {
     const classes = await this.classes.range(c.scope, from, to, ids, { subjectId: f.subjectId, tutorProfileId: f.tutorProfileId, state: f.classState }, c.now);
     for (const k of classes) {
       const r = this.row(c, { id: k.key, kind: 'CLASS', activationId: k.activationId, title: `${k.subjectName}, ${k.studentName}`, subjectName: k.subjectName, tutorName: k.tutorName, date: k.date, status: k.stateLabel, slaState: k.sla?.state ?? null, panel: 'classes' });
-      if (k.date === c.today && !['CANCELLED'].includes(k.status)) out.classes_today.push(r);
-      if (k.date > c.today && ['SCHEDULED', 'RESCHEDULED'].includes(k.status)) out.classes_upcoming.push(r);
-      if (k.state === 'AWAITING_TUTOR_UPDATE') out.classes_awaiting_update.push(r);
-      if (k.state === 'AWAITING_MENTOR_VERIFICATION') out.classes_awaiting_verification.push(r);
-      if (k.state === 'VERIFIED') out.classes_verified.push(r);
-      if (k.state === 'NOT_CONDUCTED') out.classes_not_conducted.push(r);
-      if (k.moved) out.classes_rescheduled.push(r);
-      if (k.update && k.update.conducted && !k.update.voice.receivedAt && k.state !== 'VERIFIED') out.classes_voice_pending.push(r);
+      for (const card of classCardsOf(k, c.today)) out[card].push(r);
     }
     // Classes still waiting on the Mentor or the tutor whatever their date: the queue is not limited to the window.
     const queue = await this.classes.queue(c.scope, { subjectId: f.subjectId, tutorProfileId: f.tutorProfileId, state: f.classState }, c.now);

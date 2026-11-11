@@ -26,6 +26,18 @@ export interface TimetableEvent {
   overlaps: string[];
   problems: string[];
   notes: string[];
+  /** From the stored class record the tutor and Mentor views read too. Absent from older answers. */
+  consumption?: 'CONSUMED' | 'NOT_CONSUMED';
+  classRecordStatus?: string | null;
+}
+
+/** What the stored class record says about this class, in words. Nothing is shown for a class that nothing has happened to. */
+export function recordLabel(e: Pick<TimetableEvent, 'consumption' | 'classRecordStatus'>): string | null {
+  if (e.classRecordStatus === 'CANCELLED') return 'Cancelled, not consumed';
+  if (e.consumption === 'CONSUMED') return 'Consumed, verified by the Mentor';
+  if (e.classRecordStatus === 'NOT_CONDUCTED') return 'Not conducted, not consumed';
+  if (e.classRecordStatus) return 'Not consumed until the Mentor verifies it';
+  return null;
 }
 
 export interface TimetableData {

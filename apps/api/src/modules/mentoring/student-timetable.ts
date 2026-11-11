@@ -157,6 +157,11 @@ export interface TimetableEvent {
   /** Anything that needs the Mentor's attention, in plain words. */
   problems: string[];
   notes: string[];
+  /** From the stored class record the tutor's view reads too. A class is consumed only after the Mentor verified it. */
+  consumption?: 'CONSUMED' | 'NOT_CONSUMED';
+  /** The stored status of the class (verified, cancelled, awaiting verification and so on), or null when nothing has happened to it yet. */
+  classRecordStatus?: string | null;
+  sessionId?: string | null;
 }
 
 export interface SubjectWarning {

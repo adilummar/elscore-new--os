@@ -1372,6 +1372,14 @@ const PERMISSIONS: Array<{
     isDelegatable: false,
   },
   {
+    // Defined here so the catalog and the CEO exclusion agree. No role below holds it: it is granted only after a separate approval.
+    code: 'mentoring.template.manage',
+    resource: 'mentoring.template',
+    action: 'manage',
+    description: 'Edit the wording of the Mentoring class message templates',
+    isDelegatable: false,
+  },
+  {
     code: 'mentoring.stage.verify',
     resource: 'mentoring.stage',
     action: 'verify',
@@ -1497,6 +1505,8 @@ const MENTORING_OPERATIONAL_CODES = new Set([
   'mentoring.approval.final',
   'mentoring.activation.cancel',
   'mentoring.complaint.handle',
+  // Editing the shared class message templates is an operational right, not company-wide visibility. Not granted to anyone by this file.
+  'mentoring.template.manage',
 ]);
 
 // Read-only permissions for Co-Founder — all *.read and *.view, no writes

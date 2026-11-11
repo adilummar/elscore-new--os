@@ -72,7 +72,7 @@ describe('mentoring-permission-grant.sql (reviewed script, NOT run by the applic
 
   it('keeps the CEO read-only and the retry permission with the Sales Head only', () => {
     for (const permission of excluded) expect(wanted.CEO).not.toContain(permission);
-    expect(excluded).toHaveLength(14);
+    expect(excluded).toHaveLength(15);
     expect(excluded).toContain('mentoring.handover.retry');
     const holders = Object.entries(wanted)
       .filter(([, permissions]) => permissions.includes('mentoring.handover.retry'))
