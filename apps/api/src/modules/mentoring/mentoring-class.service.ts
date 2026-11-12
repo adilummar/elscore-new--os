@@ -5,7 +5,7 @@ import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.servic
 import { TutorCalendarInput, addDays, checkWindow, isDateString, resolveDay } from '../tutor/tutor-calendar';
 import { loadCalendars } from '../tutor/tutor-calendar.data';
 
-import { EligibilityReason, OPEN_CLASS_STATUSES, TIMETABLE_STAGE, classEligibility, ineligibleMessage } from './class-eligibility';
+import { EligibilityReason, OPEN_CLASS_STATUSES, OperationalBoundary, TIMETABLE_STAGE, classEligibility, ineligibleMessage, operationalAt } from './class-eligibility';
 import {
   ChecklistItem, ClassStatus, DisplayState, Occurrence, ReminderState, STATE_LABELS, TUTOR_CAN_UPDATE, CAN_REMIND, MENTOR_CAN_REVIEW, checkMentorNotes, checkTutorUpdate, checklistOf, displayState,
   occurrencesBetween, parseClassKey, payableAmount, verificationWarnings, MAX_CLASS_MINUTES, CAN_RESCHEDULE,
@@ -24,10 +24,15 @@ const LIVE_ASSIGNMENT = ['ACTIVE', 'NEEDS_REVIEW'] as const;
 /** A reminder belongs to one slot: a class that is moved needs a new reminder for its new time. */
 /** The tutor is reminded this long before a class starts. */
 export const CLASS_REMINDER_LEAD_MINUTES = 45;
-/** A pending class update: the first reminder this long after the class ends, then one a day up to this many more, and the Mentor after this many hours. */
-export const UPDATE_FIRST_REMINDER_MINUTES = 30;
-export const UPDATE_DAILY_REMINDERS = 3;
+/**
+ * A pending class update: exactly three reminders for the tutor, at 30 minutes, 24 hours and 48 hours after the class ends, and one alert
+ * for the Mentor 24 hours after it ends. A new reminder is not started more than a day after the last one was due.
+ */
+export const UPDATE_REMINDER_OFFSETS_MINUTES = [30, 24 * 60, 48 * 60] as const;
 export const UPDATE_ESCALATION_HOURS = 24;
+const UPDATE_REMINDER_GRACE_MINUTES = 24 * 60;
+/** How many days back the job looks for classes that may still need a reminder: the last one is due 48 hours after the class, plus the grace day. */
+export const UPDATE_REMINDER_LOOKBACK_DAYS = 4;
 export const CLASS_REMINDER_ENTITY = 'ClassSession';
 const slotKind = (date: string, startMinute: number) => `CLASS_REMINDER:${date}:${startMinute}`;
 const ENTITY = 'ClassSession';
@@ -142,6 +147,14 @@ export class MentoringClassService {
     const assignments = found.filter((a) => eligible.has(a.activationId));
     if (assignments.length === 0) return [];
     const ids = assignments.map((a) => a.id);
+    const generated = await this.generate(db, assignments, ids, from, to);
+    // A class before the student's activation, or inside a pause, is never an occurrence. This is where occurrences are made, so
+    // the list, the reminders, the escalation and every action by class key all see the same set.
+    const operational = await this.operationalChecker(db, [...new Set(assignments.map((a) => a.activationId))]);
+    return generated.filter((o) => operational(o.activationId, o.date, o.startMinute));
+  }
+
+  private async generate(db: PrismaTxClient, assignments: Array<Awaited<ReturnType<PrismaTxClient['mentoringTutorAssignment']['findMany']>>[number]>, ids: string[], from: string, to: string): Promise<Occurrence[]> {
     const [rules, overrides] = await Promise.all([db.mentoringTutorAssignmentSession.findMany({ where: { assignmentId: { in: ids } } }), db.mentoringTutorAssignmentOverride.findMany({ where: { assignmentId: { in: ids } } })]);
     return occurrencesBetween(from, to, {
       assignments: assignments.map((a) => ({ id: a.id, activationId: a.activationId, subjectId: a.subjectId, tutorProfileId: a.tutorProfileId, startDate: dayOf(a.startDate), endDate: dayOf(a.endDate) })),
@@ -293,8 +306,15 @@ export class MentoringClassService {
       return { occurrence: o, session: s };
     });
     // A stored class of a student who is not eligible any more stays as history, but a class that was only scheduled is not operational.
-    const eligibleNow = await this.eligibleActivationIds(db, [...new Set([...byKey.values()].map((s) => s.activationId))]);
-    for (const [k, s] of byKey) if (!used.has(k) && (eligibleNow.has(s.activationId) || !OPEN_CLASS_STATUSES.has(s.status))) bases.push({ occurrence: null, session: s });
+    const storedActivations = [...new Set([...byKey.values()].map((s) => s.activationId))];
+    const eligibleNow = await this.eligibleActivationIds(db, storedActivations);
+    const operational = await this.operationalChecker(db, storedActivations);
+    for (const [k, s] of byKey) {
+      if (used.has(k)) continue;
+      // A class that was reported, verified, cancelled or not conducted is history and stays. One that was only scheduled must still be operational.
+      const open = OPEN_CLASS_STATUSES.has(s.status);
+      if (!open || (eligibleNow.has(s.activationId) && operational(s.activationId, dayOf(s.date) as string, s.startMinute))) bases.push({ occurrence: null, session: s });
+    }
     const list = await this.build(db, bases, now);
     return list.sort((a, b) => a.date.localeCompare(b.date) || a.startMinute - b.startMinute || a.studentName.localeCompare(b.studentName));
   }
@@ -394,10 +414,10 @@ export class MentoringClassService {
   }
 
   /**
-   * The reminders for a class whose update is still missing: the first 30 minutes after the class ends, then one a day, up to three more
-   * (four in all), all for the tutor, and one for the Mentor once 24 hours have passed. Each is keyed by the class and its number, so
-   * running this again changes nothing, and a job that was down sends only the latest one that is due, not all that were missed. They are
-   * withdrawn by the reminder job when the update is submitted, the class is cancelled or the student is not eligible.
+   * The reminders for a class whose update is still missing: exactly three for the tutor, at 30 minutes, 24 hours and 48 hours after the
+   * class ends, and one alert for the Mentor 24 hours after it ends. Each is keyed by the class slot and its number (0, 1, 2), so running
+   * this again changes nothing, and a job that was down sends only the latest one that is due, not all that were missed. They are
+   * withdrawn by the reminder job when the update is submitted, the class is cancelled, or the student or class is no longer operational.
    */
   async prepareUpdateReminders(tx: PrismaTxClient, o: Occurrence, now: Date, actor: string): Promise<{ tutor: number | null; mentor: boolean }> {
     const session = await this.ensureSession(tx, o);
@@ -405,19 +425,46 @@ export class MentoringClassService {
     const tz = (await this.sla.workingNow(tx, now)).timeZone;
     const date = dayOf(session.date) as string;
     const end = zonedInstant(date, session.endMinute, tz);
-    const first = new Date(end.getTime() + UPDATE_FIRST_REMINDER_MINUTES * 60_000);
-    if (now.getTime() < first.getTime()) return { tutor: null, mentor: false };
-    const day = 24 * 60 * 60_000;
-    const n = Math.min(UPDATE_DAILY_REMINDERS, Math.floor((now.getTime() - first.getTime()) / day));
+    const dueAt = UPDATE_REMINDER_OFFSETS_MINUTES.map((m) => new Date(end.getTime() + m * 60_000));
+    const n = dueAt.reduce((latest, t, i) => (now.getTime() >= t.getTime() ? i : latest), -1);
+    if (n < 0) return { tutor: null, mentor: false };
+    // The Mentor alert is separate from the tutor reminders and is never held back by them.
+    const last = dueAt.length - 1;
+    const stale = n === last && now.getTime() >= dueAt[last].getTime() + UPDATE_REMINDER_GRACE_MINUTES * 60_000;
     const words = await this.classWords(tx, o, session);
-    await this.reminders.prepare(tx, { kind: `CLASS_UPDATE_DUE:${date}:${session.startMinute}:${n}`, entityType: ENTITY, entityId: session.id, activationId: o.activationId, recipientUserId: session.tutorUserId, message: `Class update pending: ${words.text}. Please submit it.`, scheduledFor: new Date(first.getTime() + n * day) }, actor);
+    if (!stale) await this.reminders.prepare(tx, { kind: `CLASS_UPDATE_DUE:${date}:${session.startMinute}:${n}`, entityType: ENTITY, entityId: session.id, activationId: o.activationId, recipientUserId: session.tutorUserId, message: `Class update pending: ${words.text}. Please submit it.`, scheduledFor: dueAt[n] }, actor);
     let mentor = false;
     const escalateAt = new Date(end.getTime() + UPDATE_ESCALATION_HOURS * 60 * 60_000);
     if (words.mentorUserId && now.getTime() >= escalateAt.getTime()) {
       await this.reminders.prepare(tx, { kind: `CLASS_UPDATE_ESCALATION:${date}:${session.startMinute}`, entityType: ENTITY, entityId: session.id, activationId: o.activationId, recipientUserId: words.mentorUserId, message: `The tutor update is still missing for ${words.text}, more than ${UPDATE_ESCALATION_HOURS} hours after the class.`, scheduledFor: escalateAt }, actor);
       mentor = true;
     }
-    return { tutor: n, mentor };
+    return { tutor: stale ? null : n, mentor };
+  }
+
+  /**
+   * A function that says whether a class of a student starts at an operational moment: on or after the recorded activation and outside
+   * every recorded pause. Reads the activation and its holds once, for all the students asked about.
+   */
+  async operationalChecker(db: PrismaTxClient, activationIds: string[]): Promise<(activationId: string, date: string, startMinute: number) => boolean> {
+    if (activationIds.length === 0) return () => false;
+    const [activations, holds, working] = await Promise.all([
+      db.mentoringActivation.findMany({ where: { id: { in: activationIds } } }),
+      db.workflowHold.findMany({ where: { activationId: { in: activationIds } } }),
+      this.sla.workingNow(db, new Date()),
+    ]);
+    const boundaries = new Map<string, OperationalBoundary>(activations.map((a) => [a.id, { activatedAt: a.activatedAt ?? null, holds: holds.filter((h) => h.activationId === a.id).map((h) => ({ from: h.createdAt, to: h.resolvedAt ?? null })) }]));
+    return (activationId, date, startMinute) => {
+      const b = boundaries.get(activationId);
+      return !!b && operationalAt(b, zonedInstant(date, startMinute, working.timeZone));
+    };
+  }
+
+  /** The stored classes among these that are operational now: the student is eligible, and the class starts after activation and outside every pause. */
+  async operationalSessionIds(db: PrismaTxClient, sessions: Array<{ id: string; activationId: string; date: Date; startMinute: number }>): Promise<Set<string>> {
+    const ids = [...new Set(sessions.map((s) => s.activationId))];
+    const [eligible, operational] = await Promise.all([this.eligibleActivationIds(db, ids), this.operationalChecker(db, ids)]);
+    return new Set(sessions.filter((s) => eligible.has(s.activationId) && operational(s.activationId, dayOf(s.date) as string, s.startMinute)).map((s) => s.id));
   }
 
   /** The activations whose classes are operational now. Everything else is not generated, listed or reminded. */
@@ -820,6 +867,8 @@ export class MentoringClassService {
       if (date === current.date && start === current.start && end === current.end) throw new ConflictException('That is the time the class already has.');
       const working = await this.sla.workingNow(tx, now);
       if (date < localMomentOf(now, working.timeZone).date) throw new ConflictException('Choose today or a later date.');
+      // A class cannot be moved to a time before the student was activated or inside a pause: such a time is never operational.
+      if (!(await this.operationalChecker(tx, [o.activationId]))(o.activationId, date, start)) throw new ConflictException('The class cannot be moved to a time before the student was activated or during a pause.');
 
       // The tutor: free at the new time, with this class itself left out. Leave, holidays, days off, breaks and other bookings all count.
       const refs = await this.tutors.refsFor([o.tutorProfileId]);

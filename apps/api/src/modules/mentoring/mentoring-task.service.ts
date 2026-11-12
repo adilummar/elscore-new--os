@@ -37,6 +37,15 @@ export class MentoringTaskService {
     return task;
   }
 
+  /**
+   * A task raised from a class (a class follow-up) is run from the class workspace, where the assigned Mentor and the tutor each do their
+   * part and every step is written to the class history. The general task routes refuse it, so verifying, sending back or cancelling it
+   * here cannot skip that history or the assigned Mentor rule.
+   */
+  private assertNotClassFollowUp(task: { sourceType?: string | null }) {
+    if (task.sourceType) throw new ConflictException('This task follows up a class. Open the class workspace to work on it.');
+  }
+
   private assertManager(task: { activation: { currentMentorUserId: string | null } }, scope: MentoringScope) {
     if (!scope.all && task.activation.currentMentorUserId !== scope.userId) {
       throw new ForbiddenException('Only the assigned Mentor or the Mentoring Head can do this');
@@ -140,6 +149,7 @@ export class MentoringTaskService {
   async start(id: string, userId: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertAssignee(task, userId);
       if (task.status !== 'OPEN' && task.status !== 'RETURNED') throw new ConflictException(`Task cannot be started (${task.status})`);
       await tx.mentoringTask.update({ where: { id }, data: { status: 'IN_PROGRESS' } });
@@ -177,6 +187,7 @@ export class MentoringTaskService {
   async collect(id: string, input: { itemKey: string; value?: unknown; note?: string; evidenceRef?: string }, userId: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertAssignee(task, userId);
       if (!WORKING.includes(task.status)) throw new ConflictException(`Task is not open for work (${task.status})`);
       if (task.activation.status !== 'ACTIVATION_IN_PROGRESS') {
@@ -220,6 +231,7 @@ export class MentoringTaskService {
   async submit(id: string, input: { note?: string; evidence?: string }, userId: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertAssignee(task, userId);
       if (!WORKING.includes(task.status)) throw new ConflictException(`Task cannot be submitted (${task.status})`);
       const evidence = Array.isArray(task.evidence) ? [...(task.evidence as unknown[])] : [];
@@ -252,6 +264,7 @@ export class MentoringTaskService {
   async verify(id: string, scope: MentoringScope) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertManager(task, scope);
       if (task.status !== 'SUBMITTED') throw new ConflictException('Only a submitted task can be verified');
       await tx.mentoringTask.update({ where: { id }, data: { status: 'VERIFIED', verifiedByUserId: scope.userId, verifiedAt: new Date() } });
@@ -272,6 +285,7 @@ export class MentoringTaskService {
     if (!reason?.trim()) throw new BadRequestException('A reason is required');
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertManager(task, scope);
       if (task.status !== 'SUBMITTED') throw new ConflictException('Only a submitted task can be returned');
       await tx.mentoringTask.update({ where: { id }, data: { status: 'RETURNED', returnReason: reason.trim() } });
@@ -293,6 +307,7 @@ export class MentoringTaskService {
     if (!reason?.trim()) throw new BadRequestException('A reason is required');
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertAssignee(task, userId);
       if (!WORKING.includes(task.status)) throw new ConflictException(`Task cannot be paused (${task.status})`);
       await tx.mentoringTask.update({ where: { id }, data: { status: 'ON_HOLD', statusBeforeHold: task.status, holdReason: reason.trim() } });
@@ -312,6 +327,7 @@ export class MentoringTaskService {
   async resumeTask(id: string, userId: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertAssignee(task, userId);
       if (task.status !== 'ON_HOLD') throw new ConflictException('Task is not paused');
       const restored = task.statusBeforeHold ?? 'IN_PROGRESS';
@@ -325,6 +341,7 @@ export class MentoringTaskService {
     if (!reason?.trim()) throw new BadRequestException('A reason is required');
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const task = await this.loadTask(tx, id);
+      this.assertNotClassFollowUp(task);
       this.assertManager(task, scope);
       if (task.status === 'VERIFIED' || task.status === 'CANCELLED') throw new ConflictException('Task is already closed');
       await tx.mentoringTask.update({ where: { id }, data: { status: 'CANCELLED' } });

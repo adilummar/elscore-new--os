@@ -39,7 +39,7 @@ function world(opts: { rate?: boolean; extraDays?: boolean } = {}) {
   for (const [id, first, last, mentor] of [['A', 'Synthetic', 'Student A', 'mentor-1'], ['B', 'Synthetic', 'Student B', 'mentor-2']] as const) {
     db.seed('lead', { id: `lead-${id}` });
     db.seed('student', { id: `stu-${id}`, firstName: first, lastName: last });
-    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', currentMentorUserId: mentor });
+    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', activatedAt: new Date('2026-11-01T00:00:00Z'), currentMentorUserId: mentor });
     db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });
   }
   const tutor = (key: string, first: string, last: string) => {

@@ -1,4 +1,4 @@
-import { OPEN_CLASS_STATUSES, TIMETABLE_STAGE, classEligibility, ineligibleMessage, isActive, studentEligibility, timetableApproved } from './class-eligibility';
+import { OPEN_CLASS_STATUSES, TIMETABLE_STAGE, classEligibility, ineligibleMessage, isActive, operationalAt, studentEligibility, timetableApproved } from './class-eligibility';
 
 const stage = (status: string, stageNumber = TIMETABLE_STAGE) => ({ stageNumber, status });
 const ALL = ['AWAITING_ALLOCATION', 'ACTIVATION_IN_PROGRESS', 'ACTIVATION_ON_HOLD', 'ACTIVATION_BLOCKED', 'PENDING_FINAL_APPROVAL', 'ACTIVATED', 'CANCELLED'];
@@ -39,5 +39,39 @@ describe('who is eligible for operational Mentoring work', () => {
 
   it('treats only a class that has not progressed as operational rather than history', () => {
     expect([...OPEN_CLASS_STATUSES].sort()).toEqual(['RESCHEDULED', 'SCHEDULED']);
+  });
+});
+
+describe('operationalAt: after activation and outside every pause', () => {
+  const d = (iso: string) => new Date(iso);
+  const b = (activatedAt: string | null, holds: Array<[string, string | null]> = []) => ({ activatedAt: activatedAt ? d(activatedAt) : null, holds: holds.map(([from, to]) => ({ from: d(from), to: to ? d(to) : null })) });
+
+  it('is false before the recorded activation and true from that moment', () => {
+    const x = b('2026-11-04T08:00:00Z');
+    expect(operationalAt(x, d('2026-11-04T07:59:59Z'))).toBe(false);
+    expect(operationalAt(x, d('2026-11-04T08:00:00Z'))).toBe(true);
+    expect(operationalAt(x, d('2026-12-01T00:00:00Z'))).toBe(true);
+  });
+
+  it('is never true for a student with no recorded activation, whatever else is recorded', () => {
+    expect(operationalAt(b(null), d('2026-12-01T00:00:00Z'))).toBe(false);
+    expect(operationalAt(b(null, [['2026-11-01T00:00:00Z', '2026-11-02T00:00:00Z']]), d('2026-12-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('is false from the first moment of a pause until the moment it was resolved, and true again from then', () => {
+    const x = b('2026-11-01T00:00:00Z', [['2026-11-14T00:00:00Z', '2026-11-20T00:00:00Z']]);
+    expect(operationalAt(x, d('2026-11-13T23:59:59Z'))).toBe(true);
+    expect(operationalAt(x, d('2026-11-14T00:00:00Z'))).toBe(false);
+    expect(operationalAt(x, d('2026-11-19T23:59:59Z'))).toBe(false);
+    expect(operationalAt(x, d('2026-11-20T00:00:00Z'))).toBe(true);
+    expect(operationalAt(x, d('2027-01-01T00:00:00Z'))).toBe(true); // the historical pause does not come back
+  });
+
+  it('keeps every pause out, and an open pause out for good', () => {
+    const x = b('2026-11-01T00:00:00Z', [['2026-11-08T00:00:00Z', '2026-11-12T00:00:00Z'], ['2026-11-22T00:00:00Z', null]]);
+    expect(operationalAt(x, d('2026-11-10T00:00:00Z'))).toBe(false);
+    expect(operationalAt(x, d('2026-11-15T00:00:00Z'))).toBe(true);
+    expect(operationalAt(x, d('2026-11-23T00:00:00Z'))).toBe(false);
+    expect(operationalAt(x, d('2027-06-01T00:00:00Z'))).toBe(false);
   });
 });

@@ -60,3 +60,22 @@ export function ineligibleMessage(reason: EligibilityReason, what: 'classes' | '
 
 /** A stored class that has not progressed past scheduling. Such a class belongs to the operational list, not to history. */
 export const OPEN_CLASS_STATUSES: ReadonlySet<string> = new Set(['SCHEDULED', 'RESCHEDULED']);
+
+// ─── When a class is operational: after activation, and outside every pause ───────────────────────────────────────
+/**
+ * The moments a student's classes are operational, read from what is recorded: the instant the Mentoring Head approved the activation
+ * (activatedAt, set once on approval) and every pause or block the workflow recorded (WorkflowHold: from the moment it was made to the
+ * moment it was resolved, or still open). Nothing is estimated. A student with no recorded activation moment has no operational classes,
+ * because no date is invented for them.
+ */
+export interface OperationalBoundary {
+  activatedAt: Date | null;
+  holds: ReadonlyArray<{ from: Date; to: Date | null }>;
+}
+
+/** Whether a class that starts at this instant is operational: not before activation, and not inside any pause. */
+export function operationalAt(boundary: OperationalBoundary, start: Date): boolean {
+  if (!boundary.activatedAt) return false;
+  if (start.getTime() < boundary.activatedAt.getTime()) return false;
+  return !boundary.holds.some((h) => start.getTime() >= h.from.getTime() && (h.to === null || start.getTime() < h.to.getTime()));
+}

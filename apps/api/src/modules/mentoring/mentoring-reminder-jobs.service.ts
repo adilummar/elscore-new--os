@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { addDays } from '../tutor/tutor-calendar';
 
-import { CLASS_REMINDER_ENTITY, MentoringClassService, UPDATE_DAILY_REMINDERS } from './mentoring-class.service';
+import { CLASS_REMINDER_ENTITY, MentoringClassService, UPDATE_REMINDER_LOOKBACK_DAYS } from './mentoring-class.service';
 import { MentoringReminderService } from './mentoring-reminder.service';
 import { localMomentOf } from './mentoring-sla';
 import { MentoringSlaService } from './mentoring-sla.service';
@@ -56,14 +56,14 @@ export class MentoringReminderJobsService {
   async withdrawNoLongerApplicable(): Promise<number> {
     const prepared = await this.db.mentoringReminder.findMany({ where: { status: 'PREPARED', entityType: CLASS_REMINDER_ENTITY } });
     if (prepared.length === 0) return 0;
-    const activationIds = [...new Set(prepared.map((r) => r.activationId).filter((i): i is string => !!i))];
-    const eligible = await this.classes.eligibleActivationIds(this.db, activationIds);
     const sessions = await this.db.mentoringClassSession.findMany({ where: { id: { in: prepared.map((r) => r.entityId) } } });
+    // Still operational: the student is eligible, and the class starts after activation and outside every pause.
+    const operational = await this.classes.operationalSessionIds(this.db, sessions);
     let withdrawn = 0;
     for (const r of prepared) {
       const session = sessions.find((s) => s.id === r.entityId);
-      const open = !!session && (session.status === 'SCHEDULED' || session.status === 'RESCHEDULED');
-      if ((r.activationId && eligible.has(r.activationId)) && open) continue;
+      const open = !!session && (session.status === 'SCHEDULED' || session.status === 'RESCHEDULED' || session.status === 'RETURNED_FOR_CORRECTION');
+      if (session && operational.has(session.id) && open) continue;
       try {
         await this.prisma.$transaction((tx: PrismaTxClient) => this.reminders.cancel(tx, r.id));
         withdrawn += 1;
@@ -77,7 +77,7 @@ export class MentoringReminderJobsService {
   /** Prepares the pending-update reminders of the classes of the last few days that nobody has reported on. */
   async prepareUpdateReminders(now: Date): Promise<{ prepared: number; failed: number }> {
     const today = localMomentOf(now, (await this.sla.workingNow(this.db, now)).timeZone).date;
-    const occurrences = await this.classes.eligibleOccurrences(this.db, addDays(today, -(UPDATE_DAILY_REMINDERS + 2)), today);
+    const occurrences = await this.classes.eligibleOccurrences(this.db, addDays(today, -UPDATE_REMINDER_LOOKBACK_DAYS), today);
     let prepared = 0;
     let failed = 0;
     for (const o of occurrences) {

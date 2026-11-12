@@ -47,7 +47,7 @@ function world(extra = 0) {
   const student = (id: string, first: string, last: string, mentor: string, businessId: string, status: string, subject = 'sub-en', stage = 1) => {
     db.seed('lead', { id: `lead-${id}` });
     db.seed('student', { id: `stu-${id}`, firstName: first, lastName: last, businessId });
-    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status, currentStage: stage, currentMentorUserId: mentor, createdAt: new Date(NOW.getTime() - 5 * 86_400_000) });
+    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status, ...(status === 'ACTIVATED' ? { activatedAt: new Date('2026-11-01T00:00:00Z') } : {}), currentStage: stage, currentMentorUserId: mentor, createdAt: new Date(NOW.getTime() - 5 * 86_400_000) });
     if (status !== 'ACTIVATED') db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: stage, key: 'X', status: 'IN_PROGRESS' });
     // An Active student has finished every activation stage, including the timetable.
     if (status === 'ACTIVATED') db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });

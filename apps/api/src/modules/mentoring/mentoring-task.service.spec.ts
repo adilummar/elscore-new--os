@@ -149,3 +149,22 @@ describe('Counselor tasks', () => {
     expect(await s.tasks.list(await s.scope('head-1'), { scope: 'all' })).toHaveLength(2);
   });
 });
+
+describe('class follow-up tasks are not run through the general task routes', () => {
+  it('refuses every state change on a task raised from a class, and still allows comments', async () => {
+    const s = setup();
+    const task = await newTask(s)();
+    s.db.rows('mentoringTask').find((t) => t.id === task.id)!.sourceType = 'CLASS_SESSION';
+    const mentor = await s.scope('mentor-1');
+    const head = await s.scope('head-1');
+
+    await expect(s.tasks.start(task.id, 'counselor-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(s.tasks.collect(task.id, { itemKey: getChecklistDefinition(1)[0].key, value: 'x' }, 'counselor-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(s.tasks.submit(task.id, {}, 'counselor-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(s.tasks.verify(task.id, head)).rejects.toBeInstanceOf(ConflictException);
+    await expect(s.tasks.returnTask(task.id, 'Not enough', mentor)).rejects.toBeInstanceOf(ConflictException);
+    await expect(s.tasks.cancel(task.id, 'No longer needed', head)).rejects.toBeInstanceOf(ConflictException);
+    expect(s.db.rows('mentoringTask').find((t) => t.id === task.id)!.status).toBe('OPEN');
+    await expect(s.tasks.comment(task.id, 'Noted', mentor)).resolves.toBeDefined();
+  });
+});

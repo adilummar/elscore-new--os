@@ -8,12 +8,13 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 
 import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator';
 
+import { operationalAt } from './class-eligibility';
 import { MAX_AUDIO_BYTES } from './class-workspace';
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
 import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
 import { MentoringClassController } from './mentoring-class.controller';
-import { MentoringClassService } from './mentoring-class.service';
+import { MentoringClassService, UPDATE_ESCALATION_HOURS, UPDATE_REMINDER_OFFSETS_MINUTES } from './mentoring-class.service';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringReminderJobsService } from './mentoring-reminder-jobs.service';
 import { MentoringReminderProcessor, MentoringReminderScheduler, automaticRemindersEnabled } from './mentoring-reminder.processor';
@@ -71,7 +72,7 @@ function world() {
   const student = (id: string, first: string, last: string, mentor: string, tp: string, start: string, end: string) => {
     db.seed('lead', { id: `lead-${id}` });
     db.seed('student', { id: `stu-${id}`, firstName: first, lastName: last, businessId: `STU-000${id === 'A' ? 1 : id === 'B' ? 2 : 3}` });
-    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', currentStage: 3, currentMentorUserId: mentor });
+    db.seed('mentoringActivation', { id: `act-${id}`, leadId: `lead-${id}`, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'ACTIVATED', activatedAt: new Date('2026-11-01T00:00:00Z'), currentStage: 3, currentMentorUserId: mentor });
     db.seed('mentoringStage', { activationId: `act-${id}`, stageNumber: 3, key: 'TIMETABLE_CREATION', status: 'COMPLETED' });
     db.seed('enrollmentHandoverField', { handoverId: `ho-${id}`, fieldKey: 'timetable.schedule', value: { version: 2, subjects: [{ subjectId: 'sub-en', subjectName: 'English', gradeId: 'g-8', gradeName: 'Grade 8', frequency: 'WEEKLY', totalMinutes: 60, distribution: 'EQUAL', sessions: [{ day: 'Monday', durationMinutes: m(end) - m(start), start, end }], startDate: MON }] }, origin: 'MENTOR_COLLECTED', updatedByUserId: mentor });
     const a = db.seed('mentoringTutorAssignment', { id: `as-class-${id}`, activationId: `act-${id}`, subjectId: 'sub-en', tutorProfileId: `tp-${tp}`, status: 'ACTIVE', currentKey: `act-${id}:sub-en`, startDate: day(MON), endDate: null, scheduleSnapshot: {} });
@@ -1787,97 +1788,192 @@ describe('Stage 1: activity topic, grade, level and option groups', () => {
 describe('Stage 1: the pending update reminder schedule', () => {
   const jobs = (w: ReturnType<typeof world>) => new MentoringReminderJobsService(w.db as any, w.classes, new MentoringReminderService(w.db as any), new MentoringSlaService(w.db as any, w.access));
   const rows = (w: ReturnType<typeof world>, prefix: string, activation = 'act-A') => w.db.rows('mentoringReminder').filter((r) => r.kind.startsWith(prefix) && r.activationId === activation && r.kind.includes(`${MON}:900`));
-  const day = (n: number, time: string) => at(`2026-11-${String(9 + n).padStart(2, '0')}`, time);
+  const due = (w: ReturnType<typeof world>) => rows(w, 'CLASS_UPDATE_DUE').sort((a, b) => a.kind.localeCompare(b.kind));
+  const tutorNotes = (w: ReturnType<typeof world>) => w.db.rows('notification').filter((n) => n.recipientUserId === 'u-meera' && n.message.includes('Class update pending: English with Asha'));
+  // The class ends at 16:00 on Monday 9 November. The three reminders are due 30 minutes, 24 hours and 48 hours after that.
+  const T1 = at(MON, '16:30');
+  const T2 = at('2026-11-10', '16:00');
+  const T3 = at('2026-11-11', '16:00');
+  const minute = (d: Date, n: number) => new Date(d.getTime() + n * 60_000);
 
-  it('sends nothing before 30 minutes after the class ends, then the first reminder to the tutor', async () => {
+  it('sends nothing before 30 minutes after the class ends, then the first reminder to the tutor, at exactly that time', async () => {
     const w = world();
     const j = jobs(w);
-    await j.run(at(MON, '16:29'));
-    expect(rows(w, 'CLASS_UPDATE_DUE')).toEqual([]);
-    const r = await j.run(at(MON, '16:30'));
+    await j.run(minute(T1, -1));
+    expect(due(w)).toEqual([]);
+    const r = await j.run(T1);
     expect(r.sent).toBeGreaterThanOrEqual(1);
-    const first = rows(w, 'CLASS_UPDATE_DUE');
-    expect(first).toHaveLength(1);
-    expect(first[0]).toMatchObject({ status: 'SENT', recipientUserId: 'u-meera', kind: `CLASS_UPDATE_DUE:${MON}:900:0`, scheduledFor: at(MON, '16:30') });
-    expect(first[0].message).toContain('Class update pending: English with Asha Menon');
-    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'u-meera' && n.entityId === first[0].entityId && n.message.includes('Class update pending'))).toHaveLength(1);
+    expect(due(w)).toHaveLength(1);
+    expect(due(w)[0]).toMatchObject({ status: 'SENT', recipientUserId: 'u-meera', kind: `CLASS_UPDATE_DUE:${MON}:900:0`, scheduledFor: T1, sentAt: T1 });
+    expect(due(w)[0].message).toContain('Class update pending: English with Asha Menon');
+    expect(tutorNotes(w)).toHaveLength(1);
   });
 
-  it('repeats once a day up to three more times, so four in all, and then stops', async () => {
+  it('sends exactly three reminders at 30 minutes, 24 hours and 48 hours after the class ends, none earlier, and no fourth', async () => {
     const w = world();
     const j = jobs(w);
-    await j.run(at(MON, '16:30'));
-    await j.run(at(MON, '23:00'));
-    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(1);
-    await j.run(day(1, '16:30'));
-    await j.run(day(2, '16:30'));
-    await j.run(day(3, '16:30'));
-    expect(rows(w, 'CLASS_UPDATE_DUE').map((r) => r.kind.split(':').pop()).sort()).toEqual(['0', '1', '2', '3']);
-    expect(rows(w, 'CLASS_UPDATE_DUE').every((r) => r.status === 'SENT')).toBe(true);
-    await j.run(day(4, '16:30'));
-    await j.run(day(4, '20:00'));
-    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(4);
-    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'u-meera' && n.message.includes('Class update pending: English with Asha'))).toHaveLength(4);
+    await j.run(minute(T1, -1));
+    await j.run(T1);
+    await j.run(minute(T2, -1));
+    expect(due(w)).toHaveLength(1); // not before 24 hours
+    await j.run(T2);
+    await j.run(minute(T3, -1));
+    expect(due(w)).toHaveLength(2); // not before 48 hours
+    await j.run(T3);
+    expect(due(w).map((r) => r.kind.split(':').pop())).toEqual(['0', '1', '2']);
+    expect(due(w).map((r) => r.scheduledFor)).toEqual([T1, T2, T3]);
+    expect(due(w).map((r) => r.sentAt)).toEqual([T1, T2, T3]);
+    expect(due(w).every((r) => r.status === 'SENT' && r.recipientUserId === 'u-meera')).toBe(true);
+    for (const later of [minute(T3, 1), at('2026-11-11', '23:00'), at('2026-11-12', '16:00'), at('2026-11-13', '16:00')]) await j.run(later);
+    expect(due(w)).toHaveLength(3);
+    expect(due(w).some((r) => r.kind.endsWith(':3'))).toBe(false);
+    expect(tutorNotes(w)).toHaveLength(3);
   });
 
-  it('tells the Mentor once, 24 hours after the class ended, and not before', async () => {
+  it('tells the Mentor once, 24 hours after the class ended, together with the second tutor reminder and not before', async () => {
     const w = world();
     w.db.seed('user', { id: 'mentor-1', status: 'ACTIVE' });
     const j = jobs(w);
-    await j.run(day(1, '15:59'));
+    await j.run(T1);
+    await j.run(minute(T2, -1));
     expect(rows(w, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
-    await j.run(day(1, '16:00'));
-    await j.run(day(1, '18:00'));
+    await j.run(T2);
+    for (const later of [minute(T2, 5), T3, at('2026-11-12', '09:00')]) await j.run(later);
     const esc = rows(w, 'CLASS_UPDATE_ESCALATION');
     expect(esc).toHaveLength(1);
-    expect(esc[0]).toMatchObject({ status: 'SENT', recipientUserId: 'mentor-1', scheduledFor: day(1, '16:00') });
+    expect(esc[0]).toMatchObject({ status: 'SENT', recipientUserId: 'mentor-1', scheduledFor: T2, sentAt: T2 });
     expect(esc[0].message).toContain('The tutor update is still missing for English with Asha Menon');
     expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'mentor-1' && n.message.includes('still missing'))).toHaveLength(1);
+    expect(due(w).find((r) => r.kind.endsWith(':1'))).toMatchObject({ scheduledFor: T2 }); // the second tutor reminder is due at the same moment
   });
 
-  it('stops when the update is submitted, and a late submission is sent no more reminders', async () => {
+  it('is safe to run again and at the same time: three reminders and three notifications, never more', async () => {
+    const w = world();
+    w.db.seed('user', { id: 'mentor-1', status: 'ACTIVE' });
+    const j = jobs(w);
+    for (const t of [T1, T2, T3]) {
+      await Promise.all([j.run(t), j.run(t), j.run(t)]);
+      await j.run(t);
+    }
+    const keys = w.db.rows('mentoringReminder').map((r) => r.currentKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(due(w)).toHaveLength(3);
+    expect(tutorNotes(w)).toHaveLength(3);
+    expect(rows(w, 'CLASS_UPDATE_ESCALATION')).toHaveLength(1);
+  });
+
+  it('survives a restart of the job: running again after a pause in the schedule adds nothing that was already done', async () => {
+    const w = world();
+    await jobs(w).run(T1);
+    await jobs(w).run(minute(T1, 1)); // a new instance, as after a restart
+    await jobs(w).run(T2);
+    await jobs(w).run(minute(T2, 1));
+    expect(due(w).map((r) => r.kind.split(':').pop())).toEqual(['0', '1']);
+    expect(tutorNotes(w)).toHaveLength(2);
+  });
+
+  it('stops when the update is submitted: the reminders still to come are not made, and one prepared but not sent is withdrawn', async () => {
     const w = world();
     const j = jobs(w);
-    await j.run(at(MON, '16:30'));
+    await j.run(T1);
     await w.submit(KEY, 'u-meera');
-    await j.run(day(1, '16:30'));
-    await j.run(day(2, '16:30'));
-    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(1);
+    await j.run(T2);
+    await j.run(T3);
+    expect(due(w)).toHaveLength(1);
     expect(rows(w, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
-  });
-
-  it('withdraws a prepared reminder when the update arrives first, and sends only the latest one that is due after the job was down', async () => {
-    const w = world();
-    const j = jobs(w);
-    await j.run(day(2, '16:35')); // the job was down for two days
-    const due = rows(w, 'CLASS_UPDATE_DUE');
-    expect(due.map((r) => r.kind.split(':').pop())).toEqual(['2']); // not 0 and 1 as well
-    expect(due[0].scheduledFor).toEqual(day(2, '16:30'));
     const prepared = world();
-    await prepared.classes.prepareUpdateReminders(prepared.db as any, (await prepared.classes.eligibleOccurrences(prepared.db as any, MON, MON))[0], at(MON, '16:40'), 'system');
+    prepared.db.seed('user', { id: 'mentor-1', status: 'ACTIVE' });
+    await prepared.classes.prepareUpdateReminders(prepared.db as any, (await prepared.classes.eligibleOccurrences(prepared.db as any, MON, MON))[0], T2, 'system');
+    expect(due(prepared)[0].status).toBe('PREPARED');
     await prepared.submit();
     await jobs(prepared).withdrawNoLongerApplicable();
-    expect(rows(prepared, 'CLASS_UPDATE_DUE').every((r) => r.status === 'CANCELLED')).toBe(true);
+    expect(due(prepared).every((r) => r.status === 'CANCELLED')).toBe(true);
+    await jobs(prepared).run(T3);
+    expect(tutorNotes(prepared)).toHaveLength(0);
   });
 
-  it('sends nothing for a class that was cancelled, a student who is paused, or a student who is not eligible', async () => {
+  it('sends no more once the class is cancelled after the first reminder, and none for a class cancelled before', async () => {
+    const early = world();
+    await early.classes.cancel(KEY, 'Holiday', 'mentor-1', at(MON, '09:00'));
+    for (const t of [T1, T2, T3]) await jobs(early).run(t);
+    expect(due(early)).toEqual([]);
+    expect(rows(early, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
+    const late = world();
+    await jobs(late).run(T1);
+    expect(due(late)).toHaveLength(1);
+    // A class that was reported is no longer cancellable, so the follow-on case is the Mentor confirming it was not conducted.
+    await late.classes.tutorSubmitUpdate('u-meera', KEY, { conducted: false, notConductedReason: 'Ill' }, minute(T1, 5));
+    for (const t of [T2, T3]) await jobs(late).run(t);
+    expect(due(late)).toHaveLength(1);
+  });
+
+  it('follows a class that was moved: nothing for the old time, and the three reminders from the end of the new time', async () => {
     const w = world();
-    await w.classes.cancel(KEY, 'Holiday', 'mentor-1', at(MON, '09:00'));
-    await jobs(w).run(day(1, '17:00'));
-    expect(rows(w, 'CLASS_UPDATE_DUE')).toEqual([]);
+    const j = jobs(w);
+    await j.run(at(MON, '09:00'));
+    await w.classes.reschedule(KEY, { newDate: MON, newStart: '18:00', newEnd: '19:00', reason: 'Exam' }, 'mentor-1', at(MON, '09:05'));
+    await j.run(T1); // 16:30 is after the old end, but the class now ends at 19:00
+    expect(due(w)).toEqual([]);
+    const newEnd = at(MON, '19:00');
+    await j.run(minute(newEnd, 29));
+    expect(due(w)).toEqual([]);
+    await j.run(minute(newEnd, 30));
+    expect(w.db.rows('mentoringReminder').filter((r) => r.kind.startsWith('CLASS_UPDATE_DUE') && r.activationId === 'act-A')).toMatchObject([{ kind: `CLASS_UPDATE_DUE:${MON}:1080:0`, scheduledFor: minute(newEnd, 30), status: 'SENT' }]);
+    await j.run(minute(newEnd, 24 * 60));
+    await j.run(minute(newEnd, 48 * 60));
+    expect(w.db.rows('mentoringReminder').filter((r) => r.kind.startsWith('CLASS_UPDATE_DUE') && r.activationId === 'act-A').map((r) => r.kind.split(':').pop())).toEqual(['0', '1', '2']);
+  });
+
+  it('after the job was down it sends only the latest reminder that is due, and starts none more than a day after the last one was due', async () => {
+    const w = world();
+    await jobs(w).run(minute(T3, 5)); // down since the class
+    expect(due(w).map((r) => r.kind.split(':').pop())).toEqual(['2']);
+    const old = world();
+    old.db.seed('user', { id: 'mentor-1', status: 'ACTIVE' });
+    await jobs(old).run(at('2026-11-12', '17:00')); // more than a day after the third was due
+    expect(due(old)).toEqual([]);
+    expect(tutorNotes(old)).toHaveLength(0);
+  });
+
+  it('sends nothing for a student who is paused or not eligible', async () => {
     const p = world();
     p.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.status = 'ACTIVATION_ON_HOLD';
-    await jobs(p).run(day(1, '17:00'));
-    expect(rows(p, 'CLASS_UPDATE_DUE')).toEqual([]);
+    for (const t of [T1, T2, T3]) await jobs(p).run(t);
+    expect(due(p)).toEqual([]);
     expect(rows(p, 'CLASS_UPDATE_ESCALATION')).toEqual([]);
   });
 
-  it('can be run again and at the same time with no second reminder or notification', async () => {
+  it('keeps the existing retry behaviour for a failed send: it stays prepared, is tried again on the next run, and is sent once', async () => {
     const w = world();
     const j = jobs(w);
-    await Promise.all([j.run(at(MON, '16:31')), j.run(at(MON, '16:31')), j.run(at(MON, '16:31'))]);
-    expect(rows(w, 'CLASS_UPDATE_DUE')).toHaveLength(1);
-    expect(w.db.rows('notification').filter((n) => n.message.includes('Class update pending: English with Asha'))).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const original = FakeDb.prototype.model;
+    let fail = true;
+    const spy = jest.spyOn(FakeDb.prototype, 'model').mockImplementation(function (this: FakeDb, table: string) {
+      const m = original.call(this, table);
+      return (table === 'notification' ? { ...m, create: jest.fn((args: any) => (fail ? Promise.reject(new Error('notification refused')) : m.create(args))) } : m);
+    });
+    const first = await j.run(T1);
+    expect(first.failed).toBeGreaterThanOrEqual(1);
+    expect(due(w)[0]).toMatchObject({ status: 'PREPARED', sentAt: null });
+    expect(tutorNotes(w)).toHaveLength(0);
+    fail = false;
+    const second = await j.run(minute(T1, 1));
+    spy.mockRestore();
+    expect(second.sent).toBeGreaterThanOrEqual(1);
+    expect(due(w)).toHaveLength(1);
+    expect(due(w)[0]).toMatchObject({ status: 'SENT', scheduledFor: T1, sentAt: minute(T1, 1) });
+    expect(tutorNotes(w)).toHaveLength(1);
+    await j.run(minute(T1, 2));
+    expect(tutorNotes(w)).toHaveLength(1);
+  });
+
+  it('uses the three offsets from the class end in the constants, and no fourth', () => {
+    expect([...UPDATE_REMINDER_OFFSETS_MINUTES]).toEqual([30, 24 * 60, 48 * 60]);
+    expect(UPDATE_ESCALATION_HOURS).toBe(24);
+    const source = readFileSync(join(__dirname, 'mentoring-class.service.ts'), 'utf8');
+    expect(source).not.toContain('UPDATE_DAILY_REMINDERS');
+    expect(source).not.toContain('UPDATE_FIRST_REMINDER_MINUTES');
   });
 });
 
@@ -1991,5 +2087,170 @@ describe('Stage 1: pause handling and make-up classes', () => {
     await expect(w.classes.reschedule(KEY, { newDate: MON, newStart: '18:00', newEnd: '19:00', reason: 'Make-up for the pause' }, 'mentor-1', at(MON, '09:00'))).resolves.toMatchObject({ notified: true });
     expect(w.session()).toMatchObject({ status: 'RESCHEDULED', startMinute: 1080, originalStartMinute: 900 });
     expect(w.db.rows('mentoringTutorAssignmentOverride')[0]).toMatchObject({ reason: 'Make-up for the pause' });
+  });
+});
+
+// ─── Blocker fix: classes before activation and inside a pause are never operational ───────────────────────────────
+describe('classes are operational only after activation and outside every pause', () => {
+  const MONDAYS = ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16', '2026-11-23', '2026-11-30'];
+  const keyOf = (d: string) => `as-class-A~${d}~900`;
+  const LATER = at('2026-12-01', '10:00');
+  const jobs = (w: ReturnType<typeof world>) => new MentoringReminderJobsService(w.db as any, w.classes, new MentoringReminderService(w.db as any), new MentoringSlaService(w.db as any, w.access));
+
+  /** Asha's English class every Monday at 15:00, assigned from 5 October, activated at the given moment, with the given pauses (from, to). */
+  const setup = (activatedAt: string | null, holds: Array<[string, string | null]> = []) => {
+    const w = world();
+    w.db.seed('user', { id: 'mentor-1', status: 'ACTIVE' });
+    // The other two students are not active, so everything these tests count belongs to Asha.
+    for (const id of ['act-B', 'act-H']) w.db.rows('mentoringActivation').find((a) => a.id === id)!.status = 'PENDING_FINAL_APPROVAL';
+    w.db.rows('mentoringTutorAssignment').find((a) => a.id === 'as-class-A')!.startDate = day('2026-10-05');
+    w.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.activatedAt = activatedAt ? new Date(activatedAt) : null;
+    for (const [from, to] of holds) w.db.seed('workflowHold', { activationId: 'act-A', kind: 'HOLD', reason: 'Pause', previousActivationStatus: 'ACTIVATION_IN_PROGRESS', createdByUserId: 'head-1', createdAt: new Date(from), resolvedAt: to ? new Date(to) : null });
+    return w;
+  };
+  const shown = async (w: ReturnType<typeof world>, date: string, now = LATER) => (await w.classes.daily('act-A', date, {}, await w.scope('head-1'), now)).classes.map((c) => c.key);
+  const shownAll = async (w: ReturnType<typeof world>) => { const out: string[] = []; for (const d of MONDAYS) out.push(...(await shown(w, d))); return out; };
+  const reminderDates = (w: ReturnType<typeof world>) => [...new Set(w.db.rows('mentoringReminder').filter((r) => r.activationId === 'act-A').map((r) => r.kind.split(':')[1]))].sort();
+
+  it('never shows a class before the activation, and shows the classes after it normally, when the assignment starts earlier', async () => {
+    const w = setup('2026-11-04T08:00:00Z');
+    expect(await shownAll(w)).toEqual(['2026-11-09', '2026-11-16', '2026-11-23', '2026-11-30'].map(keyOf));
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(0);
+  });
+
+  it('cannot be reached by its key either: nothing can be reminded, reported, written or opened for a class before activation', async () => {
+    const w = setup('2026-11-04T08:00:00Z');
+    const before = keyOf('2026-10-26');
+    await expect(w.classes.prepareReminder(before, 'mentor-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.classes.tutorSubmitUpdate('u-meera', before, good, at('2026-10-26', '17:00'))).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.ws.tutorWorkspace('u-meera', before, LATER)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.ws.addActivity('u-meera', before, activity(1), LATER)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.classes.cancel(before, 'x', 'mentor-1', LATER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(0);
+    await expect(w.ws.tutorWorkspace('u-meera', keyOf('2026-11-09'), LATER)).resolves.toMatchObject({ student: { name: 'Asha Menon' } });
+  });
+
+  it('uses the exact moment of activation: a class that started before it is excluded, one that starts after it is included', async () => {
+    const early = setup('2026-11-09T09:00:00Z'); // 14:30 in India, before the 15:00 class
+    expect(await shown(early, '2026-11-09')).toEqual([keyOf('2026-11-09')]);
+    const late = setup('2026-11-09T10:00:00Z'); // 15:30, after the class started
+    expect(await shown(late, '2026-11-09')).toEqual([]);
+    expect(await shown(late, '2026-11-16')).toEqual([keyOf('2026-11-16')]);
+    const exact = setup('2026-11-09T09:30:00Z'); // the class starts at the very moment of activation
+    expect(await shown(exact, '2026-11-09')).toEqual([keyOf('2026-11-09')]);
+  });
+
+  it('shows no class of a student whose activation moment was never recorded, and invents no date for one', async () => {
+    const w = setup(null);
+    expect(await shownAll(w)).toEqual([]);
+    expect(w.db.rows('mentoringClassSession')).toHaveLength(0);
+    await jobs(w).run(at('2026-11-09', '14:20'));
+    expect(w.db.rows('mentoringReminder')).toHaveLength(0);
+  });
+
+  it('makes no reminder and no Mentor alert for a class before activation, and does for the classes after it', async () => {
+    const w = setup('2026-11-03T00:00:00Z');
+    const j = jobs(w);
+    // On Tuesday 3 November the Monday class of 2 November is 24 hours old, which would be a reminder and a Mentor alert if it counted.
+    await j.run(at('2026-11-03', '17:00'));
+    await j.run(at('2026-11-03', '18:00'));
+    // Only the class of 9 November, which is after activation, is prepared. Nothing for 2 November or any Monday before it.
+    expect(reminderDates(w)).toEqual(['2026-11-09']);
+    expect(w.db.rows('mentoringReminder').filter((r) => r.kind.startsWith('CLASS_UPDATE'))).toEqual([]);
+    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'mentor-1')).toEqual([]);
+    await j.run(at('2026-11-09', '14:20'));
+    expect(reminderDates(w)).toEqual(['2026-11-09', '2026-11-16']);
+    await j.run(at('2026-11-10', '16:00')); // the update for 9 November is 24 hours late
+    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'mentor-1' && n.message.includes('still missing'))).toHaveLength(1);
+    expect(reminderDates(w)).not.toContain('2026-11-02');
+  });
+
+  it('keeps a class inside a pause out after the student resumes, and shows the classes before and after the pause', async () => {
+    const w = setup('2026-11-01T00:00:00Z', [['2026-11-14T00:00:00Z', '2026-11-20T00:00:00Z']]);
+    expect(await shownAll(w)).toEqual(['2026-11-02', '2026-11-09', '2026-11-23', '2026-11-30'].map(keyOf));
+    expect(await shown(w, '2026-11-16')).toEqual([]);
+  });
+
+  it('never restores a class of a historical pause, however often it is listed, generated or run again', async () => {
+    const w = setup('2026-11-01T00:00:00Z', [['2026-11-14T00:00:00Z', '2026-11-20T00:00:00Z']]);
+    const j = jobs(w);
+    for (let i = 0; i < 3; i++) {
+      expect(await shown(w, '2026-11-16')).toEqual([]);
+      for (const t of [at('2026-11-14', '12:00'), at('2026-11-15', '14:20'), at('2026-11-16', '14:20'), at('2026-11-16', '17:00'), at('2026-11-17', '16:00'), at('2026-11-18', '16:00'), at('2026-11-19', '16:00'), at('2026-11-21', '10:00')]) await Promise.all([j.run(t), j.run(t)]);
+    }
+    expect(reminderDates(w)).not.toContain('2026-11-16');
+    expect(w.db.rows('mentoringClassSession').filter((s) => s.date.toISOString().startsWith('2026-11-16'))).toEqual([]);
+    expect(w.db.rows('notification').filter((n) => n.recipientUserId === 'mentor-1' && n.message.includes('2026-11-16'))).toEqual([]);
+    expect((await w.ws.list(await w.scope('head-1'), { from: '2026-11-02', to: '2026-11-30' }, LATER)).rows.map((r) => r.key)).toEqual(['2026-11-02', '2026-11-09', '2026-11-23', '2026-11-30'].map(keyOf));
+    expect((await w.classes.tutorClasses('u-meera', '2026-11-14', '2026-11-20', LATER)).map((c) => c.key)).toEqual([]);
+  });
+
+  it('starts a pause at the first moment and ends it at the last: a class at the start of the pause is out, one at its end is in', async () => {
+    const w = setup('2026-11-01T00:00:00Z', [['2026-11-16T09:30:00Z', '2026-11-23T09:30:00Z']]);
+    expect(await shown(w, '2026-11-09')).toEqual([keyOf('2026-11-09')]);
+    expect(await shown(w, '2026-11-16')).toEqual([]); // starts exactly when the pause begins
+    expect(await shown(w, '2026-11-23')).toEqual([keyOf('2026-11-23')]); // starts exactly when it ends
+  });
+
+  it('keeps every class inside two separate pauses out, and the classes between them in', async () => {
+    const w = setup('2026-11-01T00:00:00Z', [['2026-11-08T00:00:00Z', '2026-11-12T00:00:00Z'], ['2026-11-22T00:00:00Z', '2026-11-25T00:00:00Z']]);
+    expect(await shownAll(w)).toEqual(['2026-11-02', '2026-11-16', '2026-11-30'].map(keyOf));
+  });
+
+  it('stays out while a pause is still open, and an open pause ends the class day for all classes after it', async () => {
+    const w = setup('2026-11-01T00:00:00Z', [['2026-11-12T00:00:00Z', null]]);
+    expect(await shownAll(w)).toEqual(['2026-11-02', '2026-11-09'].map(keyOf));
+    expect(operationalAt({ activatedAt: new Date('2026-11-01T00:00:00Z'), holds: [{ from: new Date('2026-11-12T00:00:00Z'), to: null }] }, new Date('2026-12-30T00:00:00Z'))).toBe(false);
+  });
+
+  it('leaves a class that was already reported or cancelled inside a pause as history, unchanged, with no reminders, and drops one that was only scheduled', async () => {
+    const w = setup('2026-11-01T00:00:00Z');
+    await w.classes.tutorSubmitUpdate('u-meera', keyOf('2026-11-16'), good, at('2026-11-16', '17:00')); // reported
+    await w.classes.cancel(keyOf('2026-11-23'), 'Holiday', 'mentor-1', at('2026-11-20', '10:00')); // cancelled
+    await w.classes.prepareReminder(keyOf('2026-11-30'), 'mentor-1'); // only scheduled, with a reminder prepared
+    const before = JSON.stringify(w.db.rows('mentoringClassSession').map((s) => [s.id, s.status, s.verifiedMinutes]));
+    // A pause is recorded afterwards that covers all three Mondays.
+    w.db.seed('workflowHold', { activationId: 'act-A', kind: 'HOLD', reason: 'Pause', previousActivationStatus: 'ACTIVATION_IN_PROGRESS', createdByUserId: 'head-1', createdAt: new Date('2026-11-14T00:00:00Z'), resolvedAt: new Date('2026-12-05T00:00:00Z') });
+    expect(await shown(w, '2026-11-16')).toEqual([keyOf('2026-11-16')]);
+    expect(await shown(w, '2026-11-23')).toEqual([keyOf('2026-11-23')]);
+    expect(await shown(w, '2026-11-30')).toEqual([]);
+    expect(JSON.stringify(w.db.rows('mentoringClassSession').map((s) => [s.id, s.status, s.verifiedMinutes]))).toBe(before);
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(0);
+    const r = await jobs(w).run(at('2026-11-30', '10:00'));
+    expect(r.withdrawn).toBeGreaterThanOrEqual(1);
+    expect(w.db.rows('mentoringReminder').filter((x) => x.kind.includes('2026-11-30') && x.status === 'PREPARED')).toEqual([]);
+    expect(w.db.rows('mentoringReminder').filter((x) => x.kind.startsWith('CLASS_UPDATE') && x.kind.includes('2026-11-16'))).toEqual([]);
+  });
+
+  it('keeps the compensation and consumption of a verified class that falls inside a pause recorded later', async () => {
+    const w = setup('2026-11-01T00:00:00Z');
+    await w.classes.tutorSubmitUpdate('u-meera', KEY, good, AFTER);
+    await w.prepare();
+    await w.classes.verify(w.session().id, {}, 'mentor-1', at(MON, '18:00'));
+    w.db.seed('workflowHold', { activationId: 'act-A', kind: 'HOLD', reason: 'Pause', previousActivationStatus: 'ACTIVATION_IN_PROGRESS', createdByUserId: 'head-1', createdAt: new Date('2026-11-08T00:00:00Z'), resolvedAt: new Date('2026-11-12T00:00:00Z') });
+    expect(await shown(w, MON)).toEqual([KEY]);
+    const c = (await w.classes.daily('act-A', MON, {}, await w.scope('head-1'), at('2026-12-01', '10:00'))).classes[0];
+    expect(c).toMatchObject({ status: 'VERIFIED', consumption: 'CONSUMED' });
+    expect(w.db.rows('tutorClassRecord')).toHaveLength(1);
+    expect(w.db.rows('tutorClassRecord')[0]).toMatchObject({ workedMinutes: 65, status: 'VERIFIED' });
+  });
+
+  it('refuses to move a class to a time inside a pause or before activation, and allows a time after the pause', async () => {
+    const w = setup('2026-11-01T00:00:00Z', [['2026-11-12T00:00:00Z', '2026-11-13T12:00:00Z']]);
+    const move = (date: string, start: string, end: string) => w.classes.reschedule(keyOf('2026-11-09'), { newDate: date, newStart: start, newEnd: end, reason: 'Make-up' }, 'mentor-1', at('2026-11-09', '09:00'));
+    await expect(move('2026-11-12', '18:00', '19:00')).rejects.toThrow('before the student was activated or during a pause');
+    await expect(move('2026-11-13', '16:00', '17:00')).rejects.toThrow('before the student was activated or during a pause');
+    await expect(move('2026-11-13', '18:30', '19:30')).resolves.toMatchObject({ notified: true });
+    const early = setup('2026-11-10T00:00:00Z'); // activated after the class that would be moved
+    await expect(early.classes.reschedule(keyOf('2026-11-16'), { newDate: '2026-11-09', newStart: '18:00', newEnd: '19:00', reason: 'Earlier' }, 'mentor-1', at('2026-11-09', '09:00'))).rejects.toThrow('before the student was activated');
+  });
+
+  it('shows the same classes in the daily list, the tutor classes, the Mentor list and the dashboard queue', async () => {
+    const w = setup('2026-11-04T08:00:00Z', [['2026-11-14T00:00:00Z', '2026-11-20T00:00:00Z']]);
+    const keys = ['2026-11-09', '2026-11-23', '2026-11-30'].map(keyOf);
+    expect((await w.ws.list(await w.scope('head-1'), { from: '2026-10-05', to: '2026-11-04' }, LATER)).rows).toEqual([]);
+    expect((await w.ws.list(await w.scope('head-1'), { from: '2026-11-05', to: '2026-12-04' }, LATER)).rows.map((r) => r.key)).toEqual(keys);
+    expect((await w.classes.tutorClasses('u-meera', '2026-11-05', '2026-12-04', LATER)).map((c) => c.key)).toEqual(keys);
+    expect((await w.classes.range(await w.scope('mentor-1'), '2026-11-05', '2026-12-04', null, {}, LATER)).map((c) => c.key)).toEqual(keys);
   });
 });
