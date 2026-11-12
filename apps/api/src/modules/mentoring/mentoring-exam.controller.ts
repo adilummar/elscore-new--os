@@ -6,7 +6,7 @@ import { RequirePermissions } from '../../common/rbac/require-permissions.decora
 
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringExamService } from './mentoring-exam.service';
-import { ExamQueryDto } from './mentoring.dto';
+import { ExamDueQueryDto, ExamQueryDto, ExamWorkspaceQueryDto } from './mentoring.dto';
 
 type Body_ = Record<string, unknown>;
 
@@ -31,6 +31,18 @@ export class MentoringExamController {
   @RequirePermissions('mentoring.stage.work')
   create(@Param('activationId') activationId: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
     return this.exams.create(activationId, body, user.id);
+  }
+
+  /** The Exams workspace: exams across the caller's students. Declared before ':examId' so the word is never read as an id. */
+  @Get('exams')
+  async workspace(@Query() query: ExamWorkspaceQueryDto, @CurrentUser() user: RequestUser) {
+    return this.exams.workspace(await this.access.scopeFor(user.id), query);
+  }
+
+  /** Which student and subject need an exam next, from verified class hours. Read-only. */
+  @Get('exams/due')
+  async due(@Query() query: ExamDueQueryDto, @CurrentUser() user: RequestUser) {
+    return this.exams.due(await this.access.scopeFor(user.id), query);
   }
 
   @Get('exams/:examId')

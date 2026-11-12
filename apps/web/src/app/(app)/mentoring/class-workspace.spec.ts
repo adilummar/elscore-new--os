@@ -195,7 +195,9 @@ describe('the words on the workspace screens', () => {
     expect(read('students/[id]/DailyClassesPanel.tsx')).toContain('<ClassWorkspaceDrawer role="MENTOR"');
     expect(read('../tutor-portal/TutorClasses.tsx')).toContain('<ClassWorkspaceDrawer role="TUTOR"');
     expect(read('dashboard/DashboardClient.tsx')).toContain('href="/mentoring/classes"');
-    expect(read('page.tsx')).toContain("href: '/mentoring/classes'");
+    // The Mentoring home now opens Classes itself, and the shell's first workspace tab is Classes.
+    expect(read('page.tsx')).toContain('landingPath');
+    expect(read('shell-view.ts')).toContain("href: '/mentoring/classes'");
   });
 });
 
@@ -463,7 +465,9 @@ describe('Stage 1: the two statuses, side by side', () => {
 
   it('puts the same two columns in the daily class list', () => {
     const list = read('classes/ClassListClient.tsx');
-    expect(list).toContain("'Class', 'Documentation', 'Status'");
+    expect(list).toContain("'Class', 'Tutor reminder'");
+    expect(list).toContain('After-class checklist');
+    expect(list).toContain('r.classStatusLabel');
     expect(list).toContain('data-testid="row-class-status"');
     expect(list).toContain('data-testid="row-documentation-status"');
   });

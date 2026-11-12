@@ -81,6 +81,31 @@ export class ExamQueryDto {
   @IsOptional() @IsString() limit?: string;
 }
 
+export class ExamWorkspaceQueryDto {
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() kind?: string;
+  @IsOptional() @IsString() student?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() pageSize?: string;
+}
+
+export class ReviewWorkspaceQueryDto {
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() student?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() pageSize?: string;
+}
+
+export class ExamDueQueryDto {
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() student?: string;
+}
+
 /** Filters for the daily class list. Each one is checked by the service, which says what is wrong. */
 export class WorkspaceListQueryDto {
   @IsOptional() @IsString() date?: string;

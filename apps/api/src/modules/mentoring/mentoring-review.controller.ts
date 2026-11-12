@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, UseGuards, Query } from '@nestjs/common';
 
 import { CurrentUser, RequestUser } from '../../common/auth/decorators/current-user.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
+import { ReviewWorkspaceQueryDto } from './mentoring.dto';
 import { MentoringReviewService } from './mentoring-review.service';
 
 type Body_ = Record<string, unknown>;
@@ -21,6 +22,12 @@ export class MentoringReviewController {
     private readonly reviews: MentoringReviewService,
     private readonly access: MentoringAccessService,
   ) {}
+
+  /** The Meetings workspace: every monthly review across the caller's students. Read-only, scoped in the query. */
+  @Get('reviews')
+  async workspace(@Query() query: ReviewWorkspaceQueryDto, @CurrentUser() user: RequestUser) {
+    return this.reviews.workspace(await this.access.scopeFor(user.id), query);
+  }
 
   @Get('students/:activationId/review')
   async current(@Param('activationId') activationId: string, @CurrentUser() user: RequestUser) {

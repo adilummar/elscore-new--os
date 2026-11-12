@@ -631,3 +631,91 @@ describe('monthly meetings need an Active student (step 1 eligibility)', () => {
     expect(w.db.rows('mentoringReviewMeeting').map((m) => m.id)).toEqual([id]);
   });
 });
+
+// ─── Meetings workspace: every review across the caller's students ──────────────────────────────────────────────
+describe('the Meetings workspace list', () => {
+  it('lists nothing for a student with no running plan, and a needs-scheduling row once a plan runs', async () => {
+    const w = world();
+    expect((await w.service.workspace(MENTOR, {}, NOW)).rows).toHaveLength(0);
+    await w.savePlans();
+    const list = await w.service.workspace(MENTOR, {}, NOW);
+    expect(list.rows).toHaveLength(1);
+    expect(list.rows[0]).toMatchObject({ state: 'NOT_SCHEDULED', meetingId: null, date: null, studentName: 'Synthetic Student A', mentorName: 'Mira Mentor', canWork: true });
+    expect(list.counts).toEqual({ NOT_SCHEDULED: 1 });
+  });
+
+  it('shows a scheduled meeting with its date, its period and its preparation', async () => {
+    const w = world();
+    const id = await w.ready();
+    const row = (await w.service.workspace(MENTOR, {}, NOW)).rows[0] as any;
+    expect(row).toMatchObject({ meetingId: id, state: 'SCHEDULED', date: MEETING, overdue: false });
+    expect(row.period.start).toBe(START);
+    expect(row.preparation).toMatchObject({ examsReviewed: false, subjects: 2, subjectsWithGoals: 0, tutorObservations: 0, nextPlanApproved: false });
+    expect(row.parentFeedbackRecorded).toBe(false);
+  });
+
+  it('does not add a needs-scheduling row next to a live meeting, and marks a missed date overdue', async () => {
+    const w = world();
+    await w.ready();
+    const later = at('2026-12-15', '10:00');
+    const list = await w.service.workspace(MENTOR, {}, later);
+    expect(list.rows).toHaveLength(1);
+    expect((list.rows[0] as any).overdue).toBe(true);
+    expect(list.overdue).toBe(1);
+    expect((await w.service.workspace(MENTOR, { state: 'OVERDUE' }, later)).rows).toHaveLength(1);
+    expect((await w.service.workspace(MENTOR, { state: 'OVERDUE' }, NOW)).rows).toHaveLength(0);
+  });
+
+  it('summarises only the exams of the period, with marks and their average, and invents nothing', async () => {
+    const w = world();
+    await w.ready();
+    w.exam('sub-ma', '2026-11-20', { conducted: true, marksObtained: 8, maxMarks: 10, percentage: 80 });
+    w.exam('sub-en', '2026-11-25', { conducted: true });
+    w.exam('sub-ma', '2026-09-01', { conducted: true, marksObtained: 1, maxMarks: 10, percentage: 10 });
+    const row = (await w.service.workspace(MENTOR, {}, NOW)).rows[0] as any;
+    expect(row.exams).toEqual({ total: 2, conducted: 2, marked: 1, averagePercentage: 80 });
+  });
+
+  it('shows the assigned Mentor and the Head their students, and nobody else', async () => {
+    const w = world();
+    await w.ready();
+    expect((await w.service.workspace(OTHER, {}, NOW)).rows).toHaveLength(0);
+    expect((await w.service.workspace(HEAD, {}, NOW)).rows).toHaveLength(1);
+    await expect(w.service.workspace(NOBODY, {}, NOW)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('shows the parent name only to the assigned Mentor and the Head', async () => {
+    const w = world();
+    await w.ready();
+    w.db.seed('enrollmentHandoverField', { handoverId: 'ho-1', fieldKey: 'parent.name', value: 'Parent A', origin: 'MENTOR_COLLECTED', updatedByUserId: 'mentor-1' });
+    expect(((await w.service.workspace(MENTOR, {}, NOW)).rows[0] as any).parentName).toBe('Parent A');
+    expect(((await w.service.workspace(HEAD, {}, NOW)).rows[0] as any).parentName).toBe('Parent A');
+    const counselor = scope('counselor-1', ['mentoring.student.read-assigned']);
+    w.db.seed('mentoringTask', { id: 'task-1', activationId: 'act-1', assigneeUserId: 'counselor-1', status: 'OPEN' });
+    const seen = (await w.service.workspace(counselor, {}, NOW)).rows as any[];
+    expect(seen.every((r) => r.parentName === null)).toBe(true);
+  });
+
+  it('refuses dates that are not real, filters by student name and by state', async () => {
+    const w = world();
+    await w.ready();
+    await expect(w.service.workspace(MENTOR, { to: 'later' }, NOW)).rejects.toBeInstanceOf(BadRequestException);
+    expect((await w.service.workspace(MENTOR, { student: 'zzz' }, NOW)).rows).toHaveLength(0);
+    expect((await w.service.workspace(MENTOR, { student: 'student a' }, NOW)).rows).toHaveLength(1);
+    expect((await w.service.workspace(MENTOR, { state: 'COMPLETED' }, NOW)).rows).toHaveLength(0);
+    expect((await w.service.workspace(MENTOR, { from: '2027-01-01' }, NOW)).rows).toHaveLength(0);
+  });
+
+  it('only reads: no meeting, plan or event changes', async () => {
+    const w = world();
+    await w.ready();
+    const before = JSON.stringify([w.db.rows('mentoringReviewMeeting'), w.db.rows('mentoringReviewEvent'), w.db.rows('mentoringLearningPlan')]);
+    await w.service.workspace(MENTOR, {}, NOW);
+    expect(JSON.stringify([w.db.rows('mentoringReviewMeeting'), w.db.rows('mentoringReviewEvent'), w.db.rows('mentoringLearningPlan')])).toBe(before);
+  });
+
+  it('is a read route with no write permission', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, MentoringReviewController.prototype.workspace)).toBeUndefined();
+    expect(readFileSync(join(__dirname, 'mentoring-review.controller.ts'), 'utf8')).toContain("@Get('reviews')");
+  });
+});

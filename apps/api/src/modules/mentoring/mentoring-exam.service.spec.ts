@@ -636,3 +636,89 @@ describe('exams need an Active student (step 1 eligibility)', () => {
     await expect(w.service.recordConducted(id, { conducted: true }, 'mentor-1', after)).resolves.toBeDefined();
   });
 });
+
+// ─── Exams workspace: the cross-student list and the due counter ─────────────────────────────────────────────────
+describe('the Exams workspace list and the due counter', () => {
+  const session = (w: ReturnType<typeof world>, id: string, act: string, subjectId: string, date: string, status: string, verifiedMinutes: number | null) =>
+    w.db.seed('mentoringClassSession', { id, activationId: act, assignmentId: `as-${id}`, subjectId, date: new Date(`${date}T00:00:00Z`), status, verifiedMinutes });
+
+  it('lists only the exams of the Mentor\'s own students, and every student\'s for the Head', async () => {
+    const w = world();
+    await w.make({ date: THU }, 'act-A', 'mentor-1');
+    await w.make({ date: FRI }, 'act-B', 'mentor-2');
+    expect((await w.service.workspace(MENTOR, {}, NOW)).exams.map((e) => e.activationId)).toEqual(['act-A']);
+    expect((await w.service.workspace(HEAD, {}, NOW)).exams.map((e) => e.activationId).sort()).toEqual(['act-A', 'act-B']);
+  });
+
+  it('refuses a caller with no Mentoring student access', async () => {
+    const w = world();
+    await expect(w.service.workspace(NOBODY, {}, NOW)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.service.due(NOBODY, {}, NOW)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('filters by subject, derived state and student name, and counts each state', async () => {
+    const w = world();
+    await w.make({ date: THU, subjectId: 'sub-en' });
+    await w.make({ date: FRI, subjectId: 'sub-ma', title: 'Maths 1', responsibleType: 'PARENT', responsibleName: 'Parent' });
+    expect((await w.service.workspace(MENTOR, { subjectId: 'sub-ma' }, NOW)).exams).toHaveLength(1);
+    const all = await w.service.workspace(MENTOR, {}, NOW);
+    expect(Object.values(all.counts).reduce((a, b) => a + b, 0)).toBe(2);
+    expect((await w.service.workspace(MENTOR, { state: 'NO_SUCH_STATE' }, NOW)).exams).toHaveLength(0);
+    expect((await w.service.workspace(MENTOR, { student: 'student a' }, NOW)).exams).toHaveLength(2);
+    expect((await w.service.workspace(MENTOR, { student: 'zzz' }, NOW)).exams).toHaveLength(0);
+  });
+
+  it('refuses dates that are not real', async () => {
+    const w = world();
+    await expect(w.service.workspace(MENTOR, { from: 'soon' }, NOW)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('counts only verified minutes of the student and the subject, and is due at three hours', async () => {
+    const w = world();
+    session(w, 's1', 'act-A', 'sub-en', '2026-11-02', 'VERIFIED', 60);
+    session(w, 's2', 'act-A', 'sub-en', '2026-11-03', 'VERIFIED', 60);
+    session(w, 's3', 'act-A', 'sub-en', '2026-11-04', 'AWAITING_MENTOR_VERIFICATION', null);
+    session(w, 's4', 'act-A', 'sub-ma', '2026-11-04', 'VERIFIED', 60);
+    session(w, 's5', 'act-B', 'sub-en', '2026-11-04', 'VERIFIED', 60);
+    const find = async (user: MentoringScope, act: string, sub: string) => (await w.service.due(user, {}, NOW)).rows.find((r) => r.activationId === act && r.subjectId === sub)!;
+    expect(await find(MENTOR, 'act-A', 'sub-en')).toMatchObject({ verifiedMinutes: 120, due: false });
+    expect(await find(MENTOR, 'act-A', 'sub-ma')).toMatchObject({ verifiedMinutes: 60 });
+    session(w, 's6', 'act-A', 'sub-en', '2026-11-05', 'VERIFIED', 60);
+    expect(await find(MENTOR, 'act-A', 'sub-en')).toMatchObject({ verifiedMinutes: 180, due: true });
+    expect((await w.service.due(MENTOR, {}, NOW)).rows.some((r) => r.activationId === 'act-B')).toBe(false);
+  });
+
+  it('does not reset on a scheduled exam, and restarts after the exam is actually conducted', async () => {
+    const w = world();
+    for (const [i, d] of ['2026-11-02', '2026-11-03', '2026-11-04'].entries()) session(w, `c${i}`, 'act-A', 'sub-en', d, 'VERIFIED', 60);
+    const id = await w.make({ date: THU, subjectId: 'sub-en' });
+    const find = async () => (await w.service.due(MENTOR, { subjectId: 'sub-en' }, NOW)).rows.find((r) => r.activationId === 'act-A')!;
+    expect(await find()).toMatchObject({ verifiedMinutes: 180, due: true, scheduledExam: { id, date: THU } });
+    await w.service.recordConducted(id, { conducted: true }, 'mentor-1', at(THU, '12:00'));
+    session(w, 'c9', 'act-A', 'sub-en', FRI, 'VERIFIED', 45);
+    expect(await find()).toMatchObject({ verifiedMinutes: 45, due: false, lastConductedDate: THU });
+  });
+
+  it('does not offer a student who is not Active', async () => {
+    const w = world();
+    w.db.rows('mentoringActivation').find((a) => a.id === 'act-A')!.status = 'ACTIVATION_ON_HOLD';
+    expect((await w.service.due(MENTOR, {}, NOW)).rows).toHaveLength(0);
+  });
+
+  it('reads only, so the exam rows and events are unchanged', async () => {
+    const w = world();
+    await w.make();
+    const before = JSON.stringify([w.db.rows('mentoringExam'), w.db.rows('mentoringExamEvent')]);
+    await w.service.workspace(MENTOR, {}, NOW);
+    await w.service.due(MENTOR, {}, NOW);
+    expect(JSON.stringify([w.db.rows('mentoringExam'), w.db.rows('mentoringExamEvent')])).toBe(before);
+  });
+
+  it('is routed before the exam id, with no write permission needed to read', () => {
+    const src = readFileSync(join(__dirname, 'mentoring-exam.controller.ts'), 'utf8');
+    expect(src.indexOf("@Get('exams/due')")).toBeGreaterThan(-1);
+    expect(src.indexOf("@Get('exams/due')")).toBeLessThan(src.indexOf("@Get('exams/:examId')"));
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, MentoringExamController.prototype.workspace)).toBeUndefined();
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, MentoringExamController.prototype.due)).toBeUndefined();
+  });
+});

@@ -8,8 +8,8 @@ import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { ACTIVATION_LABELS, fmt, pretty, statusVariant } from '../labels';
 
-export function StudentListClient({ title, fixedStatus }: { title: string; fixedStatus?: string }) {
-  const [status, setStatus] = React.useState(fixedStatus ?? '');
+export function StudentListClient({ title, fixedStatus, initialStatus = '' }: { title: string; fixedStatus?: string; initialStatus?: string }) {
+  const [status, setStatus] = React.useState(fixedStatus ?? initialStatus);
   const [stage, setStage] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [page, setPage] = React.useState(1);

@@ -3,6 +3,8 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 import { isDateString } from '../tutor/tutor-calendar';
 
+import { EXAM_DUE_MINUTES, examDue } from './exam-due';
+
 import { EligibilityReason, ineligibleMessage, studentEligibility } from './class-eligibility';
 import {
   CheckedExam, EXAM_STATE_LABELS, ExamFacts, ExamState, ReminderState, checkExam, checkItem, checkMarks, checkRemarks, checkReschedule, completionProblems, dateKey, examState, POST_EXAM_ITEMS, RE_EXAM_ITEMS,
@@ -228,6 +230,57 @@ export class MentoringExamService {
     if (f.tutorUserId) where.tutorUserId = f.tutorUserId;
     if (f.from || f.to) where.date = { ...(f.from ? { gte: asDate(f.from) } : {}), ...(f.to ? { lte: asDate(f.to) } : {}) };
     return this.build(this.db, (await this.db.mentoringExam.findMany({ where, orderBy: { date: 'asc' } })), now);
+  }
+
+  /**
+   * The Exams workspace list: exams across the caller's students, with the derived state, a count per state and a page. Scoping is the
+   * same database-level visibility as every other read, so a Mentor sees only assigned students and the Head sees all. The state and the
+   * student search run here and not on the page.
+   */
+  async workspace(scope: MentoringScope, f: { from?: string; to?: string; subjectId?: string; state?: string; kind?: string; student?: string; page?: number | string; pageSize?: number | string } = {}, now: Date = new Date()) {
+    for (const d of [f.from, f.to]) if (d !== undefined && d !== '' && !isDateString(d)) throw new BadRequestException('Choose real dates, written like 2026-11-09.');
+    const rows = await this.queue(scope, null, { from: f.from || undefined, to: f.to || undefined, subjectId: f.subjectId || undefined }, now);
+    const q = f.student?.trim().toLowerCase();
+    const matching = rows.filter((v) => (!f.kind || v.kind === f.kind) && (!q || v.studentName.toLowerCase().includes(q)));
+    const counts: Record<string, number> = {};
+    for (const v of matching) counts[v.state] = (counts[v.state] ?? 0) + 1;
+    const shown = f.state ? matching.filter((v) => v.state === f.state) : matching;
+    const size = Math.min(100, Math.max(1, Number(f.pageSize ?? 50) || 50));
+    const page = Math.max(1, Number(f.page ?? 1) || 1);
+    return { counts, total: shown.length, page, pageSize: size, pages: Math.max(1, Math.ceil(shown.length / size)), exams: shown.slice((page - 1) * size, page * size) };
+  }
+
+  /**
+   * Which student and subject need an exam next. For each Active, visible student and each subject they are enrolled in: the verified,
+   * consumed class minutes since the last exam that was actually conducted (see exam-due.ts). Read-only: nothing is stored or reset here.
+   */
+  async due(scope: MentoringScope, f: { subjectId?: string; student?: string } = {}, now: Date = new Date()) {
+    this.access.requireAnyScope(scope);
+    const q = f.student?.trim().toLowerCase();
+    const activations = (await this.db.mentoringActivation.findMany({ where: this.access.visibilityWhere(scope), include: { student: true } }))
+      .filter((a) => studentEligibility(a).eligible)
+      .filter((a) => !q || `${a.student.firstName} ${a.student.lastName ?? ''}`.toLowerCase().includes(q));
+    if (activations.length === 0) return { thresholdMinutes: EXAM_DUE_MINUTES, rows: [] };
+    const ids = activations.map((a) => a.id);
+    const [sessions, exams] = await Promise.all([
+      this.db.mentoringClassSession.findMany({ where: { activationId: { in: ids }, status: 'VERIFIED' } }),
+      this.db.mentoringExam.findMany({ where: { activationId: { in: ids } } }),
+    ]);
+    const { date: today } = await this.today(this.db, now);
+    const rows: Array<{ activationId: string; studentId: string; studentName: string; subjectId: string; subjectName: string } & ReturnType<typeof examDue>> = [];
+    for (const a of activations) {
+      for (const subject of await this.enrolledSubjects(this.db, a.handoverId)) {
+        if (f.subjectId && subject.subjectId !== f.subjectId) continue;
+        const due = examDue(
+          sessions.filter((c) => c.activationId === a.id && c.subjectId === subject.subjectId).map((c) => ({ date: dayOf(c.date) as string, verifiedMinutes: c.verifiedMinutes ?? 0 })),
+          exams.filter((e) => e.activationId === a.id && e.subjectId === subject.subjectId).map((e) => ({ id: e.id, kind: e.kind, date: dayOf(e.date) as string, conducted: e.conducted, dropped: e.dateKey === null })),
+          today,
+        );
+        rows.push({ activationId: a.id, studentId: a.studentId, studentName: `${a.student.firstName} ${a.student.lastName ?? ''}`.trim(), subjectId: subject.subjectId, subjectName: subject.subjectName, ...due });
+      }
+    }
+    rows.sort((x, y) => Number(y.due) - Number(x.due) || y.verifiedMinutes - x.verifiedMinutes || x.studentName.localeCompare(y.studentName));
+    return { thresholdMinutes: EXAM_DUE_MINUTES, rows };
   }
 
   async detail(examId: string, scope: MentoringScope, now: Date = new Date()): Promise<ExamView> {

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
+import { isDateString } from '../tutor/tutor-calendar';
 
 import { EligibilityReason, ineligibleMessage, studentEligibility } from './class-eligibility';
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
@@ -9,6 +10,7 @@ import { loadLockedActivation } from './mentoring-guards';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringLearningPlanService } from './mentoring-learning-plan.service';
 import { localMomentOf } from './mentoring-sla';
+import { Sortable, averagePercentage, compareRows, isOverdueMeeting, listState, sortRank } from './review-list';
 import { MentoringSlaService } from './mentoring-sla.service';
 import {
   ChecklistRow, GoalResult, MEETING_REMARK_FIELDS, MEETING_STATE_LABELS, MeetingState, NO_EXAMS_MESSAGE, POST_MEETING_FIELDS, Tally, checkActual, checkArea, checkFields, checkGoal, checkMove, checkNextPlan, checkSchedule, checklistProblems,
@@ -136,6 +138,104 @@ export class MentoringReviewService {
     if (!activation) throw new NotFoundException('Student not found');
     const meeting = (await this.db.mentoringReviewMeeting.findFirst({ where: { activationId, kind: 'MONTHLY_REVIEW', status: 'SCHEDULED' } }));
     return this.build(this.db, activation, meeting, scope, now, false);
+  }
+
+  /**
+   * The Meetings workspace: every monthly review meeting of the caller's Active students in one list, plus a row for each student whose
+   * learning plan is running but has no live meeting. Each row carries what the Mentor needs to see without opening it: when, the state,
+   * the preparation (exams reviewed, goals, tutor observations, next plan), the exam record of the period, the goal tally and whether
+   * parent feedback was recorded. Everything is read from the records; nothing is stored or changed here. Visibility is the same
+   * database-level scope as every other read, and the parent's name is shown only to the assigned Mentor and the Head.
+   */
+  async workspace(scope: MentoringScope, f: { state?: string; student?: string; from?: string; to?: string; page?: number | string; pageSize?: number | string } = {}, now: Date = new Date()) {
+    this.access.requireAnyScope(scope);
+    for (const d of [f.from, f.to]) if (d !== undefined && d !== '' && !isDateString(d)) throw new BadRequestException('Choose real dates, written like 2026-11-09.');
+    const db = this.db;
+    const q = f.student?.trim().toLowerCase();
+    const activations = (await db.mentoringActivation.findMany({ where: this.access.visibilityWhere(scope), include: { student: true } }))
+      .filter((a) => studentEligibility(a).eligible)
+      .filter((a) => !q || `${a.student.firstName} ${a.student.lastName ?? ''}`.toLowerCase().includes(q));
+    const empty = { counts: {} as Record<string, number>, overdue: 0, total: 0, page: 1, pageSize: 50, pages: 1, rows: [] as unknown[] };
+    if (activations.length === 0) return empty;
+    const ids = activations.map((a) => a.id);
+    const today = await this.today(db, now);
+
+    const [meetings, plans, handoverNames, mentors] = await Promise.all([
+      db.mentoringReviewMeeting.findMany({ where: { activationId: { in: ids }, kind: 'MONTHLY_REVIEW' } }),
+      db.mentoringLearningPlan.findMany({ where: { activationId: { in: ids }, status: { in: ['DRAFT', 'READY_FOR_REVIEW', 'APPROVED'] } } }),
+      db.enrollmentHandoverField.findMany({ where: { handoverId: { in: activations.map((a) => a.handoverId).filter((h): h is string => !!h) }, fieldKey: 'parent.name' } }),
+      db.employee.findMany({ where: { userId: { in: [...new Set(activations.map((a) => a.currentMentorUserId).filter((u): u is string => !!u))] } } }),
+    ]);
+    const meetingIds = meetings.map((m) => m.id);
+    const planIds = [...new Set([...plans.map((p) => p.id), ...meetings.map((m) => m.planId).filter((p): p is string => !!p)])];
+    const [goals, notes, nextPlans, areas, planSubjects, exams] = await Promise.all([
+      meetingIds.length ? db.mentoringReviewGoal.findMany({ where: { meetingId: { in: meetingIds } } }) : [],
+      meetingIds.length ? db.mentoringReviewTutorNote.findMany({ where: { meetingId: { in: meetingIds } } }) : [],
+      meetingIds.length ? db.mentoringReviewNextPlan.findMany({ where: { meetingId: { in: meetingIds } } }) : [],
+      meetingIds.length ? db.mentoringReviewImprovementArea.findMany({ where: { meetingId: { in: meetingIds } } }) : [],
+      planIds.length ? db.mentoringLearningPlanSubject.findMany({ where: { planId: { in: planIds } } }) : [],
+      db.mentoringExam.findMany({ where: { activationId: { in: ids } } }),
+    ]);
+
+    type Row = {
+      activationId: string; studentId: string; studentName: string; parentName: string | null; mentorName: string | null;
+      meetingId: string | null; state: MeetingState; stateLabel: string; overdue: boolean; date: string | null; originalDate: string | null; startMinute: number | null; endMinute: number | null;
+      period: { start: string | null; end: string | null }; planStatus: string | null;
+      preparation: { examsReviewed: boolean; subjects: number; subjectsWithGoals: number; tutorObservations: number; nextPlanSubjects: number; nextPlanApproved: boolean };
+      exams: { total: number; conducted: number; marked: number; averagePercentage: number | null };
+      goals: Tally; improvementAreas: number; parentFeedbackRecorded: boolean; completedAt: string | null; canWork: boolean;
+    };
+    const nameOf = (e: { firstName: string; lastName: string | null } | undefined) => (e ? `${e.firstName} ${e.lastName ?? ''}`.trim() : null);
+    const built: Array<Row & Sortable> = [];
+    for (const a of activations) {
+      const mentor = mentors.find((m) => m.userId === a.currentMentorUserId);
+      const seeParent = this.access.canSeeParentContact(scope, a);
+      const parentRaw = handoverNames.find((h) => h.handoverId === a.handoverId)?.value;
+      const parentName = seeParent && typeof parentRaw === 'string' && parentRaw.trim() ? parentRaw.trim() : null;
+      const studentName = `${a.student.firstName} ${a.student.lastName ?? ''}`.trim();
+      const mine = meetings.filter((m) => m.activationId === a.id);
+      const live = mine.find((m) => m.status === 'SCHEDULED') ?? null;
+      const livePlan = plans.find((p) => p.activationId === a.id) ?? null;
+      // One row per meeting, and one "needs scheduling" row when a plan is running and no live meeting exists.
+      const rowsOf: Array<MeetingRow | null> = [...mine];
+      if (!live && livePlan) rowsOf.push(null);
+      for (const m of rowsOf) {
+        const planId = m ? m.planId ?? (m.status === 'SCHEDULED' ? livePlan?.id ?? null : null) : livePlan?.id ?? null;
+        const subjects = planSubjects.filter((s) => s.planId === planId);
+        const starts = subjects.map((s) => dayOf(s.startsOn)).filter((d): d is string => !!d).sort();
+        const completed = m?.status === 'COMPLETED';
+        const date = m ? dayOf(m.scheduledFor) : null;
+        const start = completed ? dayOf(m?.periodStart) : starts[0] ?? null;
+        const end = completed ? dayOf(m?.periodEnd) : date;
+        const state = listState(m ? { status: m.status, date, originalDate: dayOf(m.originalDate) ?? date, conducted: m.conducted } : null);
+        const overdue = isOverdueMeeting(state, date, today);
+        const inPeriod = start && end ? exams.filter((e) => e.activationId === a.id && dayOf(e.date)! >= start && dayOf(e.date)! <= end) : [];
+        const conducted = inPeriod.filter((e) => e.conducted === true);
+        const myGoals = m ? goals.filter((g) => g.meetingId === m.id) : [];
+        built.push({
+          activationId: a.id, studentId: a.student.businessId, studentName, parentName, mentorName: nameOf(mentor),
+          meetingId: m?.id ?? null, state, stateLabel: MEETING_STATE_LABELS[state], overdue, date, originalDate: m ? dayOf(m.originalDate) ?? date : null, startMinute: m?.scheduledStartMinute ?? null, endMinute: m?.scheduledEndMinute ?? null,
+          period: { start, end }, planStatus: planId ? plans.find((p) => p.id === planId)?.status ?? (completed ? 'COMPLETED' : null) : null,
+          preparation: {
+            examsReviewed: !!m?.examsReviewedAt, subjects: subjects.length, subjectsWithGoals: new Set(myGoals.map((g) => g.subjectId)).size,
+            tutorObservations: m ? notes.filter((n) => n.meetingId === m.id).length : 0, nextPlanSubjects: m ? nextPlans.filter((n) => n.meetingId === m.id).length : 0, nextPlanApproved: !!m?.nextPlanApprovedAt,
+          },
+          exams: { total: inPeriod.length, conducted: conducted.length, marked: conducted.filter((e) => e.marksObtained !== null && e.marksObtained !== undefined).length, averagePercentage: averagePercentage(conducted.map((e) => num(e.percentage))) },
+          goals: tally(myGoals.map((g) => g.result as GoalResult | null)), improvementAreas: m ? areas.filter((x) => x.meetingId === m.id).length : 0,
+          parentFeedbackRecorded: filled(m?.parentFeedback), completedAt: m?.completedAt?.toISOString() ?? null,
+          canWork: a.currentMentorUserId === scope.userId && scope.perms.has('mentoring.stage.work'),
+          rank: sortRank(state, overdue),
+        });
+      }
+    }
+    const inRange = built.filter((r) => (!f.from || (r.date !== null && r.date >= f.from)) && (!f.to || (r.date !== null && r.date <= f.to)));
+    const counts: Record<string, number> = {};
+    for (const r of inRange) counts[r.state] = (counts[r.state] ?? 0) + 1;
+    const overdueCount = inRange.filter((r) => r.overdue).length;
+    const shown = (f.state ? inRange.filter((r) => (f.state === 'OVERDUE' ? r.overdue : r.state === f.state)) : inRange).sort(compareRows);
+    const size = Math.min(100, Math.max(1, Number(f.pageSize ?? 50) || 50));
+    const page = Math.max(1, Number(f.page ?? 1) || 1);
+    return { counts, overdue: overdueCount, total: shown.length, page, pageSize: size, pages: Math.max(1, Math.ceil(shown.length / size)), rows: shown.slice((page - 1) * size, page * size).map(({ rank, ...row }) => { void rank; return row; }) };
   }
 
   /** One review, completed or not, with its history. */
