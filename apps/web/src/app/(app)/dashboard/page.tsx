@@ -3,8 +3,6 @@ import { getSession } from '@/lib/api/auth';
 import CeoDashboard from '@/components/dashboard/CeoDashboard';
 import OperationalDashboard from '@/components/dashboard/OperationalDashboard';
 
-import { MentoringOverview } from './MentoringOverview';
-
 export default async function DashboardPage({ searchParams }: { searchParams: { from?: string; to?: string; period?: string } }) {
   const user = await getSession();
   const perms = user?.permissions || [];
@@ -18,9 +16,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
     return <CeoDashboard searchParams={searchParams} />;
   }
 
-  // The Mentoring Head and the Mentors get their own dashboard, not the Sales one. Someone who also does Sales keeps the Sales page.
+  // The Mentoring Head and the Mentors work from Classes, not the Sales dashboard. Someone who also does Sales keeps the Sales page.
+  // The earlier Mentoring overview is still available, from the Overview link inside Mentoring.
   if (isMentoring && !isSales) {
-    return <MentoringOverview />;
+    const { redirect } = await import('next/navigation');
+    redirect('/mentoring/classes');
   }
 
   if (isHr && !isSales) {

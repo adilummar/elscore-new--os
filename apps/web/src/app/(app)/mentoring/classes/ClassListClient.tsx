@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/Select';
 
 import { STATE_CHOICES, STATE_TONE } from '../class-view';
 import {
-  Cell, QUICK_VIEWS, RangeMode, actualDiffers, actualText, checklistCell, classHref, isOverdue, modeOf, quickViewOf, reminderCell, scheduledText, shiftDay, updateCell, verificationCell, voiceCell, weekOf, workload,
+  AttentionTile, Cell, QUICK_VIEWS, RangeMode, actualDiffers, actualText, checklistCell, classHref, isOverdue, modeOf, quickViewOf, attentionTiles, reminderCell, scheduledText, shiftDay, updateCell, verificationCell, voiceCell, weekOf,
 } from '../classes-view';
 import { mentoringApi } from '../mentoring-client';
 import { longDayLabel } from '../timetable-view';
@@ -103,6 +103,21 @@ export function ClassListClient({ initialDate = '', initialFrom = '', initialTo 
   const [known, setKnown] = React.useState<{ mentors: Map<string, string>; tutors: Map<string, string>; subjects: Map<string, string> }>({ mentors: new Map(), tutors: new Map(), subjects: new Map() });
   const [error, setError] = React.useState<string | null>(null);
 
+  const [attention, setAttention] = React.useState<AttentionTile[] | null>(null);
+  const loadAttention = React.useCallback(async () => {
+    const today = todayIso();
+    try {
+      const [month, verify] = await Promise.all([
+        mentoringApi(`/mentoring/class-workspace/list?from=${shiftDay(today, -30)}&to=${today}&pageSize=1`),
+        mentoringApi('/mentoring/class-workspace/list?card=classes_awaiting_verification&pageSize=100'),
+      ]);
+      setAttention(attentionTiles(month.counts ?? {}, (verify.rows as ListRow[]).filter(isOverdue).length));
+    } catch {
+      setAttention(null);
+    }
+  }, []);
+  React.useEffect(() => { void loadAttention(); }, [loadAttention]);
+
   const query = listQuery(f, page);
   const load = React.useCallback(async () => {
     try {
@@ -146,7 +161,10 @@ export function ClassListClient({ initialDate = '', initialFrom = '', initialTo 
   const bannerCard = f.card && CARD_LABELS[f.card] && view === 'other';
   const filtered = f.mentorUserId || f.studentQuery || f.tutorProfileId || f.subjectId || (f.state && view === 'other') || bannerCard;
   const many = mode !== 'day';
-  const strip = data ? workload(data.counts, data.total) : [];
+  const applyView = (key: string) => {
+    const q = QUICK_VIEWS.find((x) => x.key === key);
+    if (q) set({ card: q.card, state: q.state, ...(q.wholeDay ? { from: shiftDay(today, -30), to: today } : { from: '', to: '' }) });
+  };
   const title = mode === 'day' ? longDayLabel(f.date) : `${longDayLabel(f.from || f.date)} to ${longDayLabel(f.to || f.from || f.date)}`;
 
   return (
@@ -170,7 +188,7 @@ export function ClassListClient({ initialDate = '', initialFrom = '', initialTo 
 
       <div className="flex flex-wrap gap-1" role="group" aria-label="Work queues">
         {QUICK_VIEWS.map((q) => (
-          <button key={q.key} type="button" aria-pressed={view === q.key} onClick={() => set({ card: q.card, state: q.state, ...(q.wholeDay ? { from: shiftDay(today, -30), to: today } : { from: '', to: '' }) })}
+          <button key={q.key} type="button" aria-pressed={view === q.key} onClick={() => applyView(q.key)}
             className={`min-h-9 rounded-full border px-3 text-sm ${RING} ${view === q.key ? 'border-brand-600 bg-brand-50 font-semibold text-brand-800' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>{q.label}</button>
         ))}
       </div>
@@ -193,10 +211,21 @@ export function ClassListClient({ initialDate = '', initialFrom = '', initialTo 
         {filtered && <Button type="button" size="sm" variant="ghost" onClick={() => { setSearch(''); set({ mentorUserId: '', studentQuery: '', tutorProfileId: '', subjectId: '', state: '', card: '' }); }}>Clear the filters</Button>}
       </section>
 
-      {strip.length > 0 && (
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700" aria-label="What is waiting" data-testid="workload">
-          {strip.map((s) => <li key={s.state}><span className="font-semibold text-slate-900">{s.count}</span> {s.label}</li>)}
-        </ul>
+      {attention && attention.some((t) => t.count > 0) && (
+        <section aria-label="Needs your attention" className="rounded-md border border-slate-200 bg-white p-3" data-testid="attention">
+          <h2 className="text-sm font-semibold text-slate-900">Needs your attention</h2>
+          <ul className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {attention.map((t) => (
+              <li key={t.key}>
+                <button type="button" onClick={() => applyView(t.view)} className={`flex min-h-14 w-full items-baseline justify-between gap-2 rounded-md border px-3 py-2 text-left ${RING} ${t.count > 0 ? 'border-amber-300 bg-amber-50 hover:bg-amber-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                  <span className="text-sm text-slate-800">{t.label}</span>
+                  <span className={`text-xl font-semibold ${t.count > 0 ? 'text-amber-900' : 'text-slate-600'}`}>{t.count}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-600">Counted over the last 30 days, whichever day is open below.</p>
+        </section>
       )}
 
       {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error} <button type="button" className="font-medium underline" onClick={() => void load()}>Try again</button></p>}

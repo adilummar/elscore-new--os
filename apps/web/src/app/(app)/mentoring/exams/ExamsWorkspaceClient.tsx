@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Modal } from '@/components/ui/Modal';
+import Link from 'next/link';
 import { Select } from '@/components/ui/Select';
 
 import { EXAM_TONE, examTime } from '../exam-view';
@@ -12,7 +12,6 @@ import {
   DUE_STATUS_TEXT, DueData, DueRow, EXAM_QUEUES, ExamWorkspaceData, dueQuery, dueReason, dueStatus, examsInQueue, queueCount, workspaceQuery,
 } from '../exams-view';
 import { mentoringApi } from '../mentoring-client';
-import { ExamsPanel } from '../students/[id]/ExamsPanel';
 import { longDayLabel } from '../timetable-view';
 
 const RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
@@ -41,7 +40,6 @@ export function ExamsWorkspaceClient() {
   const [list, setList] = React.useState<ExamWorkspaceData | null>(null);
   const [subjects, setSubjects] = React.useState<Map<string, string>>(new Map());
   const [error, setError] = React.useState<string | null>(null);
-  const [managing, setManaging] = React.useState<{ activationId: string; name: string } | null>(null);
 
   React.useEffect(() => { const t = setTimeout(() => setDebounced(student), 300); return () => clearTimeout(t); }, [student]);
 
@@ -117,7 +115,7 @@ export function ExamsWorkspaceClient() {
                     <td className="px-2 py-2 align-top"><Progress r={r} /></td>
                     <td className="px-2 py-2 align-top"><Badge variant={s === 'due' ? 'warning' : s === 'counting' ? 'default' : 'info'}>{DUE_STATUS_TEXT[s]}</Badge>{r.scheduledExam && <div className="mt-1 text-xs text-slate-700">Exam on {longDayLabel(r.scheduledExam.date)}</div>}</td>
                     <td className="px-2 py-2 align-top text-slate-700">{dueReason(r)}</td>
-                    <td className="px-2 py-2 text-right align-top"><Button type="button" size="sm" variant={s === 'due' ? 'primary' : 'outline'} onClick={() => setManaging({ activationId: r.activationId, name: r.studentName })}>{s === 'due' ? 'Schedule exam' : 'Manage exams'}</Button></td>
+                    <td className="px-2 py-2 text-right align-top"><Link href={`/mentoring/exams/${encodeURIComponent(r.activationId)}`} className={`inline-flex min-h-9 items-center rounded-md border px-3 text-sm font-medium ${RING} ${s === 'due' ? 'border-brand-600 bg-brand-600 text-white hover:bg-brand-700' : 'border-slate-300 text-slate-800 hover:bg-slate-50'}`}>{s === 'due' ? 'Schedule exam' : 'Manage exams'}</Link></td>
                   </tr>
                 );
               })}
@@ -143,7 +141,7 @@ export function ExamsWorkspaceClient() {
                       <td className="px-2 py-2 align-top">{e.title}{e.kind === 'RE_EXAM' ? <span className="ml-1 text-xs text-slate-700">(re-exam)</span> : null}</td>
                       <td className="px-2 py-2 align-top"><Badge variant={EXAM_TONE[e.state] ?? 'default'}>{e.stateLabel}</Badge></td>
                       <td className="px-2 py-2 align-top">{e.marks ? `${e.marks.obtained} of ${e.marks.max} (${e.marks.percentage}%)` : 'Not recorded'}</td>
-                      <td className="px-2 py-2 text-right align-top"><Button type="button" size="sm" variant="outline" onClick={() => setManaging({ activationId: e.activationId, name: e.studentName })} aria-label={`Open the exam of ${e.studentName}`}>Open</Button></td>
+                      <td className="px-2 py-2 text-right align-top"><Link href={`/mentoring/exams/${encodeURIComponent(e.activationId)}`} className={`inline-flex min-h-9 items-center rounded-md border px-3 text-sm font-medium ${RING} border-slate-300 text-slate-800 hover:bg-slate-50`} aria-label={`Open the exam of ${e.studentName}`}>Open</Link></td>
                     </tr>
                   ))}
                 </tbody>
@@ -152,15 +150,6 @@ export function ExamsWorkspaceClient() {
           )
       )}
 
-      <Modal isOpen={!!managing} onClose={() => { setManaging(null); void load(); }} size="6xl">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-slate-900">Exams of {managing?.name}</h2>
-            <Button type="button" size="sm" variant="ghost" onClick={() => { setManaging(null); void load(); }}>Close</Button>
-          </div>
-          {managing && <ExamsPanel activationId={managing.activationId} />}
-        </div>
-      </Modal>
     </div>
   );
 }

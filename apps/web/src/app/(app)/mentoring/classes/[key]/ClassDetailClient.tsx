@@ -83,7 +83,7 @@ export function ClassDetailClient({ classKey }: { classKey: string }) {
         </section>
       )}
 
-      <ClassWorkspaceDrawer role="MENTOR" classKey={classKey} onClose={back} onChanged={() => void load()} />
+      <ClassWorkspaceDrawer role="MENTOR" classKey={classKey} onClose={back} onChanged={() => void load()} layout="sections" />
     </div>
   );
 }

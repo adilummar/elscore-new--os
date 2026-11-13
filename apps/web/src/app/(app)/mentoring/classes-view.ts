@@ -109,3 +109,17 @@ export function workload(counts: Record<string, number>, total: number): Array<{
   const out = parts.map(([state, label]) => ({ state, label, count: counts[state] ?? 0 })).filter((p) => p.count > 0);
   return total > 0 ? out : [];
 }
+
+export interface AttentionTile { key: string; label: string; count: number; view: string }
+/**
+ * What waits on the Mentor over the last month, whatever day is open: the API's own counts by state, and how many of the classes waiting
+ * for verification are past their response time. Nothing is counted here.
+ */
+export function attentionTiles(counts: Record<string, number>, overdueVerification: number): AttentionTile[] {
+  return [
+    { key: 'verify', label: 'To verify', count: counts.AWAITING_MENTOR_VERIFICATION ?? 0, view: 'verify' },
+    { key: 'overdue', label: 'Overdue for verification', count: overdueVerification, view: 'verify' },
+    { key: 'update', label: 'Waiting for tutor update', count: counts.AWAITING_TUTOR_UPDATE ?? 0, view: 'update' },
+    { key: 'returned', label: 'Returned for correction', count: counts.RETURNED_FOR_CORRECTION ?? 0, view: 'returned' },
+  ];
+}

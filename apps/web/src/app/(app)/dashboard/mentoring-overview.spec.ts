@@ -40,9 +40,14 @@ describe('which dashboard a person gets', () => {
     return (await DashboardPage({ searchParams: {} })) as any;
   };
 
-  it('gives the Mentoring Head and a Mentor the Mentoring dashboard, never the Sales one', async () => {
-    expect((await as(['mentoring.student.read-all', 'mentoring.allocation.manage'])).type.name).toBe('MentoringOverview');
-    expect((await as(['mentoring.student.read-assigned', 'mentoring.stage.work'])).type.name).toBe('MentoringOverview');
+  it('sends the Mentoring Head and a Mentor to Classes, never to the Sales dashboard', async () => {
+    const { redirect } = jest.requireMock('next/navigation');
+    redirect.mockClear();
+    await as(['mentoring.student.read-all', 'mentoring.allocation.manage']);
+    await as(['mentoring.student.read-assigned', 'mentoring.stage.work']);
+    expect(redirect).toHaveBeenCalledTimes(2);
+    expect(redirect).toHaveBeenNthCalledWith(1, '/mentoring/classes');
+    expect(redirect).toHaveBeenNthCalledWith(2, '/mentoring/classes');
   });
 
   it('leaves the CEO, Sales and anyone who also does Sales exactly as they were', async () => {

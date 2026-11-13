@@ -5,15 +5,13 @@ import { AlertTriangle, Check, Clock, Minus } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Modal } from '@/components/ui/Modal';
+import Link from 'next/link';
 
 import {
   MEETING_QUEUES, MeetingRow, MeetingsData, examSummaryText, goalsSummaryText, meetingsQuery, preparationLeft, preparationText, queueCount, whenText,
 } from '../meetings-view';
 import { mentoringApi } from '../mentoring-client';
 import { MEETING_TONE } from '../review-view';
-import { LearningPlanPanel } from '../students/[id]/LearningPlanPanel';
-import { MonthlyReviewPanel } from '../students/[id]/MonthlyReviewPanel';
 
 const RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const TONE_STYLE = { done: 'text-emerald-800', waiting: 'text-slate-700', none: 'text-slate-500' } as const;
@@ -51,8 +49,6 @@ export function MeetingsWorkspaceClient() {
   const [debounced, setDebounced] = React.useState('');
   const [data, setData] = React.useState<MeetingsData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [open, setOpen] = React.useState<MeetingRow | null>(null);
-  const [view, setView] = React.useState<'review' | 'plan'>('review');
 
   React.useEffect(() => { const t = setTimeout(() => setDebounced(student), 300); return () => clearTimeout(t); }, [student]);
 
@@ -67,8 +63,7 @@ export function MeetingsWorkspaceClient() {
   }, [state, debounced]);
   React.useEffect(() => { void load(); }, [load]);
 
-  const close = () => { setOpen(null); void load(); };
-  const openRow = (r: MeetingRow) => { setView('review'); setOpen(r); };
+  const hrefOf = (r: MeetingRow) => `/mentoring/meetings/${encodeURIComponent(r.activationId)}`;
   const filtered = !!student || queue !== 'all';
 
   return (
@@ -114,7 +109,7 @@ export function MeetingsWorkspaceClient() {
                     <td className="px-2 py-2 align-top text-slate-700">{examSummaryText(r.exams)}</td>
                     <td className="px-2 py-2 align-top text-slate-700">{goalsSummaryText(r.goals)}{r.improvementAreas > 0 ? <div className="text-xs text-slate-600">{r.improvementAreas} improvement {r.improvementAreas === 1 ? 'area' : 'areas'}</div> : null}</td>
                     <td className="px-2 py-2 align-top">{r.parentFeedbackRecorded ? 'Recorded' : r.state === 'COMPLETED' ? 'Not recorded' : 'Not yet'}</td>
-                    <td className="px-2 py-2 text-right align-top"><Button type="button" size="sm" variant={r.state === 'NOT_SCHEDULED' ? 'primary' : 'outline'} onClick={() => openRow(r)} aria-label={`${r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'} the meeting of ${r.studentName}`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'}</Button></td>
+                    <td className="px-2 py-2 text-right align-top"><Link href={hrefOf(r)} className={`inline-flex min-h-9 items-center rounded-md border px-3 text-sm font-medium ${RING} ${r.state === 'NOT_SCHEDULED' ? 'border-brand-600 bg-brand-600 text-white hover:bg-brand-700' : 'border-slate-300 text-slate-800 hover:bg-slate-50'}`} aria-label={`${r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'} the meeting of ${r.studentName}`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'}</Link></td>
                   </tr>
                 ))}
               </tbody>
@@ -132,7 +127,7 @@ export function MeetingsWorkspaceClient() {
                   <div><dt className="text-xs text-slate-600">Exam performance</dt><dd>{examSummaryText(r.exams)}</dd></div>
                   <div><dt className="text-xs text-slate-600">Goals</dt><dd>{goalsSummaryText(r.goals)}</dd></div>
                 </dl>
-                <Button type="button" variant="outline" className="mt-3 min-h-11 w-full" onClick={() => openRow(r)}>{r.state === 'NOT_SCHEDULED' ? 'Schedule the meeting' : 'Open the meeting'}</Button>
+                <Link href={hrefOf(r)} className={`mt-3 flex min-h-11 w-full items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 ${RING}`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule the meeting' : 'Open the meeting'}</Link>
               </li>
             ))}
           </ul>
@@ -140,23 +135,6 @@ export function MeetingsWorkspaceClient() {
       )}
       {data && data.pages > 1 && <p className="text-sm text-slate-700">Showing the first {data.rows.length} of {data.total} meetings. Narrow the list with a student name or a queue.</p>}
 
-      <Modal isOpen={!!open} onClose={close} size="6xl">
-        {open && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">{open.studentName}: monthly review</h2>
-              <div className="flex items-center gap-2">
-                <div role="tablist" aria-label="Meeting sections" className="inline-flex overflow-hidden rounded-md border border-slate-300">
-                  <button type="button" role="tab" aria-selected={view === 'review'} onClick={() => setView('review')} className={`min-h-9 px-3 text-sm ${RING} ${view === 'review' ? 'bg-brand-600 font-semibold text-white' : 'bg-white text-slate-700'}`}>Monthly review</button>
-                  <button type="button" role="tab" aria-selected={view === 'plan'} onClick={() => setView('plan')} className={`min-h-9 border-l border-slate-300 px-3 text-sm ${RING} ${view === 'plan' ? 'bg-brand-600 font-semibold text-white' : 'bg-white text-slate-700'}`}>Learning plan</button>
-                </div>
-                <Button type="button" size="sm" variant="ghost" onClick={close}>Close</Button>
-              </div>
-            </div>
-            {view === 'review' ? <MonthlyReviewPanel activationId={open.activationId} /> : <LearningPlanPanel activationId={open.activationId} />}
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }

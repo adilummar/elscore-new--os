@@ -61,8 +61,9 @@ describe('the Mentoring shell', () => {
     expect(isCurrent(items.onboarding, '/mentoring/students', { status: 'ACTIVATION_IN_PROGRESS' })).toBe(true);
     expect(isCurrent(items.students, '/mentoring/students', { status: 'ACTIVATION_IN_PROGRESS' })).toBe(false);
     expect(isCurrent(items.complaints, '/mentoring/dashboard', { card: 'complaints_open' })).toBe(true);
-    expect(isCurrent(items.dashboard, '/mentoring/dashboard', { card: 'complaints_open' })).toBe(false);
-    expect(isCurrent(items.dashboard, '/mentoring/dashboard', {})).toBe(true);
+    expect(isCurrent(items.overview, '/mentoring/dashboard', { card: 'complaints_open' })).toBe(false);
+    expect(isCurrent(items.overview, '/mentoring/overview', {})).toBe(true);
+    expect(items.overview.href).toBe('/mentoring/overview');
     expect(isCurrent(primaryNav(() => true)[0], '/mentoring/classes/abc', {})).toBe(true);
   });
 

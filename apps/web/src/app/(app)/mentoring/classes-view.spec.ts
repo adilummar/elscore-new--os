@@ -1,5 +1,5 @@
 import {
-  actualDiffers, actualText, checklistCell, classHref, isOverdue, modeOf, needsAction, quickViewOf, reminderCell, scheduledText, shiftDay, updateCell, verificationCell, voiceCell, weekOf, workload,
+  attentionTiles, actualDiffers, actualText, checklistCell, classHref, isOverdue, modeOf, needsAction, quickViewOf, reminderCell, scheduledText, shiftDay, updateCell, verificationCell, voiceCell, weekOf, workload,
 } from './classes-view';
 
 const base: any = {
@@ -102,5 +102,11 @@ describe('Classes: queues and counts', () => {
   });
   it('makes a link that survives the key\'s separator', () => {
     expect(classHref('a~2026-11-12~960')).toBe('/mentoring/classes/a~2026-11-12~960');
+  });
+
+  it('builds the attention tiles from the API counts and the overdue verifications', () => {
+    const t = attentionTiles({ AWAITING_MENTOR_VERIFICATION: 4, AWAITING_TUTOR_UPDATE: 2 }, 1);
+    expect(t.map((x) => [x.key, x.count])).toEqual([['verify', 4], ['overdue', 1], ['update', 2], ['returned', 0]]);
+    expect(t.every((x) => ['verify', 'update', 'returned'].includes(x.view))).toBe(true);
   });
 });

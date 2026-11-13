@@ -35,7 +35,7 @@ export function secondaryNav(can: Can): NavItem[] {
   if (can('mentoring.allocation.read') || can('mentoring.staff.read')) out.push({ href: '/mentoring/allocation', label: 'Allocation', section: 'allocation' });
   if (can('mentoring.approval.final') || wide(can)) out.push({ href: '/mentoring/approvals', label: 'Final approvals', section: 'approvals' });
   if (can('mentoring.staff.read')) out.push({ href: '/mentoring/staff', label: 'Mentors and counselors', section: 'staff' });
-  if (sees(can)) out.push({ href: '/mentoring/dashboard', label: wide(can) ? 'Department overview' : 'Overview', section: 'dashboard' });
+  if (sees(can)) out.push({ href: '/mentoring/overview', label: wide(can) ? 'Department overview' : 'Overview', section: 'overview' });
   return out;
 }
 
@@ -60,7 +60,6 @@ export function isCurrent(item: NavItem, pathname: string, query: { status?: str
   if (item.section === 'onboarding') return section === 'students' && query.status === 'ACTIVATION_IN_PROGRESS';
   if (item.section === 'students') return section === 'students' && query.status !== 'ACTIVATION_IN_PROGRESS';
   if (item.section === 'complaints') return section === 'dashboard' && !!query.card?.startsWith('complaints_');
-  if (item.section === 'dashboard') return section === 'dashboard' && !query.card?.startsWith('complaints_');
   return item.section === section;
 }
 
@@ -73,7 +72,7 @@ export function readOnlyNotice(can: Can): string | null {
 const titleOf = (section: string, can?: Can): string => {
   const base: Record<string, string> = {
     classes: 'Classes', exams: 'Exams', meetings: 'Meetings', students: can && wide(can) ? 'All students' : 'My students', tasks: 'Pending actions', allocation: 'Allocation',
-    approvals: 'Final approvals', staff: 'Mentors and counselors', dashboard: can && wide(can) ? 'Department overview' : 'Overview',
+    approvals: 'Final approvals', staff: 'Mentors and counselors', dashboard: 'Work lists', overview: can && wide(can) ? 'Department overview' : 'Overview',
   };
   return base[section] ?? 'Mentoring';
 };
