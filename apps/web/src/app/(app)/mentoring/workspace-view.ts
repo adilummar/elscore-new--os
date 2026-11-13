@@ -31,7 +31,7 @@ export interface WorkspaceData {
   student: { name: string; studentId: string | null };
   tutorName: string;
   mentorName: string | null;
-  before: { targetAt: string; leadMinutes: number; meetLink: string | null; warning: { level: 'amber' | 'red'; text: string } | null; done: boolean; message: MessagePreview };
+  before: { targetAt: string; leadMinutes: number; meetLink: string | null; meetLinkSource?: 'SUBJECT' | 'CLASS' | null; warning: { level: 'amber' | 'red'; text: string } | null; done: boolean; message: MessagePreview };
   after: {
     voice: VoiceInfo | null; earlierVoice: number; activities: ActivityInfo[]; minimumActivities: number; messages: MessagePreview[]; canEdit: boolean;
     activityCounts?: { created: number; shared: number }; activityOptions?: ActivityOptions; versions?: VersionInfo[];

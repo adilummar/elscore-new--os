@@ -12,6 +12,7 @@ import { MentoringWorkflowService } from './mentoring-workflow.service';
 import {
   ApprovalDecisionDto,
   AssignTutorDto,
+  SubjectMeetLinkDto,
   BlockDto,
   CancelDto,
   ExceptionDto,
@@ -127,6 +128,13 @@ export class MentoringWorkflowController {
   @RequirePermissions('mentoring.stage.work')
   assignTutor(@Param('activationId') id: string, @Param('subjectId') subjectId: string, @Body() dto: AssignTutorDto, @CurrentUser() user: RequestUser) {
     return this.tutors.assign(id, subjectId, dto.tutorProfileId, user.id);
+  }
+
+  /** Save or clear the Google Meet link of a subject (assigned Mentor). Class pages and reminders read it from here. */
+  @Put(':activationId/schedule/subjects/:subjectId/meet-link')
+  @RequirePermissions('mentoring.stage.work')
+  setSubjectMeetLink(@Param('activationId') id: string, @Param('subjectId') subjectId: string, @Body() dto: SubjectMeetLinkDto, @CurrentUser() user: RequestUser) {
+    return this.tutors.setMeetLink(id, subjectId, dto, user.id);
   }
 
   /** Remove the tutor from a subject (assigned Mentor). The assignment stays in the history. */

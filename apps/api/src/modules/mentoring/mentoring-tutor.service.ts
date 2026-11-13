@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { MentoringTutorAssignmentStatus, Prisma } from '@prisma/client';
 
@@ -7,6 +7,7 @@ import { AvailabilityWindow, DayNumber, minutesToClock } from '../tutor/tutor-av
 import { HORIZON_WEEKS, addDays } from '../tutor/tutor-calendar';
 import { TutorRef, loadCalendars } from '../tutor/tutor-calendar.data';
 
+import { checkMeetLink } from './class-workspace';
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { assertMeetingStarted, assertWorkable, loadLockedActivation } from './mentoring-guards';
 import { stableJson } from './mentoring-handover-fields';
@@ -36,6 +37,8 @@ import {
 
 const SCHEDULE_FIELD = 'timetable.schedule';
 const LIVE: MentoringTutorAssignmentStatus[] = ['ACTIVE', 'NEEDS_REVIEW'];
+/** Activation statuses in which the assigned Mentor may keep a subject's Meet link. */
+const MEET_LINK_STATUSES: ReadonlySet<string> = new Set(['ACTIVATION_IN_PROGRESS', 'ACTIVATED']);
 const DATED_STATUSES = new Set(['SCHEDULED', 'ASSIGNED', 'IN_PROGRESS']);
 
 interface TutorRecord extends TutorFacts {
@@ -85,6 +88,8 @@ export interface AssignmentView {
   /** Why the assignment needs review, with the sessions that no longer fit. */
   reviewDetail: unknown;
   assignedAt: Date;
+  /** The Google Meet link of this student's classes in this subject, or null when none has been added. */
+  meetLink: string | null;
 }
 
 export interface CandidateList {
@@ -372,7 +377,7 @@ export class MentoringTutorService {
 
   private async assignmentViews(
     db: PrismaTxClient,
-    rows: Array<{ id: string; subjectId: string; status: MentoringTutorAssignmentStatus; tutorProfileId: string; scheduleSnapshot: Prisma.JsonValue; reviewDetail: Prisma.JsonValue | null; assignedAt: Date }>,
+    rows: Array<{ id: string; subjectId: string; status: MentoringTutorAssignmentStatus; tutorProfileId: string; scheduleSnapshot: Prisma.JsonValue; reviewDetail: Prisma.JsonValue | null; assignedAt: Date; meetLink: string | null }>,
   ): Promise<AssignmentView[]> {
     if (rows.length === 0) return [];
     const tutors = await this.loadTutors(db, [...new Set(rows.map((r) => r.tutorProfileId))]);
@@ -393,6 +398,7 @@ export class MentoringTutorService {
         sessions: snap.labels ?? [],
         reviewDetail: r.reviewDetail,
         assignedAt: r.assignedAt,
+        meetLink: r.meetLink ?? null,
       };
     });
   }
@@ -463,6 +469,8 @@ export class MentoringTutorService {
           scheduleSnapshot: { subjectName: resolved.subject.subjectName, gradeName: resolved.subject.gradeName, core, labels: resolved.required.map((r) => r.label) } as unknown as Prisma.InputJsonValue,
           assignedByUserId: userId,
           startDate: asDate(resolved.subject.startDate),
+          // The link belongs to the subject, so it survives a tutor change or a schedule re-check.
+          meetLink: current?.meetLink ?? null,
         },
       });
       await this.writeSessions(tx, created.id, tutorProfileId, stored);
@@ -484,6 +492,34 @@ export class MentoringTutorService {
         },
       });
       return (await this.assignmentViews(tx, [created]))[0];
+    });
+  }
+
+  /**
+   * Saves or clears the Google Meet link of one subject for one student. It lives on the subject's current tutor assignment, so it is part of
+   * the subject schedule: every class of the subject shows it and every reminder uses it. Only the assigned Mentor may change it, the change is
+   * checked again here, and the old and new link go into the student's history.
+   */
+  async setMeetLink(activationId: string, subjectId: string, body: unknown, userId: string): Promise<{ subjectId: string; meetLink: string | null }> {
+    const checked = checkMeetLink(body);
+    if (!checked.ok) throw new BadRequestException(checked.message);
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const activation = await loadLockedActivation(tx, activationId);
+      MentoringAllocationService.assertAssignedMentor(activation, userId);
+      // Unlike choosing a tutor, the link is kept up while classes run, so it is allowed once the student is Active as well as during activation.
+      if (!MEET_LINK_STATUSES.has(activation.status)) throw new ConflictException('The Meet link can be changed only while the student is being activated or is Active.');
+      const current = await this.currentAssignment(tx, activationId, subjectId);
+      if (!current) throw new ConflictException('Choose the tutor for this subject first. The Meet link belongs to the subject\'s tutor assignment.');
+      if ((current.meetLink ?? null) === checked.value) return { subjectId, meetLink: checked.value };
+      await tx.mentoringTutorAssignment.update({ where: { id: current.id }, data: { meetLink: checked.value } });
+      await this.history.record(tx, {
+        activationId,
+        type: 'MENTORING_SUBJECT_MEET_LINK_SET',
+        actorUserId: userId,
+        reason: checked.value === null ? 'The Meet link was removed' : null,
+        payload: { subjectId, assignmentId: current.id, previousLink: current.meetLink ?? null, newLink: checked.value },
+      });
+      return { subjectId, meetLink: checked.value };
     });
   }
 

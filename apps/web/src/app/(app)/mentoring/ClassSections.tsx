@@ -136,3 +136,23 @@ export function TabBar({ label, tabs, value, onChange, idPrefix = 'ws' }: { labe
     </div>
   );
 }
+
+// ─── The Meet link, shown and never edited here ──────────────────────────────────────────────────────────────────
+/**
+ * The class's Google Meet link, read-only. It comes from the subject's schedule (the student's tutor assignment for this subject), so a class
+ * only ever shows its own subject's link. A link saved on the single class before the schedule had one is shown too, and says so. Changing a
+ * link is done in the student's tutor schedule, not here.
+ */
+export function MeetLinkDisplay({ link, source }: { link: string | null; source?: 'SUBJECT' | 'CLASS' | null }) {
+  const safe = link && /^https:\/\//i.test(link) ? link : null;
+  return (
+    <div className="text-sm" data-testid="meet-link">
+      <p className="font-medium text-slate-700">Google Meet link</p>
+      {safe
+        ? <a href={safe} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block break-all font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{safe}<span className="sr-only"> (opens in a new tab)</span></a>
+        : <p className="mt-1 text-slate-700">No Google Meet link has been added for this class.</p>}
+      {safe && source === 'CLASS' && <p className="mt-1 text-xs text-slate-600">This link was saved on this class earlier. Links are now kept in the student&apos;s tutor schedule, under the subject.</p>}
+      {!safe && <p className="mt-1 text-xs text-slate-600">The Mentor adds the link in the student&apos;s tutor schedule, under the subject. The reminder message uses it.</p>}
+    </div>
+  );
+}

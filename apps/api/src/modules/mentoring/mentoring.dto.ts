@@ -200,6 +200,11 @@ export class AssignTutorDto {
   @IsString() @IsNotEmpty() tutorProfileId!: string;
 }
 
+export class SubjectMeetLinkDto {
+  /** A full https address, or empty to remove the link. Checked again by the service. */
+  @IsString() link!: string;
+}
+
 export class RemoveTutorDto {
   @IsOptional() @IsString() reason?: string;
 }

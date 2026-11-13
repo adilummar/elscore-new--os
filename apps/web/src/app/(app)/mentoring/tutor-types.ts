@@ -69,6 +69,8 @@ export interface AssignmentView {
   sessions: string[];
   reviewDetail: { reason?: string; sessions?: Array<{ key: string; label: string; status: SessionStatus; reason: string }> } | null;
   assignedAt: string;
+  /** The Google Meet link of this student's classes in this subject, or null when none has been added. */
+  meetLink?: string | null;
 }
 
 export interface CandidateList {
@@ -92,6 +94,9 @@ export interface TutorTools {
   /** HR staff and the tutor themselves. A Mentor sees who to ask instead. */
   canManageAvailability: boolean;
   loadCandidates: (subjectId: string) => Promise<CandidateList>;
+  /** The assigned Mentor, while the student is being activated or is Active: may keep a subject's Meet link. */
+  canEditMeetLink?: boolean;
+  setMeetLink?: (subjectId: string, link: string) => Promise<void>;
   assign: (subjectId: string, tutorProfileId: string) => Promise<void>;
   remove: (subjectId: string, reason?: string) => Promise<void>;
   loadAvailability: (tutorProfileId: string) => Promise<{ name: string; windows: AvailabilityWindow[] }>;

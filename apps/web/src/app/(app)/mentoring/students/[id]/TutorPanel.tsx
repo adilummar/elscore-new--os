@@ -270,6 +270,51 @@ export function TutorSelectionModal({ subjectId, subjectName, tools, open, onClo
   );
 }
 
+/**
+ * The Google Meet link of this subject. It belongs to the subject's schedule: every class of the subject shows it and every reminder uses it.
+ * Only the assigned Mentor can change it (the server checks again); everyone else sees it as a link.
+ */
+export function SubjectMeetLink({ subjectId, link, tools }: { subjectId: string; link: string | null; tools?: TutorTools }) {
+  const [value, setValue] = React.useState(link ?? '');
+  const [error, setError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { setValue(link ?? ''); }, [link]);
+  const editable = Boolean(tools?.canEditMeetLink && tools.setMeetLink);
+  const id = `subject-meet-link-${subjectId}`;
+  const save = async () => {
+    if (!tools?.setMeetLink) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await tools.setMeetLink(subjectId, value.trim());
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'The link could not be saved.');
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3" data-testid="subject-meet-link">
+      {editable ? (
+        <>
+          <label htmlFor={id} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Google Meet link for this subject</label>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <input id={id} type="url" inputMode="url" value={value} placeholder="https://meet.google.com/abc-defg-hij" onChange={(e) => setValue(e.target.value)} aria-describedby={`${id}-hint`}
+              className="min-w-[14rem] flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <Button type="button" size="sm" variant="outline" disabled={busy || value.trim() === (link ?? '')} onClick={save}>Save link</Button>
+          </div>
+          <p id={`${id}-hint`} className="mt-1 text-xs text-slate-600">Every class of this subject and every class reminder uses this link. Leave it empty and save to remove it.</p>
+        </>
+      ) : (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Google Meet link</p>
+          {link ? <a href={link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block break-all text-sm font-medium text-brand-700 underline">{link}</a> : <p className="mt-1 text-sm text-slate-600">No Google Meet link has been added for this subject.</p>}
+        </>
+      )}
+      {error && <p role="alert" className="mt-1 text-xs font-medium text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 interface AssignedProps {
   subjectId: string;
   subjectName: string;
@@ -334,6 +379,8 @@ export function AssignedTutor({ subjectId, subjectName, tools, saved }: Assigned
       ) : (
         <p className="mt-2 text-sm text-slate-500">No tutor selected for {subjectName}.</p>
       )}
+
+      {current && <SubjectMeetLink subjectId={subjectId} link={current.meetLink ?? null} tools={tools} />}
 
       {!saved && tools.canAssign && <p className="mt-2 text-xs text-slate-500">Save the schedule to {current ? 're-check this tutor' : 'choose a tutor'}. Tutors are matched against the saved schedule.</p>}
       {error && <p role="alert" className="mt-2 text-xs font-medium text-red-600">{error}</p>}

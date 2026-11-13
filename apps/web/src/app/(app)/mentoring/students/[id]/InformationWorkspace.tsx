@@ -156,7 +156,7 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
         ) : pending ? (
           <p className="text-sm text-slate-400">No value yet</p>
         ) : isScheduleValue(row.rawValue) ? (
-          <SubjectScheduleView value={row.rawValue} assignments={tutorTools?.assignments} />
+          <SubjectScheduleView value={row.rawValue} assignments={tutorTools?.assignments} tools={tutorTools} />
         ) : (
           <p className="whitespace-pre-line break-words text-sm text-slate-900 [overflow-wrap:anywhere]">{row.value}</p>
         )}

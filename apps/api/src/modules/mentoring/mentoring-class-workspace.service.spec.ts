@@ -128,12 +128,15 @@ describe('who can reach a class workspace', () => {
   });
 });
 
+/** The Meet link of a subject lives on the student's tutor assignment (the subject schedule). */
+const subjectLink = (w: ReturnType<typeof world>, link: string | null, id = 'A') => { w.db.rows('mentoringTutorAssignment').find((a) => a.id === `as-class-${id}`)!.meetLink = link; };
+
 describe('before class: the reminder', () => {
   it('shows the 45 minute target, the class details and the Meet link, and warns in amber when due and in red once the class has started', async () => {
     const w = world();
-    await w.ws.setMeetLink('mentor-1', KEY, { link: 'https://meet.google.com/abc-defg-hij' });
+    subjectLink(w, 'https://meet.google.com/abc-defg-hij');
     const early = (await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:00'))).before;
-    expect(early).toMatchObject({ targetAt: at(MON, '14:15').toISOString(), leadMinutes: 45, meetLink: 'https://meet.google.com/abc-defg-hij', warning: null, done: false });
+    expect(early).toMatchObject({ targetAt: at(MON, '14:15').toISOString(), leadMinutes: 45, meetLink: 'https://meet.google.com/abc-defg-hij', meetLinkSource: 'SUBJECT', warning: null, done: false });
     expect(early.message).toMatchObject({ ok: true });
     expect(early.message.text).toContain('Student: Asha Menon');
     expect(early.message.text).toContain('Tutor: Meera Thomas');
@@ -143,17 +146,52 @@ describe('before class: the reminder', () => {
     expect((await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '15:10'))).before.warning).toMatchObject({ level: 'red' });
   });
 
-  it('does not make up a Meet link: the message asks for it, and takes one typed in', async () => {
+  it('does not make up a Meet link: without one on the subject the message asks for it, and a typed link is ignored', async () => {
     const w = world();
-    const before = (await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:00'))).before.message;
-    expect(before).toMatchObject({ ok: false, missing: ['meetLink'], message: 'Complete the Meet link first.' });
+    const before = (await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:00'))).before;
+    expect(before.message).toMatchObject({ ok: false, missing: ['meetLink'], message: 'Complete the Meet link first.' });
+    expect(before).toMatchObject({ meetLink: null, meetLinkSource: null });
     await expect(w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', {}, at(MON, '14:00'))).rejects.toThrow('Complete the Meet link first.');
-    const made = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: 'https://meet.google.com/zzz-yyyy-xxx' }, at(MON, '14:00'));
-    expect(made.text).toContain('https://meet.google.com/zzz-yyyy-xxx');
+    await expect(w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: 'https://meet.google.com/zzz-yyyy-xxx' }, at(MON, '14:00'))).rejects.toThrow('Complete the Meet link first.');
+    expect(w.db.rows('mentoringMessageShare')).toHaveLength(0);
+  });
+
+  it('uses the subject link in the reminder, and a typed link never replaces it', async () => {
+    const w = world();
+    subjectLink(w, 'https://meet.google.com/aaa-bbbb-ccc');
+    const made = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: 'https://meet.google.com/forged-link' }, at(MON, '14:00'));
+    expect(made.text).toContain('Meet link: https://meet.google.com/aaa-bbbb-ccc');
+    expect(made.text).not.toContain('forged-link');
+  });
+
+  it('shows each class the link of its own subject, and no link for a subject that has none', async () => {
+    const w = world();
+    // Student A has English only in this world; give A a second subject with another link and another with none.
+    const en = w.db.rows('mentoringTutorAssignment').find((x) => x.id === 'as-class-A')!;
+    en.meetLink = 'https://meet.google.com/eng-lish-aaa';
+    const maths: any = w.db.seed('mentoringTutorAssignment', { id: 'as-class-A-ma', activationId: 'act-A', subjectId: 'sub-ma', tutorProfileId: en.tutorProfileId, status: 'ACTIVE', currentKey: 'act-A:sub-ma', startDate: day(MON), endDate: null, scheduleSnapshot: {}, meetLink: 'https://meet.google.com/mat-hsss-bbb' });
+    const science: any = w.db.seed('mentoringTutorAssignment', { id: 'as-class-A-sc', activationId: 'act-A', subjectId: 'sub-sc', tutorProfileId: en.tutorProfileId, status: 'ACTIVE', currentKey: 'act-A:sub-sc', startDate: day(MON), endDate: null, scheduleSnapshot: {}, meetLink: null });
+    for (const [assignment, start] of [[maths, 18 * 60], [science, 19 * 60]] as const) w.db.seed('mentoringTutorAssignmentSession', { assignmentId: assignment.id, tutorProfileId: en.tutorProfileId, dayOfWeek: 1, frequency: 'WEEKLY', week: null, occurrences: [], startMinute: start, endMinute: start + 60 });
+    for (const [id, name] of [['sub-ma', 'Mathematics'], ['sub-sc', 'Science']] as const) if (!w.db.rows('subject').some((x) => x.id === id)) w.db.seed('subject', { id, name, isActive: true });
+    const link = async (assignment: any, start: number) => (await w.ws.tutorWorkspace('u-meera', `${assignment.id}~${MON}~${start}`, at(MON, '14:00'))).before;
+    expect(await link(en, 15 * 60)).toMatchObject({ meetLink: 'https://meet.google.com/eng-lish-aaa', meetLinkSource: 'SUBJECT' });
+    expect(await link(maths, 18 * 60)).toMatchObject({ meetLink: 'https://meet.google.com/mat-hsss-bbb', meetLinkSource: 'SUBJECT' });
+    expect(await link(science, 19 * 60)).toMatchObject({ meetLink: null, meetLinkSource: null });
+  });
+
+  it('falls back to a link saved on the single class only when the subject has none, and the subject link wins when both exist', async () => {
+    const w = world();
+    const first = await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:00'));
+    expect(first.before.meetLink).toBeNull();
+    w.session().meetLink = 'https://meet.google.com/old-class-link';
+    expect((await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:00'))).before).toMatchObject({ meetLink: 'https://meet.google.com/old-class-link', meetLinkSource: 'CLASS' });
+    subjectLink(w, 'https://meet.google.com/subject-link-1');
+    expect((await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:00'))).before).toMatchObject({ meetLink: 'https://meet.google.com/subject-link-1', meetLinkSource: 'SUBJECT' });
   });
 
   it('copying is not sharing: the message stays not confirmed until a named person says they shared it, and confirming twice records once', async () => {
     const w = world();
+    subjectLink(w, 'https://meet.google.com/aaa-bbbb-ccc');
     const { shareId } = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: 'https://meet.google.com/aaa-bbbb-ccc' }, at(MON, '14:00'));
     await w.ws.markCopied('u-meera', 'TUTOR', shareId, at(MON, '14:01'));
     let share = (await w.ws.tutorWorkspace('u-meera', KEY, at(MON, '14:02'))).before.message.share!;
@@ -170,6 +208,7 @@ describe('before class: the reminder', () => {
 
   it('only the tutor of the class can confirm a message of theirs, and a Mentor only for their own student', async () => {
     const w = world();
+    subjectLink(w, 'https://meet.google.com/aaa-bbbb-ccc');
     const { shareId } = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: 'https://meet.google.com/aaa-bbbb-ccc' }, AFTER);
     await expect(w.ws.confirmShare('u-rahul', 'TUTOR', shareId, AFTER)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(w.ws.confirmShare('mentor-2', 'MENTOR', shareId, AFTER)).rejects.toBeInstanceOf(ForbiddenException);
@@ -178,14 +217,9 @@ describe('before class: the reminder', () => {
     await expect(w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'NOT_A_TEMPLATE', {}, AFTER)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('lets only the assigned Mentor set the Meet link, an https address, and clears it when empty', async () => {
+  it('has no way to add or change a Meet link from a class: the link is managed in the subject schedule', () => {
     const w = world();
-    await expect(w.ws.setMeetLink('mentor-2', KEY, { link: 'https://meet.google.com/x-y-z' })).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(w.ws.setMeetLink('mentor-1', KEY, { link: 'http://insecure.example' })).rejects.toThrow('https://');
-    await w.ws.setMeetLink('mentor-1', KEY, { link: 'https://meet.google.com/x-y-z' });
-    expect(w.session().meetLink).toBe('https://meet.google.com/x-y-z');
-    await w.ws.setMeetLink('mentor-1', KEY, { link: '' });
-    expect(w.session().meetLink).toBeNull();
+    expect('setMeetLink' in w.ws).toBe(false);
   });
 });
 
@@ -456,7 +490,6 @@ describe('strict verification', () => {
     await expect(w.ws.addActivity('u-meera', KEY, activity(4), AFTER)).rejects.toThrow('is verified');
     await expect(w.ws.uploadVoice('u-meera', KEY, audio(), AFTER)).rejects.toThrow('is verified');
     await expect(w.ws.removeActivity('u-meera', w.db.rows('mentoringClassActivity')[0].id)).rejects.toThrow('is verified');
-    await expect(w.ws.setMeetLink('mentor-1', KEY, { link: 'https://meet.google.com/a-b-c' })).rejects.toThrow('is verified');
   });
 
   it('does not need the voice or the activities to confirm that a class was not conducted, and never consumes it', async () => {
@@ -670,7 +703,7 @@ describe('the daily class list', () => {
 describe('the routes', () => {
   it('every Mentor change needs the Mentor work permission, the Head decision needs the exception permission, and templates need their own', () => {
     const proto = MentoringClassWorkspaceController.prototype as any;
-    for (const name of ['share', 'meetLink', 'cancel', 'requestException', 'copied', 'confirm', 'response']) expect(Reflect.getMetadata(PERMISSIONS_KEY, proto[name])).toEqual(['mentoring.stage.work']);
+    for (const name of ['share', 'cancel', 'requestException', 'copied', 'confirm', 'response']) expect(Reflect.getMetadata(PERMISSIONS_KEY, proto[name])).toEqual(['mentoring.stage.work']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.decideException)).toEqual(['mentoring.exception.authorize']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.saveTemplate)).toEqual(['mentoring.template.manage']);
     for (const name of ['list', 'templates', 'audio', 'one']) expect(Reflect.getMetadata(PERMISSIONS_KEY, proto[name])).toBeUndefined();
@@ -893,27 +926,30 @@ describe('H1: playback ranges', () => {
 describe('7: what a message may state', () => {
   it('ignores any value a caller sends for the student, tutor, date, time or subject, and states the recorded ones', async () => {
     const w = world();
-    const made = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { studentName: 'Somebody Else', tutorName: 'Not The Tutor', classDate: 'Never', classTime: '1:00 AM', subject: 'Maths', meetLink: 'https://meet.google.com/aaa-bbbb-ccc' }, at(MON, '14:00'));
+    subjectLink(w, 'https://meet.google.com/aaa-bbbb-ccc');
+    const made = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { studentName: 'Somebody Else', tutorName: 'Not The Tutor', classDate: 'Never', classTime: '1:00 AM', subject: 'Maths', meetLink: 'https://meet.google.com/forged-link' }, at(MON, '14:00'));
     expect(made.text).toContain('Asha Menon');
     expect(made.text).toContain('Meera Thomas');
     expect(made.text).toContain('3:00 PM to 4:00 PM');
     for (const forged of ['Somebody Else', 'Not The Tutor', 'Never', '1:00 AM', 'Maths']) expect(made.text).not.toContain(forged);
     expect(made.text).toContain('https://meet.google.com/aaa-bbbb-ccc');
+    expect(made.text).not.toContain('forged-link');
   });
 
-  it('does not let a caller fill a value the class record leaves out, other than the Meet link', async () => {
+  it('does not let a caller fill a value the class record leaves out', async () => {
     const w = world();
     await expect(w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_UPDATE', { duration: '9 h', topicsCovered: 'Invented', practiceWork: 'Invented' }, AFTER)).rejects.toThrow();
     expect(w.db.rows('mentoringMessageShare')).toHaveLength(0);
   });
 
-  it('accepts only an https Meet link and says why when it is not one', async () => {
+  it('ignores a typed Meet link of any kind, so the message always states the subject link', async () => {
     const w = world();
-    for (const link of ['http://insecure.example/x', 'javascript:alert(1)', 'meet.google.com/abc', 'ftp://x.example']) {
-      await expect(w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: link }, at(MON, '14:00'))).rejects.toBeInstanceOf(BadRequestException);
+    subjectLink(w, 'https://meet.google.com/ok-okok-ok');
+    for (const link of ['http://insecure.example/x', 'javascript:alert(1)', 'meet.google.com/abc', 'ftp://x.example', 'https://meet.google.com/forged-link']) {
+      const made = await w.ws.prepareShare('u-meera', 'TUTOR', KEY, 'CLASS_REMINDER', { meetLink: link }, at(MON, '14:00'));
+      expect(made.text).toContain('Meet link: https://meet.google.com/ok-okok-ok');
+      expect(made.text).not.toContain(link);
     }
-    expect(w.db.rows('mentoringMessageShare')).toHaveLength(0);
-    await expect(w.ws.prepareShare('mentor-1', 'MENTOR', KEY, 'CLASS_REMINDER', { meetLink: 'https://meet.google.com/ok-okok-ok' }, at(MON, '14:00'))).resolves.toMatchObject({ shared: false });
   });
 });
 
@@ -1198,7 +1234,6 @@ describe('eligibility: classes exist only for an Active student with an approved
     await expect(w.submit()).rejects.toBeInstanceOf(NotFoundException);
     await expect(w.ws.addActivity('u-meera', KEY, activity(1), AFTER)).rejects.toBeInstanceOf(NotFoundException);
     await expect(w.ws.uploadVoice('u-meera', KEY, audio(), AFTER)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(w.ws.setMeetLink('mentor-1', KEY, { link: 'https://meet.google.com/a-b-c' })).rejects.toBeInstanceOf(NotFoundException);
     await expect(w.classes.cancel(KEY, 'x', 'mentor-1', AFTER)).rejects.toBeInstanceOf(NotFoundException);
     // By a stored class the reason is given.
     await expect(w.classes.verify(id, {}, 'mentor-1', AFTER)).rejects.toThrow('This student has not been activated yet, so classes cannot be changed.');

@@ -642,3 +642,98 @@ describe('What the workspace tells the page', () => {
     expect(w.db.rows('mentoringTutorAssignment')).toHaveLength(1);
   });
 });
+
+describe('The Meet link of a subject', () => {
+  const LINK = 'https://meet.google.com/abc-defg-hij';
+  const assigned = async () => {
+    const w = world();
+    addTutor(w.db, 'rahul', 'Rahul Menon', { hours: ALL_DAYS });
+    await w.tutors.assign('act-1', 'sub-en', 'tp-rahul', 'mentor-1');
+    return w;
+  };
+
+  it('is saved on the subject\'s tutor assignment by the assigned Mentor, and shown with the assignment', async () => {
+    const w = await assigned();
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1')).resolves.toEqual({ subjectId: 'sub-en', meetLink: LINK });
+    expect(w.db.rows('mentoringTutorAssignment')[0].meetLink).toBe(LINK);
+    expect((await w.tutors.assignmentsFor('act-1'))[0]).toMatchObject({ subjectId: 'sub-en', meetLink: LINK });
+  });
+
+  it('starts empty, so a subject without a link shows none', async () => {
+    const w = await assigned();
+    expect((await w.tutors.assignmentsFor('act-1'))[0].meetLink).toBeNull();
+  });
+
+  it('records the old and new link in the student history, and says so when it is removed', async () => {
+    const w = await assigned();
+    await w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1');
+    await w.tutors.setMeetLink('act-1', 'sub-en', { link: 'https://meet.google.com/zzz-yyyy-xxx' }, 'mentor-1');
+    await w.tutors.setMeetLink('act-1', 'sub-en', { link: '' }, 'mentor-1');
+    const e = events(w.db, 'MENTORING_SUBJECT_MEET_LINK_SET');
+    expect(e).toHaveLength(3);
+    expect(e[0]).toMatchObject({ actorUserId: 'mentor-1', payload: { subjectId: 'sub-en', previousLink: null, newLink: LINK } });
+    expect(e[1].payload).toMatchObject({ previousLink: LINK, newLink: 'https://meet.google.com/zzz-yyyy-xxx' });
+    expect(e[2]).toMatchObject({ reason: 'The Meet link was removed', payload: { previousLink: 'https://meet.google.com/zzz-yyyy-xxx', newLink: null } });
+    expect(w.db.rows('mentoringTutorAssignment')[0].meetLink).toBeNull();
+  });
+
+  it('records nothing when the link does not change', async () => {
+    const w = await assigned();
+    await w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1');
+    await w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1');
+    expect(events(w.db, 'MENTORING_SUBJECT_MEET_LINK_SET')).toHaveLength(1);
+  });
+
+  it('refuses anyone but the assigned Mentor', async () => {
+    const w = await assigned();
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-2')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'head-1')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(w.db.rows('mentoringTutorAssignment')[0].meetLink).toBeNull();
+  });
+
+  it('accepts only a full https address', async () => {
+    const w = await assigned();
+    for (const link of ['http://insecure.example', 'meet.google.com/abc', 'javascript:alert(1)', 'ftp://x.example', 'x'.repeat(301)]) {
+      await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
+    }
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: 42 }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(w.db.rows('mentoringTutorAssignment')[0].meetLink).toBeNull();
+  });
+
+  it('needs the subject\'s tutor to be chosen first, because the link belongs to that assignment', async () => {
+    const w = world();
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('is kept when the tutor is changed or the assignment is re-confirmed, and is never copied to another subject', async () => {
+    const w = await assigned();
+    addTutor(w.db, 'anjali', 'Anjali Nair', { hours: ALL_DAYS });
+    await w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1');
+    await w.tutors.assign('act-1', 'sub-en', 'tp-anjali', 'mentor-1');
+    const rows = w.db.rows('mentoringTutorAssignment');
+    expect(rows.map((r) => [r.tutorProfileId, r.status, r.meetLink])).toEqual([['tp-rahul', 'ENDED', LINK], ['tp-anjali', 'ACTIVE', LINK]]);
+  });
+
+  it('is an assigned-Mentor action behind the work permission on a route of the schedule', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, MentoringWorkflowController.prototype.setSubjectMeetLink)).toEqual(['mentoring.stage.work']);
+  });
+});
+
+describe('The Meet link and the student\'s status', () => {
+  const setStatus = (w: any, status: string) => { w.db.rows('mentoringActivation').find((a: any) => a.id === 'act-1').status = status; };
+  const LINK = 'https://meet.google.com/abc-defg-hij';
+  const assigned = async () => { const w = world(); addTutor(w.db, 'rahul', 'Rahul Menon', { hours: ALL_DAYS }); await w.tutors.assign('act-1', 'sub-en', 'tp-rahul', 'mentor-1'); return w; };
+
+  it('can be kept up once the student is Active, which is when the classes run', async () => {
+    const w = await assigned();
+    setStatus(w, 'ACTIVATED');
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1')).resolves.toMatchObject({ meetLink: LINK });
+  });
+
+  it.each(['ACTIVATION_ON_HOLD', 'ACTIVATION_BLOCKED', 'CANCELLED', 'AWAITING_ALLOCATION', 'PENDING_FINAL_APPROVAL'])('is refused while the student is %s', async (status) => {
+    const w = await assigned();
+    setStatus(w, status);
+    await expect(w.tutors.setMeetLink('act-1', 'sub-en', { link: LINK }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(w.db.rows('mentoringTutorAssignment')[0].meetLink).toBeNull();
+  });
+});

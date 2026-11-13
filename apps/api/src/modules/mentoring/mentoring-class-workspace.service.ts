@@ -115,6 +115,19 @@ export class MentoringClassWorkspaceService {
   }
 
   // ─── Reading one class ─────────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * The Google Meet link a class uses. The subject's schedule is the source of truth: the link on the student's current tutor assignment for
+   * this subject. A link saved on a single class before the schedule had one (or an older assignment of the subject) is used only when the
+   * schedule has none. Nothing is invented, and another subject's link is never used.
+   */
+  private async meetLinkOf(db: PrismaTxClient, session: SessionRow): Promise<{ link: string | null; source: 'SUBJECT' | 'CLASS' | null }> {
+    const live = await db.mentoringTutorAssignment.findFirst({ where: { activationId: session.activationId, subjectId: session.subjectId, status: { in: ['ACTIVE', 'NEEDS_REVIEW'] } } });
+    if (live?.meetLink) return { link: live.meetLink, source: 'SUBJECT' };
+    const own = await db.mentoringTutorAssignment.findUnique({ where: { id: session.assignmentId } });
+    if (own && own.subjectId === session.subjectId && own.meetLink) return { link: own.meetLink, source: 'SUBJECT' };
+    return session.meetLink ? { link: session.meetLink, source: 'CLASS' } : { link: null, source: null };
+  }
+
   private async facts(db: PrismaTxClient, session: SessionRow, view: ClassView) {
     const [activation, subject, tutorEmp] = await Promise.all([
       db.mentoringActivation.findUnique({ where: { id: session.activationId } }),
@@ -122,7 +135,8 @@ export class MentoringClassWorkspaceService {
       db.employee.findUnique({ where: { userId: session.tutorUserId } }),
     ]);
     const mentor = activation?.currentMentorUserId ? await db.employee.findUnique({ where: { userId: activation.currentMentorUserId } }) : null;
-    return { studentId: activation?.studentId ?? null, subject: subject?.name ?? view.subjectName, tutorName: tutorEmp ? `${tutorEmp.firstName} ${tutorEmp.lastName}`.trim() : view.tutorName, mentorName: mentor ? `${mentor.firstName} ${mentor.lastName}`.trim() : null };
+    const meet = await this.meetLinkOf(db, session);
+    return { meetLink: meet.link, meetLinkSource: meet.source, studentId: activation?.studentId ?? null, subject: subject?.name ?? view.subjectName, tutorName: tutorEmp ? `${tutorEmp.firstName} ${tutorEmp.lastName}`.trim() : view.tutorName, mentorName: mentor ? `${mentor.firstName} ${mentor.lastName}`.trim() : null };
   }
 
   private async people(db: PrismaTxClient, ids: Array<string | null | undefined>) {
@@ -139,7 +153,7 @@ export class MentoringClassWorkspaceService {
     const base: Record<string, string | null> = {
       studentName: view.studentName, tutorName: f.tutorName, classDate: longDate(view.date), classTime: formatRange(view.startMinute, view.endMinute), subject: f.subject,
       duration: minutes !== null ? hoursText(minutes) : null, topicsCovered: session.topicsCovered ?? null, practiceWork: activities.length ? activities.map((a) => a.title).join(', ') : null,
-      meetLink: session.meetLink ?? null, activityList: list || null, mentorName: f.mentorName,
+      meetLink: f.meetLink ?? null, activityList: list || null, mentorName: f.mentorName,
     };
     for (const [k, v] of Object.entries(over)) if (typeof v === 'string' && v.trim()) base[k] = v.trim();
     return base;
@@ -187,7 +201,7 @@ export class MentoringClassWorkspaceService {
       tutorName: f.tutorName,
       mentorName: f.mentorName,
       before: {
-        targetAt: target.toISOString(), leadMinutes: REMINDER_LEAD_MINUTES, meetLink: session.meetLink ?? null, warning: reminderWarning, done: reminderDone,
+        targetAt: target.toISOString(), leadMinutes: REMINDER_LEAD_MINUTES, meetLink: f.meetLink ?? null, meetLinkSource: f.meetLinkSource ?? null, warning: reminderWarning, done: reminderDone,
         message: preview('CLASS_REMINDER'),
         inApp: view.reminder,
       },
@@ -281,14 +295,9 @@ export class MentoringClassWorkspaceService {
       const f = await this.facts(tx, session, view);
       const activities = (await tx.mentoringClassActivity.findMany({ where: { sessionId: session.id, removedAt: null } })).sort((a, b) => a.position - b.position);
       const t = (await this.templates(tx)).find((x) => x.key === templateKey) as { body: string };
-      // Only the Meet link can be typed in, because it is the one value that is not recorded anywhere else. Every other value comes from
-      // the class record, so a caller can never change the student, tutor, date, time or subject that a message states.
+      // Every value comes from the record, including the Meet link (the subject's schedule). Nothing can be typed in here, so a caller can never
+      // change the student, tutor, date, time, subject or link that a message states.
       const over: Record<string, string> = {};
-      if (typeof overrides.meetLink === 'string' && overrides.meetLink.trim()) {
-        const link = checkMeetLink({ link: overrides.meetLink });
-        if (!link.ok) throw new BadRequestException(link.message);
-        if (link.value) over.meetLink = link.value;
-      }
       const r = renderTemplate(t.body, this.values(session, view, f, activities, over));
       if (!r.ok) throw new BadRequestException(r.message);
       const made = await tx.mentoringMessageShare.create({ data: { sessionId: session.id, templateKey, text: r.text, preparedByUserId: userId } });
@@ -324,19 +333,6 @@ export class MentoringClassWorkspaceService {
       await tx.mentoringMessageShare.update({ where: { id: shareId }, data: { confirmedAt: now, confirmedByUserId: userId, ...(share.copiedAt ? {} : { copiedAt: now, copiedByUserId: userId }) } });
       await this.classes.logEvent(tx, session.id, 'MESSAGE_SHARE_CONFIRMED', userId, { payload: { shareId, templateKey: share.templateKey, by: role } });
       return { shareId, shared: true, confirmedAt: now.toISOString(), already: false };
-    });
-  }
-
-  /** The common Meet link of the class. Empty clears it. */
-  async setMeetLink(userId: string, key: string, body: unknown) {
-    const checked = checkMeetLink(body);
-    if (!checked.ok) throw new BadRequestException(checked.message);
-    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
-      const { session } = await this.mentorCtx(tx, userId, key);
-      this.open(session);
-      await tx.mentoringClassSession.update({ where: { id: session.id }, data: { meetLink: checked.value } });
-      await this.classes.logEvent(tx, session.id, 'MEET_LINK_SET', userId, { payload: { cleared: checked.value === null } });
-      return { sessionId: session.id, meetLink: checked.value };
     });
   }
 

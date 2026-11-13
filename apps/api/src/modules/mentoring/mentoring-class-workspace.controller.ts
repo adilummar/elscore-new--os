@@ -107,12 +107,6 @@ export class MentoringClassWorkspaceController {
     return this.workspace.prepareShare(user.id, 'MENTOR', key, typeof body.templateKey === 'string' ? body.templateKey : '', (body.values as Body_) ?? {});
   }
 
-  @Put(':key/meet-link')
-  @RequirePermissions('mentoring.stage.work')
-  meetLink(@Param('key') key: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
-    return this.workspace.setMeetLink(user.id, key, body);
-  }
-
   @Post(':key/cancel')
   @RequirePermissions('mentoring.stage.work')
   cancel(@Param('key') key: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {

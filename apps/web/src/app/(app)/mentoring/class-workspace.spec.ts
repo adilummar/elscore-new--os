@@ -91,10 +91,13 @@ describe('a message block', () => {
     expect(out).toContain('Not prepared');
   });
 
-  it('says what is missing instead of making a message up, and asks for the Meet link', () => {
-    const out = html(preview({ ok: false, text: null, missing: ['meetLink'], message: 'Complete the Meet link first.' }), { needsLink: true });
+  it('says what is missing instead of making a message up, and sends the Mentor to the subject schedule for the Meet link', () => {
+    const out = html(preview({ ok: false, text: null, missing: ['meetLink'], message: 'Complete the Meet link first.' }));
     expect(out).toContain('Complete the Meet link first.');
-    expect(out).toContain('Meet link for this class');
+    expect(out).toContain('No Google Meet link has been added for this subject yet.');
+    expect(out).not.toContain('Meet link for this class');
+    expect(out).not.toContain('<input');
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*>Copy message/);
     expect(out).not.toContain('Student: Asha Menon');
   });
 

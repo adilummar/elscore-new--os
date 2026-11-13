@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { EditableFieldMeta } from '../../handover-presentation';
 import { AssignmentView, TutorTools } from '../../tutor-types';
-import { AssignedTutor } from './TutorPanel';
+import { AssignedTutor, SubjectMeetLink } from './TutorPanel';
 import {
   FREQUENCIES,
   FREQUENCY_LABELS,
@@ -469,7 +469,7 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
 }
 
 /** The saved schedule for people who cannot edit it: one block per subject with its classes. */
-export function SubjectScheduleView({ value, assignments = [] }: { value: ScheduleValue; assignments?: AssignmentView[] }) {
+export function SubjectScheduleView({ value, assignments = [], tools }: { value: ScheduleValue; assignments?: AssignmentView[]; tools?: TutorTools }) {
   return (
     <div className="space-y-2" data-testid="schedule-view">
       {value.subjects.map((subject) => (
@@ -481,6 +481,8 @@ export function SubjectScheduleView({ value, assignments = [] }: { value: Schedu
               Tutor: <span className="font-medium text-slate-900">{a.tutorName}</span>{a.status === 'NEEDS_REVIEW' ? ', needs review' : ''}
             </p>
           ))}
+          {/* The subject's Meet link: the assigned Mentor can change it here while the student is being activated or is Active. */}
+          {assignments.filter((a) => a.subjectId === subject.subjectId).slice(0, 1).map((a) => <SubjectMeetLink key={`link-${a.id}`} subjectId={subject.subjectId} link={a.meetLink ?? null} tools={tools} />)}
           <ul role="list" className="mt-1 flex flex-wrap gap-1">
             {subject.sessions.map((s) => (
               <li key={`${s.week ?? 0}-${s.day}`} className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-700">

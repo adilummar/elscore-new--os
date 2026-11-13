@@ -1052,6 +1052,8 @@ export class MentoringWorkflowService {
           manageTasks: scope.perms.has('mentoring.task.create') || scope.perms.has('mentoring.task.verify'),
         },
         canEditHandover: activation.currentMentorUserId === scope.userId && activation.status === 'ACTIVATION_IN_PROGRESS' && meetingStarted,
+        // The subject's Meet link is also kept up once the student is Active, because that is when the classes run.
+        canEditMeetLink: activation.currentMentorUserId === scope.userId && scope.perms.has('mentoring.stage.work') && (activation.status === 'ACTIVATION_IN_PROGRESS' || activation.status === 'ACTIVATED'),
         // Changing a tutor's working hours is for HR and the tutor, under the existing tutor profile permissions.
         canManageTutorAvailability: scope.perms.has('tutor.profile.manage'),
       },

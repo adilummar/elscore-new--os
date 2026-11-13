@@ -3984,6 +3984,9 @@ model MentoringTutorAssignment {
   /// this existed: they keep the earlier week-pattern behaviour.
   startDate        DateTime?                      @map("start_date") @db.Date
   endDate          DateTime?                      @map("end_date") @db.Date
+  /// The Google Meet link of this student's classes in this subject. It belongs to the subject's schedule, so every class of the subject shows
+  /// it. A link saved on a single class before this existed stays on that class and is used only when this is empty.
+  meetLink         String?                        @map("meet_link")
 
   activation MentoringActivation            @relation(fields: [activationId], references: [id], onDelete: Restrict)
   sessions   MentoringTutorAssignmentSession[]

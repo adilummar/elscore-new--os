@@ -13,7 +13,7 @@ import {
   exceptionKind, fileSizeText, payloadOfActivity, verifyHint, voiceUploadUrl, workspaceBase,
 } from './workspace-view';
 import { FollowUps, StatusStrip, VersionHistory } from './ClassWorkspaceExtras';
-import { Checklist, ReminderCheckbox, TabBar, Timing, TutorUpdate } from './ClassSections';
+import { Checklist, MeetLinkDisplay, ReminderCheckbox, TabBar, Timing, TutorUpdate } from './ClassSections';
 import { afterChecklist, reminderCheck, timingRows, tutorUpdateRows } from './class-sections-view';
 import { call } from './workspace-api';
 
@@ -25,14 +25,13 @@ const tabOf = (v: string | undefined): Tab => (v === 'after' || v === 'timing' ?
 
 
 // ─── A message the person copies and shares themselves ──────────────────────────────────────────────────────────
-interface MessageProps { role: WorkspaceRole; classKey: string; m: MessagePreview; busy: boolean; canAct: boolean; needsLink?: boolean; run: (label: string, fn: () => Promise<unknown>, done: string) => void }
+interface MessageProps { role: WorkspaceRole; classKey: string; m: MessagePreview; busy: boolean; canAct: boolean; run: (label: string, fn: () => Promise<unknown>, done: string) => void }
 
-export function MessageBlock({ role, classKey, m, busy, canAct, needsLink = false, run }: MessageProps) {
-  const [link, setLink] = React.useState('');
+export function MessageBlock({ role, classKey, m, busy, canAct, run }: MessageProps) {
   const [manual, setManual] = React.useState<string | null>(null);
   const share = m.share;
   const copy = () => run(`copy-${m.key}`, async () => {
-    const made = await call(role, `/${classKey}/shares`, 'POST', { templateKey: m.key, ...(needsLink && link.trim() ? { values: { meetLink: link.trim() } } : {}) });
+    const made = await call(role, `/${classKey}/shares`, 'POST', { templateKey: m.key });
     const ok = await copyText(made.text);
     if (!ok) setManual(made.text);
     await call(role, `/shares/${made.shareId}/copied`, 'POST');
@@ -44,13 +43,11 @@ export function MessageBlock({ role, classKey, m, busy, canAct, needsLink = fals
         <Badge variant={share?.confirmedAt ? 'success' : share?.copiedAt ? 'warning' : 'default'} data-testid="share-state">{SHARE_STATE(share)}</Badge>
       </div>
       {m.ok && m.text ? <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-2 text-sm text-slate-900" data-testid="message-text">{m.text}</pre> : <p className="text-sm text-amber-800" data-testid="message-missing">{m.message ?? 'The message cannot be made yet.'}</p>}
-      {needsLink && !m.ok && m.missing.includes('meetLink') && canAct && (
-        <label className="mt-2 block text-sm"><span className="mb-1 block text-slate-700">Meet link for this class</span><Input value={link} placeholder="https://meet.google.com/" onChange={(e) => setLink(e.target.value)} /></label>
-      )}
+      {!m.ok && m.missing.includes('meetLink') && <p className="mt-1 text-xs text-slate-600" data-testid="meet-link-needed">No Google Meet link has been added for this subject yet. The Mentor adds it in the student&apos;s tutor schedule, and then this message can be prepared.</p>}
       {manual && <textarea readOnly aria-label="Select and copy this message" className={`${AREA} mt-2`} rows={4} value={manual} onFocus={(e) => e.currentTarget.select()} />}
       {canAct && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" disabled={busy || (!m.ok && !(needsLink && link.trim()))} onClick={copy}>Copy message</Button>
+          <Button type="button" size="sm" variant="outline" disabled={busy || !m.ok} onClick={copy}>Copy message</Button>
           <Button type="button" size="sm" disabled={busy || !share || !!share.confirmedAt} onClick={() => run('confirm', () => call(role, `/shares/${share!.id}/confirm`, 'POST'), 'Recorded that you shared it.')}>I shared it in the group</Button>
         </div>
       )}
@@ -259,14 +256,12 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  const [link, setLink] = React.useState('');
   const [adding, setAdding] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
       const d: WorkspaceData = await call(role, `/${classKey}`);
       setW(d);
-      setLink(d.before.meetLink ?? '');
       setError(null);
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'The class could not be opened.');
@@ -333,14 +328,8 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
           {sections && <ReminderCheckbox check={reminderCheck(w, canWork && !closedAfter)} busy={busy} onConfirm={(shareId) => run('confirm', () => call(role, `/shares/${shareId}/confirm`, 'POST'), 'Recorded that the reminder was shared.')} />}
           <p className="text-sm text-slate-700">The reminder is due {w.before.leadMinutes} minutes before the class, at {when(w.before.targetAt)}.</p>
           {w.before.warning && <p role="alert" className={`rounded-md px-3 py-2 text-sm ${w.before.warning.level === 'red' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`} data-testid="reminder-warning" data-level={w.before.warning.level}>{w.before.warning.text}</p>}
-          <div className="text-sm">
-            <p className="font-medium text-slate-700">Google Meet link</p>
-            {mentor && canWork && !cancelled && !closedAfter ? (
-              <div className="mt-1 flex flex-wrap gap-2"><span className="min-w-[16rem] flex-1"><Input aria-label="Google Meet link" value={link} placeholder="https://meet.google.com/" onChange={(e) => setLink(e.target.value)} /></span>
-                <Button type="button" size="sm" variant="outline" disabled={busy || link === (w.before.meetLink ?? '')} onClick={() => run('meet', () => call('MENTOR', `/${classKey}/meet-link`, 'PUT', { link }), 'The Meet link is saved.')}>Save link</Button></div>
-            ) : <p className="text-slate-900">{w.before.meetLink ?? 'No link has been set for this class.'}</p>}
-          </div>
-          {!cancelled && <MessageBlock role={role} classKey={classKey} m={w.before.message} busy={busy} canAct={canWork && !closedAfter} needsLink={!w.before.meetLink} run={run} />}
+          <MeetLinkDisplay link={w.before.meetLink} source={w.before.meetLinkSource ?? null} />
+          {!cancelled && <MessageBlock role={role} classKey={classKey} m={w.before.message} busy={busy} canAct={canWork && !closedAfter} run={run} />}
         </div>
       )}
 

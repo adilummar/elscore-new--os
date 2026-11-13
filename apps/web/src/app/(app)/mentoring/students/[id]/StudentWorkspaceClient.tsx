@@ -109,6 +109,12 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const tutorTools: TutorTools = {
     assignments: (Array.isArray(ws.tutorAssignments) ? ws.tutorAssignments : []) as AssignmentView[],
     canAssign: Boolean(viewer.canEditHandover),
+    canEditMeetLink: Boolean((viewer as { canEditMeetLink?: boolean }).canEditMeetLink),
+    setMeetLink: async (subjectId, link) => {
+      await mentoringApi(`${base}/schedule/subjects/${subjectId}/meet-link`, 'PUT', { link });
+      setNotice(link.trim() ? 'Meet link saved.' : 'Meet link removed.');
+      await load();
+    },
     canManageAvailability: Boolean((viewer as { canManageTutorAvailability?: boolean }).canManageTutorAvailability),
     loadCandidates: (subjectId) => mentoringApi(`${base}/schedule/subjects/${subjectId}/tutors`) as Promise<CandidateList>,
     assign: async (subjectId, tutorProfileId) => {
