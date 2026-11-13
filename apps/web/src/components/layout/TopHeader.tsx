@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Bell, Eye } from 'lucide-react';
 import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { NavToggle } from './NavDrawer';
 
 export function TopHeader({ user }: { user: any }) {
   const { isInGodView, godViewUser, openGodViewPicker } = useAuth();
@@ -12,8 +13,9 @@ export function TopHeader({ user }: { user: any }) {
   const canEnterGodView = user?.roles?.includes('CEO');
 
   return (
-    <header className="h-16 bg-surface border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">
+    <header className="h-16 bg-surface border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 sticky top-0 z-10">
       <div className="flex-1 max-w-md flex items-center">
+        <NavToggle />
         <BackButton />
       </div>
       <div className="flex items-center gap-3">

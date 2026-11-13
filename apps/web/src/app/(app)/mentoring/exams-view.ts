@@ -26,7 +26,7 @@ export interface ExamWorkspaceData { counts: Record<string, number>; total: numb
 export interface ExamQueue { key: string; label: string; states: readonly ExamState[] }
 /** The queues a Mentor works through, in the order of an exam's life. "Due" is separate: it comes from verified class hours, not from an exam row. */
 export const EXAM_QUEUES: readonly ExamQueue[] = [
-  { key: 'scheduled', label: 'Scheduled', states: ['SCHEDULED', 'REMINDER_PENDING', 'READY_FOR_EXAM'] },
+  { key: 'scheduled', label: 'Upcoming', states: ['SCHEDULED', 'REMINDER_PENDING', 'READY_FOR_EXAM'] },
   { key: 'rescheduled', label: 'Rescheduled', states: ['RESCHEDULED'] },
   { key: 'paper', label: 'Awaiting paper collection', states: ['EXAM_COMPLETED', 'AWAITING_PAPER_COLLECTION'] },
   { key: 'evaluation', label: 'Awaiting tutor evaluation', states: ['AWAITING_EVALUATION'] },
@@ -66,3 +66,25 @@ export const workspaceQuery = (f: { subjectId: string; student: string; from: st
   const parts = Object.entries({ ...f, page: String(page), pageSize: String(pageSize) }).filter(([, v]) => v !== '').map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
   return `?${parts.join('&')}`;
 };
+
+// ─── What each exam row says about evaluation, marks and the parent ──────────────────────────────────────────────
+type ItemLike = { list: string; kind: string; status: string };
+const itemStatus = (e: { items: readonly ItemLike[] }, kind: string) => e.items.find((i) => i.list === 'POST_EXAM' && i.kind === kind)?.status ?? 'PENDING';
+
+/** Evaluation and marks, in words. Marks are shown only once the API has them; nothing is guessed for an exam that was not sat. */
+export function evaluationText(e: { conducted: boolean | null; tutorName: string | null; marks: { obtained: number; max: number; percentage: number } | null; items: readonly ItemLike[] }): { tone: 'done' | 'waiting' | 'none'; text: string } {
+  if (e.conducted === false) return { tone: 'none', text: 'Not sat' };
+  if (e.marks) return { tone: 'done', text: `${e.marks.obtained} of ${e.marks.max} (${e.marks.percentage}%)` };
+  if (e.conducted === null) return { tone: 'none', text: 'Not sat yet' };
+  return itemStatus(e, 'TUTOR_EVALUATION') === 'DONE'
+    ? { tone: 'waiting', text: 'Evaluated, marks not recorded' }
+    : { tone: 'waiting', text: e.tutorName ? `Awaiting evaluation by ${e.tutorName}` : 'Awaiting evaluation' };
+}
+
+/** Whether the evaluated paper reached the parent: shared, received, or still to do. */
+export function parentSharingText(e: { conducted: boolean | null; items: readonly ItemLike[] }): { tone: 'done' | 'waiting' | 'none'; text: string } {
+  if (e.conducted !== true) return { tone: 'none', text: 'Not applicable yet' };
+  if (itemStatus(e, 'PARENT_RECEIPT') === 'DONE') return { tone: 'done', text: 'Parent received it' };
+  if (itemStatus(e, 'SHARE_WITH_PARENT') === 'DONE') return { tone: 'waiting', text: 'Shared, receipt not confirmed' };
+  return { tone: 'waiting', text: 'Not shared with the parent yet' };
+}

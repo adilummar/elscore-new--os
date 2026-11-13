@@ -1,4 +1,4 @@
-import { MEETING_QUEUES, examSummaryText, goalsSummaryText, meetingsQuery, preparationLeft, preparationText, queueCount, whenText } from './meetings-view';
+import { reviewSteps, MEETING_QUEUES, examSummaryText, goalsSummaryText, meetingsQuery, preparationLeft, preparationText, queueCount, whenText } from './meetings-view';
 
 const tally = (over: object = {}) => ({ total: 0, yes: 0, partially: 0, no: 0, unevaluated: 0, percent: null, result: null, ...over }) as never;
 const prep = (over: object = {}) => ({ examsReviewed: false, subjects: 2, subjectsWithGoals: 0, tutorObservations: 0, nextPlanSubjects: 0, nextPlanApproved: false, ...over });
@@ -45,5 +45,24 @@ describe('Meetings: wording', () => {
   it('sends only the filters that are set', () => {
     expect(meetingsQuery({ state: '', student: '', from: '', to: '' })).toBe('?page=1&pageSize=100');
     expect(meetingsQuery({ state: 'OVERDUE', student: 'a b', from: '', to: '' })).toBe('?state=OVERDUE&student=a%20b&page=1&pageSize=100');
+  });
+});
+
+describe('Meetings: review steps', () => {
+  const base = { state: 'SCHEDULED', preparation: prep(), goals: tally(), improvementAreas: 0, parentFeedbackRecorded: false, exams: { total: 0, conducted: 0, marked: 0, averagePercentage: null } } as never;
+  it('lists no steps for a student with no meeting yet', () => {
+    expect(reviewSteps({ ...(base as object), state: 'NOT_SCHEDULED' } as never)).toEqual([]);
+  });
+  it('keeps the six parts of the review apart, each done only when recorded', () => {
+    const steps = reviewSteps(base);
+    expect(steps.map((s) => s.label)).toEqual(['Exam results reviewed', 'Subject-wise goals', 'Improvement areas', 'Tutor observations', 'Next learning plan', 'Parent feedback']);
+    expect(steps.some((s) => s.done)).toBe(false);
+    expect(steps[0].detail).toBe('No exams in this period');
+  });
+  it('marks a part done when its records are complete', () => {
+    const full = reviewSteps({ ...(base as object), preparation: prep({ examsReviewed: true, subjectsWithGoals: 2, tutorObservations: 2, nextPlanSubjects: 2, nextPlanApproved: true }), improvementAreas: 2, parentFeedbackRecorded: true, goals: tally({ total: 2, yes: 2 }) } as never);
+    expect(full.every((s) => s.done)).toBe(true);
+    const part = reviewSteps({ ...(base as object), preparation: prep({ nextPlanSubjects: 1 }) } as never);
+    expect(part.find((s) => s.key === 'next')?.detail).toBe('1 of 2 subjects written, not approved');
   });
 });

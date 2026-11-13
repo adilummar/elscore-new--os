@@ -37,7 +37,7 @@ export interface MeetingQueue { key: string; label: string; state: string }
 export const MEETING_QUEUES: readonly MeetingQueue[] = [
   { key: 'all', label: 'All', state: '' },
   { key: 'schedule', label: 'Needs scheduling', state: 'NOT_SCHEDULED' },
-  { key: 'upcoming', label: 'Scheduled', state: 'SCHEDULED' },
+  { key: 'upcoming', label: 'Upcoming', state: 'SCHEDULED' },
   { key: 'rescheduled', label: 'Rescheduled', state: 'RESCHEDULED' },
   { key: 'overdue', label: 'Overdue', state: 'OVERDUE' },
   { key: 'progress', label: 'Review in progress', state: 'REVIEW_IN_PROGRESS' },
@@ -90,3 +90,23 @@ export const meetingsQuery = (f: { state: string; student: string; from: string;
   const parts = Object.entries({ ...f, page: String(page), pageSize: String(pageSize) }).filter(([, v]) => v !== '').map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
   return `?${parts.join('&')}`;
 };
+
+export interface ReviewStep { key: string; label: string; done: boolean; detail: string }
+
+/**
+ * The monthly review at a glance: each part of it, done or not, from the counts the API sent. The Mentor's observations, the tutor's
+ * observations and what the parent said stay separate steps, so one cannot stand in for another.
+ */
+export function reviewSteps(r: Pick<MeetingRow, 'state' | 'preparation' | 'goals' | 'improvementAreas' | 'parentFeedbackRecorded' | 'exams'>): ReviewStep[] {
+  if (r.state === 'NOT_SCHEDULED') return [];
+  const p = r.preparation;
+  const of = (n: number, total: number) => `${n} of ${total}`;
+  return [
+    { key: 'exams', label: 'Exam results reviewed', done: p.examsReviewed, detail: p.examsReviewed ? 'Reviewed' : r.exams.total === 0 ? 'No exams in this period' : 'Not reviewed' },
+    { key: 'goals', label: 'Subject-wise goals', done: p.subjects > 0 && p.subjectsWithGoals === p.subjects && r.goals.unevaluated === 0, detail: `${of(p.subjectsWithGoals, p.subjects)} subjects have goals${r.goals.unevaluated > 0 ? `, ${r.goals.unevaluated} not evaluated` : ''}` },
+    { key: 'areas', label: 'Improvement areas', done: r.improvementAreas > 0, detail: r.improvementAreas > 0 ? `${r.improvementAreas} recorded` : 'None recorded' },
+    { key: 'tutor', label: 'Tutor observations', done: p.subjects > 0 && p.tutorObservations === p.subjects, detail: `${of(p.tutorObservations, p.subjects)} subjects` },
+    { key: 'next', label: 'Next learning plan', done: p.nextPlanApproved, detail: p.nextPlanApproved ? 'Approved' : p.nextPlanSubjects > 0 ? `${of(p.nextPlanSubjects, p.subjects)} subjects written, not approved` : 'Not started' },
+    { key: 'parent', label: 'Parent feedback', done: r.parentFeedbackRecorded, detail: r.parentFeedbackRecorded ? 'Recorded' : 'Not recorded yet' },
+  ];
+}

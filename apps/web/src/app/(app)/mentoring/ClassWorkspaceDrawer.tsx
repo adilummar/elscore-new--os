@@ -296,8 +296,8 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
   const closedAfter = w ? !w.after.canEdit : false;
   const cancelled = w?.class.status === 'CANCELLED';
   return (
-    <section aria-label="Class workspace" className="rounded-md border border-brand-200 bg-white p-3 shadow-sm" data-testid="class-workspace">
-      <div className="mb-2 flex items-start justify-between gap-2">
+    <section aria-label="Class workspace" className={sections ? '' : 'rounded-md border border-brand-200 bg-white p-3 shadow-sm'} data-testid="class-workspace">
+      {!sections && <div className="mb-2 flex items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-900">{w ? `${w.class.subjectName}, ${w.student.name}` : 'Class'}</h3>
           {w && <p className="text-xs text-slate-600">{longDayLabel(w.class.date)}, {timeLabel(w.class)}. Tutor: {w.tutorName}.{w.mentorName ? ` Mentor: ${w.mentorName}.` : ''}</p>}
@@ -307,7 +307,7 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
           {w && <Badge variant={w.class.consumption === 'CONSUMED' ? 'success' : 'default'} data-testid="consumption-badge">{w.class.consumption === 'CONSUMED' ? 'Consumed' : 'Not consumed'}</Badge>}
           <Button type="button" size="sm" variant="ghost" onClick={onClose}>Close</Button>
         </div>
-      </div>
+      </div>}
       {sections && (
         <nav aria-label="Sections of this class" className="-mx-1 mb-3 overflow-x-auto px-1">
           <ul className="flex min-w-max gap-1 border-b border-slate-200">{SECTIONS.filter((x) => mentor || x.key !== 'verification').map((x) => <li key={x.key}><a href={`#sec-${x.key}`} className="inline-flex min-h-10 items-center px-3 text-sm font-medium text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{x.label}</a></li>)}</ul>

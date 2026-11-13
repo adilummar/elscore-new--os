@@ -1,47 +1,55 @@
 "use client";
 
 import * as React from 'react';
-import { AlertTriangle, Check, Clock, Minus } from 'lucide-react';
-import { Badge } from '@/components/ui/Badge';
+import Link from 'next/link';
+import { AlertTriangle, Check, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import Link from 'next/link';
 
 import {
-  MEETING_QUEUES, MeetingRow, MeetingsData, examSummaryText, goalsSummaryText, meetingsQuery, preparationLeft, preparationText, queueCount, whenText,
+  MEETING_QUEUES, MeetingRow, MeetingsData, examSummaryText, goalsSummaryText, meetingsQuery, preparationText, queueCount, reviewSteps, whenText,
 } from '../meetings-view';
 import { mentoringApi } from '../mentoring-client';
+import {
+  Empty, FIELD_LABEL, FOCUS, ListSkeleton, Notice, PANEL, PageHeader, QueueTabs, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR, chipTone, linkButton,
+} from '../mentoring-ui';
 import { MEETING_TONE } from '../review-view';
 
-const RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
-const TONE_STYLE = { done: 'text-emerald-800', waiting: 'text-slate-700', none: 'text-slate-500' } as const;
-const TONE_ICON = { done: Check, waiting: Clock, none: Minus } as const;
+const meetingHref = (r: MeetingRow) => `/mentoring/meetings/${encodeURIComponent(r.activationId)}`;
 
-function Prep({ r }: { r: MeetingRow }) {
-  const p = preparationText(r);
-  const left = preparationLeft(r);
-  const Icon = TONE_ICON[p.tone];
+function Steps({ r }: { r: MeetingRow }) {
+  const steps = reviewSteps(r);
+  const prep = preparationText(r);
+  if (steps.length === 0) return <span className="text-slate-600">{prep.text}</span>;
+  const done = steps.filter((s) => s.done).length;
   return (
-    <div>
-      <span className={`inline-flex items-start gap-1 ${TONE_STYLE[p.tone]}`}><Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{p.text}</span></span>
-      {left.length > 0 && <ul className="mt-1 list-inside list-disc text-xs text-slate-600">{left.slice(0, 3).map((l) => <li key={l}>{l}</li>)}{left.length > 3 && <li>and {left.length - 3} more</li>}</ul>}
+    <div className="min-w-[13rem]">
+      <p className="mb-1 text-xs font-semibold text-slate-700">{done} of {steps.length} parts in place</p>
+      <ul className="space-y-0.5">
+        {steps.map((s) => (
+          <li key={s.key} className={`flex items-start gap-1.5 text-xs ${s.done ? 'text-emerald-900' : 'text-slate-700'}`} data-done={s.done}>
+            {s.done ? <Check className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" /> : <Clock className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />}
+            <span><span className="font-medium">{s.label}:</span> {s.detail}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-function StatusBadge({ r }: { r: MeetingRow }) {
+function Status({ r }: { r: MeetingRow }) {
   return (
     <div>
-      <Badge variant={MEETING_TONE[r.state] ?? 'default'}>{r.stateLabel}</Badge>
-      {r.overdue && <div className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-red-700"><AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />{r.state === 'NOT_CONDUCTED' ? 'Needs a new date' : 'Overdue'}</div>}
+      <StatusChip tone={chipTone(MEETING_TONE[r.state])}>{r.stateLabel}</StatusChip>
+      {r.overdue && <div className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-red-800"><AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />{r.state === 'NOT_CONDUCTED' ? 'Needs a new date' : 'Overdue'}</div>}
     </div>
   );
 }
 
 /**
- * The monthly parent meetings of the Mentor's students, each tied to the student's Individual Learning Plan: when, the state, how far the
- * preparation is, the exam record of the period, the goals, and whether the parent's feedback was recorded. Opening one shows the whole
- * review (the existing workflow, unchanged) and the learning plan. Parent communication stays in its own fields, apart from observations.
+ * The monthly parent meetings of the Mentor's students, each tied to the student's Individual Learning Plan: when, the state, which parts of
+ * the review are in place, the exam record of the period and the goals. Opening one shows the whole review (the existing workflow,
+ * unchanged) and the learning plan. Parent communication stays in its own fields, apart from the Mentor's and the tutor's observations.
  */
 export function MeetingsWorkspaceClient() {
   const [queue, setQueue] = React.useState('all');
@@ -63,78 +71,74 @@ export function MeetingsWorkspaceClient() {
   }, [state, debounced]);
   React.useEffect(() => { void load(); }, [load]);
 
-  const hrefOf = (r: MeetingRow) => `/mentoring/meetings/${encodeURIComponent(r.activationId)}`;
   const filtered = !!student || queue !== 'all';
 
   return (
-    <div className="mx-auto max-w-7xl space-y-3" data-testid="meetings-workspace">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Meetings</h1>
-        <p className="text-sm text-slate-700">Monthly parent reviews. Each one reviews the student&apos;s current learning plan, and completing it starts the next plan.</p>
-      </header>
+    <div className="mx-auto max-w-7xl space-y-5" data-testid="meetings-workspace">
+      <PageHeader title="Meetings" subtitle="Monthly parent reviews. Each one reviews the student's current learning plan, and completing it starts the next plan." />
 
-      <section aria-label="Filters" className="grid gap-2 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-3">
-        <label className="text-sm"><span className="mb-1 block text-slate-700">Student name</span><Input type="search" value={student} onChange={(e) => setStudent(e.target.value)} /></label>
-        {filtered && <div className="flex items-end"><Button type="button" size="sm" variant="ghost" onClick={() => { setStudent(''); setQueue('all'); }}>Clear the filters</Button></div>}
+      <section aria-label="Filters" className={`${PANEL} p-4`}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="text-sm"><span className={FIELD_LABEL}>Student name</span><Input type="search" value={student} onChange={(e) => setStudent(e.target.value)} /></label>
+          {filtered && <div className="flex items-end"><Button type="button" size="sm" variant="ghost" onClick={() => { setStudent(''); setQueue('all'); }}>Clear the filters</Button></div>}
+        </div>
       </section>
 
-      <div className="-mx-1 overflow-x-auto px-1">
-        <div role="group" aria-label="Meeting queues" className="flex min-w-max gap-1">
-          {MEETING_QUEUES.map((q) => (
-            <button key={q.key} type="button" aria-pressed={queue === q.key} onClick={() => setQueue(q.key)} className={`min-h-9 rounded-full border px-3 text-sm ${RING} ${queue === q.key ? 'border-brand-600 bg-brand-50 font-semibold text-brand-800' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
-              {q.label}{data ? <span className="ml-1 font-semibold">{queueCount(q, data)}</span> : null}
-            </button>
-          ))}
-        </div>
-      </div>
+      <QueueTabs label="Meeting queues" value={queue} onChange={setQueue}
+        items={MEETING_QUEUES.map((q) => ({ key: q.key, label: q.label, count: data ? queueCount(q, data) : undefined, urgent: q.key === 'schedule' || q.key === 'overdue' || q.key === 'progress' }))} />
 
-      {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error} <button type="button" className="font-medium underline" onClick={() => void load()}>Try again</button></p>}
-      {!data && !error && <div role="status" aria-label="Loading the meetings" className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-md bg-slate-100" />)}</div>}
-      {data && data.rows.length === 0 && <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600" data-testid="no-meetings">No meetings {filtered ? 'match these filters' : 'to show yet. A student appears here once their learning plan is running'}.</p>}
+      {error && <Notice tone="error">{error} <button type="button" className={`rounded font-semibold underline ${FOCUS}`} onClick={() => void load()}>Try again</button></Notice>}
+      {!data && !error && <ListSkeleton rows={3} label="Loading the meetings" />}
+      {data && data.rows.length === 0 && (
+        <Empty title={filtered ? 'No meetings match these filters' : 'No meetings to show yet'} testId="no-meetings">
+          {filtered ? 'Clear a filter or choose another queue.' : 'A student appears here once their learning plan is running.'}
+        </Empty>
+      )}
 
       {data && data.rows.length > 0 && (
         <>
-          <div className="hidden overflow-x-auto rounded-md border border-slate-200 bg-white lg:block">
-            <table className="min-w-full text-left text-sm" data-testid="meeting-table">
+          <div className={`${TABLE_WRAP} hidden xl:block`}>
+            <table className={TABLE} data-testid="meeting-table">
               <caption className="sr-only">Monthly parent meetings</caption>
-              <thead className="bg-slate-50 text-xs text-slate-700"><tr>{['Meeting', 'Student and parent', 'Mentor', 'Status', 'Preparation', 'Exam performance', 'Goals', 'Parent feedback', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className="px-2 py-2 font-semibold">{h || <span className="sr-only">Open</span>}</th>)}</tr></thead>
+              <thead className={THEAD}><tr>{['Meeting', 'Student and parent', 'Status', 'Review progress', 'Exam performance', 'Goals', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className={TH}>{h || <span className="sr-only">Open</span>}</th>)}</tr></thead>
               <tbody>
                 {data.rows.map((r) => (
-                  <tr key={r.meetingId ?? `${r.activationId}-new`} className="border-t border-slate-100" data-testid="meeting-row" data-state={r.state}>
-                    <td className="px-2 py-2 align-top whitespace-nowrap">{whenText(r)}{r.originalDate && r.date && r.originalDate !== r.date ? <div className="text-xs text-slate-600">moved from {r.originalDate}</div> : null}</td>
-                    <td className="px-2 py-2 align-top"><div className="font-medium text-slate-900">{r.studentName}</div><div className="text-slate-700">{r.parentName ?? 'Parent not recorded'}</div></td>
-                    <td className="px-2 py-2 align-top">{r.mentorName ?? 'Not assigned'}</td>
-                    <td className="px-2 py-2 align-top"><StatusBadge r={r} /></td>
-                    <td className="px-2 py-2 align-top"><Prep r={r} /></td>
-                    <td className="px-2 py-2 align-top text-slate-700">{examSummaryText(r.exams)}</td>
-                    <td className="px-2 py-2 align-top text-slate-700">{goalsSummaryText(r.goals)}{r.improvementAreas > 0 ? <div className="text-xs text-slate-600">{r.improvementAreas} improvement {r.improvementAreas === 1 ? 'area' : 'areas'}</div> : null}</td>
-                    <td className="px-2 py-2 align-top">{r.parentFeedbackRecorded ? 'Recorded' : r.state === 'COMPLETED' ? 'Not recorded' : 'Not yet'}</td>
-                    <td className="px-2 py-2 text-right align-top"><Link href={hrefOf(r)} className={`inline-flex min-h-9 items-center rounded-md border px-3 text-sm font-medium ${RING} ${r.state === 'NOT_SCHEDULED' ? 'border-brand-600 bg-brand-600 text-white hover:bg-brand-700' : 'border-slate-300 text-slate-800 hover:bg-slate-50'}`} aria-label={`${r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'} the meeting of ${r.studentName}`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'}</Link></td>
+                  <tr key={r.meetingId ?? `${r.activationId}-new`} className={TR} data-testid="meeting-row" data-state={r.state}>
+                    <td className={`${TD} whitespace-nowrap ${r.overdue || r.state === 'NOT_SCHEDULED' ? 'shadow-[inset_3px_0_0_0_#d97706]' : ''}`}>
+                      <div className="font-medium text-slate-900">{whenText(r)}</div>
+                      {r.originalDate && r.date && r.originalDate !== r.date ? <div className="text-xs text-slate-600">moved from {r.originalDate}</div> : null}
+                      <div className="mt-0.5 text-xs text-slate-600">{r.mentorName ? `Mentor: ${r.mentorName}` : 'No Mentor assigned'}</div>
+                    </td>
+                    <td className={TD}><div className="font-medium text-slate-900">{r.studentName}</div><div className="text-slate-700">{r.parentName ?? 'Parent not recorded'}</div></td>
+                    <td className={TD}><Status r={r} /></td>
+                    <td className={TD}><Steps r={r} /></td>
+                    <td className={`${TD} text-slate-700`}>{examSummaryText(r.exams)}</td>
+                    <td className={`${TD} text-slate-700`}>{goalsSummaryText(r.goals)}</td>
+                    <td className={`${TD} text-right`}><Link href={meetingHref(r)} className={linkButton(r.state === 'NOT_SCHEDULED' ? 'primary' : 'secondary')} aria-label={`${r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'} the meeting of ${r.studentName}`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule' : 'Open'}</Link></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <ul className="space-y-2 lg:hidden" aria-label="Meetings">
+          <ul className="space-y-3 xl:hidden" aria-label="Meetings">
             {data.rows.map((r) => (
-              <li key={r.meetingId ?? `${r.activationId}-new`} className="rounded-md border border-slate-200 bg-white p-3" data-testid="meeting-card">
-                <div className="flex items-start justify-between gap-2">
-                  <div><p className="font-medium text-slate-900">{r.studentName}</p><p className="text-sm text-slate-700">{r.parentName ?? 'Parent not recorded'}</p><p className="text-sm text-slate-700">{whenText(r)}</p></div>
-                  <StatusBadge r={r} />
+              <li key={r.meetingId ?? `${r.activationId}-new`} className={`${PANEL} p-4 ${r.overdue || r.state === 'NOT_SCHEDULED' ? 'border-l-4 border-l-amber-600' : ''}`} data-testid="meeting-card">
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="font-semibold text-slate-900">{r.studentName}</p><p className="text-sm text-slate-700">{r.parentName ?? 'Parent not recorded'}</p><p className="mt-1 text-sm font-medium text-slate-900">{whenText(r)}</p></div>
+                  <Status r={r} />
                 </div>
-                <dl className="mt-2 space-y-1 text-sm">
-                  <div><dt className="text-xs text-slate-600">Preparation</dt><dd><Prep r={r} /></dd></div>
-                  <div><dt className="text-xs text-slate-600">Exam performance</dt><dd>{examSummaryText(r.exams)}</dd></div>
-                  <div><dt className="text-xs text-slate-600">Goals</dt><dd>{goalsSummaryText(r.goals)}</dd></div>
+                <dl className="mt-3 space-y-2 text-sm">
+                  <div><dt className="text-xs text-slate-600">Review progress</dt><dd><Steps r={r} /></dd></div>
+                  <div><dt className="text-xs text-slate-600">Exam performance</dt><dd className="text-slate-800">{examSummaryText(r.exams)}</dd></div>
+                  <div><dt className="text-xs text-slate-600">Goals</dt><dd className="text-slate-800">{goalsSummaryText(r.goals)}</dd></div>
                 </dl>
-                <Link href={hrefOf(r)} className={`mt-3 flex min-h-11 w-full items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 ${RING}`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule the meeting' : 'Open the meeting'}</Link>
+                <Link href={meetingHref(r)} className={`${linkButton(r.state === 'NOT_SCHEDULED' ? 'primary' : 'secondary', true)} mt-4`}>{r.state === 'NOT_SCHEDULED' ? 'Schedule the meeting' : 'Open the meeting'}</Link>
               </li>
             ))}
           </ul>
         </>
       )}
       {data && data.pages > 1 && <p className="text-sm text-slate-700">Showing the first {data.rows.length} of {data.total} meetings. Narrow the list with a student name or a queue.</p>}
-
     </div>
   );
 }

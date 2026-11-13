@@ -69,7 +69,7 @@ export function Sidebar({ user }: { user: any }) {
   ];
 
   return (
-    <aside className="w-64 bg-primary text-white flex flex-col h-full border-r border-primary-hover shadow-lg">
+    <aside className="w-full lg:w-64 bg-primary text-white flex flex-col h-full border-r border-primary-hover shadow-lg">
       <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-primary-hover">
         <span className="font-bold text-xl tracking-tight">EL SCORE OS</span>
       </div>

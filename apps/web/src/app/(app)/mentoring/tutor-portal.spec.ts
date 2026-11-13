@@ -27,7 +27,8 @@ describe('the tutor portal request', () => {
   });
 
   it('has no way to name a tutor: no id in the action, the client or the page', () => {
-    const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
+    // The repository stores LF; a Windows checkout with autocrlf has CRLF. Compare the text, not the checkout's line endings.
+    const read = (p: string) => readFileSync(join(__dirname, p), 'utf8').replace(/\r\n/g, '\n');
     const action = read('schedule-actions.ts').match(/export async function getMyCalendarAction[\s\S]*?\n}\n/)?.[0] ?? '';
     expect(action).toContain('getMyCalendarAction(from: string, to: string)');
     expect(action).not.toMatch(/tutorProfileId|tutorId/);

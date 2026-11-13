@@ -2,6 +2,7 @@ import * as React from 'react';
 import { cookies } from 'next/headers';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopHeader } from '@/components/layout/TopHeader';
+import { NavDrawerProvider, SidebarFrame } from '@/components/layout/NavDrawer';
 import { getSession } from '@/lib/api/auth';
 import { redirect } from 'next/navigation';
 import { AuthProvider } from '@/components/providers/AuthProvider';
@@ -60,15 +61,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             canAct={!!canActInGodView}
           />
         )}
-        <div className="flex flex-1 min-h-0">
-          <Sidebar user={effectiveUser} />
-          <div className="flex-1 flex flex-col min-w-0">
-            <TopHeader user={realUser} />
-            <main className="flex-1 overflow-auto p-8 custom-scrollbar-dark">
-              {children}
-            </main>
+        <NavDrawerProvider>
+          <div className="flex flex-1 min-h-0">
+            <SidebarFrame>
+              <Sidebar user={effectiveUser} />
+            </SidebarFrame>
+            <div className="flex-1 flex flex-col min-w-0">
+              <TopHeader user={realUser} />
+              <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 custom-scrollbar-dark">
+                {children}
+              </main>
+            </div>
           </div>
-        </div>
+        </NavDrawerProvider>
       </div>
     </AuthProvider>
   );

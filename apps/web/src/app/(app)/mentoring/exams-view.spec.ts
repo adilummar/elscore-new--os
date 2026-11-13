@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { DUE_STATUS_TEXT, EXAM_QUEUES, dueQuery, dueReason, dueStatus, examsInQueue, queueCount, queueOf, workspaceQuery } from './exams-view';
+import { evaluationText, parentSharingText, DUE_STATUS_TEXT, EXAM_QUEUES, dueQuery, dueReason, dueStatus, examsInQueue, queueCount, queueOf, workspaceQuery } from './exams-view';
 
 describe('Exams: queues', () => {
   it('puts every exam state the API can send into exactly one queue', () => {
@@ -42,5 +42,22 @@ describe('Exams: requests', () => {
     expect(dueQuery({ subjectId: '', student: '' })).toBe('');
     expect(dueQuery({ subjectId: 's1', student: 'asha rao' })).toBe('?subjectId=s1&student=asha%20rao');
     expect(workspaceQuery({ subjectId: '', student: 'a', from: '', to: '' })).toBe('?student=a&page=1&pageSize=100');
+  });
+});
+
+describe('Exams: evaluation, marks and the parent', () => {
+  const item = (kind: string, status: string) => ({ list: 'POST_EXAM', kind, status });
+  it('shows marks only when recorded and says what is awaited otherwise', () => {
+    expect(evaluationText({ conducted: null, tutorName: 'Meera', marks: null, items: [] }).text).toBe('Not sat yet');
+    expect(evaluationText({ conducted: false, tutorName: null, marks: null, items: [] }).tone).toBe('none');
+    expect(evaluationText({ conducted: true, tutorName: 'Meera', marks: null, items: [] }).text).toBe('Awaiting evaluation by Meera');
+    expect(evaluationText({ conducted: true, tutorName: null, marks: null, items: [item('TUTOR_EVALUATION', 'DONE')] }).text).toBe('Evaluated, marks not recorded');
+    expect(evaluationText({ conducted: true, tutorName: 'Meera', marks: { obtained: 8, max: 10, percentage: 80 }, items: [] })).toEqual({ tone: 'done', text: '8 of 10 (80%)' });
+  });
+  it('follows the parent steps of the checklist', () => {
+    expect(parentSharingText({ conducted: null, items: [] }).tone).toBe('none');
+    expect(parentSharingText({ conducted: true, items: [] }).text).toBe('Not shared with the parent yet');
+    expect(parentSharingText({ conducted: true, items: [item('SHARE_WITH_PARENT', 'DONE')] }).text).toBe('Shared, receipt not confirmed');
+    expect(parentSharingText({ conducted: true, items: [item('SHARE_WITH_PARENT', 'DONE'), item('PARENT_RECEIPT', 'DONE')] })).toEqual({ tone: 'done', text: 'Parent received it' });
   });
 });

@@ -1,35 +1,50 @@
 "use client";
 
 import * as React from 'react';
-import { Badge } from '@/components/ui/Badge';
+import Link from 'next/link';
+import { Check, Clock, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import Link from 'next/link';
 import { Select } from '@/components/ui/Select';
 
 import { EXAM_TONE, examTime } from '../exam-view';
 import {
-  DUE_STATUS_TEXT, DueData, DueRow, EXAM_QUEUES, ExamWorkspaceData, dueQuery, dueReason, dueStatus, examsInQueue, queueCount, workspaceQuery,
+  DUE_STATUS_TEXT, DueData, DueRow, EXAM_QUEUES, ExamWorkspaceData, dueQuery, dueReason, dueStatus, evaluationText, examsInQueue, parentSharingText, queueCount, workspaceQuery,
 } from '../exams-view';
 import { mentoringApi } from '../mentoring-client';
+import {
+  Empty, FIELD_LABEL, FOCUS, ListSkeleton, Notice, PANEL, PageHeader, ProgressBar, QueueTabs, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR, chipTone, linkButton,
+} from '../mentoring-ui';
 import { longDayLabel } from '../timetable-view';
 
-const RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
+const TONE_STYLE = { done: 'text-emerald-800', waiting: 'text-slate-700', none: 'text-slate-500' } as const;
+const TONE_ICON = { done: Check, waiting: Clock, none: Minus } as const;
+function Status({ s }: { s: { tone: 'done' | 'waiting' | 'none'; text: string } }) {
+  const Icon = TONE_ICON[s.tone];
+  return <span className={`inline-flex items-start gap-1.5 ${TONE_STYLE[s.tone]}`}><Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{s.text}</span></span>;
+}
 
-function Progress({ r }: { r: DueRow }) {
+const hm = (m: number) => `${Math.floor(m / 60)} h ${m % 60} min`;
+const examHref = (activationId: string) => `/mentoring/exams/${encodeURIComponent(activationId)}`;
+
+function DueCard({ r }: { r: DueRow }) {
+  const s = dueStatus(r);
   return (
-    <div className="min-w-[10rem]">
-      <div className="h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-valuemin={0} aria-valuemax={r.thresholdMinutes} aria-valuenow={Math.min(r.verifiedMinutes, r.thresholdMinutes)} aria-label={`Verified class time for ${r.studentName}, ${r.subjectName}`}>
-        <div className={`h-full ${r.due ? 'bg-amber-600' : 'bg-brand-600'}`} style={{ width: `${r.progressPercent}%` }} />
+    <li className={`${PANEL} p-4 ${r.due ? 'border-l-4 border-l-amber-600' : ''}`} data-testid="due-card">
+      <div className="flex items-start justify-between gap-3">
+        <div><p className="font-semibold text-slate-900">{r.studentName}</p><p className="text-sm text-slate-700">{r.subjectName}</p></div>
+        <StatusChip tone={s === 'due' ? 'warning' : s === 'counting' ? 'neutral' : 'info'}>{DUE_STATUS_TEXT[s]}</StatusChip>
       </div>
-      <p className="mt-1 text-xs text-slate-700">{Math.floor(r.verifiedMinutes / 60)} h {r.verifiedMinutes % 60} min of {r.thresholdMinutes / 60} h</p>
-    </div>
+      <div className="mt-3"><ProgressBar percent={r.progressPercent} tone={r.due ? 'amber' : 'brand'} label={`Verified class time for ${r.studentName}, ${r.subjectName}`} /><p className="mt-1 text-xs text-slate-700">{hm(r.verifiedMinutes)} of {r.thresholdMinutes / 60} h</p></div>
+      <p className="mt-2 text-sm text-slate-700">{dueReason(r)}</p>
+      <Link href={examHref(r.activationId)} className={`${linkButton(s === 'due' ? 'primary' : 'secondary', true)} mt-3`}>{s === 'due' ? 'Schedule exam' : 'Manage exams'}</Link>
+    </li>
   );
 }
 
 /**
- * Exams for the Mentor's students: who is due next (from verified class hours), the exams in each stage of their life, and the one panel
- * where an exam is scheduled, moved, marked and closed. The due figure and every state come from the API; nothing is counted here.
+ * Exams for the Mentor's students: who is due next (from verified class hours), the exams in each stage of their life, and one page per
+ * student where an exam is scheduled, moved, marked and closed. The due figure and every state come from the API; nothing is counted here.
  */
 export function ExamsWorkspaceClient() {
   const [tab, setTab] = React.useState<string>('due');
@@ -60,96 +75,100 @@ export function ExamsWorkspaceClient() {
   React.useEffect(() => { void load(); }, [load]);
 
   const dueNow = due ? due.rows.filter((r) => r.due) : [];
-  const shownDue = tab === 'due' ? dueNow : [];
   const queue = EXAM_QUEUES.find((q) => q.key === tab);
   const exams = list && queue ? examsInQueue(queue, list.exams) : [];
   const filtered = subjectId || student;
+  const tabs = [
+    { key: 'due', label: 'Due now', count: due ? dueNow.length : undefined, urgent: true },
+    ...EXAM_QUEUES.map((q) => ({ key: q.key, label: q.label, count: list ? queueCount(q, list.counts) : undefined, urgent: q.key === 'marks' || q.key === 'evaluation' || q.key === 'reexam' })),
+  ];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-3" data-testid="exams-workspace">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Exams</h1>
-        <p className="text-sm text-slate-700">An exam is due after 3 hours of verified classes in a subject since the last exam that was conducted. Scheduling or moving an exam does not restart that count.</p>
-      </header>
+    <div className="mx-auto max-w-7xl space-y-5" data-testid="exams-workspace">
+      <PageHeader title="Exams" subtitle="An exam is due after 3 hours of Mentor-verified classes in a subject since the last exam that was conducted. Scheduling or moving an exam does not restart that count." />
 
-      <section aria-label="Filters" className="grid gap-2 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-3">
-        <label className="text-sm"><span className="mb-1 block text-slate-700">Student name</span><Input type="search" value={student} onChange={(e) => setStudent(e.target.value)} /></label>
-        <label className="text-sm"><span className="mb-1 block text-slate-700">Subject</span><Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}><option value="">All subjects</option>{[...subjects].map(([id, n]) => <option key={id} value={id}>{n}</option>)}</Select></label>
-        {filtered ? <div className="flex items-end"><Button type="button" size="sm" variant="ghost" onClick={() => { setStudent(''); setSubjectId(''); }}>Clear the filters</Button></div> : null}
+      <section aria-label="Filters" className={`${PANEL} p-4`}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="text-sm"><span className={FIELD_LABEL}>Student name</span><Input type="search" value={student} onChange={(e) => setStudent(e.target.value)} /></label>
+          <label className="text-sm"><span className={FIELD_LABEL}>Subject</span><Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}><option value="">All subjects</option>{[...subjects].map(([id, n]) => <option key={id} value={id}>{n}</option>)}</Select></label>
+          {filtered ? <div className="flex items-end"><Button type="button" size="sm" variant="ghost" onClick={() => { setStudent(''); setSubjectId(''); }}>Clear the filters</Button></div> : null}
+        </div>
       </section>
 
-      <div className="-mx-1 overflow-x-auto px-1">
-        <div role="group" aria-label="Exam queues" className="flex min-w-max gap-1">
-          <button type="button" aria-pressed={tab === 'due'} onClick={() => setTab('due')} className={`min-h-9 rounded-full border px-3 text-sm ${RING} ${tab === 'due' ? 'border-brand-600 bg-brand-50 font-semibold text-brand-800' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
-            Due now{due ? <span className="ml-1 font-semibold">{dueNow.length}</span> : null}
-          </button>
-          {EXAM_QUEUES.map((q) => (
-            <button key={q.key} type="button" aria-pressed={tab === q.key} onClick={() => setTab(q.key)} className={`min-h-9 rounded-full border px-3 text-sm ${RING} ${tab === q.key ? 'border-brand-600 bg-brand-50 font-semibold text-brand-800' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
-              {q.label}{list ? <span className="ml-1 font-semibold">{queueCount(q, list.counts)}</span> : null}
-            </button>
-          ))}
-        </div>
-      </div>
+      <QueueTabs label="Exam queues" value={tab} onChange={setTab} items={tabs} />
 
-      {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error} <button type="button" className="font-medium underline" onClick={() => void load()}>Try again</button></p>}
-      {!due && !error && <div role="status" aria-label="Loading the exams" className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-md bg-slate-100" />)}</div>}
+      {error && <Notice tone="error">{error} <button type="button" className={`rounded font-semibold underline ${FOCUS}`} onClick={() => void load()}>Try again</button></Notice>}
+      {!due && !error && <ListSkeleton rows={3} label="Loading the exams" />}
 
       {due && tab === 'due' && (
-        shownDue.length === 0
-          ? <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600" data-testid="no-due">No student is due an exam {filtered ? 'with these filters' : 'right now'}. The counts below show who is closest.</p>
-          : null
-      )}
-      {due && tab === 'due' && (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm" data-testid="due-table">
-            <caption className="sr-only">Students and subjects, with verified class time toward the next exam</caption>
-            <thead className="bg-slate-50 text-xs text-slate-700"><tr>{['Student', 'Subject', 'Verified class time', 'Status', 'Why', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className="px-2 py-2 font-semibold">{h || <span className="sr-only">Actions</span>}</th>)}</tr></thead>
-            <tbody>
-              {due.rows.length === 0 && <tr><td colSpan={6} className="px-3 py-4 text-slate-600">No Active student has a subject to count yet.</td></tr>}
-              {due.rows.map((r) => {
-                const s = dueStatus(r);
-                return (
-                  <tr key={`${r.activationId}-${r.subjectId}`} className="border-t border-slate-100" data-testid="due-row" data-due={r.due}>
-                    <td className="px-2 py-2 align-top font-medium text-slate-900">{r.studentName}</td>
-                    <td className="px-2 py-2 align-top">{r.subjectName}</td>
-                    <td className="px-2 py-2 align-top"><Progress r={r} /></td>
-                    <td className="px-2 py-2 align-top"><Badge variant={s === 'due' ? 'warning' : s === 'counting' ? 'default' : 'info'}>{DUE_STATUS_TEXT[s]}</Badge>{r.scheduledExam && <div className="mt-1 text-xs text-slate-700">Exam on {longDayLabel(r.scheduledExam.date)}</div>}</td>
-                    <td className="px-2 py-2 align-top text-slate-700">{dueReason(r)}</td>
-                    <td className="px-2 py-2 text-right align-top"><Link href={`/mentoring/exams/${encodeURIComponent(r.activationId)}`} className={`inline-flex min-h-9 items-center rounded-md border px-3 text-sm font-medium ${RING} ${s === 'due' ? 'border-brand-600 bg-brand-600 text-white hover:bg-brand-700' : 'border-slate-300 text-slate-800 hover:bg-slate-50'}`}>{s === 'due' ? 'Schedule exam' : 'Manage exams'}</Link></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {dueNow.length === 0 && <Empty title={`No student is due an exam ${filtered ? 'with these filters' : 'right now'}`} testId="no-due">The list below shows every student and subject, with how close each is to the 3-hour threshold.</Empty>}
+          <div className={`${TABLE_WRAP} hidden xl:block`}>
+            <table className={TABLE} data-testid="due-table">
+              <caption className="sr-only">Students and subjects, with verified class time toward the next exam</caption>
+              <thead className={THEAD}><tr>{['Student', 'Subject', 'Verified class time', 'Status', 'Why', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className={TH}>{h || <span className="sr-only">Actions</span>}</th>)}</tr></thead>
+              <tbody>
+                {due.rows.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-slate-600">No Active student has a subject to count yet.</td></tr>}
+                {due.rows.map((r) => {
+                  const s = dueStatus(r);
+                  return (
+                    <tr key={`${r.activationId}-${r.subjectId}`} className={TR} data-testid="due-row" data-due={r.due}>
+                      <td className={`${TD} font-medium text-slate-900 ${r.due ? 'shadow-[inset_3px_0_0_0_#d97706]' : ''}`}>{r.studentName}</td>
+                      <td className={TD}>{r.subjectName}</td>
+                      <td className={TD}><div className="min-w-[11rem]"><ProgressBar percent={r.progressPercent} tone={r.due ? 'amber' : 'brand'} label={`Verified class time for ${r.studentName}, ${r.subjectName}`} /><p className="mt-1 text-xs text-slate-700">{hm(r.verifiedMinutes)} of {r.thresholdMinutes / 60} h</p></div></td>
+                      <td className={TD}><StatusChip tone={s === 'due' ? 'warning' : s === 'counting' ? 'neutral' : 'info'}>{DUE_STATUS_TEXT[s]}</StatusChip>{r.scheduledExam && <div className="mt-1 text-xs text-slate-700">Exam on {longDayLabel(r.scheduledExam.date)}</div>}</td>
+                      <td className={`${TD} max-w-xs text-slate-700`}>{dueReason(r)}</td>
+                      <td className={`${TD} text-right`}><Link href={examHref(r.activationId)} className={linkButton(s === 'due' ? 'primary' : 'secondary')}>{s === 'due' ? 'Schedule exam' : 'Manage exams'}</Link></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <ul className="space-y-3 xl:hidden" aria-label="Students and subjects">{due.rows.map((r) => <DueCard key={`${r.activationId}-${r.subjectId}`} r={r} />)}</ul>
+        </>
       )}
 
       {list && queue && (
         exams.length === 0
-          ? <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600" data-testid="no-exams">No exams are {queue.label.toLowerCase()} {filtered ? 'with these filters' : 'right now'}.</p>
+          ? <Empty title={`No exams are ${queue.label.toLowerCase()} ${filtered ? 'with these filters' : 'right now'}`} testId="no-exams">Choose another queue, or open a student from Due now to schedule an exam.</Empty>
           : (
-            <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-              <table className="min-w-full text-left text-sm" data-testid="exam-table">
-                <caption className="sr-only">{queue.label} exams</caption>
-                <thead className="bg-slate-50 text-xs text-slate-700"><tr>{['Date and time', 'Student', 'Subject', 'Exam', 'Status', 'Marks', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className="px-2 py-2 font-semibold">{h || <span className="sr-only">Actions</span>}</th>)}</tr></thead>
-                <tbody>
-                  {exams.map((e) => (
-                    <tr key={e.id} className="border-t border-slate-100" data-testid="exam-row" data-state={e.state}>
-                      <td className="px-2 py-2 align-top whitespace-nowrap">{longDayLabel(e.date)}<div className="text-xs text-slate-700">{examTime(e)}{e.date !== e.originalDate ? `, moved from ${longDayLabel(e.originalDate)}` : ''}</div></td>
-                      <td className="px-2 py-2 align-top font-medium text-slate-900">{e.studentName}</td>
-                      <td className="px-2 py-2 align-top">{e.subjectName}</td>
-                      <td className="px-2 py-2 align-top">{e.title}{e.kind === 'RE_EXAM' ? <span className="ml-1 text-xs text-slate-700">(re-exam)</span> : null}</td>
-                      <td className="px-2 py-2 align-top"><Badge variant={EXAM_TONE[e.state] ?? 'default'}>{e.stateLabel}</Badge></td>
-                      <td className="px-2 py-2 align-top">{e.marks ? `${e.marks.obtained} of ${e.marks.max} (${e.marks.percentage}%)` : 'Not recorded'}</td>
-                      <td className="px-2 py-2 text-right align-top"><Link href={`/mentoring/exams/${encodeURIComponent(e.activationId)}`} className={`inline-flex min-h-9 items-center rounded-md border px-3 text-sm font-medium ${RING} border-slate-300 text-slate-800 hover:bg-slate-50`} aria-label={`Open the exam of ${e.studentName}`}>Open</Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className={`${TABLE_WRAP} hidden xl:block`}>
+                <table className={TABLE} data-testid="exam-table">
+                  <caption className="sr-only">{queue.label} exams</caption>
+                  <thead className={THEAD}><tr>{['Date and time', 'Student', 'Subject', 'Exam', 'Status', 'Evaluation and marks', 'Parent sharing', ''].map((h, i) => <th key={`${h}-${i}`} scope="col" className={TH}>{h || <span className="sr-only">Actions</span>}</th>)}</tr></thead>
+                  <tbody>
+                    {exams.map((e) => (
+                      <tr key={e.id} className={TR} data-testid="exam-row" data-state={e.state}>
+                        <td className={`${TD} whitespace-nowrap`}><div className="font-medium text-slate-900">{longDayLabel(e.date)}</div><div className="text-xs text-slate-700">{examTime(e)}{e.date !== e.originalDate ? `, moved from ${longDayLabel(e.originalDate)}` : ''}</div></td>
+                        <td className={`${TD} font-medium text-slate-900`}>{e.studentName}</td>
+                        <td className={TD}>{e.subjectName}</td>
+                        <td className={TD}>{e.title}{e.kind === 'RE_EXAM' ? <span className="ml-1 text-xs text-slate-700">(re-exam)</span> : null}</td>
+                        <td className={TD}><StatusChip tone={chipTone(EXAM_TONE[e.state])}>{e.stateLabel}</StatusChip></td>
+                        <td className={TD}><Status s={evaluationText(e)} /></td>
+                        <td className={TD}><Status s={parentSharingText(e)} /></td>
+                        <td className={`${TD} text-right`}><Link href={examHref(e.activationId)} className={linkButton('secondary')} aria-label={`Open the exam of ${e.studentName}`}>Open</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ul className="space-y-3 xl:hidden" aria-label="Exams">
+                {exams.map((e) => (
+                  <li key={e.id} className={`${PANEL} p-4`} data-testid="exam-card">
+                    <div className="flex items-start justify-between gap-3">
+                      <div><p className="font-semibold text-slate-900">{e.studentName}</p><p className="text-sm text-slate-700">{e.subjectName}: {e.title}</p><p className="mt-1 text-sm font-medium text-slate-900">{longDayLabel(e.date)}, {examTime(e)}</p></div>
+                      <StatusChip tone={chipTone(EXAM_TONE[e.state])}>{e.stateLabel}</StatusChip>
+                    </div>
+                    <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs text-slate-600">Evaluation and marks</dt><dd><Status s={evaluationText(e)} /></dd></div><div><dt className="text-xs text-slate-600">Parent sharing</dt><dd><Status s={parentSharingText(e)} /></dd></div></dl>
+                    <Link href={examHref(e.activationId)} className={`${linkButton('secondary', true)} mt-3`}>Open</Link>
+                  </li>
+                ))}
+              </ul>
+            </>
           )
       )}
-
     </div>
   );
 }
