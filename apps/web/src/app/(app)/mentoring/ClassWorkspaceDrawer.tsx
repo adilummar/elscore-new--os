@@ -13,13 +13,15 @@ import {
   exceptionKind, fileSizeText, payloadOfActivity, verifyHint, voiceUploadUrl, workspaceBase,
 } from './workspace-view';
 import { FollowUps, StatusStrip, VersionHistory } from './ClassWorkspaceExtras';
-import { Checklist, Timing, TutorUpdate } from './ClassSections';
-import { SECTIONS, afterChecklist, beforeChecklist, timingRows, tutorUpdateRows } from './class-sections-view';
+import { Checklist, ReminderCheckbox, TabBar, Timing, TutorUpdate } from './ClassSections';
+import { afterChecklist, reminderCheck, timingRows, tutorUpdateRows } from './class-sections-view';
 import { call } from './workspace-api';
 
 const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 const when = (iso: string | null) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '');
-type Tab = 'before' | 'after' | 'review';
+type Tab = 'before' | 'after' | 'timing' | 'review';
+/** The Mentor class page has four tabs. The address calls the verification tab "verification"; inside it is "review". */
+const tabOf = (v: string | undefined): Tab => (v === 'after' || v === 'timing' ? v : v === 'verification' || v === 'review' ? 'review' : 'before');
 
 
 // ─── A message the person copies and shares themselves ──────────────────────────────────────────────────────────
@@ -247,12 +249,13 @@ export function ReviewPanel({ w, classKey, busy, run, canWork, onClosed }: { w: 
 // ─── The drawer ──────────────────────────────────────────────────────────────────────────────────────────────────
 /** One class: before it (reminder), after it (update, recording, activities) and the Mentor review. Used by the tutor and the Mentor. */
 /**
- * `layout="tabs"` (the default, used by the tutor and the student panel) shows one section at a time. `layout="sections"` (the Mentor's class page)
- * shows Before class, After class, Actual time and Verification one under the other, each with its own checklist, under a section menu.
+ * `layout="tabs"` (the default, used by the tutor and the student panel) has the original three tabs. `layout="sections"` (the Mentor class page) has one
+ * tab bar at the top with Before class, After class, Actual time and Verification; the chosen tab shows directly under it, and stays chosen while
+ * the page reloads after an action. The chosen tab is kept in the address (?tab=) so Back, refresh and a shared link return to it.
  */
-export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layout = 'tabs' }: { role: WorkspaceRole; classKey: string; onClose: () => void; onChanged?: () => void; layout?: 'tabs' | 'sections' }) {
+export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layout = 'tabs', initialTab }: { role: WorkspaceRole; classKey: string; onClose: () => void; onChanged?: () => void; layout?: 'tabs' | 'sections'; initialTab?: string }) {
   const [w, setW] = React.useState<WorkspaceData | null>(null);
-  const [tab, setTab] = React.useState<Tab>('before');
+  const [tab, setTab] = React.useState<Tab>(() => tabOf(initialTab));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -289,7 +292,12 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
   };
 
   const sections = layout === 'sections';
-  const show = (k: Tab | 'timing') => sections || tab === k;
+  const show = (k: Tab) => tab === k;
+  const choose = (key: string) => {
+    const next = tabOf(key);
+    setTab(next);
+    if (sections) window.history.replaceState(window.history.state, '', `${window.location.pathname}?tab=${next === 'review' ? 'verification' : next}`);
+  };
   const mentor = role === 'MENTOR';
   const canWork = mentor ? !!w?.canWork : true;
   const tabs: Array<[Tab, string]> = [['before', 'Before class'], ['after', 'After class'], ...(mentor ? ([['review', 'Mentor review']] as Array<[Tab, string]>) : [])];
@@ -308,23 +316,21 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
           <Button type="button" size="sm" variant="ghost" onClick={onClose}>Close</Button>
         </div>
       </div>}
-      {sections && (
-        <nav aria-label="Sections of this class" className="-mx-1 mb-3 overflow-x-auto px-1">
-          <ul className="flex min-w-max gap-1 border-b border-slate-200">{SECTIONS.filter((x) => mentor || x.key !== 'verification').map((x) => <li key={x.key}><a href={`#sec-${x.key}`} className="inline-flex min-h-10 items-center px-3 text-sm font-medium text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{x.label}</a></li>)}</ul>
-        </nav>
-      )}
-      {!sections && <div role="tablist" aria-label="Class workspace sections" className="mb-3 flex gap-1 border-b border-slate-200">
-        {tabs.map(([k, label]) => <button key={k} type="button" role="tab" id={`ws-tab-${k}`} aria-selected={tab === k} aria-controls={`ws-panel-${k}`} className={`px-3 py-1.5 text-sm ${tab === k ? 'border-b-2 border-brand-600 font-semibold text-brand-700' : 'text-slate-600'}`} onClick={() => setTab(k)}>{label}</button>)}
-      </div>}
+      {sections
+        ? <TabBar label="Sections of this class" value={tab === 'review' ? 'verification' : tab} onChange={choose} tabs={[{ key: 'before', label: 'Before class' }, { key: 'after', label: 'After class' }, { key: 'timing', label: 'Actual time' }, ...(mentor ? [{ key: 'verification', label: 'Verification' }] : [])]} />
+        : (
+          <div role="tablist" aria-label="Class workspace sections" className="mb-3 flex gap-1 border-b border-slate-200">
+            {tabs.map(([k, label]) => <button key={k} type="button" role="tab" id={`ws-tab-${k}`} aria-selected={tab === k} aria-controls={`ws-panel-${k}`} className={`px-3 py-1.5 text-sm ${tab === k ? 'border-b-2 border-brand-600 font-semibold text-brand-700' : 'text-slate-600'}`} onClick={() => setTab(k)}>{label}</button>)}
+          </div>
+        )}
       {error && <p role="alert" className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {notice && <p role="status" className="mb-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
       {!w && !error && <p className="text-sm text-slate-500">Loading the class</p>}
       {w && cancelled && <p className="mb-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">This class was cancelled. Nothing more can be done on it.</p>}
 
       {w && show('before') && (
-        <div role={sections ? undefined : 'tabpanel'} id={sections ? 'sec-before' : 'ws-panel-before'} aria-labelledby={sections ? undefined : 'ws-tab-before'} className={`space-y-3 ${sections ? 'mb-6 scroll-mt-4' : ''}`}>
-          {sections && <h3 className="text-base font-semibold text-slate-900">Before class</h3>}
-          {sections && !cancelled && <Checklist title="Before-class checklist" rows={beforeChecklist(w)} testId="before-checklist" />}
+        <div role="tabpanel" id="ws-panel-before" aria-labelledby="ws-tab-before" className="space-y-3">
+          {sections && <ReminderCheckbox check={reminderCheck(w, canWork && !closedAfter)} busy={busy} onConfirm={(shareId) => run('confirm', () => call(role, `/shares/${shareId}/confirm`, 'POST'), 'Recorded that the reminder was shared.')} />}
           <p className="text-sm text-slate-700">The reminder is due {w.before.leadMinutes} minutes before the class, at {when(w.before.targetAt)}.</p>
           {w.before.warning && <p role="alert" className={`rounded-md px-3 py-2 text-sm ${w.before.warning.level === 'red' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`} data-testid="reminder-warning" data-level={w.before.warning.level}>{w.before.warning.text}</p>}
           <div className="text-sm">
@@ -339,8 +345,7 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
       )}
 
       {w && show('after') && (
-        <div role={sections ? undefined : 'tabpanel'} id={sections ? 'sec-after' : 'ws-panel-after'} aria-labelledby={sections ? undefined : 'ws-tab-after'} className={`space-y-3 ${sections ? 'mb-6 scroll-mt-4' : ''}`}>
-          {sections && <h3 className="text-base font-semibold text-slate-900">After class</h3>}
+        <div role="tabpanel" id="ws-panel-after" aria-labelledby="ws-tab-after" className="space-y-3">
           {sections && !cancelled && <Checklist title="After-class checklist" rows={afterChecklist(w)} testId="after-checklist" />}
           {sections && !cancelled && <TutorUpdate rows={tutorUpdateRows(w)} />}
           {!cancelled && (
@@ -365,16 +370,14 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
         </div>
       )}
 
-      {w && sections && !cancelled && (
-        <div id="sec-timing" className="mb-6 scroll-mt-4 space-y-3">
-          <h3 className="text-base font-semibold text-slate-900">Actual time</h3>
+      {w && sections && show('timing') && !cancelled && (
+        <div role="tabpanel" id="ws-panel-timing" aria-labelledby="ws-tab-timing" className="space-y-3">
           <Timing rows={timingRows(w)} w={w} />
         </div>
       )}
 
       {w && show('review') && mentor && (
-        <div role={sections ? undefined : 'tabpanel'} id={sections ? 'sec-verification' : 'ws-panel-review'} aria-labelledby={sections ? undefined : 'ws-tab-review'} className={sections ? 'scroll-mt-4 space-y-3' : undefined}>
-          {sections && <h3 className="text-base font-semibold text-slate-900">Verification</h3>}
+        <div role="tabpanel" id="ws-panel-review" aria-labelledby={sections ? 'ws-tab-verification' : 'ws-tab-review'} className="space-y-3">
           <ReviewPanel w={w} classKey={classKey} busy={busy} run={run} canWork={canWork} onClosed={onClose} />
         </div>
       )}

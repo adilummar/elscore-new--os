@@ -1,18 +1,43 @@
-import { SECTIONS, afterChecklist, beforeChecklist, timingHistory, timingRows, tutorUpdateRows } from './class-sections-view';
+import { SECTIONS, afterChecklist, beforeChecklist, reminderCheck, timingHistory, timingRows, tutorUpdateRows } from './class-sections-view';
 
 const cls = (over: any = {}) => ({
   checklist: [], startMinute: 960, endMinute: 1020, scheduledMinutes: 60, update: null, ...over,
 });
 const after = (over: any = {}) => ({ messages: [], versions: [], ...over });
 
-describe('Class page: before-class checklist', () => {
-  it('has the one required item and takes its state from the recorded reminder', () => {
-    const none = beforeChecklist({ class: cls() } as never);
-    expect(none).toHaveLength(1);
-    expect(none[0]).toMatchObject({ label: 'Tutor has sent the class reminder to the student', done: false });
-    const prepared = beforeChecklist({ class: cls({ checklist: [{ key: 'REMINDER', label: 'x', done: false, detail: 'Prepared, not sent' }] }) } as never);
-    expect(prepared[0]).toMatchObject({ done: false, detail: 'Prepared, not sent' });
-    expect(beforeChecklist({ class: cls({ checklist: [{ key: 'REMINDER', label: 'x', done: true, detail: 'Sent and acknowledged by the tutor' }] }) } as never)[0].done).toBe(true);
+const share = (over: any = {}) => ({ id: 'sh-1', text: 'x', preparedBy: 'Mira', preparedAt: '2026-11-04T09:00:00Z', copiedAt: null, confirmedAt: null, confirmedBy: null, ...over });
+const before = (shareValue: any, status = 'SCHEDULED') => ({ class: cls({ status }), before: { message: { share: shareValue } } }) as never;
+
+describe('Class page: before-class reminder checkbox', () => {
+  it('is pending, unticked and not tickable when nothing has been prepared', () => {
+    expect(reminderCheck(before(null), true)).toMatchObject({ status: 'PENDING', label: 'Pending', done: false, canTick: false, shareId: null });
+  });
+  it('is "Prepared, not sent" and unticked when a message exists but nobody recorded it as shared', () => {
+    expect(reminderCheck(before(share()), true)).toMatchObject({ status: 'PREPARED', label: 'Prepared, not sent', done: false, canTick: true, shareId: 'sh-1' });
+    expect(reminderCheck(before(share()), true).detail).toBe('Prepared, not copied');
+    expect(reminderCheck(before(share({ copiedAt: '2026-11-04T09:30:00Z' })), true).detail).toBe('Copied, not yet recorded as shared');
+  });
+  it('is ticked only when the share was confirmed, with who and when, and then cannot be ticked again', () => {
+    const sent = reminderCheck(before(share({ copiedAt: 'x', confirmedAt: '2026-11-04T09:40:00Z', confirmedBy: 'Mira Mentor' })), true);
+    expect(sent).toMatchObject({ status: 'SENT', label: 'Sent', done: true, canTick: false });
+    expect(sent.detail).toBe('Recorded as shared by Mira Mentor on 2026-11-04 09:40 UTC');
+  });
+  it('stays unticked and not tickable for someone who may not act, whatever the state', () => {
+    expect(reminderCheck(before(share()), false).canTick).toBe(false);
+    expect(reminderCheck(before(share()), false).done).toBe(false);
+  });
+  it('is not needed for a cancelled class', () => {
+    expect(reminderCheck(before(share(), 'CANCELLED'), true)).toMatchObject({ status: 'NOT_NEEDED', done: false, canTick: false });
+  });
+  it('never treats the system tutor reminder as the student reminder', () => {
+    const w = { class: cls({ checklist: [{ key: 'REMINDER', done: true, detail: 'Sent and acknowledged by the tutor' }] }), before: { message: { share: null } } } as never;
+    expect(reminderCheck(w, true).done).toBe(false);
+    expect(beforeChecklist(w)[0].done).toBe(false);
+  });
+  it('words the single before-class row', () => {
+    const rows = beforeChecklist(before(share()));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ label: 'Tutor has sent the class reminder to the student', done: false });
   });
 });
 

@@ -23,7 +23,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * class, after class, actual time, verification). The sections and every action in them are the existing class workspace; verifying,
  * returning and consuming stay explicit Mentor actions on the API.
  */
-export function ClassDetailClient({ classKey }: { classKey: string }) {
+export function ClassDetailClient({ classKey, initialTab }: { classKey: string; initialTab?: string }) {
   const router = useRouter();
   const [w, setW] = React.useState<WorkspaceData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -80,7 +80,7 @@ export function ClassDetailClient({ classKey }: { classKey: string }) {
         </section>
       )}
 
-      <ClassWorkspaceDrawer role="MENTOR" classKey={classKey} onClose={back} onChanged={() => void load()} layout="sections" />
+      <ClassWorkspaceDrawer role="MENTOR" classKey={classKey} onClose={back} onChanged={() => void load()} layout="sections" initialTab={initialTab} />
     </div>
   );
 }

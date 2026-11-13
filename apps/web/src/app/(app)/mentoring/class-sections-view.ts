@@ -7,10 +7,27 @@ import { SHARE_STATE, WorkspaceData } from './workspace-view';
 
 export interface CheckRow { key: string; label: string; done: boolean; detail: string }
 
-/** Before the class there is one required item: the tutor has sent the class reminder to the student. */
-export function beforeChecklist(w: Pick<WorkspaceData, 'class'>): CheckRow[] {
-  const r = w.class.checklist.find((c) => c.key === 'REMINDER');
-  return [{ key: 'REMINDER', label: 'Tutor has sent the class reminder to the student', done: !!r?.done, detail: r?.detail ?? 'No reminder has been recorded' }];
+export type ReminderStatus = 'PENDING' | 'PREPARED' | 'SENT' | 'NOT_NEEDED';
+export interface ReminderCheck { status: ReminderStatus; label: string; detail: string; done: boolean; /** Whether the box may be ticked now: a message exists, it is not yet recorded as shared, and the person may act. */ canTick: boolean; shareId: string | null }
+
+/**
+ * The one before-class item: the tutor has sent the class reminder to the student. The platform never sends it itself. A person copies the
+ * message, pastes it into the group, and then records that they did; that record (who, when) is the evidence. So the box is ticked only once the
+ * API says the message was confirmed as shared, never because a message was merely prepared. There is no "delivery failed" state in the backend,
+ * so none is shown.
+ */
+export function reminderCheck(w: Pick<WorkspaceData, 'class' | 'before'>, canAct: boolean): ReminderCheck {
+  const share = w.before.message.share;
+  if (w.class.status === 'CANCELLED') return { status: 'NOT_NEEDED', label: 'Not needed', detail: 'The class was cancelled', done: false, canTick: false, shareId: null };
+  if (share?.confirmedAt) return { status: 'SENT', label: 'Sent', detail: `Recorded as shared by ${share.confirmedBy ?? 'a user'} on ${share.confirmedAt.slice(0, 10)} ${share.confirmedAt.slice(11, 16)} UTC`, done: true, canTick: false, shareId: share.id };
+  if (share) return { status: 'PREPARED', label: 'Prepared, not sent', detail: share.copiedAt ? 'Copied, not yet recorded as shared' : 'Prepared, not copied', done: false, canTick: canAct, shareId: share.id };
+  return { status: 'PENDING', label: 'Pending', detail: 'No reminder message has been prepared yet. Copy the message below first.', done: false, canTick: false, shareId: null };
+}
+
+/** The before-class checklist as plain rows (used by tests and anywhere a list is enough). */
+export function beforeChecklist(w: Pick<WorkspaceData, 'class' | 'before'>): CheckRow[] {
+  const r = reminderCheck(w, false);
+  return [{ key: 'REMINDER', label: 'Tutor has sent the class reminder to the student', done: r.done, detail: r.label + ': ' + r.detail }];
 }
 
 /** After the class: the checklist message shared, the voice recording shared, and the activities given. */
