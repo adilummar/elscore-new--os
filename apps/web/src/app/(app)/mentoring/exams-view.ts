@@ -41,6 +41,24 @@ export const queueOf = (key: string) => EXAM_QUEUES.find((q) => q.key === key);
 export const queueCount = (q: ExamQueue, counts: Record<string, number>) => q.states.reduce((n, s) => n + (counts[s] ?? 0), 0);
 export const examsInQueue = (q: ExamQueue, exams: readonly ExamItem[]) => exams.filter((e) => (q.states as readonly string[]).includes(e.state));
 
+// ─── The five primary operational sections ──────────────────────────────────────────────────────────
+export interface PrimaryExamTab {
+  key: string;
+  label: string;
+  states?: readonly ExamState[];
+}
+export const PRIMARY_EXAM_TABS: readonly PrimaryExamTab[] = [
+  { key: 'due', label: 'Needs Scheduling' },
+  { key: 'upcoming', label: 'Upcoming Scheduled', states: ['SCHEDULED', 'REMINDER_PENDING', 'READY_FOR_EXAM'] },
+  { key: 'rescheduled', label: 'Rescheduled', states: ['RESCHEDULED'] },
+  { key: 'followup', label: 'Requiring Follow-up', states: ['EXAM_COMPLETED', 'AWAITING_PAPER_COLLECTION', 'AWAITING_EVALUATION', 'MARKS_PENDING', 'AWAITING_PARENT_SHARING', 'RE_EXAM_REQUIRED'] },
+  { key: 'completed', label: 'Completed', states: ['COMPLETED'] },
+];
+export const tabCount = (t: PrimaryExamTab, counts: Record<string, number>, dueCount = 0) => {
+  if (t.key === 'due') return dueCount;
+  return (t.states ?? []).reduce((n, s) => n + (counts[s] ?? 0), 0);
+};
+
 /** Why an exam is due, or how far off it is, in words. Nothing here is a separate figure: it is the API's own. */
 export function dueReason(r: Pick<DueRow, 'verifiedMinutes' | 'thresholdMinutes' | 'remainingMinutes' | 'due' | 'lastConductedDate'>): string {
   const since = r.lastConductedDate ? `since the exam on ${r.lastConductedDate}` : 'and no exam has been conducted yet';
@@ -55,7 +73,7 @@ export function dueStatus(r: Pick<DueRow, 'due' | 'scheduledExam'>): DueStatus {
   return r.scheduledExam ? 'scheduled' : 'counting';
 }
 export const DUE_STATUS_TEXT: Record<DueStatus, string> = {
-  due: 'Due, not scheduled', 'due-scheduled': 'Due, scheduled', scheduled: 'Scheduled early', counting: 'Not due yet',
+  due: 'Exam Due — Schedule Now', 'due-scheduled': 'Due, scheduled', scheduled: 'Scheduled early', counting: 'Not due yet',
 };
 
 export const dueQuery = (f: { subjectId: string; student: string }) => {

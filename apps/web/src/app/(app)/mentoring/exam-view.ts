@@ -70,18 +70,44 @@ export interface ExamDraft {
   date: string;
   start: string;
   end: string;
+  durationMinutes?: number;
   responsibleType: string;
   responsibleName: string;
   instructions: string;
 }
 
-export const emptyExamDraft = (subjectId = '', date = ''): ExamDraft => ({ title: '', subjectId, chaptersText: '', portion: '', date, start: '', end: '', responsibleType: 'TUTOR', responsibleName: '', instructions: '' });
+export const emptyExamDraft = (subjectId = '', date = '', duration = 60): ExamDraft => ({
+  title: '',
+  subjectId,
+  chaptersText: '',
+  portion: '',
+  date,
+  start: '',
+  end: '',
+  durationMinutes: duration,
+  responsibleType: 'TUTOR',
+  responsibleName: '',
+  instructions: '',
+});
 /** Chapters are typed one to a line or separated by commas. Several chapters of one subject belong to one exam. */
 export const chaptersOf = (text: string) => text.split(/[\n,]/).map((c) => c.trim()).filter(Boolean);
 
 export function draftOfExam(e: ExamItem): ExamDraft {
   const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-  return { title: e.title, subjectId: e.subjectId, chaptersText: e.chapters.join('\n'), portion: e.portion ?? '', date: e.date, start: clock(e.startMinute), end: clock(e.endMinute), responsibleType: e.responsible.type, responsibleName: e.responsible.type === 'TUTOR' ? '' : e.responsible.name ?? '', instructions: e.instructions ?? '' };
+  const duration = e.endMinute - e.startMinute;
+  return {
+    title: e.title,
+    subjectId: e.subjectId,
+    chaptersText: e.chapters.join('\n'),
+    portion: e.portion ?? '',
+    date: e.date,
+    start: clock(e.startMinute),
+    end: clock(e.endMinute),
+    durationMinutes: duration > 0 ? duration : 60,
+    responsibleType: e.responsible.type,
+    responsibleName: e.responsible.type === 'TUTOR' ? '' : e.responsible.name ?? '',
+    instructions: e.instructions ?? '',
+  };
 }
 
 /** What is plainly missing, so the button can say so before asking the server. The server still decides. */
@@ -91,16 +117,31 @@ export function examProblems(d: ExamDraft): string[] {
   if (!d.subjectId) out.push('the subject');
   if (chaptersOf(d.chaptersText).length === 0) out.push('at least one chapter');
   if (!d.date) out.push('the date');
-  if (!d.start || !d.end) out.push('the start and end times');
-  else if (d.end <= d.start) out.push('an end time after the start time');
+  if (!d.start || (!d.end && !d.durationMinutes)) out.push('the start and end times');
+  else if (d.end && d.end <= d.start) out.push('an end time after the start time');
   if (d.responsibleType !== 'TUTOR' && !d.responsibleName.trim()) out.push('the name of the person responsible');
   return out;
 }
 
 export function payloadOfExam(d: ExamDraft): Record<string, unknown> {
+  let end = d.end;
+  if (!end && d.start && d.durationMinutes) {
+    const [h, m] = d.start.split(':').map(Number);
+    const total = h * 60 + m + d.durationMinutes;
+    end = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  }
   return {
-    title: d.title, subjectId: d.subjectId, chapters: chaptersOf(d.chaptersText), portion: d.portion || undefined, date: d.date, start: d.start, end: d.end,
-    responsibleType: d.responsibleType, responsibleName: d.responsibleType === 'TUTOR' ? undefined : d.responsibleName, instructions: d.instructions || undefined,
+    title: d.title,
+    subjectId: d.subjectId,
+    chapters: chaptersOf(d.chaptersText),
+    portion: d.portion || undefined,
+    date: d.date,
+    start: d.start,
+    end,
+    durationMinutes: d.durationMinutes || undefined,
+    responsibleType: d.responsibleType,
+    responsibleName: d.responsibleType === 'TUTOR' ? undefined : d.responsibleName,
+    instructions: d.instructions || undefined,
   };
 }
 

@@ -1,7 +1,21 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { evaluationText, parentSharingText, DUE_STATUS_TEXT, EXAM_QUEUES, dueQuery, dueReason, dueStatus, examsInQueue, queueCount, queueOf, workspaceQuery } from './exams-view';
+import {
+  DUE_STATUS_TEXT,
+  EXAM_QUEUES,
+  PRIMARY_EXAM_TABS,
+  dueQuery,
+  dueReason,
+  dueStatus,
+  evaluationText,
+  examsInQueue,
+  parentSharingText,
+  queueCount,
+  queueOf,
+  tabCount,
+  workspaceQuery,
+} from './exams-view';
 
 describe('Exams: queues', () => {
   it('puts every exam state the API can send into exactly one queue', () => {
@@ -19,6 +33,20 @@ describe('Exams: queues', () => {
     expect(examsInQueue(q, [{ state: 'COMPLETED' }, { state: 'EXAM_COMPLETED' }] as never).length).toBe(1);
     expect(queueOf('nope')).toBeUndefined();
   });
+
+  it('provides the five primary operational sections', () => {
+    expect(PRIMARY_EXAM_TABS.map((t) => t.key)).toEqual([
+      'due',
+      'upcoming',
+      'rescheduled',
+      'followup',
+      'completed',
+    ]);
+    const upcoming = PRIMARY_EXAM_TABS.find((t) => t.key === 'upcoming')!;
+    expect(tabCount(upcoming, { SCHEDULED: 3, REMINDER_PENDING: 1, COMPLETED: 5 })).toBe(4);
+    const dueTab = PRIMARY_EXAM_TABS.find((t) => t.key === 'due')!;
+    expect(tabCount(dueTab, {}, 5)).toBe(5);
+  });
 });
 
 describe('Exams: why it is due', () => {
@@ -33,7 +61,7 @@ describe('Exams: why it is due', () => {
     expect(dueStatus({ due: true, scheduledExam: { id: 'x', date: '2026-11-20' } })).toBe('due-scheduled');
     expect(dueStatus({ due: false, scheduledExam: { id: 'x', date: '2026-11-20' } })).toBe('scheduled');
     expect(dueStatus({ due: false, scheduledExam: null })).toBe('counting');
-    expect(DUE_STATUS_TEXT.due).toBe('Due, not scheduled');
+    expect(DUE_STATUS_TEXT.due).toBe('Exam Due — Schedule Now');
   });
 });
 
