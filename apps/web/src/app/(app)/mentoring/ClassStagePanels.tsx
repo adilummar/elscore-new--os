@@ -8,11 +8,11 @@ import { Button } from '@/components/ui/Button';
 import { MeetLinkDisplay } from './ClassSections';
 import { afterChecklist, timingHistory } from './class-sections-view';
 import {
-  AFTER_ITEMS, ActualDraft, AfterDraft, RescheduleDraft, actualPayload, actualProblems, afterDraftOf, afterPayload, afterProblems, beforePayload, beforeProblems, evidenceLines, nextStep, reschedulePayload,
+  AFTER_ITEMS, ActualDraft, AfterDraft, RescheduleDraft, actualDraftOf, actualNoPayload, actualPayload, actualProblems, actualYesPayload, afterDraftOf, afterPayload, afterProblems, beforePayload, beforeProblems, evidenceLines, nextStep, reschedulePayload,
   rescheduleDraftOf, rescheduleProblems, StepId, submissionNote, submissionOf, timeInputOf, timeLines, toggleCode, tutorUpdateFull, visibleChoices, BEFORE_ITEM, STEP_LABELS,
 } from './class-stepper-view';
 import { longDayLabel } from './timetable-view';
-import { timeLabel } from './class-view';
+import { hoursText, timeLabel } from './class-view';
 import { FOCUS, PANEL, StatusChip } from './mentoring-ui';
 import { mentoringApi } from './mentoring-client';
 import type { WorkspaceData } from './workspace-view';
@@ -176,50 +176,231 @@ export function AfterPanel({ w, classKey, busy, canWork, run, go, evidence }: Pa
 export function TimingPanel({ w, classKey, busy, canWork, run, go }: PanelProps) {
   const lines = timeLines(w);
   const mine = w.workflow?.mentorActual ?? null;
+  const confirmed = w.workflow?.confirmedSchedule ?? null;
   const tutorU = w.class.update;
-  const start = mine?.startMinute ?? (tutorU?.conducted !== false ? tutorU?.actualStartMinute : null);
-  const end = mine?.endMinute ?? (tutorU?.conducted !== false ? tutorU?.actualEndMinute : null);
-  const [d, setD] = React.useState<ActualDraft>({ start: timeInputOf(start), end: timeInputOf(end), reason: '' });
-  React.useEffect(() => { setD({ start: timeInputOf(start), end: timeInputOf(end), reason: '' }); }, [mine?.startMinute, mine?.endMinute, mine?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scheduledStart = w.class.startMinute;
+  const scheduledEnd = w.class.endMinute;
+  const start = mine?.startMinute ?? (tutorU?.conducted !== false ? tutorU?.actualStartMinute : null) ?? scheduledStart;
+  const end = mine?.endMinute ?? (tutorU?.conducted !== false ? tutorU?.actualEndMinute : null) ?? scheduledEnd;
+
+  const initialChoice = mine ? 'YES' : 'NO';
+  const [choice, setChoice] = React.useState<'NO' | 'YES'>(initialChoice);
+  const [d, setD] = React.useState<ActualDraft>({
+    choice: initialChoice,
+    start: timeInputOf(start),
+    end: timeInputOf(end),
+    reason: mine?.reason ?? '',
+    confirmed: !!mine,
+  });
+
+  React.useEffect(() => {
+    const nextChoice = mine ? 'YES' : 'NO';
+    setChoice(nextChoice);
+    setD({
+      choice: nextChoice,
+      start: timeInputOf(mine ? mine.startMinute : start),
+      end: timeInputOf(mine ? mine.endMinute : end),
+      reason: mine?.reason ?? '',
+      confirmed: !!mine,
+    });
+  }, [mine?.startMinute, mine?.endMinute, mine?.at, confirmed?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const can = canWork && !closed(w);
-  const problems = actualProblems(d);
+  const problems = choice === 'YES' ? actualProblems(d) : [];
   const history = timingHistory(w);
   const path = `/mentoring/class-workspace/${encodeURIComponent(classKey)}/actual-time`;
+
+  const submitNo = () => {
+    run(
+      'actual-time-no',
+      () => mentoringApi(path, 'PUT', actualNoPayload()),
+      'Scheduled class time confirmed.',
+      () => go('verification')
+    );
+  };
+
+  const submitYes = () => {
+    run(
+      'actual-time-yes',
+      () => mentoringApi(path, 'PUT', actualYesPayload(d)),
+      'The actual time is recorded.',
+      () => go('verification')
+    );
+  };
+
+  const removeMyActualTime = () => {
+    run(
+      'actual-time-clear',
+      () => mentoringApi(path, 'PUT', { clear: true, reason: d.reason.trim() || 'Cleared by mentor' }),
+      'Your actual time is removed. The tutor report is unchanged.',
+      () => {
+        setChoice('NO');
+      }
+    );
+  };
+
   return (
     <div className="space-y-4" data-testid="stage-timing">
-      <StepHeading id="timing" hint="The scheduled time, the time the tutor reported and the time you record stay on separate lines. Recording a time never changes the schedule." />
+      <StepHeading
+        id="timing"
+        hint="The scheduled time, the time the tutor reported and the time you record stay on separate lines. Recording a time never changes the schedule."
+      />
+
       <section aria-label="Scheduled and actual time" className={`${PANEL} p-4`} data-testid="timing">
         <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
           {lines.map((l) => (
-            <div key={l.label}><dt className="text-xs font-medium text-slate-600">{l.label}</dt><dd className={`mt-0.5 text-base ${l.differs ? 'font-semibold text-amber-900' : 'text-slate-900'}`}>{l.value}</dd>{l.note && <p className="text-xs text-slate-600">{l.note}</p>}</div>
+            <div key={l.label}>
+              <dt className="text-xs font-medium text-slate-600">{l.label}</dt>
+              <dd className={`mt-0.5 text-base ${l.differs ? 'font-semibold text-amber-900' : 'text-slate-900'}`}>{l.value}</dd>
+              {l.note && <p className="text-xs text-slate-600">{l.note}</p>}
+            </div>
           ))}
         </dl>
-        {lines.some((l) => l.differs) && <p className="mt-4 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />An actual time differs from the schedule. The approved schedule is not changed. Verification decides the minutes that count.</p>}
+        {lines.some((l) => l.differs) && (
+          <p className="mt-4 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            An actual time differs from the schedule. The approved schedule is not changed. Verification decides the minutes that count.
+          </p>
+        )}
         {history.length > 0 && (
-          <div className="mt-4"><p className="text-xs font-medium text-slate-700">Changes to the reported time</p>
-            <ul className="mt-1 space-y-0.5 text-sm text-slate-700">{history.map((h) => <li key={h.version}>Submission {h.version}, {h.at.slice(0, 16).replace('T', ' ')} UTC{h.by ? `, by ${h.by}` : ''}</li>)}</ul></div>
+          <div className="mt-4">
+            <p className="text-xs font-medium text-slate-700">Changes to the reported time</p>
+            <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+              {history.map((h) => (
+                <li key={h.version}>Submission {h.version}, {h.at.slice(0, 16).replace('T', ' ')} UTC{h.by ? `, by ${h.by}` : ''}</li>
+              ))}
+            </ul>
+          </div>
         )}
       </section>
 
       {can && (
         <section aria-label="Record the actual time" className={`${PANEL} p-4`} data-testid="actual-form">
-          <h3 className="text-sm font-semibold text-slate-900">{mine ? 'Correct the actual time you recorded' : 'Record the actual time'}</h3>
-          <p className="mt-0.5 text-xs text-slate-600">This is your own record. The tutor&apos;s report and the schedule are not changed, and the earlier value is kept in the class history.</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="block text-sm"><span className="mb-1 block font-medium text-slate-800">Actual start</span><input type="time" className={FIELD} value={d.start} onChange={(e) => setD({ ...d, start: e.target.value })} /></label>
-            <label className="block text-sm"><span className="mb-1 block font-medium text-slate-800">Actual end</span><input type="time" className={FIELD} value={d.end} onChange={(e) => setD({ ...d, end: e.target.value })} /></label>
-            <label className="block text-sm sm:col-span-3"><span className="mb-1 block font-medium text-slate-800">Reason</span><textarea className={FIELD} rows={2} maxLength={1000} value={d.reason} onChange={(e) => setD({ ...d, reason: e.target.value })} /></label>
-          </div>
+          <h3 className="text-sm font-semibold text-slate-900">Was there any change in the scheduled class time?</h3>
+          <p className="mt-0.5 text-xs text-slate-600">Confirm whether the class happened at its scheduled time or differed.</p>
+
           <div className="mt-3 space-y-2">
-            <Problems items={problems.length ? [`Still needed: ${problems.join(', ')}.`] : []} />
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" disabled={busy || problems.length > 0} onClick={() => run('actual-time', () => mentoringApi(path, 'PUT', actualPayload(d)), 'The actual time is recorded.')}>{mine ? 'Save correction' : 'Save actual time'}</Button>
-              {mine && <Button type="button" variant="outline" disabled={busy || !d.reason.trim()} onClick={() => run('actual-time-clear', () => mentoringApi(path, 'PUT', { clear: true, reason: d.reason.trim() }), 'Your actual time is removed. The tutor report is unchanged.')}>Remove my actual time</Button>}
-            </div>
+            <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors ${choice === 'NO' ? 'border-brand-500 bg-brand-50/50' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <input
+                type="radio"
+                name="timeChangeQuestion"
+                value="NO"
+                checked={choice === 'NO'}
+                onChange={() => setChoice('NO')}
+                className="mt-0.5 h-4 w-4 text-brand-600 focus:ring-brand-500"
+              />
+              <div>
+                <span className="font-medium text-slate-900">No, the class happened at the scheduled time.</span>
+                <p className="mt-0.5 text-xs text-slate-600">The scheduled timetable will be followed. No time correction is created.</p>
+              </div>
+            </label>
+
+            <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors ${choice === 'YES' ? 'border-brand-500 bg-brand-50/50' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <input
+                type="radio"
+                name="timeChangeQuestion"
+                value="YES"
+                checked={choice === 'YES'}
+                onChange={() => setChoice('YES')}
+                className="mt-0.5 h-4 w-4 text-brand-600 focus:ring-brand-500"
+              />
+              <div>
+                <span className="font-medium text-slate-900">Yes, the actual class time was different.</span>
+                <p className="mt-0.5 text-xs text-slate-600">Enter the actual start and end times with a mandatory reason.</p>
+              </div>
+            </label>
           </div>
+
+          {choice === 'NO' && (
+            <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-800" data-testid="no-change-panel">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-600">Confirmed scheduled time:</p>
+                  <p className="text-base font-semibold text-slate-900">{timeLabel(w.class)} ({hoursText(w.class.scheduledMinutes)})</p>
+                </div>
+                {confirmed && (
+                  <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">
+                    Confirmed on record
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-600">
+                The scheduled time will be preserved. No actual time correction record is created.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button type="button" disabled={busy} onClick={submitNo}>
+                  Confirm & Continue to Verification
+                </Button>
+                {mine && (
+                  <Button type="button" variant="outline" disabled={busy} onClick={removeMyActualTime}>
+                    Remove previous actual time correction
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {choice === 'YES' && (
+            <div className="mt-4 space-y-3" data-testid="time-change-form">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-slate-800">Actual start</span>
+                  <input type="time" className={FIELD} value={d.start} onChange={(e) => setD({ ...d, start: e.target.value })} />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-slate-800">Actual end</span>
+                  <input type="time" className={FIELD} value={d.end} onChange={(e) => setD({ ...d, end: e.target.value })} />
+                </label>
+                <div className="block text-sm">
+                  <span className="mb-1 block font-medium text-slate-800">Scheduled reference</span>
+                  <p className="py-2 text-sm text-slate-600">{timeLabel(w.class)}</p>
+                </div>
+                <label className="block text-sm sm:col-span-3">
+                  <span className="mb-1 block font-medium text-slate-800">Reason for the difference</span>
+                  <textarea
+                    className={FIELD}
+                    rows={2}
+                    maxLength={1000}
+                    placeholder="Explain why the class time differed from the schedule..."
+                    value={d.reason}
+                    onChange={(e) => setD({ ...d, reason: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <label className="flex items-start gap-2 pt-1 text-sm text-slate-800">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  checked={d.confirmed}
+                  onChange={(e) => setD({ ...d, confirmed: e.target.checked })}
+                />
+                <span>I confirm that the actual class time differed from the scheduled time and this record is accurate.</span>
+              </label>
+
+              <div className="mt-3 space-y-2">
+                <Problems items={problems.length ? [`Still needed: ${problems.join(', ')}.`] : []} />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" disabled={busy || problems.length > 0} onClick={submitYes}>
+                    {mine ? 'Save correction & Continue to Verification' : 'Save & Continue to Verification'}
+                  </Button>
+                  {mine && (
+                    <Button type="button" variant="outline" disabled={busy} onClick={removeMyActualTime}>
+                      Remove my actual time
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
-      <Button type="button" variant="outline" onClick={() => go('verification')}>Continue to Verification</Button>
+
+      {(!can || closed(w)) && (
+        <Button type="button" variant="outline" onClick={() => go('verification')}>
+          Continue to Verification
+        </Button>
+      )}
     </div>
   );
 }

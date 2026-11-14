@@ -165,7 +165,7 @@ export class FakeDb {
   }
 
   seed(table: string, row: Row): Row {
-    const full = { ...(DEFAULTS[table]?.() ?? {}), id: nextId(table), createdAt: new Date(), updatedAt: new Date(), ...row };
+    const full = { ...(DEFAULTS[table]?.() ?? {}), id: nextId(table), createdAt: new Date(Date.now() + counter), updatedAt: new Date(), ...row };
     this.rows(table).push(full);
     return full;
   }
@@ -213,10 +213,18 @@ export class FakeDb {
   }
 
   private sort(rows: Row[], orderBy?: Row | Row[]) {
-    const o = Array.isArray(orderBy) ? orderBy[0] : orderBy;
-    if (!o) return rows;
-    const [field, dir] = Object.entries(o)[0] as [string, string];
-    return [...rows].sort((a, b) => (a[field] > b[field] ? 1 : a[field] < b[field] ? -1 : 0) * (dir === 'desc' ? -1 : 1));
+    const orders = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
+    if (orders.length === 0) return rows;
+    return [...rows].sort((a, b) => {
+      for (const o of orders) {
+        const [field, dir] = Object.entries(o)[0] as [string, string];
+        const va = a[field] instanceof Date ? a[field].getTime() : a[field];
+        const vb = b[field] instanceof Date ? b[field].getTime() : b[field];
+        if (va > vb) return dir === 'desc' ? -1 : 1;
+        if (va < vb) return dir === 'desc' ? 1 : -1;
+      }
+      return 0;
+    });
   }
 
   model(table: string) {
@@ -245,7 +253,7 @@ export class FakeDb {
     return {
       findUnique: jest.fn((args: Row) => { const r = find(args); return Promise.resolve(r ? this.withIncludes(table, r, args.include, args.select) : null); }),
       findUniqueOrThrow: jest.fn((args: Row) => { const r = find(args); if (!r) return Promise.reject(new Error(`${table} not found`)); return Promise.resolve(this.withIncludes(table, r, args.include, args.select)); }),
-      findFirst: jest.fn((args: Row) => { const r = find(args); return Promise.resolve(r ? this.withIncludes(table, r, args.include, args.select) : null); }),
+      findFirst: jest.fn((args: Row = {}) => { const list = findMany({ ...args, take: 1 }); return Promise.resolve(list[0] ?? null); }),
       findMany: jest.fn((args: Row) => Promise.resolve(findMany(args))),
       count: jest.fn((args: Row = {}) => Promise.resolve(this.rows(table).filter((r) => matches(this, table, r, args.where)).length)),
       create: jest.fn((args: Row) => Promise.resolve(insert(args.data))),

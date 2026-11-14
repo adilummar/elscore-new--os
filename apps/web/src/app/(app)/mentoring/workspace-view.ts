@@ -32,9 +32,11 @@ export interface StageStep { key: StageKey; label?: string; state: 'COMPLETE' | 
 export interface StageSubmission { stage: 'BEFORE' | 'AFTER'; version: number; submittedAt: string; submittedBy: string | null; checklist: { items: Record<string, boolean>; activities?: Array<{ code: string; label: string }>; otherDescription?: string } }
 export interface ActivityChoice { code: string; label: string; active: boolean }
 export interface MentorActualTime { startMinute: number; endMinute: number; minutes: number; reason: string | null; by: string | null; at: string | null }
+export interface ConfirmedSchedule { by: string | null; at: string }
 export interface WorkflowData {
   stages: { steps: StageStep[]; suggested: StageKey; submissions: StageSubmission[] };
   mentorActual: MentorActualTime | null;
+  confirmedSchedule?: ConfirmedSchedule | null;
   activityChoices: ActivityChoice[];
   canReschedule: boolean;
 }

@@ -2446,6 +2446,95 @@ describe('the Mentor-corrected actual time', () => {
     w.session().status = 'VERIFIED';
     await expect(w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:00', end: '16:00', reason: 'y' }, AFTER)).rejects.toThrow('is verified');
   });
+
+  it('confirms scheduled time when no change occurred, preserving schedule and recording audit history', async () => {
+    const w = stageWorld();
+    await w.submit();
+    const before = { ...w.session() };
+    const out = await w.stage.setMentorActualTime('mentor-1', KEY, { timeChanged: false }, AFTER);
+    expect(out).toMatchObject({
+      timeChanged: false,
+      actual: null,
+      confirmedSchedule: { startMinute: 900, endMinute: 960 },
+      already: false,
+    });
+    const s = w.session();
+    expect(s.mentorActualStartMinute).toBeNull();
+    expect(s.mentorActualEndMinute).toBeNull();
+    expect(s.mentorActualReason).toBeNull();
+    expect(s.mentorActualByUserId).toBeNull();
+    expect([s.startMinute, s.endMinute, s.actualStartMinute, s.actualEndMinute]).toEqual([
+      before.startMinute,
+      before.endMinute,
+      before.actualStartMinute,
+      before.actualEndMinute,
+    ]);
+    const ev = w.db.rows('mentoringClassSessionEvent').filter((e) => e.kind === 'MENTOR_SCHEDULED_TIME_CONFIRMED')[0];
+    expect(ev).toBeDefined();
+    expect(ev).toMatchObject({ actorUserId: 'mentor-1' });
+    expect(ev.payload).toMatchObject({
+      scheduled: { startMinute: 900, endMinute: 960 },
+      previousActual: { start: null, end: null },
+    });
+    const extra = await w.stage.extra(s.id, { status: s.status, tutorSubmitted: true, tutorActual: null, canWork: true });
+    expect(extra.confirmedSchedule).toMatchObject({ by: 'Mira Staff' });
+    expect(extra.mentorActual).toBeNull();
+    expect(extra.stages.steps.find((st: any) => st.key === 'TIMING')?.state).toBe('COMPLETE');
+
+    const repeat = await w.stage.setMentorActualTime('mentor-1', KEY, { timeChanged: false }, AFTER);
+    expect(repeat).toMatchObject({ already: true, timeChanged: false, actual: null });
+  });
+
+  it('clears existing actual time correction when switching to confirmed scheduled time', async () => {
+    const w = stageWorld();
+    await w.submit();
+    await w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: 'Tutor was late' }, AFTER);
+    expect(w.session().mentorActualStartMinute).toBe(930);
+
+    const res = await w.stage.setMentorActualTime('mentor-1', KEY, { timeChanged: false }, AFTER);
+    expect(res).toMatchObject({ timeChanged: false, actual: null, already: false });
+
+    const s = w.session();
+    expect(s.mentorActualStartMinute).toBeNull();
+    expect(s.mentorActualEndMinute).toBeNull();
+    expect(s.mentorActualReason).toBeNull();
+
+    const confirmEv = w.db.rows('mentoringClassSessionEvent').find((e) => e.kind === 'MENTOR_SCHEDULED_TIME_CONFIRMED');
+    expect(confirmEv).toBeDefined();
+    expect(confirmEv?.payload).toMatchObject({
+      previousActual: { start: 930, end: 990 },
+      scheduled: { startMinute: 900, endMinute: 960 },
+    });
+
+    const extra = await w.stage.extra(s.id, { status: s.status, tutorSubmitted: true, tutorActual: null, canWork: true });
+    expect(extra.mentorActual).toBeNull();
+    expect(extra.confirmedSchedule).toMatchObject({ by: 'Mira Staff' });
+  });
+
+  it('validates actual time change inputs and explicit confirmation requirements', async () => {
+    const w = stageWorld();
+    await w.submit();
+    await expect(
+      w.stage.setMentorActualTime('mentor-1', KEY, { timeChanged: true, start: '15:15', end: '16:15', reason: '' }, AFTER),
+    ).rejects.toThrow('Say why the actual time differed from the schedule');
+
+    await expect(
+      w.stage.setMentorActualTime('mentor-1', KEY, { timeChanged: true, start: '16:15', end: '15:15', reason: 'Typo' }, AFTER),
+    ).rejects.toThrow('The class must end after it starts');
+
+    await expect(
+      w.stage.setMentorActualTime('mentor-1', KEY, { timeChanged: true, start: 'invalid', end: '16:15', reason: 'Typo' }, AFTER),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    const out = await w.stage.setMentorActualTime(
+      'mentor-1',
+      KEY,
+      { timeChanged: true, start: '15:15', end: '16:15', reason: 'Class started 15 min late' },
+      AFTER,
+    );
+    expect(out).toMatchObject({ timeChanged: true, actual: { startMinute: 915, endMinute: 975 }, already: false });
+    expect(w.session()).toMatchObject({ mentorActualStartMinute: 915, mentorActualEndMinute: 975, mentorActualReason: 'Class started 15 min late' });
+  });
 });
 
 describe('the managed activity options', () => {

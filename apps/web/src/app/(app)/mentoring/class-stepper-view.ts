@@ -114,6 +114,7 @@ export function timeLines(w: Pick<WorkspaceData, 'class' | 'review' | 'workflow'
   const u = c.update;
   const tutor = u && u.conducted !== false && u.actualStartMinute != null && u.actualEndMinute != null ? { start: u.actualStartMinute, end: u.actualEndMinute, minutes: u.actualMinutes } : null;
   const mentor = w.workflow?.mentorActual ?? null;
+  const confirmed = w.workflow?.confirmedSchedule ?? null;
   const shifted = (s: number, e: number) => s !== c.startMinute || e !== c.endMinute;
   const v = w.review.minutes.verified;
   return [
@@ -121,8 +122,17 @@ export function timeLines(w: Pick<WorkspaceData, 'class' | 'review' | 'workflow'
     { label: 'Scheduled duration', value: hoursText(c.scheduledMinutes) },
     { label: 'Actual start and end, reported by the tutor', value: tutor ? (range(tutor.start, tutor.end) as string) : 'Not reported by the tutor yet', differs: !!tutor && shifted(tutor.start, tutor.end) },
     { label: 'Actual duration, reported by the tutor', value: tutor && tutor.minutes != null ? hoursText(tutor.minutes) : 'Not reported', differs: !!tutor && tutor.minutes != null && tutor.minutes !== c.scheduledMinutes },
-    { label: 'Actual start and end, recorded by the Mentor', value: mentor ? (range(mentor.startMinute, mentor.endMinute) as string) : 'Not recorded', note: mentor ? `${mentor.by ?? 'The Mentor'}${mentor.at ? ` on ${mentor.at.slice(0, 16).replace('T', ' ')} UTC` : ''}. Reason: ${mentor.reason ?? 'not given'}` : undefined, differs: !!mentor && shifted(mentor.startMinute, mentor.endMinute) },
-    { label: 'Actual duration, recorded by the Mentor', value: mentor ? hoursText(mentor.minutes) : 'Not recorded' },
+    {
+      label: 'Actual start and end, recorded by the Mentor',
+      value: mentor ? (range(mentor.startMinute, mentor.endMinute) as string) : confirmed ? `${timeLabel(c)} (Followed schedule)` : 'Not recorded',
+      note: mentor
+        ? `${mentor.by ?? 'The Mentor'}${mentor.at ? ` on ${mentor.at.slice(0, 16).replace('T', ' ')} UTC` : ''}. Reason: ${mentor.reason ?? 'not given'}`
+        : confirmed
+        ? `Confirmed by ${confirmed.by ?? 'the Mentor'}${confirmed.at ? ` on ${confirmed.at.slice(0, 16).replace('T', ' ')} UTC` : ''}`
+        : undefined,
+      differs: !!mentor && shifted(mentor.startMinute, mentor.endMinute),
+    },
+    { label: 'Actual duration, recorded by the Mentor', value: mentor ? hoursText(mentor.minutes) : confirmed ? hoursText(c.scheduledMinutes) : 'Not recorded' },
     { label: 'Verified duration', value: v == null ? 'Not verified' : hoursText(v) },
   ];
 }
@@ -131,8 +141,37 @@ export function timeLines(w: Pick<WorkspaceData, 'class' | 'review' | 'workflow'
 export const timeInputOf = (m: number | null | undefined) => (m == null ? '' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
 export const minutesOfInput = (t: string): number | null => (/^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null);
 
-export interface ActualDraft { start: string; end: string; reason: string }
-export function actualProblems(d: ActualDraft): string[] {
+export interface ActualDraft {
+  choice: 'NO' | 'YES';
+  start: string;
+  end: string;
+  reason: string;
+  confirmed: boolean;
+}
+
+export function actualDraftOf(w: Pick<WorkspaceData, 'class' | 'workflow'>): ActualDraft {
+  const mine = w.workflow?.mentorActual ?? null;
+  const conf = w.workflow?.confirmedSchedule ?? null;
+  const c = w.class;
+  if (mine) {
+    return {
+      choice: 'YES',
+      start: timeInputOf(mine.startMinute),
+      end: timeInputOf(mine.endMinute),
+      reason: mine.reason ?? '',
+      confirmed: true,
+    };
+  }
+  return {
+    choice: 'NO',
+    start: timeInputOf(c.startMinute),
+    end: timeInputOf(c.endMinute),
+    reason: '',
+    confirmed: !!conf,
+  };
+}
+
+export function actualProblems(d: { start: string; end: string; reason: string; confirmed?: boolean }): string[] {
   const out: string[] = [];
   const s = minutesOfInput(d.start);
   const e = minutesOfInput(d.end);
@@ -140,9 +179,19 @@ export function actualProblems(d: ActualDraft): string[] {
   if (e === null) out.push('the actual end time');
   if (s !== null && e !== null && e <= s) out.push('an end time after the start time');
   if (!d.reason.trim()) out.push('the reason');
+  if (d.confirmed === false) out.push('your confirmation');
   return out;
 }
-export const actualPayload = (d: ActualDraft) => ({ start: d.start, end: d.end, reason: d.reason.trim() });
+
+export const actualNoPayload = () => ({ timeChanged: false });
+export const actualYesPayload = (d: { start: string; end: string; reason: string }) => ({
+  timeChanged: true,
+  start: d.start,
+  end: d.end,
+  reason: d.reason.trim(),
+  confirmed: true,
+});
+export const actualPayload = (d: { start: string; end: string; reason: string }) => actualYesPayload(d);
 
 // ─── Edit Schedule / Reschedule ──────────────────────────────────────────────────────────────────────────────────
 export interface RescheduleDraft { date: string; start: string; end: string; reason: string; confirmed: boolean }
@@ -175,6 +224,7 @@ export function evidenceLines(w: Pick<WorkspaceData, 'class' | 'before' | 'after
   const voice = w.after.voice;
   const given = a?.checklist.activities?.length ? a.checklist.activities.map((x) => (x.code === 'OTHER' && a.checklist.otherDescription ? `Other: ${a.checklist.otherDescription}` : x.label)).join(', ') : null;
   const mentor = w.workflow?.mentorActual ?? null;
+  const confirmed = w.workflow?.confirmedSchedule ?? null;
   return [
     { label: 'Before-class checklist', ok: !!b, value: b ? (submissionNote(b) as string) : 'Not submitted by the Mentor' },
     { label: 'Reminder shared in the group', ok: !!w.before.message.share?.confirmedAt, value: w.before.message.share?.confirmedAt ? `Recorded by ${w.before.message.share.confirmedBy ?? 'a user'}` : w.before.message.share ? 'Prepared or copied, not recorded as shared' : 'No reminder message prepared' },
@@ -183,7 +233,17 @@ export function evidenceLines(w: Pick<WorkspaceData, 'class' | 'before' | 'after
     { label: 'Tutor update', ok: !!u?.submittedAt, value: u?.submittedAt ? `Submitted ${u.submittedAt.slice(0, 10)}` : 'The tutor has not submitted it' },
     { label: 'Voice recording', ok: !!voice?.sharedAt, value: voice ? (voice.sharedAt ? 'Uploaded and recorded as shared' : 'Uploaded, sharing not recorded') : 'Not uploaded' },
     { label: 'Scheduled time', ok: true, value: `${timeLabel(w.class)}, ${hoursText(w.class.scheduledMinutes)}` },
-    { label: 'Actual time', ok: !!mentor || (!!u && u.actualStartMinute != null), value: mentor ? `Recorded by the Mentor: ${range(mentor.startMinute, mentor.endMinute)}` : u && u.actualStartMinute != null && u.actualEndMinute != null ? `Reported by the tutor: ${range(u.actualStartMinute, u.actualEndMinute)}` : 'No actual time recorded' },
+    {
+      label: 'Actual time',
+      ok: !!mentor || !!confirmed || (!!u && u.actualStartMinute != null),
+      value: mentor
+        ? `Recorded by the Mentor: ${range(mentor.startMinute, mentor.endMinute)}`
+        : confirmed
+        ? `Confirmed by the Mentor: Followed schedule (${timeLabel(w.class)})`
+        : u && u.actualStartMinute != null && u.actualEndMinute != null
+        ? `Reported by the tutor: ${range(u.actualStartMinute, u.actualEndMinute)}`
+        : 'No actual time recorded',
+    },
   ];
 }
 

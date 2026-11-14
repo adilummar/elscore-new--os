@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ClassStepper } from './ClassStepper';
 import { AfterPanel, BeforePanel, TimingPanel, VerificationPanel } from './ClassStagePanels';
 import {
-  actualPayload, actualProblems, afterDraftOf, afterPayload, afterProblems, beforeProblems, emptyAfter, evidenceLines, minutesOfInput, nextStep, openingStep, rescheduleDraftOf, rescheduleProblems, stepViews, submissionNote, timeLines, toggleCode, tutorUpdateFull,
+  actualDraftOf, actualNoPayload, actualPayload, actualProblems, actualYesPayload, afterDraftOf, afterPayload, afterProblems, beforeProblems, emptyAfter, evidenceLines, minutesOfInput, nextStep, openingStep, rescheduleDraftOf, rescheduleProblems, stepViews, submissionNote, timeLines, toggleCode, tutorUpdateFull,
 } from './class-stepper-view';
 import { ActivityOption, labelProblem, sortedOptions } from './activity-options-view';
 
@@ -190,23 +190,55 @@ describe('Actual Time', () => {
     expect(lines['Actual start and end, reported by the tutor']).toBe('Not reported by the tutor yet');
     expect(lines['Actual start and end, recorded by the Mentor']).toBe('Not recorded');
   });
-  it('shows the form with a reason, and the note that the schedule is not changed', () => {
+  it('displays followed schedule and confirmation note when Mentor selected NO', () => {
+    const ww = w({ class: { update }, top: { workflow: flow([], [], { confirmedSchedule: { by: 'Mira Staff', at: '2026-11-09T12:00:00Z' } }) } });
+    const lines = Object.fromEntries(timeLines(ww).map((l) => [l.label, l.value]));
+    expect(lines['Actual start and end, recorded by the Mentor']).toContain('Followed schedule');
+    const mentorLine = timeLines(ww).find((l) => l.label === 'Actual start and end, recorded by the Mentor');
+    expect(mentorLine?.note).toContain('Confirmed by Mira Staff');
+    expect(mentorLine?.differs).toBe(false);
+  });
+  it('asks whether there was any change in the scheduled class time with NO and YES options', () => {
     const out = html(React.createElement(TimingPanel, props(w({ class: { update } }))));
+    expect(out).toContain('Was there any change in the scheduled class time?');
+    expect(out).toContain('No, the class happened at the scheduled time.');
+    expect(out).toContain('Yes, the actual class time was different.');
+    expect(out).toContain('Confirm &amp; Continue to Verification');
+    expect(out).toContain('data-testid="no-change-panel"');
+  });
+  it('shows the time inputs, reason, and explicit confirmation checkbox when actual time differed', () => {
+    const ww = w({ class: { update }, top: { workflow: flow([], [], { mentorActual: { startMinute: 935, endMinute: 995, minutes: 60, reason: 'Checked the recording', by: 'Mira Staff', at: '2026-11-09T12:00:00Z' } }) } });
+    const out = html(React.createElement(TimingPanel, props(ww)));
     expect(out).toContain('type="time"');
-    expect(out).toContain('Reason');
-    expect(out).toContain('Recording a time never changes the schedule');
-    expect(out).toContain('Continue to Verification');
+    expect(out).toContain('Reason for the difference');
+    expect(out).toContain('I confirm that the actual class time differed');
+    expect(out).toContain('Save correction &amp; Continue to Verification');
   });
   it('has no form for someone who may not act', () => {
     expect(html(React.createElement(TimingPanel, props(w({ class: { update } }), { canWork: false })))).not.toContain('data-testid="actual-form"');
   });
-  it('needs a start, an end after it, and a reason', () => {
+  it('needs a start, an end after it, a reason, and confirmation when time changed', () => {
     expect(actualProblems({ start: '', end: '', reason: '' })).toHaveLength(3);
     expect(actualProblems({ start: '16:30', end: '15:30', reason: 'x' })).toEqual(['an end time after the start time']);
     expect(actualProblems({ start: '15:30', end: '16:30', reason: ' ' })).toEqual(['the reason']);
-    expect(actualPayload({ start: '15:30', end: '16:30', reason: ' late ' })).toEqual({ start: '15:30', end: '16:30', reason: 'late' });
+    expect(actualProblems({ start: '15:30', end: '16:30', reason: 'late', confirmed: false })).toEqual(['your confirmation']);
+    expect(actualPayload({ start: '15:30', end: '16:30', reason: ' late ' })).toEqual({ timeChanged: true, start: '15:30', end: '16:30', reason: 'late', confirmed: true });
+    expect(actualNoPayload()).toEqual({ timeChanged: false });
     expect(minutesOfInput('16:30')).toBe(990);
     expect(minutesOfInput('24:00')).toBeNull();
+  });
+  it('initializes draft correctly for NO and YES cases', () => {
+    const draftNo = actualDraftOf(w());
+    expect(draftNo.choice).toBe('NO');
+    expect(draftNo.start).toBe('15:00');
+    expect(draftNo.end).toBe('16:00');
+
+    const draftYes = actualDraftOf(w({ top: { workflow: flow([], [], { mentorActual: { startMinute: 935, endMinute: 995, minutes: 60, reason: 'Checked recording', by: 'Mira Staff', at: '2026-11-09T12:00:00Z' } }) } }));
+    expect(draftYes.choice).toBe('YES');
+    expect(draftYes.start).toBe('15:35');
+    expect(draftYes.end).toBe('16:35');
+    expect(draftYes.reason).toBe('Checked recording');
+    expect(draftYes.confirmed).toBe(true);
   });
 });
 
