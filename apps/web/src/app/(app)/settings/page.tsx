@@ -34,6 +34,7 @@ const SETTINGS_SECTIONS = [
     items: [
       { name: 'Pricing & Slabs', href: '/settings/pricing', icon: Database, permission: 'pricing.manage' },
       { name: 'Reference Data', href: '/settings/reference-data', icon: Database, permission: 'reference.manage' },
+      { name: 'Mentoring Activities', href: '/settings/mentoring-activities', icon: Award, permission: 'mentoring.template.manage' },
     ]
   },
   {

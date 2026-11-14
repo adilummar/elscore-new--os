@@ -8,6 +8,7 @@ import { RequirePermissions } from '../../common/rbac/require-permissions.decora
 
 import { MAX_AUDIO_BYTES } from './class-workspace';
 import { MentoringAccessService } from './mentoring-access.service';
+import { MentoringClassStageService } from './mentoring-class-stage.service';
 import { MentoringClassWorkspaceService, UploadedAudio } from './mentoring-class-workspace.service';
 import { MentoringClassService } from './mentoring-class.service';
 import { WorkspaceListQueryDto } from './mentoring.dto';
@@ -43,6 +44,7 @@ export class MentoringClassWorkspaceController {
     private readonly workspace: MentoringClassWorkspaceService,
     private readonly classes: MentoringClassService,
     private readonly access: MentoringAccessService,
+    private readonly stages: MentoringClassStageService,
   ) {}
 
   @Get('list')
@@ -92,7 +94,27 @@ export class MentoringClassWorkspaceController {
 
   @Get(':key')
   async one(@Param('key') key: string, @CurrentUser() user: RequestUser) {
-    return this.workspace.mentorWorkspace(await this.access.scopeFor(user.id), key);
+    const w = await this.workspace.mentorWorkspace(await this.access.scopeFor(user.id), key);
+    const u = w.class.update;
+    // The class workflow (stage statuses, the Mentor's submissions and corrected actual time, activity choices) is added to the class the Mentor already sees.
+    const extra = w.class.sessionId
+      ? await this.stages.extra(w.class.sessionId, { status: w.class.status, tutorSubmitted: !!u?.submittedAt, tutorActual: u && u.conducted !== false ? { start: u.actualStartMinute, end: u.actualEndMinute } : null, canWork: !!w.canWork })
+      : null;
+    return { ...w, workflow: extra };
+  }
+
+  /** Submit (or correct) the Before Class or After Class checklist. Repeating the same submission changes nothing. */
+  @Post(':key/stages/:stage/submit')
+  @RequirePermissions('mentoring.stage.work')
+  submitStage(@Param('key') key: string, @Param('stage') stage: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
+    return this.stages.submit(user.id, key, stage, body);
+  }
+
+  /** The Mentor's own record of the actual teaching time. The scheduled time, the tutor's report and the verified minutes are not touched. */
+  @Put(':key/actual-time')
+  @RequirePermissions('mentoring.stage.work')
+  actualTime(@Param('key') key: string, @Body() body: Body_, @CurrentUser() user: RequestUser) {
+    return this.stages.setMentorActualTime(user.id, key, body);
   }
 
   @Post(':key/follow-ups')

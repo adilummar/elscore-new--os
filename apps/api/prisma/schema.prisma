@@ -4557,6 +4557,13 @@ model MentoringClassSession {
 
   // What the Mentor decides
   mentorRemarks       String?               @map("mentor_remarks") @db.Text
+  /// The actual teaching time as the Mentor corrected it. Kept apart from what the tutor reported (actual_*), from the scheduled time and from the
+  /// verified minutes. Null until a Mentor records one.
+  mentorActualStartMinute Int?              @map("mentor_actual_start_minute")
+  mentorActualEndMinute   Int?              @map("mentor_actual_end_minute")
+  mentorActualReason      String?           @map("mentor_actual_reason") @db.Text
+  mentorActualByUserId    String?           @map("mentor_actual_by_user_id")
+  mentorActualAt          DateTime?         @map("mentor_actual_at")
   returnedReason      String?               @map("returned_reason") @db.Text
   returnedKind        String?               @map("returned_kind")
   verifiedAt          DateTime?             @map("verified_at")
@@ -4596,6 +4603,7 @@ model MentoringClassSession {
   attachments   MentoringClassAttachment[]
   shares        MentoringMessageShare[]
   portions      MentoringClassPortion[]
+  stageSubmissions MentoringClassStageSubmission[]
 
   @@unique([assignmentId, originalDate, originalStartMinute])
   @@index([activationId, date])
@@ -4746,6 +4754,42 @@ model MentoringClassSessionEvent {
 
   @@index([sessionId, createdAt])
   @@map("mentoring_class_session_events")
+}
+
+/// A Mentor's submission of one stage of the class workflow (BEFORE or AFTER). It records the checklist as ticked, who submitted it and when. It
+/// is a record of what the Mentor said, kept apart from the evidence (message shares, voice, activities). Opening a stage writes nothing here, and
+/// the earlier values of a corrected submission stay in the class events. One row per class and stage.
+model MentoringClassStageSubmission {
+  id                String   @id @default(uuid())
+  sessionId         String   @map("session_id")
+  stage             String
+  checklist         Json
+  version           Int      @default(1)
+  submittedByUserId String   @map("submitted_by_user_id")
+  submittedAt       DateTime @default(now()) @map("submitted_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  session MentoringClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, stage])
+  @@map("mentoring_class_stage_submissions")
+}
+
+/// The activities a Mentor can record as given in a class. Managed in Settings by the Mentoring Head. An option is never deleted: deactivating
+/// hides it from new selections, and a submission keeps the code and the label it was made with, so earlier classes read as they did.
+model MentoringActivityOption {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  label           String
+  /// The label in lower case with single spaces, unique, so the same option cannot be added twice.
+  labelKey        String   @unique @map("label_key")
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("mentoring_activity_options")
 }
 
 /// A correction to the pay of a class that was already verified. The tutor class record and any payroll that used it are

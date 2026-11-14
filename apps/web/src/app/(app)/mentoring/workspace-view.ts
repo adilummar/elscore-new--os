@@ -26,6 +26,19 @@ export interface ActivityOptions { grades: Array<{ id: string; name: string }>; 
 /** The API sends null when no exception has been asked for. */
 export interface ExceptionInfo { status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | null; reason: string | null; requestedBy: string | null; requestedAt: string | null; decidedBy: string | null; decidedAt: string | null; decisionNote: string | null }
 
+/** The class workflow the API adds to the Mentor's class: stage statuses, the Mentor's submissions, their own actual time and the activity choices. */
+export type StageKey = 'BEFORE' | 'AFTER' | 'TIMING' | 'VERIFICATION';
+export interface StageStep { key: StageKey; label?: string; state: 'COMPLETE' | 'CURRENT' | 'PENDING' | 'ATTENTION'; reachable: boolean }
+export interface StageSubmission { stage: 'BEFORE' | 'AFTER'; version: number; submittedAt: string; submittedBy: string | null; checklist: { items: Record<string, boolean>; activities?: Array<{ code: string; label: string }>; otherDescription?: string } }
+export interface ActivityChoice { code: string; label: string; active: boolean }
+export interface MentorActualTime { startMinute: number; endMinute: number; minutes: number; reason: string | null; by: string | null; at: string | null }
+export interface WorkflowData {
+  stages: { steps: StageStep[]; suggested: StageKey; submissions: StageSubmission[] };
+  mentorActual: MentorActualTime | null;
+  activityChoices: ActivityChoice[];
+  canReschedule: boolean;
+}
+
 export interface WorkspaceData {
   class: ClassItem & { meetLink?: string | null; cancelled?: { reason: string } | null; consumption: 'CONSUMED' | 'NOT_CONSUMED' };
   student: { name: string; studentId: string | null };
@@ -43,6 +56,8 @@ export interface WorkspaceData {
   };
   canWork?: boolean;
   canDecideException?: boolean;
+  /** Sent on the Mentor class only. Null when the class has no record yet. */
+  workflow?: WorkflowData | null;
 }
 
 export interface ListRow extends ClassItem { studentId: string | null; mentorUserId: string | null; mentorName: string | null; consumption: 'CONSUMED' | 'NOT_CONSUMED'; cancelled?: { reason: string } | null }

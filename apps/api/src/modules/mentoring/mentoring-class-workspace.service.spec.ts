@@ -4,13 +4,16 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { Writable } from 'stream';
 
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator';
 
 import { operationalAt } from './class-eligibility';
 import { MAX_AUDIO_BYTES } from './class-workspace';
 import { MentoringAccessService } from './mentoring-access.service';
+import { MentoringActivityOptionController } from './mentoring-activity-option.controller';
+import { MentoringActivityOptionService } from './mentoring-activity-option.service';
+import { MentoringClassStageService } from './mentoring-class-stage.service';
 import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
 import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
 import { MentoringClassController } from './mentoring-class.controller';
@@ -895,7 +898,7 @@ describe('H1: playback ranges', () => {
     const w = world();
     const id = await upload(w);
     const tutor = new TutorClassWorkspaceController(w.ws);
-    const mentor = new MentoringClassWorkspaceController(w.ws, w.classes, w.access);
+    const mentor = new MentoringClassWorkspaceController(w.ws, w.classes, w.access, {} as any);
 
     let out = fakeRes();
     await tutor.audio(id, out.res, { id: 'u-meera' } as any, 'bytes=0-9');
@@ -2287,5 +2290,217 @@ describe('classes are operational only after activation and outside every pause'
     expect((await w.ws.list(await w.scope('head-1'), { from: '2026-11-05', to: '2026-12-04' }, LATER)).rows.map((r) => r.key)).toEqual(keys);
     expect((await w.classes.tutorClasses('u-meera', '2026-11-05', '2026-12-04', LATER)).map((c) => c.key)).toEqual(keys);
     expect((await w.classes.range(await w.scope('mentor-1'), '2026-11-05', '2026-12-04', null, {}, LATER)).map((c) => c.key)).toEqual(keys);
+  });
+});
+
+// ─── Class workflow: stage submissions, the Mentor-corrected actual time and the managed activity options ─────────
+describe('the class workflow stages', () => {
+  const OPTIONS = [['EDUCATIONAL_GAMES', 'Educational games'], ['WORKSHEET', 'Worksheet'], ['QUIZ', 'Quiz'], ['OTHER', 'Other']];
+  const stageWorld = () => {
+    const w = world();
+    OPTIONS.forEach(([code, label], i) => w.db.seed('mentoringActivityOption', { id: `opt-${code}`, code, label, labelKey: label.toLowerCase(), isActive: true, sortOrder: (i + 1) * 10 }));
+    const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
+    const stage = new MentoringClassStageService(w.db as any, w.classes, history, new MentoringSlaService(w.db as any, w.access));
+    const ensure = () => (w.db as any).$transaction(async (tx: any) => w.classes.ensureSession(tx, await w.classes.occurrenceForKey(tx, KEY)));
+    return { ...w, stage, ensure };
+  };
+  const BEFORE = { items: { reminderSent: true } };
+  const AFTER_ITEMS = { checklistShared: true, voiceShared: true, activitiesGiven: true };
+
+  it('submits Before Class once, records who and when, and a repeat changes nothing', async () => {
+    const w = stageWorld();
+    const first = await w.stage.submit('mentor-1', KEY, 'BEFORE', BEFORE, at(MON, '14:00'));
+    expect(first).toMatchObject({ stage: 'BEFORE', version: 1, already: false });
+    const row = w.db.rows('mentoringClassStageSubmission')[0];
+    expect(row).toMatchObject({ stage: 'BEFORE', submittedByUserId: 'mentor-1', version: 1 });
+    expect(row.submittedAt).toEqual(at(MON, '14:00'));
+    const again = await w.stage.submit('mentor-1', KEY, 'BEFORE', BEFORE, at(MON, '14:30'));
+    expect(again).toMatchObject({ already: true, version: 1 });
+    expect(w.db.rows('mentoringClassStageSubmission')).toHaveLength(1);
+    expect(w.events(w.session().id).filter((e) => e === 'STAGE_SUBMITTED')).toHaveLength(1);
+  });
+
+  it('refuses a submission with an item not ticked, and stores nothing', async () => {
+    const w = stageWorld();
+    await expect(w.stage.submit('mentor-1', KEY, 'BEFORE', { items: { reminderSent: false } })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(w.stage.submit('mentor-1', KEY, 'AFTER', { items: { ...AFTER_ITEMS, voiceShared: false }, activities: ['QUIZ'] })).rejects.toThrow('Voice recording shared');
+    await expect(w.stage.submit('mentor-1', KEY, 'AFTER', { items: AFTER_ITEMS, activities: [] })).rejects.toThrow('at least one activity');
+    expect(w.db.rows('mentoringClassStageSubmission')).toHaveLength(0);
+  });
+
+  it('corrects a submission as a new version and keeps the earlier one in the class events', async () => {
+    const w = stageWorld();
+    await w.stage.submit('mentor-1', KEY, 'AFTER', { items: AFTER_ITEMS, activities: ['QUIZ'] }, at(MON, '17:00'));
+    const out = await w.stage.submit('mentor-1', KEY, 'AFTER', { items: AFTER_ITEMS, activities: ['QUIZ', 'WORKSHEET'] }, at(MON, '17:30'));
+    expect(out).toMatchObject({ version: 2, already: false });
+    expect(w.db.rows('mentoringClassStageSubmission')).toHaveLength(1);
+    const ev = w.db.rows('mentoringClassSessionEvent').filter((e) => e.kind === 'STAGE_CORRECTED')[0];
+    expect(ev.payload.previous.checklist.activities).toEqual([{ code: 'QUIZ', label: 'Quiz' }]);
+    expect(ev.payload.checklist.activities.map((a: any) => a.code)).toEqual(['QUIZ', 'WORKSHEET']);
+  });
+
+  it('keeps the label an activity had when it was submitted, after the option is renamed or switched off', async () => {
+    const w = stageWorld();
+    await w.stage.submit('mentor-1', KEY, 'AFTER', { items: AFTER_ITEMS, activities: ['QUIZ'] }, AFTER);
+    await w.ensure();
+    const opt = w.db.rows('mentoringActivityOption').find((o) => o.code === 'QUIZ')!;
+    opt.label = 'Quick quiz'; opt.isActive = false;
+    const view = await w.stage.extra(w.session().id, { status: 'SCHEDULED', tutorSubmitted: false, tutorActual: null, canWork: true });
+    expect(view.stages.submissions[0].checklist.activities).toEqual([{ code: 'QUIZ', label: 'Quiz' }]);
+    expect(view.activityChoices.find((c: any) => c.code === 'QUIZ')).toMatchObject({ active: true });
+    await expect(w.stage.submit('mentor-1', KEY, 'AFTER', { items: AFTER_ITEMS, activities: ['QUIZ'] }, AFTER)).resolves.toMatchObject({ already: true });
+  });
+
+  it('is the assigned Mentor only, and refused once the class is verified or cancelled', async () => {
+    const w = stageWorld();
+    await w.ensure();
+    await expect(w.stage.submit('mentor-2', KEY, 'BEFORE', BEFORE)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.stage.submit('u-meera', KEY, 'BEFORE', BEFORE)).rejects.toBeInstanceOf(ForbiddenException);
+    w.session().status = 'VERIFIED';
+    await expect(w.stage.submit('mentor-1', KEY, 'BEFORE', BEFORE)).rejects.toThrow('is verified');
+    w.session().status = 'CANCELLED';
+    await expect(w.stage.submit('mentor-1', KEY, 'BEFORE', BEFORE)).rejects.toThrow('was cancelled');
+  });
+
+  it('does not accept Actual Time or Verification as a submitted stage', async () => {
+    const w = stageWorld();
+    await expect(w.stage.submit('mentor-1', KEY, 'TIMING', {})).rejects.toBeInstanceOf(BadRequestException);
+    await expect(w.stage.submit('mentor-1', KEY, 'VERIFICATION', {})).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('shows the stage statuses, and opening the class completes nothing', async () => {
+    const w = stageWorld();
+    await w.ensure();
+    const view = (await w.stage.extra(w.session().id, { status: 'SCHEDULED', tutorSubmitted: false, tutorActual: null, canWork: true })).stages;
+    expect(view.steps.map((s: any) => `${s.key}:${s.state}`)).toEqual(['BEFORE:CURRENT', 'AFTER:PENDING', 'TIMING:PENDING', 'VERIFICATION:PENDING']);
+    expect(view.suggested).toBe('BEFORE');
+    expect(w.db.rows('mentoringClassStageSubmission')).toHaveLength(0);
+    await w.stage.submit('mentor-1', KEY, 'BEFORE', BEFORE, at(MON, '14:00'));
+    const after = (await w.stage.extra(w.session().id, { status: 'SCHEDULED', tutorSubmitted: false, tutorActual: null, canWork: true })).stages;
+    expect(after.steps.map((s: any) => `${s.key}:${s.state}`)).toEqual(['BEFORE:COMPLETE', 'AFTER:CURRENT', 'TIMING:PENDING', 'VERIFICATION:PENDING']);
+    expect(after.submissions[0]).toMatchObject({ stage: 'BEFORE', submittedBy: 'Mira Staff' });
+  });
+
+  it('offers rescheduling only to the assigned Mentor and only before the class is reported', async () => {
+    const w = stageWorld();
+    await w.ensure();
+    const can = async (status: string, canWork: boolean) => (await w.stage.extra(w.session().id, { status, tutorSubmitted: false, tutorActual: null, canWork })).canReschedule;
+    expect(await can('SCHEDULED', true)).toBe(true);
+    expect(await can('RESCHEDULED', true)).toBe(true);
+    expect(await can('SCHEDULED', false)).toBe(false);
+    expect(await can('AWAITING_MENTOR_VERIFICATION', true)).toBe(false);
+    expect(await can('VERIFIED', true)).toBe(false);
+  });
+});
+
+describe('the Mentor-corrected actual time', () => {
+  const stageWorld = () => {
+    const w = world();
+    const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
+    const ensure = () => (w.db as any).$transaction(async (tx: any) => w.classes.ensureSession(tx, await w.classes.occurrenceForKey(tx, KEY)));
+    return { ...w, ensure, stage: new MentoringClassStageService(w.db as any, w.classes, history, new MentoringSlaService(w.db as any, w.access)) };
+  };
+
+  it('records the Mentor\'s own times and leaves the scheduled time, the tutor\'s report and the verified minutes alone', async () => {
+    const w = stageWorld();
+    await w.submit();
+    const before = { ...w.session() };
+    const out = await w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: 'The tutor joined late' }, AFTER);
+    expect(out).toMatchObject({ actual: { startMinute: 930, endMinute: 990 }, already: false });
+    const s = w.session();
+    expect(s).toMatchObject({ mentorActualStartMinute: 930, mentorActualEndMinute: 990, mentorActualReason: 'The tutor joined late', mentorActualByUserId: 'mentor-1' });
+    expect([s.startMinute, s.endMinute, s.actualStartMinute, s.actualEndMinute, s.actualMinutes, s.verifiedMinutes, s.status]).toEqual([before.startMinute, before.endMinute, before.actualStartMinute, before.actualEndMinute, before.actualMinutes, before.verifiedMinutes, before.status]);
+    const ev = w.db.rows('mentoringClassSessionEvent').filter((e) => e.kind === 'MENTOR_ACTUAL_TIME_SET')[0];
+    expect(ev).toMatchObject({ actorUserId: 'mentor-1', reason: 'The tutor joined late' });
+    expect(ev.payload).toMatchObject({ previous: { start: null, end: null }, new: { start: 930, end: 990 }, scheduled: { startMinute: 900, endMinute: 960 } });
+  });
+
+  it('is idempotent, keeps the earlier value in the event when corrected, and can be cleared with a reason', async () => {
+    const w = stageWorld();
+    await w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: 'Late start' }, AFTER);
+    expect(await w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: 'Late start' }, AFTER)).toMatchObject({ already: true });
+    await w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:45', end: '16:45', reason: 'Checked the recording' }, AFTER);
+    const sets = w.db.rows('mentoringClassSessionEvent').filter((e) => e.kind === 'MENTOR_ACTUAL_TIME_SET');
+    expect(sets).toHaveLength(2);
+    expect(sets[1].payload.previous).toEqual({ start: 930, end: 990 });
+    await w.stage.setMentorActualTime('mentor-1', KEY, { clear: true, reason: 'Entered by mistake' }, AFTER);
+    expect(w.session()).toMatchObject({ mentorActualStartMinute: null, mentorActualEndMinute: null, mentorActualReason: null });
+    expect(w.db.rows('mentoringClassSessionEvent').filter((e) => e.kind === 'MENTOR_ACTUAL_TIME_CLEARED')).toHaveLength(1);
+  });
+
+  it('needs a reason, a real start and end in order, and a class that has happened', async () => {
+    const w = stageWorld();
+    await expect(w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: '  ' }, AFTER)).rejects.toThrow('Say why');
+    await expect(w.stage.setMentorActualTime('mentor-1', KEY, { start: '16:30', end: '15:30', reason: 'x' }, AFTER)).rejects.toThrow('end after it starts');
+    await expect(w.stage.setMentorActualTime('mentor-1', KEY, { start: 'soon', end: '15:30', reason: 'x' }, AFTER)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: 'x' }, at('2026-11-08', '10:00'))).rejects.toThrow('has not happened yet');
+    expect(w.session().mentorActualStartMinute ?? null).toBeNull();
+  });
+
+  it('is the assigned Mentor only and refused once verified', async () => {
+    const w = stageWorld();
+    await w.ensure();
+    await expect(w.stage.setMentorActualTime('mentor-2', KEY, { start: '15:30', end: '16:30', reason: 'x' }, AFTER)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(w.stage.setMentorActualTime('u-meera', KEY, { start: '15:30', end: '16:30', reason: 'x' }, AFTER)).rejects.toBeInstanceOf(ForbiddenException);
+    await w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:30', end: '16:30', reason: 'x' }, AFTER);
+    w.session().status = 'VERIFIED';
+    await expect(w.stage.setMentorActualTime('mentor-1', KEY, { start: '15:00', end: '16:00', reason: 'y' }, AFTER)).rejects.toThrow('is verified');
+  });
+});
+
+describe('the managed activity options', () => {
+  const options = () => {
+    const w = world();
+    [['WORKSHEET', 'Worksheet'], ['QUIZ', 'Quiz']].forEach(([code, label], i) => w.db.seed('mentoringActivityOption', { id: `opt-${code}`, code, label, labelKey: label.toLowerCase(), isActive: true, sortOrder: (i + 1) * 10 }));
+    return { ...w, opts: new MentoringActivityOptionService(w.db as any, w.access) };
+  };
+  const MANAGER = { userId: 'head-1', perms: new Set(['mentoring.student.read-all', 'mentoring.template.manage']), all: true, assigned: false } as any;
+  const MENTOR_SCOPE = { userId: 'mentor-1', perms: new Set(['mentoring.student.read-assigned', 'mentoring.stage.work']), all: false, assigned: true } as any;
+  const NOBODY = { userId: 'x', perms: new Set<string>(), all: false, assigned: false } as any;
+
+  it('lists the active options to anyone who sees Mentoring students, and the switched-off ones only to a manager', async () => {
+    const w = options();
+    await w.opts.update('head-1', 'opt-QUIZ', { isActive: false });
+    expect((await w.opts.list(MENTOR_SCOPE, false)).map((o) => o.code)).toEqual(['WORKSHEET']);
+    expect((await w.opts.list(MENTOR_SCOPE, true)).map((o) => o.code)).toEqual(['WORKSHEET']);
+    expect((await w.opts.list(MANAGER, true)).map((o) => o.code)).toEqual(['WORKSHEET', 'QUIZ']);
+    await expect(w.opts.list(NOBODY, false)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('adds an option with a code made from its name, after the others', async () => {
+    const w = options();
+    const made = await w.opts.create('head-1', { label: '  Role   play ' });
+    expect(made).toMatchObject({ code: 'ROLE_PLAY', label: 'Role play', isActive: true, sortOrder: 30 });
+  });
+
+  it('refuses a duplicate name however it is written, on adding and on renaming', async () => {
+    const w = options();
+    await expect(w.opts.create('head-1', { label: 'WORKSHEET' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(w.opts.create('head-1', { label: ' work   sheet ' })).resolves.toMatchObject({ code: 'WORK_SHEET' });
+    await expect(w.opts.update('head-1', 'opt-QUIZ', { label: 'worksheet' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(w.opts.create('head-1', { label: '' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(w.opts.create('head-1', { label: 'x'.repeat(61) })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('renames and switches an option on or off without changing its code, and never deletes one', async () => {
+    const w = options();
+    await expect(w.opts.update('head-1', 'opt-QUIZ', { label: 'Quick quiz', sortOrder: 5 })).resolves.toMatchObject({ code: 'QUIZ', label: 'Quick quiz', sortOrder: 5 });
+    await expect(w.opts.update('head-1', 'opt-QUIZ', { isActive: false })).resolves.toMatchObject({ isActive: false });
+    await expect(w.opts.update('head-1', 'nope', { isActive: false })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(w.opts.update('head-1', 'opt-QUIZ', { isActive: 'no' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(w.db.rows('mentoringActivityOption')).toHaveLength(2);
+  });
+
+  it('is routed so that only the template-management permission adds or changes options', () => {
+    const proto = MentoringActivityOptionController.prototype as any;
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.create)).toEqual(['mentoring.template.manage']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.update)).toEqual(['mentoring.template.manage']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.list)).toBeUndefined();
+  });
+
+  it('puts the submit and actual-time routes behind the Mentor work permission', () => {
+    const proto = MentoringClassWorkspaceController.prototype as any;
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.submitStage)).toEqual(['mentoring.stage.work']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.actualTime)).toEqual(['mentoring.stage.work']);
   });
 });

@@ -19,6 +19,7 @@ export function getSettingsNavigationLinks(hasPermission: (permission: string) =
     ...(hasPermission('performance.read.own') ? [{ name: 'Performance', href: '/settings/performance' }] : []),
     ...(hasPermission('reference.manage') ? [{ name: 'Reference Data', href: '/settings/reference-data' }] : []),
     ...(hasPermission('attendance.settings.manage') ? [{ name: 'Attendance', href: '/settings/attendance' }] : []),
+    ...(hasPermission('mentoring.template.manage') ? [{ name: 'Mentoring Activities', href: '/settings/mentoring-activities' }] : []),
     ...(hasPermission('audit.view') ? [{ name: 'Audit', href: '/settings/audit' }] : [])
   ];
 }

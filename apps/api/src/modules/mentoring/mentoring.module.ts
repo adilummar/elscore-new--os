@@ -9,6 +9,9 @@ import { RbacModule } from '../../common/rbac/rbac.module';
 import { MentoringAccessService } from './mentoring-access.service';
 import { MentoringAllocationController } from './mentoring-allocation.controller';
 import { MentoringAllocationService } from './mentoring-allocation.service';
+import { MentoringActivityOptionController } from './mentoring-activity-option.controller';
+import { MentoringActivityOptionService } from './mentoring-activity-option.service';
+import { MentoringClassStageService } from './mentoring-class-stage.service';
 import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
 import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
 import { MentoringClassController } from './mentoring-class.controller';
@@ -43,7 +46,7 @@ import { TutorClassesController } from './tutor-classes.controller';
 
 @Module({
   imports: [PrismaModule, AuditModule, RbacModule, BullModule.registerQueue({ name: QUEUES.MENTORING })],
-  controllers: [MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
+  controllers: [MentoringActivityOptionController, MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
   providers: [
     MentoringHandoverService,
     MentoringAccessService,
@@ -67,6 +70,8 @@ import { TutorClassesController } from './tutor-classes.controller';
     MentoringOverviewService,
     MentoringStorageService,
     MentoringClassWorkspaceService,
+    MentoringClassStageService,
+    MentoringActivityOptionService,
     MentoringWorkflowService,
   ],
   exports: [MentoringHandoverService],

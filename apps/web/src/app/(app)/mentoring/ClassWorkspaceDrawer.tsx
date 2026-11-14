@@ -13,8 +13,10 @@ import {
   exceptionKind, fileSizeText, payloadOfActivity, verifyHint, voiceUploadUrl, workspaceBase,
 } from './workspace-view';
 import { FollowUps, StatusStrip, VersionHistory } from './ClassWorkspaceExtras';
-import { Checklist, MeetLinkDisplay, ReminderCheckbox, TabBar, Timing, TutorUpdate } from './ClassSections';
-import { afterChecklist, reminderCheck, timingRows, tutorUpdateRows } from './class-sections-view';
+import { MeetLinkDisplay } from './ClassSections';
+import { ClassStepper } from './ClassStepper';
+import { AfterPanel, BeforePanel, RescheduleDialog, TimingPanel, VerificationPanel } from './ClassStagePanels';
+import { STEP_LABELS, StepId, openingStep, stepViews } from './class-stepper-view';
 import { call } from './workspace-api';
 
 const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
@@ -257,19 +259,23 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
+  /** The open step on the Mentor class page. Null until the class is loaded, so the first paint never shows a step the person cannot reach. */
+  const [step, setStep] = React.useState<StepId | null>(null);
+  const [rescheduling, setRescheduling] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
       const d: WorkspaceData = await call(role, `/${classKey}`);
       setW(d);
+      setStep((cur) => cur ?? openingStep(initialTab, d));
       setError(null);
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'The class could not be opened.');
     }
-  }, [role, classKey]);
+  }, [role, classKey]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => { void load(); }, [load]);
 
-  const run = (label: string, fn: () => Promise<unknown>, done: string) => {
+  const run = (label: string, fn: () => Promise<unknown>, done: string, then?: () => void) => {
     void (async () => {
       setBusy(true);
       setError(null);
@@ -279,6 +285,7 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
         setNotice(done);
         await load();
         onChanged?.();
+        then?.();
       } catch (e) {
         setError(e instanceof Error && e.message ? e.message : 'That could not be done.');
       }
@@ -291,13 +298,33 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
   const choose = (key: string) => {
     const next = tabOf(key);
     setTab(next);
-    if (sections) window.history.replaceState(window.history.state, '', `${window.location.pathname}?tab=${next === 'review' ? 'verification' : next}`);
+  };
+  /** Opens a step and keeps it in the address (?tab=), so refresh, Back and a shared link return to it. */
+  const go = (id: StepId) => {
+    setStep(id);
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?tab=${id}`);
+    // The page scrolls inside the app shell, so bring the step bar into view rather than scrolling the window.
+    document.querySelector('[data-testid="class-stepper"]')?.scrollIntoView?.({ block: 'start' });
   };
   const mentor = role === 'MENTOR';
   const canWork = mentor ? !!w?.canWork : true;
   const tabs: Array<[Tab, string]> = [['before', 'Before class'], ['after', 'After class'], ...(mentor ? ([['review', 'Mentor review']] as Array<[Tab, string]>) : [])];
   const closedAfter = w ? !w.after.canEdit : false;
   const cancelled = w?.class.status === 'CANCELLED';
+  const panelProps = { classKey, busy, canWork, run, go };
+  /** What was prepared, uploaded and shared after the class, shown for the Mentor to read next to the After Class checklist. */
+  const afterEvidence = w && !cancelled ? (
+    <>
+      <StatusStrip c={w.class} />
+      <div className="space-y-2">{w.after.messages.map((m) => <MessageBlock key={m.key} role={role} classKey={classKey} m={m} busy={busy} canAct={canWork && w.after.canEdit} run={run} />)}</div>
+      <VoicePanel role={role} classKey={classKey} w={w} busy={busy} run={run} />
+      <section aria-label="Post-class activities" className="space-y-2">
+        <h4 className="text-sm font-semibold text-slate-900">Post-class activities ({w.after.activityCounts?.created ?? w.after.activities.length} created, {w.after.activityCounts?.shared ?? w.after.activities.filter((a) => a.sharedAt).length} shared)</h4>
+        <ul className="space-y-2" aria-label="Activities">{w.after.activities.map((a) => <ActivityRow key={a.id} a={a} role={role} busy={busy} canEdit={false} canRespond={canWork} run={run} options={w.after.activityOptions} />)}</ul>
+      </section>
+      <VersionHistory versions={w.after.versions ?? []} />
+    </>
+  ) : null;
   return (
     <section aria-label="Class workspace" className={sections ? '' : 'rounded-md border border-brand-200 bg-white p-3 shadow-sm'} data-testid="class-workspace">
       {!sections && <div className="mb-2 flex items-start justify-between gap-2">
@@ -312,7 +339,7 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
         </div>
       </div>}
       {sections
-        ? <TabBar label="Sections of this class" value={tab === 'review' ? 'verification' : tab} onChange={choose} tabs={[{ key: 'before', label: 'Before class' }, { key: 'after', label: 'After class' }, { key: 'timing', label: 'Actual time' }, ...(mentor ? [{ key: 'verification', label: 'Verification' }] : [])]} />
+        ? (w && step ? <div className="mb-5"><ClassStepper steps={stepViews(w, step)} selected={step} onSelect={go} /></div> : null)
         : (
           <div role="tablist" aria-label="Class workspace sections" className="mb-3 flex gap-1 border-b border-slate-200">
             {tabs.map(([k, label]) => <button key={k} type="button" role="tab" id={`ws-tab-${k}`} aria-selected={tab === k} aria-controls={`ws-panel-${k}`} className={`px-3 py-1.5 text-sm ${tab === k ? 'border-b-2 border-brand-600 font-semibold text-brand-700' : 'text-slate-600'}`} onClick={() => setTab(k)}>{label}</button>)}
@@ -323,9 +350,8 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
       {!w && !error && <p className="text-sm text-slate-500">Loading the class</p>}
       {w && cancelled && <p className="mb-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">This class was cancelled. Nothing more can be done on it.</p>}
 
-      {w && show('before') && (
+      {w && !sections && show('before') && (
         <div role="tabpanel" id="ws-panel-before" aria-labelledby="ws-tab-before" className="space-y-3">
-          {sections && <ReminderCheckbox check={reminderCheck(w, canWork && !closedAfter)} busy={busy} onConfirm={(shareId) => run('confirm', () => call(role, `/shares/${shareId}/confirm`, 'POST'), 'Recorded that the reminder was shared.')} />}
           <p className="text-sm text-slate-700">The reminder is due {w.before.leadMinutes} minutes before the class, at {when(w.before.targetAt)}.</p>
           {w.before.warning && <p role="alert" className={`rounded-md px-3 py-2 text-sm ${w.before.warning.level === 'red' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`} data-testid="reminder-warning" data-level={w.before.warning.level}>{w.before.warning.text}</p>}
           <MeetLinkDisplay link={w.before.meetLink} source={w.before.meetLinkSource ?? null} />
@@ -333,10 +359,8 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
         </div>
       )}
 
-      {w && show('after') && (
+      {w && !sections && show('after') && (
         <div role="tabpanel" id="ws-panel-after" aria-labelledby="ws-tab-after" className="space-y-3">
-          {sections && !cancelled && <Checklist title="After-class checklist" rows={afterChecklist(w)} testId="after-checklist" />}
-          {sections && !cancelled && <TutorUpdate rows={tutorUpdateRows(w)} />}
           {!cancelled && (
             <>
               <StatusStrip c={w.class} />
@@ -359,13 +383,18 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
         </div>
       )}
 
-      {w && sections && show('timing') && !cancelled && (
-        <div role="tabpanel" id="ws-panel-timing" aria-labelledby="ws-tab-timing" className="space-y-3">
-          <Timing rows={timingRows(w)} w={w} />
+      {w && sections && mentor && step && (
+        <div role="region" aria-label={`${STEP_LABELS[step]} step`} className="space-y-3" data-testid="stage-panel" data-step={step}>
+          {cancelled && <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">This class was cancelled. Nothing more can be done on it.</p>}
+          {step === 'before' && <BeforePanel w={w} {...panelProps} onReschedule={() => setRescheduling(true)} evidence={cancelled ? null : <MessageBlock role={role} classKey={classKey} m={w.before.message} busy={busy} canAct={canWork && !closedAfter} run={run} />} />}
+          {step === 'after' && <AfterPanel w={w} {...panelProps} evidence={afterEvidence} />}
+          {step === 'timing' && <TimingPanel w={w} {...panelProps} />}
+          {step === 'verification' && <VerificationPanel w={w} busy={busy} canWork={canWork} run={run}><ReviewPanel w={w} classKey={classKey} busy={busy} run={run} canWork={canWork} onClosed={onClose} /></VerificationPanel>}
         </div>
       )}
+      {w && sections && mentor && <RescheduleDialog w={w} classKey={classKey} open={rescheduling} onClose={() => setRescheduling(false)} onDone={() => { setRescheduling(false); setNotice('The class is rescheduled. The tutor was told.'); void load(); onChanged?.(); }} />}
 
-      {w && show('review') && mentor && (
+      {w && !sections && show('review') && mentor && (
         <div role="tabpanel" id="ws-panel-review" aria-labelledby={sections ? 'ws-tab-verification' : 'ws-tab-review'} className="space-y-3">
           <ReviewPanel w={w} classKey={classKey} busy={busy} run={run} canWork={canWork} onClosed={onClose} />
         </div>
