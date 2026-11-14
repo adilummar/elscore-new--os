@@ -19,7 +19,7 @@ export const ACTIVATION_LABELS: Record<string, string> = {
 };
 const DAY = 86_400_000;
 
-export interface OverviewFilters { period?: string; date?: string; search?: string; mentorUserId?: string; status?: string; subjectId?: string; sort?: string; dir?: string; page?: number | string; pageSize?: number | string }
+export interface OverviewFilters { period?: string; date?: string; from?: string; to?: string; search?: string; mentorUserId?: string; status?: string; subjectId?: string; sort?: string; dir?: string; page?: number | string; pageSize?: number | string }
 
 const monday = (iso: string) => addDays(iso, -((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7));
 const hours = (minutes: number) => Math.round((minutes / 60) * 10) / 10;
@@ -48,11 +48,15 @@ export class MentoringOverviewService {
 
   private async base(scope: MentoringScope, f: OverviewFilters, now: Date) {
     this.access.requireAnyScope(scope);
-    for (const d of [f.date]) if (d !== undefined && !isDateString(d)) throw new BadRequestException('Choose a real date, written like 2026-11-09.');
-    if (f.period !== undefined && !['week', 'month'].includes(f.period)) throw new BadRequestException('Choose week or month.');
+    for (const d of [f.date, f.from, f.to]) if (d !== undefined && !isDateString(d)) throw new BadRequestException('Choose a real date, written like 2026-11-09.');
+    if (f.period !== undefined && !['day', 'today', 'week', 'month'].includes(f.period)) throw new BadRequestException('Choose week or month.');
     const today = localMomentOf(now, (await this.sla.workingNow(this.db, now)).timeZone).date;
     const anchor = f.date ?? today;
-    const window = f.period === 'week'
+    const window = (f.from && f.to)
+      ? { from: f.from, to: f.to }
+      : (f.period === 'day' || f.period === 'today')
+      ? { from: anchor, to: anchor }
+      : f.period === 'week'
       ? { from: monday(anchor), to: addDays(monday(anchor), 6) }
       : { from: `${anchor.slice(0, 8)}01`, to: addDays(new Date(Date.UTC(Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7)), 1)).toISOString().slice(0, 10), -1) };
     const activations = await this.db.mentoringActivation.findMany({ where: this.access.visibilityWhere(scope) });

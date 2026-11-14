@@ -3,9 +3,9 @@ import { breadcrumbsOf, isCurrent, landingPath, primaryNav, readOnlyNotice, seco
 const has = (...p: string[]) => (x: string) => p.includes(x);
 
 describe('the Mentoring shell', () => {
-  it('shows Classes, Exams and Meetings first, in that order, to anyone who can see students', () => {
-    expect(primaryNav(has('mentoring.student.read-assigned')).map((n) => n.label)).toEqual(['Classes', 'Exams', 'Meetings']);
-    expect(primaryNav(has('mentoring.student.read-all')).map((n) => n.label)).toEqual(['Classes', 'Exams', 'Meetings']);
+  it('shows Classes, Exams, Meetings and Complaints first, in that order, to anyone who can see students', () => {
+    expect(primaryNav(has('mentoring.student.read-assigned')).map((n) => n.label)).toEqual(['Classes', 'Exams', 'Meetings', 'Complaints']);
+    expect(primaryNav(has('mentoring.student.read-all')).map((n) => n.label)).toEqual(['Classes', 'Exams', 'Meetings', 'Complaints']);
   });
 
   it('shows no workspace to someone without student access', () => {
@@ -14,7 +14,7 @@ describe('the Mentoring shell', () => {
 
   it('keeps allocation, staff and final approvals away from a plain Mentor', () => {
     const labels = secondaryNav(has('mentoring.student.read-assigned', 'mentoring.task.work')).map((n) => n.label);
-    expect(labels).toEqual(['My students', 'Phase 1 onboarding', 'Complaints', 'Pending actions', 'Overview']);
+    expect(labels).toEqual(['My students', 'Phase 1 onboarding', 'Pending actions', 'Overview']);
   });
 
   it('offers allocation and staff to those who hold the permission', () => {
@@ -55,11 +55,13 @@ describe('the Mentoring shell', () => {
   });
 
   it('tells items that share a page apart by their query', () => {
-    const items = Object.fromEntries(secondaryNav(() => true).map((n) => [n.section, n]));
+    const all = [...primaryNav(() => true), ...secondaryNav(() => true)];
+    const items = Object.fromEntries(all.map((n) => [n.section, n]));
     expect(isCurrent(items.students, '/mentoring/students', {})).toBe(true);
     expect(isCurrent(items.onboarding, '/mentoring/students', {})).toBe(false);
     expect(isCurrent(items.onboarding, '/mentoring/students', { status: 'ACTIVATION_IN_PROGRESS' })).toBe(true);
     expect(isCurrent(items.students, '/mentoring/students', { status: 'ACTIVATION_IN_PROGRESS' })).toBe(false);
+    expect(isCurrent(items.complaints, '/mentoring/complaints', {})).toBe(true);
     expect(isCurrent(items.complaints, '/mentoring/dashboard', { card: 'complaints_open' })).toBe(true);
     expect(isCurrent(items.overview, '/mentoring/dashboard', { card: 'complaints_open' })).toBe(false);
     expect(isCurrent(items.overview, '/mentoring/overview', {})).toBe(true);

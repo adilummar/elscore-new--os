@@ -13,6 +13,7 @@ import { ActivationTable, AgendaRow, AttentionPanel, ErrorNote, MentorTable, Pag
 jest.mock('@/lib/api/auth', () => ({ getSession: jest.fn() }));
 jest.mock('@/components/dashboard/CeoDashboard', () => ({ __esModule: true, default: function CeoDashboard() { return null; } }));
 jest.mock('@/components/dashboard/OperationalDashboard', () => ({ __esModule: true, default: function OperationalDashboard() { return null; } }));
+jest.mock('@/components/dashboard/MentorDashboard', () => ({ __esModule: true, default: function MentorDashboard() { return null; } }));
 jest.mock('./MentoringOverview', () => ({ ...jest.requireActual('./MentoringOverview'), MentoringOverview: function MentoringOverview() { return null; } }));
 jest.mock('../mentoring/mentoring-client', () => ({ mentoringApi: jest.fn().mockResolvedValue({}) }));
 jest.mock('next/link', () => ({ __esModule: true, default: ({ href, children, ...rest }: any) => React.createElement('a', { href, ...rest }, children) }));
@@ -35,19 +36,23 @@ const classRow = (over: Partial<TodayRow> = {}): TodayRow => ({ key: 'k1', activ
 const today = (rows: TodayRow[] = [classRow()]): Today => ({ ...paged(rows), date: '2026-11-09', today: '2026-11-09', counts: {}, consumed: rows.filter((r) => r.consumption === 'CONSUMED').length });
 
 describe('which dashboard a person gets', () => {
-  const as = async (permissions: string[]) => {
-    (getSession as jest.Mock).mockResolvedValue({ permissions });
+  const as = async (permissions: string[], roles: string[] = []) => {
+    (getSession as jest.Mock).mockResolvedValue({ permissions, roles });
     return (await DashboardPage({ searchParams: {} })) as any;
   };
 
-  it('sends the Mentoring Head and a Mentor to Classes, never to the Sales dashboard', async () => {
+  it('lands a Mentor on the dedicated MentorDashboard and sends Mentoring Head to Classes', async () => {
     const { redirect } = jest.requireMock('next/navigation');
     redirect.mockClear();
-    await as(['mentoring.student.read-all', 'mentoring.allocation.manage']);
-    await as(['mentoring.student.read-assigned', 'mentoring.stage.work']);
-    expect(redirect).toHaveBeenCalledTimes(2);
-    expect(redirect).toHaveBeenNthCalledWith(1, '/mentoring/classes');
-    expect(redirect).toHaveBeenNthCalledWith(2, '/mentoring/classes');
+
+    // Mentoring Head is redirected to Classes
+    await as(['mentoring.student.read-all', 'mentoring.allocation.manage'], ['MENTORING_HEAD']);
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith('/mentoring/classes');
+
+    // Mentor lands on dedicated MentorDashboard
+    const mentorPage = await as(['mentoring.student.read-assigned', 'mentoring.stage.work'], ['MENTOR']);
+    expect(mentorPage.type.name).toBe('MentorDashboard');
   });
 
   it('leaves the CEO, Sales and anyone who also does Sales exactly as they were', async () => {

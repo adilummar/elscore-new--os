@@ -13,13 +13,14 @@ const wide = (can: Can) => can('mentoring.student.read-all');
 /** Phase 1 onboarding is the students whose activation is in progress. */
 export const ONBOARDING_HREF = '/mentoring/students?status=ACTIVATION_IN_PROGRESS';
 
-/** The three workspaces. They stay first and largest. */
+/** The four workspaces. They stay first and largest. */
 export function primaryNav(can: Can): NavItem[] {
   if (!sees(can)) return [];
   return [
     { href: '/mentoring/classes', label: 'Classes', section: 'classes' },
     { href: '/mentoring/exams', label: 'Exams', section: 'exams' },
     { href: '/mentoring/meetings', label: 'Meetings', section: 'meetings' },
+    { href: '/mentoring/complaints', label: 'Complaints', section: 'complaints' },
   ];
 }
 
@@ -29,7 +30,6 @@ export function secondaryNav(can: Can): NavItem[] {
   if (sees(can)) {
     out.push({ href: '/mentoring/students', label: wide(can) ? 'All students' : 'My students', section: 'students' });
     out.push({ href: ONBOARDING_HREF, label: 'Phase 1 onboarding', section: 'onboarding' });
-    out.push({ href: '/mentoring/dashboard?card=complaints_open', label: 'Complaints', section: 'complaints' });
   }
   if (can('mentoring.task.work') || can('mentoring.task.create')) out.push({ href: '/mentoring/tasks', label: 'Pending actions', section: 'tasks' });
   if (can('mentoring.allocation.read') || can('mentoring.staff.read')) out.push({ href: '/mentoring/allocation', label: 'Allocation', section: 'allocation' });
@@ -59,7 +59,7 @@ export function isCurrent(item: NavItem, pathname: string, query: { status?: str
   const section = sectionOf(pathname);
   if (item.section === 'onboarding') return section === 'students' && query.status === 'ACTIVATION_IN_PROGRESS';
   if (item.section === 'students') return section === 'students' && query.status !== 'ACTIVATION_IN_PROGRESS';
-  if (item.section === 'complaints') return section === 'dashboard' && !!query.card?.startsWith('complaints_');
+  if (item.section === 'complaints') return section === 'complaints' || (section === 'dashboard' && !!query.card?.startsWith('complaints_'));
   return item.section === section;
 }
 
@@ -71,7 +71,7 @@ export function readOnlyNotice(can: Can): string | null {
 
 const titleOf = (section: string, can?: Can): string => {
   const base: Record<string, string> = {
-    classes: 'Classes', exams: 'Exams', meetings: 'Meetings', students: can && wide(can) ? 'All students' : 'My students', tasks: 'Pending actions', allocation: 'Allocation',
+    classes: 'Classes', exams: 'Exams', meetings: 'Meetings', complaints: 'Complaints', students: can && wide(can) ? 'All students' : 'My students', tasks: 'Pending actions', allocation: 'Allocation',
     approvals: 'Final approvals', staff: 'Mentors and counselors', dashboard: 'Work lists', overview: can && wide(can) ? 'Department overview' : 'Overview',
   };
   return base[section] ?? 'Mentoring';
