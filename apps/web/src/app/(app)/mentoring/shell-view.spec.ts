@@ -3,9 +3,9 @@ import { breadcrumbsOf, isCurrent, landingPath, primaryNav, readOnlyNotice, seco
 const has = (...p: string[]) => (x: string) => p.includes(x);
 
 describe('the Mentoring shell', () => {
-  it('shows Classes, Exams, Meetings and Complaints first, in that order, to anyone who can see students', () => {
-    expect(primaryNav(has('mentoring.student.read-assigned')).map((n) => n.label)).toEqual(['Classes', 'Exams', 'Meetings', 'Complaints']);
-    expect(primaryNav(has('mentoring.student.read-all')).map((n) => n.label)).toEqual(['Classes', 'Exams', 'Meetings', 'Complaints']);
+  it('shows Students first, then Classes, Exams, Meetings and Complaints, to anyone who can see students', () => {
+    expect(primaryNav(has('mentoring.student.read-assigned')).map((n) => n.label)).toEqual(['Students', 'Classes', 'Exams', 'Meetings', 'Complaints']);
+    expect(primaryNav(has('mentoring.student.read-all')).map((n) => n.label)).toEqual(['Students', 'Classes', 'Exams', 'Meetings', 'Complaints']);
   });
 
   it('shows no workspace to someone without student access', () => {
@@ -14,7 +14,7 @@ describe('the Mentoring shell', () => {
 
   it('keeps allocation, staff and final approvals away from a plain Mentor', () => {
     const labels = secondaryNav(has('mentoring.student.read-assigned', 'mentoring.task.work')).map((n) => n.label);
-    expect(labels).toEqual(['My students', 'Phase 1 onboarding', 'Pending actions', 'Overview']);
+    expect(labels).toEqual(['Phase 1 onboarding', 'Pending actions', 'Overview']);
   });
 
   it('offers allocation and staff to those who hold the permission', () => {
@@ -42,16 +42,16 @@ describe('the Mentoring shell', () => {
   it('builds breadcrumbs with a linked parent and an unlinked current page', () => {
     expect(breadcrumbsOf('/mentoring/classes')).toEqual([{ label: 'Mentoring', href: '/mentoring' }, { label: 'Classes' }]);
     expect(breadcrumbsOf('/mentoring/students/abc', 'Asha')).toEqual([
-      { label: 'Mentoring', href: '/mentoring' }, { label: 'My students', href: '/mentoring/students' }, { label: 'Asha' },
+      { label: 'Mentoring', href: '/mentoring' }, { label: 'Students', href: '/mentoring/students' }, { label: 'Asha' },
     ]);
   });
 
-  it('words the student and overview links for department-wide visibility', () => {
+  it('words the overview link for department-wide visibility, and calls the student list Students for everyone', () => {
     const labels = secondaryNav(has('mentoring.student.read-all')).map((n) => n.label);
-    expect(labels).toEqual(expect.arrayContaining(['All students', 'Department overview']));
-    expect(labels).not.toContain('My students');
-    expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-all'))[1].label).toBe('All students');
-    expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-assigned'))[1].label).toBe('My students');
+    expect(labels).toEqual(expect.arrayContaining(['Department overview']));
+    expect(primaryNav(has('mentoring.student.read-all'))[0].label).toBe('Students');
+    expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-all'))[1].label).toBe('Students');
+    expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-assigned'))[1].label).toBe('Students');
   });
 
   it('tells items that share a page apart by their query', () => {
@@ -66,7 +66,7 @@ describe('the Mentoring shell', () => {
     expect(isCurrent(items.overview, '/mentoring/dashboard', { card: 'complaints_open' })).toBe(false);
     expect(isCurrent(items.overview, '/mentoring/overview', {})).toBe(true);
     expect(items.overview.href).toBe('/mentoring/overview');
-    expect(isCurrent(primaryNav(() => true)[0], '/mentoring/classes/abc', {})).toBe(true);
+    expect(isCurrent(primaryNav(() => true)[1], '/mentoring/classes/abc', {})).toBe(true);
   });
 
   it('says so to someone who can view but not work, and stays quiet for a Mentor', () => {

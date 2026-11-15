@@ -374,6 +374,18 @@ export class MentoringClassService {
     return filters.state ? list.filter((c) => c.state === filters.state) : list;
   }
 
+  /**
+   * Every stored class record of the given students, newest first, and nothing else: no class is generated from a rule here, so a
+   * student never shows a record that does not exist. The caller has already checked who may see these students. Built in one pass.
+   */
+  async stored(activationIds: string[], range: { from?: string; to?: string; limit?: number } = {}, now: Date = new Date()): Promise<ClassView[]> {
+    if (activationIds.length === 0) return [];
+    const where: Record<string, unknown> = { activationId: { in: activationIds } };
+    if (range.from || range.to) where.date = { ...(range.from ? { gte: asDate(range.from) } : {}), ...(range.to ? { lte: asDate(range.to) } : {}) };
+    const rows = await this.db.mentoringClassSession.findMany({ where, orderBy: [{ date: 'desc' }, { startMinute: 'desc' }], take: Math.min(500, Math.max(1, range.limit ?? 300)) });
+    return this.build(this.db, rows.map((r) => ({ occurrence: null, session: r })), now);
+  }
+
   /** One class in full for the Mentor to review: the update, the checklist, the warnings and its history. */
   async detail(sessionId: string, scope: MentoringScope, now: Date = new Date()) {
     this.access.requireAnyScope(scope);

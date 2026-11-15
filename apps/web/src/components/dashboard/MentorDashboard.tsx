@@ -28,6 +28,7 @@ import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '@/app/(app)/mentoring/mentoring-client';
 import { ClassWorkspaceDrawer } from '@/app/(app)/mentoring/ClassWorkspaceDrawer';
 import { dayLabel, longDayLabel } from '@/app/(app)/mentoring/timetable-view';
+import { studentsHref } from '@/app/(app)/mentoring/student-hub-view';
 import {
   CLASS_STATES,
   COMPLAINT_CATEGORIES,
@@ -436,6 +437,22 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          <Link href={studentsHref()}>
+            <Button size="sm" variant="outline" className="flex items-center gap-1">
+              <Users className="h-4 w-4" />
+              Students
+            </Button>
+          </Link>
+          <Link href={studentsHref({ pendingVerification: true })}>
+            <Button size="sm" variant="outline" className="flex items-center gap-1">
+              To verify
+            </Button>
+          </Link>
+          <Link href={studentsHref({ upcomingExam: true })}>
+            <Button size="sm" variant="outline" className="flex items-center gap-1">
+              Exams soon
+            </Button>
+          </Link>
           <Link href="/mentoring/classes">
             <Button size="sm" variant="outline" className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />

@@ -13,10 +13,11 @@ const wide = (can: Can) => can('mentoring.student.read-all');
 /** Phase 1 onboarding is the students whose activation is in progress. */
 export const ONBOARDING_HREF = '/mentoring/students?status=ACTIVATION_IN_PROGRESS';
 
-/** The four workspaces. They stay first and largest. */
+/** The workspaces. Students comes first: it is where a Mentor finds a student and sees their whole journey. The rest stay large. */
 export function primaryNav(can: Can): NavItem[] {
   if (!sees(can)) return [];
   return [
+    { href: '/mentoring/students', label: 'Students', section: 'students' },
     { href: '/mentoring/classes', label: 'Classes', section: 'classes' },
     { href: '/mentoring/exams', label: 'Exams', section: 'exams' },
     { href: '/mentoring/meetings', label: 'Meetings', section: 'meetings' },
@@ -28,7 +29,6 @@ export function primaryNav(can: Can): NavItem[] {
 export function secondaryNav(can: Can): NavItem[] {
   const out: NavItem[] = [];
   if (sees(can)) {
-    out.push({ href: '/mentoring/students', label: wide(can) ? 'All students' : 'My students', section: 'students' });
     out.push({ href: ONBOARDING_HREF, label: 'Phase 1 onboarding', section: 'onboarding' });
   }
   if (can('mentoring.task.work') || can('mentoring.task.create')) out.push({ href: '/mentoring/tasks', label: 'Pending actions', section: 'tasks' });
@@ -41,7 +41,8 @@ export function secondaryNav(can: Can): NavItem[] {
 
 /** The first place a person should land, or null when Mentoring has nothing for them. */
 export function landingPath(can: Can): string | null {
-  const first = primaryNav(can)[0] ?? secondaryNav(can)[0];
+  // A Mentor still lands on the day's classes; Students is one click away.
+  const first = primaryNav(can).find((n) => n.section !== 'students') ?? secondaryNav(can)[0];
   return first ? first.href.split('?')[0] : null;
 }
 
@@ -71,7 +72,7 @@ export function readOnlyNotice(can: Can): string | null {
 
 const titleOf = (section: string, can?: Can): string => {
   const base: Record<string, string> = {
-    classes: 'Classes', exams: 'Exams', meetings: 'Meetings', complaints: 'Complaints', students: can && wide(can) ? 'All students' : 'My students', tasks: 'Pending actions', allocation: 'Allocation',
+    classes: 'Classes', exams: 'Exams', meetings: 'Meetings', complaints: 'Complaints', students: 'Students', tasks: 'Pending actions', allocation: 'Allocation',
     approvals: 'Final approvals', staff: 'Mentors and counselors', dashboard: 'Work lists', overview: can && wide(can) ? 'Department overview' : 'Overview',
   };
   return base[section] ?? 'Mentoring';

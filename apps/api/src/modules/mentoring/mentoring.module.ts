@@ -26,6 +26,8 @@ import { MentoringHandoverService } from './mentoring-handover.service';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringLearningPlanService } from './mentoring-learning-plan.service';
 import { MentoringOperationsController } from './mentoring-operations.controller';
+import { MentoringStudentHubController } from './mentoring-student-hub.controller';
+import { MentoringStudentHubService } from './mentoring-student-hub.service';
 import { MentoringOverviewController } from './mentoring-overview.controller';
 import { MentoringOverviewService } from './mentoring-overview.service';
 import { MentoringReminderJobsService } from './mentoring-reminder-jobs.service';
@@ -46,7 +48,7 @@ import { TutorClassesController } from './tutor-classes.controller';
 
 @Module({
   imports: [PrismaModule, AuditModule, RbacModule, BullModule.registerQueue({ name: QUEUES.MENTORING })],
-  controllers: [MentoringActivityOptionController, MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
+  controllers: [MentoringActivityOptionController, MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringStudentHubController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
   providers: [
     MentoringHandoverService,
     MentoringAccessService,
@@ -68,6 +70,7 @@ import { TutorClassesController } from './tutor-classes.controller';
     MentoringComplaintService,
     MentoringDashboardService,
     MentoringOverviewService,
+    MentoringStudentHubService,
     MentoringStorageService,
     MentoringClassWorkspaceService,
     MentoringClassStageService,

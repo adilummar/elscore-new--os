@@ -320,3 +320,27 @@ export class TaskReasonDto {
   @IsString() @IsNotEmpty() reason!: string;
 }
 
+
+/** Filters for the Mentor Portal Students list. Each one is checked by the service, which says what is wrong. */
+export class StudentHubListQueryDto {
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsString() grade?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() consumption?: string;
+  @IsOptional() @IsString() pendingVerification?: string;
+  @IsOptional() @IsString() upcomingExam?: string;
+  @IsOptional() @IsString() mentorUserId?: string;
+  @IsOptional() @IsString() month?: string;
+  @IsOptional() @IsString() sort?: string;
+  @IsOptional() @IsString() dir?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() pageSize?: string;
+}
+
+export class StudentHubClassesQueryDto {
+  @IsOptional() @IsString() state?: string;
+  @IsOptional() @IsString() subjectId?: string;
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
+}

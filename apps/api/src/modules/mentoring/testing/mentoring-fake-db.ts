@@ -186,6 +186,10 @@ export class FakeDb {
       case 'mentoringStage.exceptions': return by('workflowException', 'stageId', row.id);
       case 'mentoringTask.comments': return by('mentoringTaskComment', 'taskId', row.id);
       case 'mentoringTask.activation': return by('mentoringActivation', 'id', row.activationId);
+      case 'mentoringActivation.tutorAssignments': return by('mentoringTutorAssignment', 'activationId', row.id);
+      case 'mentoringClassSession.activation': return by('mentoringActivation', 'id', row.activationId);
+      case 'mentoringExam.activation': return by('mentoringActivation', 'id', row.activationId);
+      case 'mentoringTutorAssignment.activation': return by('mentoringActivation', 'id', row.activationId);
       case 'mentoringTask.stage': return by('mentoringStage', 'id', row.stageId);
       case 'user.employee': return by('employee', 'userId', row.id);
       case 'userRole.role': return row.roleId === undefined ? [] : by('role', 'id', row.roleId);
