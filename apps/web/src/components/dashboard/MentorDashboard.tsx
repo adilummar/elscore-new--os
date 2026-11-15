@@ -433,7 +433,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             disabled={loading}
             className="flex items-center gap-1.5"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'motion-safe:animate-spin' : ''}`} />
             Refresh
           </Button>
           <Link href="/mentoring/classes">
@@ -468,7 +468,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
       {/* ─── Filter Bar ───────────────────────────────────────────────────────────────────────── */}
       <section aria-label="Dashboard Filters" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs" data-testid="dashboard-filters-bar">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
             <Filter className="h-3.5 w-3.5" />
             Operational Filters
           </div>
@@ -510,7 +510,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Student Search</label>
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-600" />
               <Input
                 placeholder="Student name or ID..."
                 value={studentQuery}
@@ -577,7 +577,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
 
         {hasActiveFilters && (
           <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-            <span className="text-slate-500">Filters applied</span>
+            <span className="text-slate-600">Filters applied</span>
             <Button type="button" size="sm" variant="ghost" onClick={clearAllFilters} className="text-xs">
               Clear All Filters
             </Button>
@@ -605,7 +605,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className={`block text-2xl font-bold ${studentMetrics.handoverPending > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+            <span className={`block text-2xl font-bold ${studentMetrics.handoverPending > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
               {studentMetrics.handoverPending}
             </span>
             <span className="block text-xs font-medium text-slate-600 mt-1">Handover Pending</span>
@@ -638,13 +638,13 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
               <Clock className="h-5 w-5 text-brand-600" />
               Teaching Hours Overview
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-600">
               Hours breakdown for selected period: <span className="font-semibold text-slate-700">{period === 'day' ? 'Today' : period === 'week' ? 'This Week' : period === 'month' ? 'This Month' : `${from || 'Start'} to ${to || 'End'}`}</span>.
             </p>
           </div>
 
           <div className="text-right">
-            <span className="text-xs font-medium text-slate-500">Verification Progress</span>
+            <span className="text-xs font-medium text-slate-600">Verification Progress</span>
             <p className="text-sm font-bold text-slate-900">{hoursMetrics.progressPercent}% of scheduled</p>
           </div>
         </div>
@@ -654,25 +654,25 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
           <div className="rounded-lg bg-slate-50 p-3.5 border border-slate-100">
             <span className="block text-xs font-medium text-slate-600">Scheduled Hours</span>
             <span className="block text-xl font-bold text-slate-900 mt-1">{hoursMetrics.scheduled}</span>
-            <span className="block text-[11px] text-slate-400 mt-0.5">From approved schedule</span>
+            <span className="block text-xs text-slate-600 mt-0.5">From approved schedule</span>
           </div>
 
           <div className="rounded-lg bg-slate-50 p-3.5 border border-slate-100">
             <span className="block text-xs font-medium text-slate-600">Tutor-Reported Hours</span>
             <span className="block text-xl font-bold text-slate-900 mt-1">{hoursMetrics.reported}</span>
-            <span className="block text-[11px] text-slate-400 mt-0.5">Reported by tutors</span>
+            <span className="block text-xs text-slate-600 mt-0.5">Reported by tutors</span>
           </div>
 
           <div className="rounded-lg bg-emerald-50 p-3.5 border border-emerald-100">
             <span className="block text-xs font-medium text-emerald-800">Mentor-Verified Hours</span>
             <span className="block text-xl font-bold text-emerald-900 mt-1">{hoursMetrics.verified}</span>
-            <span className="block text-[11px] text-emerald-700 mt-0.5">Consumed & payout authorized</span>
+            <span className="block text-xs text-emerald-700 mt-0.5">Consumed & payout authorized</span>
           </div>
 
           <div className="rounded-lg bg-amber-50 p-3.5 border border-amber-100">
-            <span className="block text-xs font-medium text-amber-800">Remaining Unverified Hours</span>
+            <span className="block text-xs font-medium text-amber-700">Remaining Unverified Hours</span>
             <span className="block text-xl font-bold text-amber-900 mt-1">{hoursMetrics.remaining}</span>
-            <span className="block text-[11px] text-amber-700 mt-0.5">Awaiting verification</span>
+            <span className="block text-xs text-amber-700 mt-0.5">Awaiting verification</span>
           </div>
         </div>
 
@@ -742,7 +742,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             href="/mentoring/classes?card=classes_awaiting_verification"
             className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-xs transition-all hover:border-amber-400 hover:shadow-sm"
           >
-            <span className={`block text-2xl font-bold ${todayAwaitingVerification > 0 ? 'text-amber-800' : 'text-slate-900'}`}>
+            <span className={`block text-2xl font-bold ${todayAwaitingVerification > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
               {todayAwaitingVerification}
             </span>
             <span className="block text-xs font-medium text-amber-900 mt-1">Awaiting Verification</span>
@@ -773,7 +773,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             <UserCheck className="h-5 w-5 text-brand-600" />
             Phase 1 Handover Overview (7 Stages)
           </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-600">
             Complete stages 2–6 for your assigned students. Stage 7 final approval is strictly restricted to Mentoring Head.
           </p>
         </div>
@@ -785,12 +785,12 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
               key={s.number}
               className={`rounded-lg border p-2.5 ${s.number === 7 ? 'border-amber-200 bg-amber-50/60' : 'border-slate-200 bg-slate-50/70'}`}
             >
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
                 <span>Stage {s.number}</span>
-                {s.number === 7 && <span className="text-[10px] text-amber-700 font-bold">HEAD ONLY</span>}
+                {s.number === 7 && <span className="text-xs text-amber-700 font-bold">HEAD ONLY</span>}
               </div>
               <p className="font-semibold text-slate-900 mt-0.5 truncate" title={s.name}>{s.name}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{s.owner}</p>
+              <p className="text-xs text-slate-600 mt-0.5">{s.owner}</p>
             </div>
           ))}
         </div>
@@ -798,7 +798,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
         {/* Students in Handover Table */}
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-left text-sm" data-testid="handover-students-table">
-            <thead className="bg-slate-50 text-xs font-medium text-slate-500 border-b border-slate-200">
+            <thead className="bg-slate-50 text-xs font-medium text-slate-600 border-b border-slate-200">
               <tr>
                 <th className="px-3 py-2.5">Student</th>
                 <th className="px-3 py-2.5">Current Stage</th>
@@ -811,7 +811,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             <tbody className="divide-y divide-slate-100">
               {handoverActivations.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-500">
+                  <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-600">
                     No students currently pending in Phase 1 handover.
                   </td>
                 </tr>
@@ -820,7 +820,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                   <tr key={a.activationId} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-3 py-2.5 font-medium text-slate-900">
                       {a.studentName}
-                      {a.studentId ? <span className="ml-1 text-xs text-slate-500 font-normal">({a.studentId})</span> : null}
+                      {a.studentId ? <span className="ml-1 text-xs text-slate-600 font-normal">({a.studentId})</span> : null}
                     </td>
                     <td className="px-3 py-2.5">
                       <Badge variant={a.stageNumber === 7 ? 'warning' : 'default'} className="text-xs">
@@ -834,7 +834,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                     </td>
                     <td className="px-3 py-2.5 text-xs">
                       {a.stageNumber === 7 ? (
-                        <span className="font-semibold text-amber-800">Mentoring Head (Restricted)</span>
+                        <span className="font-semibold text-amber-700">Mentoring Head (Restricted)</span>
                       ) : (
                         <span className="text-slate-700">{a.responsible}</span>
                       )}
@@ -878,7 +878,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             </div>
 
             {filteredTodayClasses.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">No classes scheduled for today.</p>
+              <p className="py-6 text-center text-xs text-slate-600">No classes scheduled for today.</p>
             ) : (
               <div className="space-y-2.5">
                 {filteredTodayClasses.map((c: any) => {
@@ -904,7 +904,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                           <h4 className="text-sm font-semibold text-slate-900">
                             {c.studentName} — <span className="font-normal text-slate-600">{c.subjectName}</span>
                           </h4>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-600 mt-0.5">
                             Tutor: {c.tutorName} • Time: {formatMinute(c.startMinute)} – {formatMinute(c.endMinute)}
                           </p>
                         </div>
@@ -914,7 +914,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                       </div>
 
                       <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-                        <span className="text-slate-500">{c.stateLabel}</span>
+                        <span className="text-slate-600">{c.stateLabel}</span>
                         <Button
                           type="button"
                           size="sm"
@@ -946,7 +946,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             </div>
 
             {filteredExams.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">No exams or verified hours tracked.</p>
+              <p className="py-6 text-center text-xs text-slate-600">No exams or verified hours tracked.</p>
             ) : (
               <div className="space-y-2.5">
                 {filteredExams.slice(0, 6).map((e: any) => {
@@ -967,7 +967,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <h4 className="text-sm font-semibold text-slate-900">{e.studentName}</h4>
-                          <p className="text-xs text-slate-500">{e.subjectName}</p>
+                          <p className="text-xs text-slate-600">{e.subjectName}</p>
                         </div>
                         <Badge
                           variant={e.scheduledExam ? 'info' : e.due ? 'success' : 'default'}
@@ -979,7 +979,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
 
                       {/* 3-hour verified progress bar */}
                       <div className="mt-3 space-y-1">
-                        <div className="flex justify-between text-[11px] text-slate-600">
+                        <div className="flex justify-between text-xs text-slate-600">
                           <span>Verified Class Time</span>
                           <span className="font-semibold">{verifiedHours} / {thresholdHours} hrs ({e.progressPercent}%)</span>
                         </div>
@@ -1019,7 +1019,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
             </div>
 
             {upcomingMeetings.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">No upcoming parent meetings.</p>
+              <p className="py-6 text-center text-xs text-slate-600">No upcoming parent meetings.</p>
             ) : (
               <div className="space-y-2.5">
                 {upcomingMeetings.slice(0, 5).map((m: any) => {
@@ -1044,7 +1044,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <h4 className="text-sm font-semibold text-slate-900">{m.studentName}</h4>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-slate-600">
                             Parent: {m.parentName || 'Parent'} • Date: {m.date ? dayLabel(m.date) : 'Unscheduled'}
                           </p>
                         </div>
@@ -1054,7 +1054,7 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                       </div>
 
                       <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-                        <span className="text-slate-500">Status: {m.stateLabel}</span>
+                        <span className="text-slate-600">Status: {m.stateLabel}</span>
                         <Link
                           href={`/mentoring/students/${m.activationId}?panel=review`}
                           className="font-medium text-brand-700 hover:underline flex items-center gap-1"
@@ -1073,15 +1073,15 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
           <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
                 Pending Actions Queue ({pendingActions.length})
               </h3>
-              <span className="text-xs text-slate-500">Prioritized Attention</span>
+              <span className="text-xs text-slate-600">Prioritized Attention</span>
             </div>
 
             {pendingActions.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+              <div className="py-8 text-center text-xs text-slate-600 flex flex-col items-center gap-2">
+                <CheckCircle2 className="h-8 w-8 text-emerald-700" />
                 <span>All caught up! No urgent pending actions required.</span>
               </div>
             ) : (
@@ -1094,10 +1094,10 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 mb-1">
-                        <Badge variant="default" className="text-[10px] px-1.5 py-0">{item.category}</Badge>
+                        <Badge variant="default" className="text-xs px-1.5 py-0">{item.category}</Badge>
                         <Badge
                           variant={item.severity === 'danger' ? 'danger' : item.severity === 'warning' ? 'warning' : 'info'}
-                          className="text-[10px] px-1.5 py-0"
+                          className="text-xs px-1.5 py-0"
                         >
                           {item.slaText || item.severity}
                         </Badge>

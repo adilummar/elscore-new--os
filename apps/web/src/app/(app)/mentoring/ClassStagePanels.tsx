@@ -20,7 +20,7 @@ import type { WorkspaceData } from './workspace-view';
 export type Run = (label: string, fn: () => Promise<unknown>, done: string, then?: () => void) => void;
 interface PanelProps { w: WorkspaceData; classKey: string; busy: boolean; canWork: boolean; run: Run; go: (id: StepId) => void }
 
-const FIELD = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
+const FIELD = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 const BOX = 'mt-0.5 h-5 w-5 shrink-0 rounded border-slate-400 text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
 const closed = (w: WorkspaceData) => ['CANCELLED', 'VERIFIED', 'NOT_CONDUCTED'].includes(w.class.status);
 

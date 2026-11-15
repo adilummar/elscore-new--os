@@ -35,14 +35,14 @@ export function TaskBoardClient() {
       </div>
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 text-sm">
-        {tasks.length === 0 && <p className="p-4 text-slate-500">No tasks.</p>}
+        {tasks.length === 0 && <p className="p-4 text-slate-600">No tasks.</p>}
         {tasks.map((t) => (
           <div key={t.id} className="p-3 flex flex-wrap items-center gap-3">
             <Link href={`/mentoring/students/${t.activationId}`} className="font-medium text-brand-700 hover:underline">{t.title}</Link>
-            <span className="text-slate-500">{t.studentName} ({t.studentBusinessId})</span>
+            <span className="text-slate-600">{t.studentName} ({t.studentBusinessId})</span>
             <Badge variant={statusVariant(t.status)}>{pretty(t.status)}</Badge>
             <Badge>{PRIORITY_LABELS[t.priority] ?? pretty(t.priority)}</Badge>
-            {t.dueAt && <span className={`text-xs ${overdue(t) ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>Due {fmt(t.dueAt)}{overdue(t) ? ' · overdue' : ''}</span>}
+            {t.dueAt && <span className={`text-xs ${overdue(t) ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>Due {fmt(t.dueAt)}{overdue(t) ? ' · overdue' : ''}</span>}
             {t.returnReason && <span className="text-xs text-red-600">Returned: {t.returnReason}</span>}
           </div>
         ))}

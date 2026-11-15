@@ -12,7 +12,7 @@ import { dayLabel, longDayLabel } from '../mentoring/timetable-view';
 import { ClassWorkspaceDrawer } from '../mentoring/ClassWorkspaceDrawer';
 import { tutorPortalApi } from './client';
 
-const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500';
+const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500';
 const when = (iso: string) => `${dayLabel(iso.slice(0, 10))}, ${iso.slice(11, 16)} UTC`;
 const money = (n: number | null, currency: string | null) => (n === null ? 'No rate set' : `${currency ?? 'AED'} ${n.toFixed(2)}`);
 
@@ -89,13 +89,13 @@ export function ClassUpdateForm({ c, draft, busy = false, error = null, onChange
       )}
 
       {draft.conducted !== '' && (
-        <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={draft.voiceSent} onChange={(e) => set('voiceSent', e.target.checked)} /><span>I have sent my voice update to the Mentor. <span className="text-slate-500">The Mentor confirms when it arrives. Nothing is recorded or stored here.</span></span></label>
+        <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={draft.voiceSent} onChange={(e) => set('voiceSent', e.target.checked)} /><span>I have sent my voice update to the Mentor. <span className="text-slate-600">The Mentor confirms when it arrives. Nothing is recorded or stored here.</span></span></label>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" isLoading={busy} disabled={busy || problems.length > 0} onClick={onSubmit}>Submit class update</Button>
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        {problems.length > 0 && <p className="text-xs text-slate-500" data-testid="update-missing">Still needed: {problems.join(', ')}.</p>}
+        {problems.length > 0 && <p className="text-xs text-slate-600" data-testid="update-missing">Still needed: {problems.join(', ')}.</p>}
       </div>
       <p className="mt-1 text-xs text-slate-600">Submitting sends the update to your Mentor. The class counts as completed only after the Mentor verifies it.</p>
       {error && <p role="alert" className="mt-2 text-xs font-medium text-red-600">{error}</p>}
@@ -111,7 +111,7 @@ export function MyClassCard({ c, onUpdate, onWorkspace }: { c: ClassItem; onUpda
   return (
     <article aria-label={`${c.subjectName} ${timeLabel(c)}`} className="rounded-md border border-slate-200 bg-white p-3" data-testid="my-class" data-state={c.state}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto text-sm font-semibold text-slate-900">{c.subjectName}<span className="ml-2 font-normal text-slate-500">{dayLabel(c.date)}, {timeLabel(c)}</span></h3>
+        <h3 className="mr-auto text-sm font-semibold text-slate-900">{c.subjectName}<span className="ml-2 font-normal text-slate-600">{dayLabel(c.date)}, {timeLabel(c)}</span></h3>
         {c.moved && <Badge variant="info">Moved</Badge>}
         <Badge variant={STATE_TONE[c.state]}>{c.stateLabel}</Badge>
       </div>
@@ -164,7 +164,7 @@ export function MyClasses({ from, to }: { from: string; to: string }) {
       <h2 className="text-base font-semibold text-slate-900">Class updates</h2>
       {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
-      {classes && classes.length === 0 && <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-500">You have no classes in these dates.</p>}
+      {classes && classes.length === 0 && <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600">You have no classes in these dates.</p>}
       {classes?.map((c) => (
         <div key={c.key} className="space-y-2">
           <MyClassCard c={c} onUpdate={() => { setNotice(null); setFormError(null); setDraft(draftFromClass(c)); setOpen(c.key); }} onWorkspace={() => setWorkspace(workspace === c.key ? null : c.key)} />
@@ -183,23 +183,23 @@ export function EarningsView({ data }: { data: EarningsData }) {
     <div className="space-y-3" data-testid="earnings">
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {([['Verified teaching time', hoursText(t.verifiedMinutes)], ['Pending Mentor verification', hoursText(t.pendingMinutes)], ['Estimated amount', t.estimatedAmount.toFixed(2)], ['Classes with no rate set', String(t.classesWithoutRate)]] as Array<[string, string]>).map(([k, v]) => (
-          <div key={k} className="rounded-md border border-slate-200 bg-white px-3 py-2"><dt className="text-xs text-slate-500">{k}</dt><dd className="text-sm font-semibold text-slate-900">{v}</dd></div>
+          <div key={k} className="rounded-md border border-slate-200 bg-white px-3 py-2"><dt className="text-xs text-slate-600">{k}</dt><dd className="text-sm font-semibold text-slate-900">{v}</dd></div>
         ))}
       </dl>
       <p className="text-xs text-slate-600">{data.note}</p>
 
       <section aria-label="Verified classes" className="rounded-md border border-slate-200 bg-white">
         <h3 className="border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">Verified classes</h3>
-        {data.verified.length === 0 ? <p className="px-3 py-3 text-sm text-slate-500">No class has been verified in these dates.</p> : (
-          <table className="w-full text-sm"><thead className="text-left text-xs text-slate-500"><tr><th className="px-3 py-1.5 font-medium">Date</th><th className="px-3 py-1.5 font-medium">Subject</th><th className="px-3 py-1.5 font-medium">Verified</th><th className="px-3 py-1.5 font-medium">Estimate</th><th className="px-3 py-1.5 font-medium">Payroll</th></tr></thead>
+        {data.verified.length === 0 ? <p className="px-3 py-3 text-sm text-slate-600">No class has been verified in these dates.</p> : (
+          <table className="w-full text-sm"><thead className="text-left text-xs text-slate-600"><tr><th className="px-3 py-1.5 font-medium">Date</th><th className="px-3 py-1.5 font-medium">Subject</th><th className="px-3 py-1.5 font-medium">Verified</th><th className="px-3 py-1.5 font-medium">Estimate</th><th className="px-3 py-1.5 font-medium">Payroll</th></tr></thead>
             <tbody>
               {data.verified.map((v) => (
                 <tr key={v.sessionId} className="border-t border-slate-100 align-top" data-testid="verified-row">
                   <td className="px-3 py-1.5">{dayLabel(v.date)}</td>
                   <td className="px-3 py-1.5">{v.subject}</td>
-                  <td className="px-3 py-1.5">{hoursText(v.verifiedMinutes)}<span className="block text-xs text-slate-500">{hoursText(v.scheduledMinutes)} scheduled{v.actualMinutes != null ? `, ${hoursText(v.actualMinutes)} reported` : ''}</span></td>
+                  <td className="px-3 py-1.5">{hoursText(v.verifiedMinutes)}<span className="block text-xs text-slate-600">{hoursText(v.scheduledMinutes)} scheduled{v.actualMinutes != null ? `, ${hoursText(v.actualMinutes)} reported` : ''}</span></td>
                   <td className="px-3 py-1.5">{money(v.estimatedAmount, v.currency)}</td>
-                  <td className="px-3 py-1.5">{v.payroll ? <>{v.payroll.period ?? 'Payroll run'}<span className="block text-xs text-slate-500">{v.payroll.paymentStatus === 'PAID' ? `Paid${v.payroll.paidAt ? ` ${dayLabel(v.payroll.paidAt.slice(0, 10))}` : ''}` : 'Unpaid'}, {money(v.payroll.amount, v.payroll.currency)}</span></> : <span className="text-slate-500">Not in a payroll run yet</span>}
+                  <td className="px-3 py-1.5">{v.payroll ? <>{v.payroll.period ?? 'Payroll run'}<span className="block text-xs text-slate-600">{v.payroll.paymentStatus === 'PAID' ? `Paid${v.payroll.paidAt ? ` ${dayLabel(v.payroll.paidAt.slice(0, 10))}` : ''}` : 'Unpaid'}, {money(v.payroll.amount, v.payroll.currency)}</span></> : <span className="text-slate-600">Not in a payroll run yet</span>}
                     {v.adjustments.map((a) => <span key={a.at} className="block text-xs text-amber-800">Correction {a.deltaMinutes > 0 ? '+' : ''}{a.deltaMinutes} min: {a.reason}</span>)}</td>
                 </tr>
               ))}
@@ -209,7 +209,7 @@ export function EarningsView({ data }: { data: EarningsData }) {
 
       <section aria-label="Pending verification" className="rounded-md border border-slate-200 bg-white">
         <h3 className="border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">Pending Mentor verification</h3>
-        {data.pending.length === 0 ? <p className="px-3 py-3 text-sm text-slate-500">Nothing is waiting for your Mentor.</p> : (
+        {data.pending.length === 0 ? <p className="px-3 py-3 text-sm text-slate-600">Nothing is waiting for your Mentor.</p> : (
           <ul className="divide-y divide-slate-100 text-sm">
             {data.pending.map((p) => <li key={p.sessionId} className="px-3 py-1.5" data-testid="pending-row">{dayLabel(p.date)}, {p.subject}, {hoursText(p.pendingMinutes)}. {p.status === 'RETURNED_FOR_CORRECTION' ? 'Returned to you for correction.' : 'Waiting for the Mentor.'}</li>)}
           </ul>

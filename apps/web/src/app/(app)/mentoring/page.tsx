@@ -11,7 +11,7 @@ export default async function MentoringHome() {
   if (target) redirect(target);
   return (
     <div className="mx-auto max-w-5xl">
-      <p className="text-slate-500">You do not have access to any Mentoring area.</p>
+      <p className="text-slate-600">You do not have access to any Mentoring area.</p>
     </div>
   );
 }

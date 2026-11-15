@@ -59,6 +59,14 @@ const config: Config = {
         lg: "12px",
         xl: "16px",
       },
+      keyframes: {
+        "overlay-in": { from: { transform: "translateX(2rem)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
+        "overlay-fade": { from: { opacity: "0" }, to: { opacity: "1" } },
+      },
+      animation: {
+        "overlay-in": "overlay-in 200ms ease-out",
+        "overlay-fade": "overlay-fade 150ms ease-out",
+      },
       boxShadow: {
         soft: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
         floating: "0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025)",

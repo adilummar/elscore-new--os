@@ -9,7 +9,7 @@ import { longDayLabel } from '../mentoring/timetable-view';
 
 import { tutorPortalApi } from './client';
 
-const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500';
+const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500';
 
 interface EvaluationDraft { obtained: string; max: string; evaluationDate: string; weaknesses: string; topicsToImprove: string; tutorSuggestions: string }
 const draftOf = (e: ExamItem): EvaluationDraft => ({
@@ -53,7 +53,7 @@ export function MyExamCard({ e, busy = false, onReceipt, onEvaluate }: { e: Exam
   return (
     <article aria-label={`${e.subjectName} exam ${e.date}`} className="rounded-md border border-slate-200 bg-white p-3" data-testid="my-exam" data-state={e.state}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto text-sm font-semibold text-slate-900">{e.title}<span className="ml-2 font-normal text-slate-500">{e.subjectName}, {longDayLabel(e.date)}, {examTime(e)}</span></h3>
+        <h3 className="mr-auto text-sm font-semibold text-slate-900">{e.title}<span className="ml-2 font-normal text-slate-600">{e.subjectName}, {longDayLabel(e.date)}, {examTime(e)}</span></h3>
         {e.kind === 'RE_EXAM' && <Badge variant="info">Re-exam</Badge>}
         <Badge variant={EXAM_TONE[e.state]}>{e.stateLabel}</Badge>
       </div>
@@ -112,7 +112,7 @@ export function MyExams({ from, to }: { from: string; to: string }) {
       {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
       {formError && !open && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
-      {exams && exams.length === 0 && <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-500">You have no exams in these dates.</p>}
+      {exams && exams.length === 0 && <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600">You have no exams in these dates.</p>}
       {exams?.map((e) => (
         <div key={e.id} className="space-y-2">
           <MyExamCard e={e} busy={busy}

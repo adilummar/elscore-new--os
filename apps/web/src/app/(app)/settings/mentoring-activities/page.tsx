@@ -7,9 +7,10 @@ import { Card } from '@/components/ui/Card';
 import { usePermissions } from '@/components/providers/AuthProvider';
 
 import { mentoringApi } from '../../mentoring/mentoring-client';
+import { ListSkeleton } from '../../mentoring/mentoring-ui';
 import { ActivityOption, labelProblem, sortedOptions } from '../../mentoring/activity-options-view';
 
-const FIELD = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
+const FIELD = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 
 /**
  * The activities a Mentor can record as "given" in a class. Switching one off hides it from new choices but never changes a class that already
@@ -77,7 +78,7 @@ export default function MentoringActivitiesPage() {
       )}
 
       <Card className="p-0">
-        {!rows && !error && <p className="p-4 text-sm text-slate-700">Loading the activities</p>}
+        {!rows && !error && <div className="p-4"><ListSkeleton rows={3} label="Loading the activities" /></div>}
         {rows && list.length === 0 && <p className="p-4 text-sm text-slate-700">No activities are set up yet.</p>}
         <ul className="divide-y divide-slate-100" aria-label="Activities">
           {list.map((o) => (

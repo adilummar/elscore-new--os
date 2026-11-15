@@ -10,7 +10,7 @@ import {
   FOLLOW_UP_PRIORITIES, FOLLOW_UP_STATUS_LABELS, FollowUpDraft, FollowUpInfo, UPDATE_FIELD_LABELS, VersionInfo, WorkspaceData, WorkspaceRole, emptyFollowUp, followUpProblems, payloadOfFollowUp,
 } from './workspace-view';
 
-const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
+const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 const when = (iso: string | null) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '');
 type Run = (label: string, fn: () => Promise<unknown>, done: string) => void;
 
@@ -32,8 +32,8 @@ export function StatusStrip({ c }: { c: WorkspaceData['class'] }) {
   return (
     <section aria-label="Class and documentation status" className="rounded-md border border-slate-200 bg-white p-3" data-testid="status-strip">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-500">Class</span><Badge variant={CONDUCT_TONE[c.classStatus] ?? 'default'} data-testid="class-status">{c.classStatusLabel}</Badge>
-        <span className="ml-3 text-xs text-slate-500">Documentation</span><Badge variant={DOC_TONE[c.documentation.status] ?? 'default'} data-testid="documentation-status">{c.documentation.label}</Badge>
+        <span className="text-xs text-slate-600">Class</span><Badge variant={CONDUCT_TONE[c.classStatus] ?? 'default'} data-testid="class-status">{c.classStatusLabel}</Badge>
+        <span className="ml-3 text-xs text-slate-600">Documentation</span><Badge variant={DOC_TONE[c.documentation.status] ?? 'default'} data-testid="documentation-status">{c.documentation.label}</Badge>
       </div>
       {missing.length > 0 && c.documentation.status !== 'NOT_REQUIRED' && (
         <ul className="mt-2 space-y-0.5 text-xs text-slate-700" aria-label="What is missing" data-testid="documentation-missing">{missing.map((m) => <li key={m}>{m}</li>)}</ul>
@@ -59,7 +59,7 @@ export function VersionHistory({ versions }: { versions: VersionInfo[] }) {
             {v.snapshot && (
               <details className="text-xs text-slate-700"><summary className="cursor-pointer">How it was sent</summary>
                 <dl className="mt-1 grid gap-x-3 gap-y-0.5 sm:grid-cols-[180px_1fr]">
-                  {Object.entries(v.snapshot).filter(([k]) => UPDATE_FIELD_LABELS[k]).map(([k, val]) => <React.Fragment key={k}><dt className="text-slate-500">{UPDATE_FIELD_LABELS[k]}</dt><dd className="whitespace-pre-wrap">{show(val)}</dd></React.Fragment>)}
+                  {Object.entries(v.snapshot).filter(([k]) => UPDATE_FIELD_LABELS[k]).map(([k, val]) => <React.Fragment key={k}><dt className="text-slate-600">{UPDATE_FIELD_LABELS[k]}</dt><dd className="whitespace-pre-wrap">{show(val)}</dd></React.Fragment>)}
                 </dl>
               </details>
             )}
@@ -88,7 +88,7 @@ function FollowUpForm({ busy, onSave }: { busy: boolean; onSave: (d: FollowUpDra
       <label className="block text-sm"><span className="mb-1 block text-slate-700">Details</span><textarea className={AREA} rows={2} value={d.description} onChange={(e) => set('description', e.target.value)} /></label>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" disabled={busy || problems.length > 0} onClick={() => { onSave(d); setD(emptyFollowUp()); }}>Add follow-up</Button>
-        {problems.length > 0 && <span className="text-xs text-slate-500">Still needed: {problems.join(', ')}.</span>}
+        {problems.length > 0 && <span className="text-xs text-slate-600">Still needed: {problems.join(', ')}.</span>}
       </div>
     </div>
   );
@@ -138,7 +138,7 @@ export function FollowUps({ role, classKey, items, busy, canWork, run }: { role:
   return (
     <section aria-label="Follow-up tasks" className="space-y-2" data-testid="follow-ups">
       <h4 className="text-sm font-semibold text-slate-900">Follow-up tasks</h4>
-      {items.length === 0 && <p className="text-sm text-slate-500">No follow-up tasks for this class.</p>}
+      {items.length === 0 && <p className="text-sm text-slate-600">No follow-up tasks for this class.</p>}
       <ul className="space-y-2" aria-label="Follow-ups">{items.map((f) => <FollowUpRow key={f.id} f={f} role={role} classKey={classKey} busy={busy} canDecide={canWork} run={run} />)}</ul>
       {role === 'MENTOR' && canWork && <FollowUpForm busy={busy} onSave={(d) => run('add-follow-up', () => call('MENTOR', `/${classKey}/follow-ups`, 'POST', payloadOfFollowUp(d)), 'The follow-up was added.')} />}
     </section>

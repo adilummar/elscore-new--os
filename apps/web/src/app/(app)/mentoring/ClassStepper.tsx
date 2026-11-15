@@ -46,7 +46,7 @@ export function ClassStepper({ steps, selected, onSelect }: { steps: StepView[];
                   {s.state === 'COMPLETE' ? <Check className="h-4 w-4" aria-hidden="true" /> : s.state === 'ATTENTION' ? <AlertTriangle className="h-4 w-4" aria-hidden="true" /> : !s.reachable ? <Lock className="h-3.5 w-3.5" aria-hidden="true" /> : s.number}
                 </span>
                 <span className={`text-xs leading-tight sm:text-sm ${on ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>{s.label}</span>
-                <span className={`text-[11px] leading-none ${s.state === 'COMPLETE' ? 'text-emerald-800' : s.state === 'ATTENTION' ? 'text-amber-900' : 'text-slate-600'}`}>{s.stateText}</span>
+                <span className={`text-xs leading-none ${s.state === 'COMPLETE' ? 'text-emerald-800' : s.state === 'ATTENTION' ? 'text-amber-900' : 'text-slate-600'}`}>{s.stateText}</span>
               </button>
             </li>
           );

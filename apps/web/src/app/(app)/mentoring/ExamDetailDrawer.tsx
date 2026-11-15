@@ -12,9 +12,7 @@ import {
   FileText,
   RotateCcw,
   User,
-  X,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -33,9 +31,10 @@ import {
   responsibleLabel,
 } from './exam-view';
 import { mentoringApi } from './mentoring-client';
+import { Overlay, StatusChip, chipTone } from './mentoring-ui';
 import { dayLabel, longDayLabel } from './timetable-view';
 
-const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
+const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 const when = (iso: string) => `${dayLabel(iso.slice(0, 10))}, ${iso.slice(11, 16)} UTC`;
 
 export interface ExamDetailDrawerProps {
@@ -113,30 +112,6 @@ export function ExamDetailDrawer({
     }
   }, [e]);
 
-  // Keyboard accessibility: ESC key to close
-  React.useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  // Lock background scroll when open
-  React.useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-    const original = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, [isOpen]);
-
   if (!isOpen || !internalExam) return null;
 
   const current = internalExam;
@@ -203,73 +178,32 @@ export function ExamDetailDrawer({
   const reItems = current.items.filter((i) => i.list === 'RE_EXAM');
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="exam-drawer-title"
-      className="fixed inset-0 z-50 overflow-hidden"
+    <Overlay
+      testId="exam-drawer"
+      title={current.title}
+      closeLabel="Close drawer"
+      onClose={onClose}
+      headerExtra={(
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-700">{current.subjectName}</span>
+          {current.kind === 'RE_EXAM' && <StatusChip tone="info">Re-exam</StatusChip>}
+          {current.date !== current.originalDate && <StatusChip tone="info">Moved</StatusChip>}
+          <span data-testid="drawer-exam-state"><StatusChip tone={chipTone(EXAM_TONE[current.state])}>{current.stateLabel}</StatusChip></span>
+        </div>
+      )}
+      subtitle={(
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="inline-flex items-center gap-1"><User className="h-3.5 w-3.5 text-slate-600" aria-hidden="true" /><strong>Student:</strong> {current.studentName}</span>
+          <span className="inline-flex items-center gap-1"><Calendar className="h-3.5 w-3.5 text-slate-600" aria-hidden="true" />{longDayLabel(current.date)}</span>
+          <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-slate-600" aria-hidden="true" />{examTime(current)}</span>
+        </div>
+      )}
     >
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Slide-over Panel */}
-      <div className="fixed inset-y-0 right-0 flex max-w-full pl-6 sm:pl-10">
-        <div
-          className="w-screen max-w-2xl lg:max-w-3xl bg-white shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-300"
-          onClick={(ev) => ev.stopPropagation()}
-        >
-          {/* Drawer Header */}
-          <div className="sticky top-0 z-20 flex items-start justify-between border-b border-slate-200 bg-white px-6 py-4 shadow-sm">
-            <div className="min-w-0 pr-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-brand-600">
-                  {current.subjectName}
-                </span>
-                {current.kind === 'RE_EXAM' && <Badge variant="info">Re-exam</Badge>}
-                {current.date !== current.originalDate && <Badge variant="info">Moved</Badge>}
-                <Badge variant={EXAM_TONE[current.state]} data-testid="drawer-exam-state">
-                  {current.stateLabel}
-                </Badge>
-              </div>
-              <h2 id="exam-drawer-title" className="mt-1 text-lg font-bold text-slate-900 truncate">
-                {current.title}
-              </h2>
-              <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1">
-                  <User className="h-3.5 w-3.5 text-slate-400" />
-                  <strong>Student:</strong> {current.studentName}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                  {longDayLabel(current.date)}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5 text-slate-400" />
-                  {examTime(current)}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500"
-              aria-label="Close drawer"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* Drawer Body */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+          <div className="space-y-6">
             {/* Feedback Banners */}
             {notice && (
               <div role="status" className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
                 <span>{notice}</span>
               </div>
             )}
@@ -294,25 +228,25 @@ export function ExamDetailDrawer({
 
             {/* Overview Details Section */}
             <section aria-label="Exam Overview" className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Exam Details</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Exam Details</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div>
-                  <dt className="text-xs text-slate-500">Chapters</dt>
+                  <dt className="text-xs text-slate-600">Chapters</dt>
                   <dd className="font-medium text-slate-900">{current.chapters.join(', ')}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-slate-500">Responsible Person</dt>
+                  <dt className="text-xs text-slate-600">Responsible Person</dt>
                   <dd className="font-medium text-slate-900">{responsibleLabel(current.responsible)}</dd>
                 </div>
                 {current.portion && (
                   <div className="sm:col-span-2">
-                    <dt className="text-xs text-slate-500">Portion</dt>
+                    <dt className="text-xs text-slate-600">Portion</dt>
                     <dd className="text-slate-800">{current.portion}</dd>
                   </div>
                 )}
                 {current.instructions && (
                   <div className="sm:col-span-2">
-                    <dt className="text-xs text-slate-500">Instructions</dt>
+                    <dt className="text-xs text-slate-600">Instructions</dt>
                     <dd className="text-slate-800">{current.instructions}</dd>
                   </div>
                 )}
@@ -466,7 +400,7 @@ export function ExamDetailDrawer({
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">After the Exam Checklist</h3>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-slate-600">
                         Tick routine items to confirm completion. Ticking automatically logs your ID and timestamp.
                       </p>
                     </div>
@@ -502,13 +436,13 @@ export function ExamDetailDrawer({
                                 <span className={`text-sm font-medium ${isDone ? 'text-slate-900 line-through' : 'text-slate-800'}`}>
                                   {i.label}
                                 </span>
-                                <Badge variant={isDone ? 'success' : isNotApplicable ? 'default' : 'warning'}>
+                                <StatusChip tone={isDone ? "success" : isNotApplicable ? "neutral" : "warning"}>
                                   {ITEM_STATUS_LABELS[i.status] ?? i.status}
-                                </Badge>
+                                </StatusChip>
                               </div>
 
                               {i.doneAt && (
-                                <p className="text-xs text-slate-500 mt-1">
+                                <p className="text-xs text-slate-600 mt-1">
                                   Done {when(i.doneAt)}
                                   {i.responsible ? `, ${i.responsible}` : ''}
                                   {i.evidenceRef ? `, ${i.evidenceRef}` : ''}
@@ -521,7 +455,7 @@ export function ExamDetailDrawer({
                               <button
                                 type="button"
                                 onClick={() => toggleExpand(i.kind)}
-                                className="text-slate-400 hover:text-slate-600 p-1 rounded"
+                                className="text-slate-600 hover:text-slate-600 p-1 rounded"
                                 title="Add notes or mark not applicable"
                               >
                                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -771,7 +705,7 @@ export function ExamDetailDrawer({
                     )}
 
                     {!current.reExam.required && !canWork && (
-                      <p className="text-xs text-slate-500">No re-exam is required.</p>
+                      <p className="text-xs text-slate-600">No re-exam is required.</p>
                     )}
 
                     {current.reExam.required && (
@@ -786,7 +720,7 @@ export function ExamDetailDrawer({
                               {reItems.map((i) => (
                                 <li key={i.kind} className="flex items-center justify-between text-xs p-2 rounded border border-slate-200" data-testid="exam-item" data-status={i.status}>
                                   <span>{i.label}</span>
-                                  <Badge variant={i.status === 'DONE' ? 'success' : 'warning'}>{ITEM_STATUS_LABELS[i.status] ?? i.status}</Badge>
+                                  <StatusChip tone={i.status === "DONE" ? "success" : "warning"}>{ITEM_STATUS_LABELS[i.status] ?? i.status}</StatusChip>
                                 </li>
                               ))}
                             </ul>
@@ -838,7 +772,7 @@ export function ExamDetailDrawer({
                       <span className="font-semibold text-slate-800 capitalize">
                         {h.kind.replace(/_/g, ' ').toLowerCase()}
                       </span>{' '}
-                      — <span className="text-slate-500">{when(h.at)}</span>
+                      — <span className="text-slate-600">{when(h.at)}</span>
                       {h.reason && <p className="text-slate-700 mt-0.5 font-sans">Reason: {h.reason}</p>}
                     </li>
                   ))}
@@ -846,8 +780,6 @@ export function ExamDetailDrawer({
               </details>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+    </Overlay>
   );
 }

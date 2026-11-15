@@ -19,7 +19,7 @@ const DOT = { normal: 'bg-slate-300', amber: 'bg-amber-500', red: 'bg-red-500', 
 const Panel = ({ title, hint, action, children, label }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; label?: string }) => (
   <section aria-label={label ?? title} className={CARD} data-testid="panel">
     <header className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-4 py-3">
-      <div><h2 className="text-sm font-semibold text-slate-900">{title}</h2>{hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}</div>
+      <div><h2 className="text-sm font-semibold text-slate-900">{title}</h2>{hint && <p className="mt-0.5 text-xs text-slate-600">{hint}</p>}</div>
       {action}
     </header>
     {children}
@@ -27,7 +27,7 @@ const Panel = ({ title, hint, action, children, label }: { title: string; hint?:
 );
 
 export function Skeleton({ rows = 3 }: { rows?: number }) {
-  return <div className="space-y-2 p-4" aria-busy="true" data-testid="skeleton">{Array.from({ length: rows }, (_, i) => <div key={i} className="h-5 animate-pulse rounded bg-slate-100" />)}</div>;
+  return <div className="space-y-2 p-4" aria-busy="true" data-testid="skeleton">{Array.from({ length: rows }, (_, i) => <div key={i} className="h-5 motion-safe:animate-pulse rounded bg-slate-100" />)}</div>;
 }
 
 export function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -38,7 +38,7 @@ export function ErrorNote({ message, onRetry }: { message: string; onRetry: () =
   );
 }
 
-const Empty = ({ children }: { children: React.ReactNode }) => <p className="px-4 py-6 text-center text-sm text-slate-500" data-testid="empty">{children}</p>;
+const Empty = ({ children }: { children: React.ReactNode }) => <p className="px-4 py-6 text-center text-sm text-slate-600" data-testid="empty">{children}</p>;
 
 // ─── The summary strip ──────────────────────────────────────────────────────────────────────────────────────────
 export function SummaryStrip({ o }: { o: Overview }) {
@@ -57,16 +57,16 @@ export function SummaryStrip({ o }: { o: Overview }) {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-6 lg:divide-x lg:divide-slate-100">
         {items.map((i) => (
           <div key={i.key} className="lg:px-4 lg:first:pl-0" data-testid="summary-item" data-key={i.key}>
-            <dt className="text-xs text-slate-500">{i.label}</dt>
+            <dt className="text-xs text-slate-600">{i.label}</dt>
             <dd className={`mt-0.5 text-2xl font-semibold ${i.tone === 'amber' ? 'text-amber-700' : 'text-slate-900'}`}>{i.value}</dd>
-            {i.hint && <p className="text-xs text-slate-400">{i.hint}</p>}
+            {i.hint && <p className="text-xs text-slate-600">{i.hint}</p>}
           </div>
         ))}
       </dl>
       <div className="mt-4">
-        <div className="flex items-center justify-between text-xs text-slate-500"><span>Consumed of scheduled, {longDayLabel(o.window.from)} to {longDayLabel(o.window.to)}</span><span data-testid="progress-text">{pct}%</span></div>
+        <div className="flex items-center justify-between text-xs text-slate-600"><span>Consumed of scheduled, {longDayLabel(o.window.from)} to {longDayLabel(o.window.to)}</span><span data-testid="progress-text">{pct}%</span></div>
         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Consumed of scheduled hours"><div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} /></div>
-        <p className="mt-2 text-xs text-slate-500">{o.note}</p>
+        <p className="mt-2 text-xs text-slate-600">{o.note}</p>
       </div>
     </section>
   );
@@ -79,7 +79,7 @@ export function AttentionPanel({ items }: { items: Attention[] }) {
       {items.length === 0 ? <Empty>Nothing needs attention right now.</Empty> : (
         <ul className="divide-y divide-slate-100">
           {items.map((a) => (
-            <li key={a.key} data-testid="attention-item"><Link href={attentionHref(a.key)} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm hover:bg-slate-50"><span className="text-slate-800">{a.label}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">{a.count}</span></Link></li>
+            <li key={a.key} data-testid="attention-item"><Link href={attentionHref(a.key)} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm hover:bg-slate-50"><span className="text-slate-800">{a.label}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">{a.count}</span></Link></li>
           ))}
         </ul>
       )}
@@ -95,11 +95,11 @@ export function MentorTable({ data, search, sort, selected, onSearch, onSort, on
       {data.rows.length === 0 ? <Empty>No Mentor matches.</Empty> : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr>{['Mentor', 'Active', 'In activation', 'Scheduled', 'Consumed', 'Remaining', 'Waiting for verification', 'Pending tasks', ''].map((h, i) => <th key={`${h}-${i}`} className={`px-4 py-2 font-medium ${i > 0 && i < 8 ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
+            <thead className="text-left text-xs text-slate-600"><tr>{['Mentor', 'Active', 'In activation', 'Scheduled', 'Consumed', 'Remaining', 'Waiting for verification', 'Pending tasks', ''].map((h, i) => <th key={`${h}-${i}`} className={`px-4 py-2 font-medium ${i > 0 && i < 8 ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
             <tbody>
               {data.rows.map((m) => (
                 <tr key={m.mentorUserId} className={`border-t border-slate-100 ${selected === m.mentorUserId ? 'bg-primary-soft/40' : ''}`} data-testid="mentor-row">
-                  <td className="px-4 py-2.5 font-medium text-slate-900">{m.name}<span className="block text-xs font-normal text-slate-500">{m.assignedStudents} assigned</span></td>
+                  <td className="px-4 py-2.5 font-medium text-slate-900">{m.name}<span className="block text-xs font-normal text-slate-600">{m.assignedStudents} assigned</span></td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{m.activeStudents}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{m.ongoingActivations}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{hoursOnly(m.scheduledHours)}</td>
@@ -137,15 +137,15 @@ export function ActivationTable({ data, onPage }: { data: Paged<ActivationRow>; 
       {data.rows.length === 0 ? <Empty>No student is waiting to be activated.</Empty> : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="px-4 py-2 font-medium">Student</th><th className="px-4 py-2 font-medium">Stage</th><th className="px-4 py-2 font-medium">With</th><th className="px-4 py-2 font-medium">Next action</th><th className="px-4 py-2 text-right font-medium">Waiting</th></tr></thead>
+            <thead className="text-left text-xs text-slate-600"><tr><th className="px-4 py-2 font-medium">Student</th><th className="px-4 py-2 font-medium">Stage</th><th className="px-4 py-2 font-medium">With</th><th className="px-4 py-2 font-medium">Next action</th><th className="px-4 py-2 text-right font-medium">Waiting</th></tr></thead>
             <tbody>
               {data.rows.map((a) => {
                 const tone = waitTone(a.daysPending, a.blocked);
                 return (
                   <tr key={a.activationId} className="border-t border-slate-100" data-testid="activation-row" data-tone={tone}>
-                    <td className="px-4 py-2.5"><Link href={studentHref(a.activationId)} className="font-medium text-slate-900 hover:text-primary">{a.studentName}</Link>{a.studentId && <span className="block text-xs text-slate-500">{a.studentId}</span>}</td>
-                    <td className="px-4 py-2.5 text-slate-700">{a.stageName ? `${a.stageNumber}. ${a.stageName}` : `Stage ${a.stageNumber}`}<span className={`block text-xs ${a.blocked ? 'text-red-700' : 'text-slate-500'}`}>{a.statusLabel}</span></td>
-                    <td className="px-4 py-2.5 text-slate-700">{a.responsible}{a.mentorName && a.responsible !== a.mentorName ? <span className="block text-xs text-slate-500">Mentor: {a.mentorName}</span> : null}</td>
+                    <td className="px-4 py-2.5"><Link href={studentHref(a.activationId)} className="font-medium text-slate-900 hover:text-primary">{a.studentName}</Link>{a.studentId && <span className="block text-xs text-slate-600">{a.studentId}</span>}</td>
+                    <td className="px-4 py-2.5 text-slate-700">{a.stageName ? `${a.stageNumber}. ${a.stageName}` : `Stage ${a.stageNumber}`}<span className={`block text-xs ${a.blocked ? 'text-red-700' : 'text-slate-600'}`}>{a.statusLabel}</span></td>
+                    <td className="px-4 py-2.5 text-slate-700">{a.responsible}{a.mentorName && a.responsible !== a.mentorName ? <span className="block text-xs text-slate-600">Mentor: {a.mentorName}</span> : null}</td>
                     <td className="px-4 py-2.5 text-slate-800">{a.nextAction}</td>
                     <td className={`px-4 py-2.5 text-right tabular-nums ${TONE[tone]}`}>{a.daysPending} {a.daysPending === 1 ? 'day' : 'days'}</td>
                   </tr>
@@ -168,15 +168,15 @@ export function StudentTable({ data, search, onSearch, onPage }: { data: Paged<S
       {data.rows.length === 0 ? <Empty>No student matches.</Empty> : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="px-4 py-2 font-medium">Student</th><th className="px-4 py-2 font-medium">Mentor</th><th className="px-4 py-2 font-medium">Subjects</th><th className="px-4 py-2 text-right font-medium">Scheduled</th><th className="px-4 py-2 text-right font-medium">Reported</th><th className="px-4 py-2 text-right font-medium">Consumed</th><th className="px-4 py-2 text-right font-medium">Remaining</th><th className="px-4 py-2 text-right font-medium">Classes left</th></tr></thead>
+            <thead className="text-left text-xs text-slate-600"><tr><th className="px-4 py-2 font-medium">Student</th><th className="px-4 py-2 font-medium">Mentor</th><th className="px-4 py-2 font-medium">Subjects</th><th className="px-4 py-2 text-right font-medium">Scheduled</th><th className="px-4 py-2 text-right font-medium">Reported</th><th className="px-4 py-2 text-right font-medium">Consumed</th><th className="px-4 py-2 text-right font-medium">Remaining</th><th className="px-4 py-2 text-right font-medium">Classes left</th></tr></thead>
             <tbody>
               {data.rows.map((s) => (
                 <tr key={s.activationId} className="border-t border-slate-100" data-testid="student-row">
-                  <td className="px-4 py-2.5"><Link href={studentHref(s.activationId)} className="font-medium text-slate-900 hover:text-primary">{s.studentName}</Link><span className="block text-xs text-slate-500">{s.studentId ?? ''}{s.studentId ? ', ' : ''}{s.statusLabel}</span></td>
+                  <td className="px-4 py-2.5"><Link href={studentHref(s.activationId)} className="font-medium text-slate-900 hover:text-primary">{s.studentName}</Link><span className="block text-xs text-slate-600">{s.studentId ?? ''}{s.studentId ? ', ' : ''}{s.statusLabel}</span></td>
                   <td className="px-4 py-2.5 text-slate-700">{s.mentorName ?? 'No Mentor yet'}</td>
                   <td className="px-4 py-2.5 text-slate-700">{s.subjects.map((x) => x.name).join(', ') || 'None scheduled'}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{hoursOnly(s.scheduledHours)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-500">{hoursOnly(s.reportedHours)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{hoursOnly(s.reportedHours)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{hoursOnly(s.consumedHours)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{hoursOnly(s.remainingHours)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.pendingClasses}</td>
@@ -196,14 +196,14 @@ export function AgendaRow({ r }: { r: TodayRow }) {
   const tone = classTone(r.state, r.warning);
   return (
     <li className="flex gap-3 px-4 py-3" data-testid="agenda-row" data-tone={tone} data-consumption={r.consumption}>
-      <div className="w-28 shrink-0 text-sm tabular-nums text-slate-600">{timeRange(r)}<span className="block text-xs text-slate-400">{hoursText(r.scheduledMinutes)}</span></div>
+      <div className="w-28 shrink-0 text-sm tabular-nums text-slate-600">{timeRange(r)}<span className="block text-xs text-slate-600">{hoursText(r.scheduledMinutes)}</span></div>
       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[tone]}`} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-900"><Link href={studentHref(r.activationId, 'classes')} className="hover:text-primary">{r.subjectName}, {r.studentName}</Link>{r.studentId && <span className="ml-2 text-xs font-normal text-slate-500">{r.studentId}</span>}</p>
-        <p className="text-xs text-slate-500">Tutor {r.tutorName}{r.mentorName ? `. Mentor ${r.mentorName}` : ''}</p>
+        <p className="text-sm font-medium text-slate-900"><Link href={studentHref(r.activationId, 'classes')} className="hover:text-primary">{r.subjectName}, {r.studentName}</Link>{r.studentId && <span className="ml-2 text-xs font-normal text-slate-600">{r.studentId}</span>}</p>
+        <p className="text-xs text-slate-600">Tutor {r.tutorName}{r.mentorName ? `. Mentor ${r.mentorName}` : ''}</p>
         {r.warning && <p className={`mt-0.5 text-xs ${tone === 'red' ? 'text-red-700' : 'text-amber-700'}`} data-testid="agenda-warning">{r.warning}</p>}
       </div>
-      <div className="shrink-0 text-right text-xs"><span className={TONE[tone]}>{r.stateLabel}</span><span className={`block ${r.consumption === 'CONSUMED' ? 'font-medium text-primary' : 'text-slate-400'}`}>{r.consumption === 'CONSUMED' ? 'Consumed' : 'Not consumed'}</span></div>
+      <div className="shrink-0 text-right text-xs"><span className={TONE[tone]}>{r.stateLabel}</span><span className={`block ${r.consumption === 'CONSUMED' ? 'font-medium text-primary' : 'text-slate-600'}`}>{r.consumption === 'CONSUMED' ? 'Consumed' : 'Not consumed'}</span></div>
     </li>
   );
 }
@@ -271,8 +271,8 @@ export function MentoringOverview() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{copy.title}</h1>
-          <p className="mt-0.5 text-sm text-slate-500">{copy.subtitle}</p>
-          {overview.data && <p className="mt-1 text-xs text-slate-400">{longDayLabel(overview.data.today)}</p>}
+          <p className="mt-0.5 text-sm text-slate-600">{copy.subtitle}</p>
+          {overview.data && <p className="mt-1 text-xs text-slate-600">{longDayLabel(overview.data.today)}</p>}
         </div>
         <div className="flex items-center gap-2">
           <div role="group" aria-label="Reporting period" className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">

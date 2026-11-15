@@ -112,7 +112,7 @@ export function Notice({ tone, children, role }: { tone: 'error' | 'info' | 'war
 export function ListSkeleton({ rows = 4, label }: { rows?: number; label: string }) {
   return (
     <div role="status" aria-label={label} className="space-y-2">
-      {Array.from({ length: rows }, (_, i) => <div key={i} className="h-14 animate-pulse rounded-md bg-slate-100" />)}
+      {Array.from({ length: rows }, (_, i) => <div key={i} className="h-14 motion-safe:animate-pulse rounded-md bg-slate-100" />)}
     </div>
   );
 }
@@ -123,6 +123,117 @@ export function Empty({ title, children, testId }: { title: string; children?: R
     <div className={`${PANEL} px-6 py-10 text-center`} data-testid={testId}>
       <p className="text-base font-semibold text-slate-900">{title}</p>
       {children ? <p className="mx-auto mt-1 max-w-md text-sm text-slate-600">{children}</p> : null}
+    </div>
+  );
+}
+
+/** Secondary text. slate-600 on white is 7.6:1; slate-400 and slate-500 are not used for text in Mentoring. */
+export const MUTED = 'text-slate-600';
+export const SUBTLE_ICON = 'text-slate-500';
+
+/** Respects reduced motion: the pulse and the slide only run when the person has not asked for less movement. */
+export const PULSE = 'motion-safe:animate-pulse';
+export const SPIN = 'motion-safe:animate-spin';
+
+/** A success or failure line that is announced to screen readers. */
+export function Banner({ tone, children, onRetry }: { tone: 'error' | 'success' | 'warning' | 'info'; children: React.ReactNode; onRetry?: () => void }) {
+  const cls = { error: 'bg-red-50 text-red-900', success: 'bg-emerald-50 text-emerald-900', warning: 'bg-amber-50 text-amber-900', info: 'bg-slate-100 text-slate-800' }[tone];
+  return (
+    <p role={tone === 'error' ? 'alert' : 'status'} className={`rounded-md px-3 py-2 text-sm ${cls}`}>
+      {children}
+      {onRetry ? <> <button type="button" onClick={onRetry} className={`rounded font-semibold underline ${FOCUS}`}>Try again</button></> : null}
+    </p>
+  );
+}
+
+/** One count with its meaning. Amber only when something waits on a person. */
+export function StatTile({ value, label, hint, attention, onClick, href, testId }: { value: React.ReactNode; label: string; hint?: string; attention?: boolean; onClick?: () => void; href?: string; testId?: string }) {
+  const body = (
+    <>
+      <span className={`block text-2xl font-semibold leading-none ${attention ? 'text-amber-800' : 'text-slate-900'}`}>{value}</span>
+      <span className="mt-1.5 block text-sm text-slate-700">{label}</span>
+      {hint ? <span className={`mt-0.5 block text-xs ${MUTED}`}>{hint}</span> : null}
+    </>
+  );
+  const cls = `${PANEL} block min-h-16 w-full px-4 py-3 text-left transition-shadow hover:shadow-floating ${FOCUS}`;
+  if (href) return <a href={href} className={cls} data-testid={testId}>{body}</a>;
+  if (onClick) return <button type="button" onClick={onClick} className={cls} data-testid={testId}>{body}</button>;
+  return <div className={`${PANEL} px-4 py-3`} data-testid={testId}>{body}</div>;
+}
+
+/** A titled block of a page. The heading is a real heading, so the page has an outline a screen reader can jump through. */
+export function Section({ title, aside, children, className = '' }: { title: string; aside?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <section aria-label={title} className={`space-y-3 ${className}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        {aside ? <div className={`text-sm ${MUTED}`}>{aside}</div> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+/**
+ * The one overlay for Mentoring: a panel that slides in from the right on wide screens and fills the screen on a phone, or a centred
+ * dialog. It is a real dialog: labelled by its title, closes on Escape and on the backdrop, keeps Tab inside, puts focus on the panel when
+ * it opens and returns it to the control that opened it, and stops the page behind it from scrolling. The slide is off for people who
+ * ask for reduced motion.
+ */
+export function Overlay({ title, subtitle, onClose, children, variant = 'drawer', size = 'lg', testId, closeLabel = 'Close', headerExtra }: {
+  title: string; subtitle?: React.ReactNode; onClose: () => void; children: React.ReactNode; variant?: 'drawer' | 'dialog'; size?: 'md' | 'lg' | 'xl'; testId?: string; closeLabel?: string; headerExtra?: React.ReactNode;
+}) {
+  const panel = React.useRef<HTMLDivElement>(null);
+  const titleId = React.useId();
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
+
+  React.useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    panel.current?.focus();
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') { ev.stopPropagation(); closeRef.current(); return; }
+      if (ev.key !== 'Tab' || !panel.current) return;
+      const nodes = Array.from(panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((n) => n.offsetParent !== null || n === document.activeElement);
+      if (nodes.length === 0) { ev.preventDefault(); return; }
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement;
+      if (ev.shiftKey && (active === first || active === panel.current)) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && active === last) { ev.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = previous;
+      if (opener && document.contains(opener)) opener.focus();
+    };
+  }, []);
+
+  const width = { md: 'max-w-xl', lg: 'max-w-2xl lg:max-w-3xl', xl: 'max-w-5xl' }[size];
+  const drawer = variant === 'drawer';
+  return (
+    <div className={`fixed inset-0 z-50 flex ${drawer ? 'justify-end' : 'items-center justify-center p-3 sm:p-6'}`} data-testid={testId ? `${testId}-backdrop` : undefined}>
+      <div className="absolute inset-0 bg-slate-900/50" onClick={() => closeRef.current()} aria-hidden="true" />
+      <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}
+        className={`relative flex w-full flex-col bg-white shadow-modal outline-none ${drawer ? `h-full ${width} motion-safe:animate-overlay-in` : `max-h-[90vh] ${width} rounded-xl motion-safe:animate-overlay-fade`}`}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-6">
+          <div className="min-w-0">
+            {headerExtra}
+            <h2 id={titleId} className="break-words text-lg font-semibold text-slate-900">{title}</h2>
+            {subtitle ? <div className={`mt-1 text-sm ${MUTED}`}>{subtitle}</div> : null}
+          </div>
+          <button type="button" onClick={() => closeRef.current()} aria-label={closeLabel}
+            className={`-mr-2 -mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 ${FOCUS}`}>
+            <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" /></svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
+      </div>
     </div>
   );
 }

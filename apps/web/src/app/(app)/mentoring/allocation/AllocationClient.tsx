@@ -61,14 +61,14 @@ export function AllocationClient() {
       <section className="space-y-2">
         <h2 className="font-semibold">Allocation queue ({queue.length})</h2>
         <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 text-sm">
-          {queue.length === 0 && <p className="p-4 text-slate-500">No students are waiting for a Mentor.</p>}
+          {queue.length === 0 && <p className="p-4 text-slate-600">No students are waiting for a Mentor.</p>}
           {queue.length > 0 && load && mentors.length === 0 && (
-            <p className="p-4 text-amber-700 bg-amber-50">No eligible Mentors yet. Create Mentors in Settings → Users under the Mentoring department. Mentors created earlier appear after you open Mentoring → Staff and choose “Add missing Mentors”.</p>
+            <p className="p-4 text-amber-800 bg-amber-50">No eligible Mentors yet. Create Mentors in Settings → Users under the Mentoring department. Mentors created earlier appear after you open Mentoring → Staff and choose “Add missing Mentors”.</p>
           )}
           {queue.map((q) => (
             <div key={q.activationId} className="p-3 flex flex-wrap items-center gap-3">
               <Link href={`/mentoring/students/${q.activationId}`} className="font-medium text-brand-700 hover:underline">{q.studentName} ({q.studentBusinessId})</Link>
-              <span className="text-xs text-slate-500">Queued {fmt(q.queuedAt)}</span>
+              <span className="text-xs text-slate-600">Queued {fmt(q.queuedAt)}</span>
               <Select className="w-64" value={pick[q.activationId] ?? ''} onChange={(e) => setPick({ ...pick, [q.activationId]: e.target.value })}>
                 <option value="">Choose Mentor…</option>
                 {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name} — {m.openStudents}/{m.capacity}</option>)}
@@ -97,8 +97,8 @@ export function AllocationClient() {
                   <td className="px-3 py-2">{s.role === 'MENTOR' ? `${s.openStudents} / ${s.capacity}` : '—'}</td>
                   <td className="px-3 py-2">{s.openTasks}</td>
                   <td className="px-3 py-2">
-                    {!s.eligibleForManual ? <><Badge variant="danger">Not eligible</Badge> <span className="text-xs text-slate-500">{s.ineligibleReason}</span></> : s.eligibleForAuto ? <Badge variant="success">Accepting</Badge> : <Badge>Manual only</Badge>}
-                    {s.userStatus === 'PENDING_SETUP' && <span className="ml-2 text-xs text-slate-500">Awaiting first sign-in</span>}
+                    {!s.eligibleForManual ? <><Badge variant="danger">Not eligible</Badge> <span className="text-xs text-slate-600">{s.ineligibleReason}</span></> : s.eligibleForAuto ? <Badge variant="success">Accepting</Badge> : <Badge>Manual only</Badge>}
+                    {s.userStatus === 'PENDING_SETUP' && <span className="ml-2 text-xs text-slate-600">Awaiting first sign-in</span>}
                   </td>
                 </tr>
               ))}

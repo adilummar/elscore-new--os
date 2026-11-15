@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 
 import { STATE_TONE, hoursText, timeLabel } from './class-view';
 import { mentoringApi } from './mentoring-client';
+import { ListSkeleton } from './mentoring-ui';
 import { longDayLabel } from './timetable-view';
 import {
   ACTIVITY_CHOICES, ActivityDraft, ActivityInfo, ActivityOptions, AUDIO_ACCEPT, COMPLETION_CHOICES, MessagePreview, SHARE_STATE, WorkspaceData, WorkspaceRole, activityProblems, audioProblem, audioUrl, copyText, draftOfActivity, emptyActivity,
@@ -19,7 +20,7 @@ import { AfterPanel, BeforePanel, RescheduleDialog, TimingPanel, VerificationPan
 import { STEP_LABELS, StepId, openingStep, stepViews } from './class-stepper-view';
 import { call } from './workspace-api';
 
-const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
+const AREA = 'block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50';
 const when = (iso: string | null) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '');
 type Tab = 'before' | 'after' | 'timing' | 'review';
 /** The Mentor class page has four tabs. The address calls the verification tab "verification"; inside it is "review". */
@@ -87,7 +88,7 @@ function ActivityForm({ initial, busy, onSave, onCancel, submitLabel, options, l
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" disabled={busy || problems.length > 0} onClick={() => onSave(d)}>{submitLabel}</Button>
         {onCancel && <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>}
-        {problems.length > 0 && <span className="text-xs text-slate-500">Still needed: {problems.join(', ')}.</span>}
+        {problems.length > 0 && <span className="text-xs text-slate-600">Still needed: {problems.join(', ')}.</span>}
       </div>
     </div>
   );
@@ -126,7 +127,7 @@ function ActivityRow({ a, role, busy, canEdit, canRespond, run, options }: { a: 
             <label className="block"><span className="mb-1 block text-slate-700">Completion</span><select className={AREA} value={completion} onChange={(e) => setCompletion(e.target.value)}>{COMPLETION_CHOICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
             <label className="block"><span className="mb-1 block text-slate-700">{role === 'TUTOR' ? 'Tutor remarks' : 'Mentor remarks'}</span><textarea className={AREA} rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></label>
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => run('response', () => call(role, `${mine(a.id)}/response`, 'PUT', { ...(response.trim() ? { response } : {}), completion, ...(role === 'TUTOR' ? { tutorRemarks: remarks } : { mentorRemarks: remarks }) }), 'Saved what the student did.')}>Save</Button>
-            <p className="text-xs text-slate-500">This never holds up verification of the class.</p>
+            <p className="text-xs text-slate-600">This never holds up verification of the class.</p>
           </div>
         </details>
       )}
@@ -169,7 +170,7 @@ function VoicePanel({ role, classKey, w, busy, run }: { role: WorkspaceRole; cla
           <audio controls preload="none" src={audioUrl(role, v.id)} className="w-full" aria-label="Voice recording player" />
           {v.sharedAt && <p className="text-xs text-slate-600">Shared by {v.sharedBy ?? 'a user'} on {when(v.sharedAt)}.</p>}
           {v.mentorVerifiedAt && <p className="text-xs text-slate-600">Verified by {v.mentorVerifiedBy ?? 'the Mentor'} on {when(v.mentorVerifiedAt)}.</p>}
-          {w.after.earlierVoice > 0 && <p className="text-xs text-slate-500">{w.after.earlierVoice} earlier recording kept on record.</p>}
+          {w.after.earlierVoice > 0 && <p className="text-xs text-slate-600">{w.after.earlierVoice} earlier recording kept on record.</p>}
         </div>
       )}
       {role === 'TUTOR' && w.after.canEdit && (
@@ -201,7 +202,7 @@ export function ReviewPanel({ w, classKey, busy, run, canWork, onClosed }: { w: 
   return (
     <div className="space-y-3" data-testid="review-panel">
       <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-        {([['Scheduled', hoursText(r.minutes.scheduled)], ['Reported by the tutor', r.minutes.reported == null ? 'Not reported' : hoursText(r.minutes.reported)], ['Verified', r.minutes.verified == null ? 'Not verified' : hoursText(r.minutes.verified)], ['Consumed', hoursText(r.minutes.consumed)]] as Array<[string, string]>).map(([k, v]) => <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd className="text-slate-900">{v}</dd></div>)}
+        {([['Scheduled', hoursText(r.minutes.scheduled)], ['Reported by the tutor', r.minutes.reported == null ? 'Not reported' : hoursText(r.minutes.reported)], ['Verified', r.minutes.verified == null ? 'Not verified' : hoursText(r.minutes.verified)], ['Consumed', hoursText(r.minutes.consumed)]] as Array<[string, string]>).map(([k, v]) => <div key={k}><dt className="text-xs text-slate-600">{k}</dt><dd className="text-slate-900">{v}</dd></div>)}
       </dl>
       <p className="text-sm text-slate-700" data-testid="consumption">{r.consumption === 'CONSUMED' ? 'This class is consumed.' : 'This class is not consumed. It counts only once the Mentor verifies it.'}</p>
       <ul className="space-y-0.5 text-sm" aria-label="Review checklist">{w.class.checklist.map((i) => <li key={i.key} data-done={i.done}><span className="font-medium">{i.label}</span>: {i.detail}</li>)}</ul>
@@ -347,7 +348,7 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
         )}
       {error && <p role="alert" className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {notice && <p role="status" className="mb-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
-      {!w && !error && <p className="text-sm text-slate-500">Loading the class</p>}
+      {!w && !error && <ListSkeleton rows={3} label="Loading the class" />}
       {w && cancelled && <p className="mb-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">This class was cancelled. Nothing more can be done on it.</p>}
 
       {w && !sections && show('before') && (
