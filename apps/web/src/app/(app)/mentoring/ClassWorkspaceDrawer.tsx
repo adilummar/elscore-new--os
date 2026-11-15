@@ -1,13 +1,12 @@
 "use client";
 
 import * as React from 'react';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
 import { STATE_TONE, hoursText, timeLabel } from './class-view';
 import { mentoringApi } from './mentoring-client';
-import { ListSkeleton } from './mentoring-ui';
+import { Banner, ListSkeleton, ToneBadge } from './mentoring-ui';
 import { longDayLabel } from './timetable-view';
 import {
   ACTIVITY_CHOICES, ActivityDraft, ActivityInfo, ActivityOptions, AUDIO_ACCEPT, COMPLETION_CHOICES, MessagePreview, SHARE_STATE, WorkspaceData, WorkspaceRole, activityProblems, audioProblem, audioUrl, copyText, draftOfActivity, emptyActivity,
@@ -43,7 +42,7 @@ export function MessageBlock({ role, classKey, m, busy, canAct, run }: MessagePr
     <section aria-label={m.name} className="rounded-md border border-slate-200 bg-white p-3" data-testid={`message-${m.key}`}>
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <h4 className="mr-auto text-sm font-semibold text-slate-900">{m.name}</h4>
-        <Badge variant={share?.confirmedAt ? 'success' : share?.copiedAt ? 'warning' : 'default'} data-testid="share-state">{SHARE_STATE(share)}</Badge>
+        <ToneBadge variant={share?.confirmedAt ? 'success' : share?.copiedAt ? 'warning' : 'default'} data-testid="share-state">{SHARE_STATE(share)}</ToneBadge>
       </div>
       {m.ok && m.text ? <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-2 text-sm text-slate-900" data-testid="message-text">{m.text}</pre> : <p className="text-sm text-amber-800" data-testid="message-missing">{m.message ?? 'The message cannot be made yet.'}</p>}
       {!m.ok && m.missing.includes('meetLink') && <p className="mt-1 text-xs text-slate-600" data-testid="meet-link-needed">No Google Meet link has been added for this subject yet. The Mentor adds it in the student&apos;s tutor schedule, and then this message can be prepared.</p>}
@@ -104,8 +103,8 @@ function ActivityRow({ a, role, busy, canEdit, canRespond, run, options }: { a: 
     <li className="rounded-md border border-slate-200 bg-white p-3" data-testid="activity" data-shared={!!a.sharedAt}>
       <div className="flex flex-wrap items-center gap-2">
         <h4 className="mr-auto text-sm font-semibold text-slate-900">{a.position}. {a.title}</h4>
-        <Badge variant="default">{a.type === 'OTHER' && a.typeDescription ? `Other: ${a.typeDescription}` : a.typeLabel}</Badge>
-        <Badge variant={a.sharedAt ? 'success' : 'warning'}>{a.sharedAt ? 'Sharing recorded' : 'Not shared yet'}</Badge>
+        <ToneBadge variant="default">{a.type === 'OTHER' && a.typeDescription ? `Other: ${a.typeDescription}` : a.typeLabel}</ToneBadge>
+        <ToneBadge variant={a.sharedAt ? 'success' : 'warning'}>{a.sharedAt ? 'Sharing recorded' : 'Not shared yet'}</ToneBadge>
       </div>
       <p className="text-xs text-slate-600">Topic: {a.topic || 'not recorded'}{a.gradeName ? `. ${a.gradeName}` : ''}{a.learningLevelLabel ? `, ${a.learningLevelLabel.toLowerCase()}` : ''}{a.dueDate ? `. Due ${a.dueDate}.` : ''}</p>
       {a.optionGroupKey && <p className="text-xs text-slate-600" data-testid="activity-option">Option {a.optionLabel} in the group {a.optionGroupKey}. The group counts as one activity.</p>}
@@ -160,9 +159,9 @@ function VoicePanel({ role, classKey, w, busy, run }: { role: WorkspaceRole; cla
     <section aria-label="Voice recording" className="rounded-md border border-slate-200 bg-white p-3" data-testid="voice-panel">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h4 className="mr-auto text-sm font-semibold text-slate-900">Voice recording</h4>
-        <Badge variant={v ? 'success' : 'warning'}>{v ? 'Uploaded' : 'Not uploaded'}</Badge>
-        <Badge variant={v?.sharedAt ? 'success' : 'warning'}>{v?.sharedAt ? 'Shared in the group' : 'Sharing not confirmed'}</Badge>
-        <Badge variant={v?.mentorVerifiedAt ? 'success' : 'default'}>{v?.mentorVerifiedAt ? 'Verified by the Mentor' : 'Not verified by the Mentor'}</Badge>
+        <ToneBadge variant={v ? 'success' : 'warning'}>{v ? 'Uploaded' : 'Not uploaded'}</ToneBadge>
+        <ToneBadge variant={v?.sharedAt ? 'success' : 'warning'}>{v?.sharedAt ? 'Shared in the group' : 'Sharing not confirmed'}</ToneBadge>
+        <ToneBadge variant={v?.mentorVerifiedAt ? 'success' : 'default'}>{v?.mentorVerifiedAt ? 'Verified by the Mentor' : 'Not verified by the Mentor'}</ToneBadge>
       </div>
       {v && (
         <div className="space-y-1">
@@ -178,7 +177,7 @@ function VoicePanel({ role, classKey, w, busy, run }: { role: WorkspaceRole; cla
           <label className="block text-sm"><span className="mb-1 block text-slate-700">{v ? 'Upload a new recording' : 'Choose the recording'} (up to 15 MB)</span>
             <input type="file" accept={AUDIO_ACCEPT} className="block w-full text-sm" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setProblem(null); }} />
           </label>
-          {problem && <p role="alert" className="text-xs font-medium text-red-600">{problem}</p>}
+          {problem && <p role="alert" className="text-xs font-medium text-red-700">{problem}</p>}
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" disabled={busy || !file} onClick={upload}>Upload recording</Button>
             <Button type="button" size="sm" disabled={busy || !v || !!v.sharedAt} onClick={() => run('voice-shared', () => call(role, `/${classKey}/voice/shared`, 'POST'), 'Recorded that you shared the recording.')}>I shared the recording in the group</Button>
@@ -334,8 +333,8 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
           {w && <p className="text-xs text-slate-600">{longDayLabel(w.class.date)}, {timeLabel(w.class)}. Tutor: {w.tutorName}.{w.mentorName ? ` Mentor: ${w.mentorName}.` : ''}</p>}
         </div>
         <div className="flex items-center gap-2">
-          {w && <Badge variant={STATE_TONE[w.class.state] ?? 'default'}>{w.class.stateLabel}</Badge>}
-          {w && <Badge variant={w.class.consumption === 'CONSUMED' ? 'success' : 'default'} data-testid="consumption-badge">{w.class.consumption === 'CONSUMED' ? 'Consumed' : 'Not consumed'}</Badge>}
+          {w && <ToneBadge variant={STATE_TONE[w.class.state] ?? 'default'}>{w.class.stateLabel}</ToneBadge>}
+          {w && <ToneBadge variant={w.class.consumption === 'CONSUMED' ? 'success' : 'default'} data-testid="consumption-badge">{w.class.consumption === 'CONSUMED' ? 'Consumed' : 'Not consumed'}</ToneBadge>}
           <Button type="button" size="sm" variant="ghost" onClick={onClose}>Close</Button>
         </div>
       </div>}
@@ -346,8 +345,8 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
             {tabs.map(([k, label]) => <button key={k} type="button" role="tab" id={`ws-tab-${k}`} aria-selected={tab === k} aria-controls={`ws-panel-${k}`} className={`px-3 py-1.5 text-sm ${tab === k ? 'border-b-2 border-brand-600 font-semibold text-brand-700' : 'text-slate-600'}`} onClick={() => setTab(k)}>{label}</button>)}
           </div>
         )}
-      {error && <p role="alert" className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {notice && <p role="status" className="mb-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
+      {error && <div className="mb-2"><Banner tone="error">{error}</Banner></div>}
+      {notice && <div className="mb-2"><Banner tone="success">{notice}</Banner></div>}
       {!w && !error && <ListSkeleton rows={3} label="Loading the class" />}
       {w && cancelled && <p className="mb-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">This class was cancelled. Nothing more can be done on it.</p>}
 
@@ -370,7 +369,7 @@ export function ClassWorkspaceDrawer({ role, classKey, onClose, onChanged, layou
               <section aria-label="Post-class activities" className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="mr-auto text-sm font-semibold text-slate-900">Post-class activities</h4>
-                  <Badge variant={(w.after.activityCounts?.created ?? w.after.activities.length) >= w.after.minimumActivities ? 'success' : 'warning'} data-testid="activity-count">{w.after.activityCounts?.created ?? w.after.activities.length} of at least {w.after.minimumActivities} created, {w.after.activityCounts?.shared ?? w.after.activities.filter((a) => a.sharedAt).length} shared. Options of one group count once.</Badge>
+                  <ToneBadge variant={(w.after.activityCounts?.created ?? w.after.activities.length) >= w.after.minimumActivities ? 'success' : 'warning'} data-testid="activity-count">{w.after.activityCounts?.created ?? w.after.activities.length} of at least {w.after.minimumActivities} created, {w.after.activityCounts?.shared ?? w.after.activities.filter((a) => a.sharedAt).length} shared. Options of one group count once.</ToneBadge>
                 </div>
                 <ul className="space-y-2" aria-label="Activities">{w.after.activities.map((a) => <ActivityRow key={a.id} a={a} role={role} busy={busy} canEdit={w.after.canEdit} canRespond={canWork} run={run} options={w.after.activityOptions} />)}</ul>
                 {role === 'TUTOR' && w.after.canEdit && (adding

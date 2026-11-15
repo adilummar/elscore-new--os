@@ -237,3 +237,8 @@ export function Overlay({ title, subtitle, onClose, children, variant = 'drawer'
     </div>
   );
 }
+
+/** A status chip that takes the tone words the older class screens already pass (default, success, warning, danger, info). */
+export function ToneBadge({ variant, children, ...rest }: { variant?: string; children: React.ReactNode; 'data-testid'?: string }) {
+  return <span {...rest}><StatusChip tone={chipTone(variant)}>{children}</StatusChip></span>;
+}

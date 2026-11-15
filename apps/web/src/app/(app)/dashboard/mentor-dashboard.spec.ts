@@ -1,311 +1,87 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import MentorDashboard from '@/components/dashboard/MentorDashboard';
-import { mentoringApi } from '../mentoring/mentoring-client';
+import MentorDashboard, { buildQueue } from '@/components/dashboard/MentorDashboard';
 
-jest.mock('../mentoring/mentoring-client', () => ({
-  mentoringApi: jest.fn(),
-}));
+jest.mock('../mentoring/mentoring-client', () => ({ mentoringApi: jest.fn(() => new Promise(() => undefined)) }));
+jest.mock('next/link', () => ({ __esModule: true, default: ({ href, children, ...rest }: any) => React.createElement('a', { href, ...rest }, children) }));
+jest.mock('../mentoring/ClassWorkspaceDrawer', () => ({ ClassWorkspaceDrawer: () => React.createElement('div', null, 'Drawer') }));
 
-jest.mock('next/link', () => ({
-  __esModule: true,
-  default: ({ href, children, ...rest }: any) => React.createElement('a', { href, ...rest }, children),
-}));
+const text = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+const source = fs.readFileSync(path.resolve(__dirname, '../../../components/dashboard/MentorDashboard.tsx'), 'utf8');
 
-jest.mock('../mentoring/ClassWorkspaceDrawer', () => ({
-  ClassWorkspaceDrawer: function MockDrawer({ classKey, role }: any) {
-    return React.createElement('div', { 'data-testid': 'mock-workspace-drawer', 'data-key': classKey, 'data-role': role }, 'Drawer');
-  },
-}));
-
-const text = (markup: string) =>
-  markup
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&#x27;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const render = (el: React.ReactElement) => renderToStaticMarkup(el);
-
-describe('MentorDashboard Component', () => {
-  beforeEach(() => {
-    (mentoringApi as jest.Mock).mockImplementation((path: string) => {
-      if (path.includes('/mentoring/overview/activations')) {
-        return Promise.resolve({
-          rows: [
-            {
-              activationId: 'act-1',
-              studentName: 'Aarav Patel',
-              studentId: 'STU-001',
-              stageNumber: 2,
-              stageName: 'Baseline Assessment',
-              status: 'HANDOVER_IN_PROGRESS',
-              statusLabel: 'Handover in progress',
-              responsible: 'Mentor Test',
-              nextAction: 'Complete Baseline Assessment',
-              daysPending: 3,
-              blocked: false,
-            },
-            {
-              activationId: 'act-2',
-              studentName: 'Zara Khan',
-              studentId: 'STU-002',
-              stageNumber: 7,
-              stageName: 'Final Handover',
-              status: 'PENDING_FINAL_APPROVAL',
-              statusLabel: 'Pending final approval',
-              responsible: 'Mentoring Head',
-              nextAction: 'Give final approval',
-              daysPending: 6,
-              blocked: false,
-            },
-          ],
-        });
-      }
-
-      if (path.includes('/mentoring/overview/today')) {
-        return Promise.resolve({
-          today: '2026-11-14',
-          date: '2026-11-14',
-          total: 4,
-          counts: {
-            SCHEDULED: 1,
-            AWAITING_TUTOR_UPDATE: 1,
-            AWAITING_MENTOR_VERIFICATION: 1,
-            VERIFIED: 1,
-            NOT_CONDUCTED: 0,
-            RESCHEDULED: 0,
-          },
-          rows: [
-            {
-              key: 'session-101',
-              activationId: 'act-1',
-              studentName: 'Aarav Patel',
-              subjectName: 'Mathematics',
-              tutorName: 'Rajesh Sharma',
-              startMinute: 600,
-              endMinute: 660,
-              state: 'AWAITING_MENTOR_VERIFICATION',
-              stateLabel: 'Awaiting Mentor verification',
-              warning: 'Response time approaching',
-            },
-            {
-              key: 'session-102',
-              activationId: 'act-2',
-              studentName: 'Zara Khan',
-              subjectName: 'Physics',
-              tutorName: 'Anita Desai',
-              startMinute: 720,
-              endMinute: 780,
-              state: 'AWAITING_TUTOR_UPDATE',
-              stateLabel: 'Awaiting tutor update',
-              warning: null,
-            },
-          ],
-        });
-      }
-
-      if (path.includes('/mentoring/exams/due')) {
-        return Promise.resolve({
-          thresholdMinutes: 180,
-          rows: [
-            {
-              activationId: 'act-1',
-              studentName: 'Aarav Patel',
-              subjectId: 'sub-math',
-              subjectName: 'Mathematics',
-              verifiedMinutes: 150,
-              thresholdMinutes: 180,
-              progressPercent: 83,
-              due: false,
-              scheduledExam: null,
-            },
-            {
-              activationId: 'act-2',
-              studentName: 'Zara Khan',
-              subjectId: 'sub-phy',
-              subjectName: 'Physics',
-              verifiedMinutes: 180,
-              thresholdMinutes: 180,
-              progressPercent: 100,
-              due: true,
-              scheduledExam: { id: 'ex-1', date: '2026-11-18' },
-            },
-          ],
-        });
-      }
-
-      if (path.includes('/mentoring/reviews')) {
-        return Promise.resolve({
-          counts: { SCHEDULED: 1 },
-          overdue: 0,
-          rows: [
-            {
-              activationId: 'act-1',
-              studentName: 'Aarav Patel',
-              parentName: 'Sunita Patel',
-              date: '2026-11-20',
-              state: 'SCHEDULED',
-              stateLabel: 'Scheduled',
-              overdue: false,
-              preparation: {
-                examsReviewed: true,
-                nextPlanApproved: false,
-                tutorObservations: 2,
-              },
-            },
-          ],
-        });
-      }
-
-      if (path.includes('/mentoring/complaints')) {
-        return Promise.resolve({
-          rows: [
-            {
-              id: 'comp-1',
-              number: 'CMP-0001',
-              title: 'Tutor replacement request',
-              studentName: 'Aarav Patel',
-              priority: 'HIGH',
-              status: 'IN_PROGRESS',
-              ack: {
-                state: 'BREACHED',
-                overdueMinutes: 45,
-                remainingMinutes: 0,
-              },
-            },
-          ],
-        });
-      }
-
-      // Default: overview
-      return Promise.resolve({
-        role: 'MENTOR',
-        today: '2026-11-14',
-        window: { from: '2026-11-09', to: '2026-11-15' },
-        period: 'week',
-        summary: {
-          activeStudents: 12,
-          ongoingActivations: 2,
-          scheduledMinutes: 7200, // 120 hrs
-          reportedMinutes: 6000,  // 100 hrs
-          consumedMinutes: 5400,  // 90 hrs
-          remainingMinutes: 1800, // 30 hrs
-          pendingClasses: 4,
-          pendingVerification: 1,
-          attentionTotal: 3,
-        },
-        activationByStatus: [],
-        attention: [],
-      });
-    });
+describe('Mentor dashboard shell', () => {
+  const html = renderToStaticMarkup(React.createElement(MentorDashboard, {}));
+  it('names the page and links to the four workspaces that exist', () => {
+    expect(text(html)).toContain('Mentor dashboard');
+    for (const href of ['/mentoring/classes', '/mentoring/exams', '/mentoring/meetings', '/mentoring/complaints']) expect(html).toContain(`href="${href}"`);
   });
-
-  it('renders the header with title and direct workspace quick-links', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
-    const t = text(html);
-
-    expect(t).toContain('Mentor Dashboard');
-    expect(html).toContain('href="/mentoring/classes"');
-    expect(html).toContain('href="/mentoring/exams"');
-    expect(html).toContain('href="/mentoring/reviews"');
-    expect(html).toContain('href="/mentoring/complaints"');
+  it('never links to routes that do not exist', () => {
+    expect(source).not.toContain('/mentoring/reviews"');
+    expect(source).not.toContain('classState=');
+    expect(source).toContain('/mentoring/classes?state=SCHEDULED');
   });
-
-  it('renders the interactive filter bar with period tabs and filters', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
-    const t = text(html);
-
-    expect(t).toContain('Operational Filters');
-    expect(t).toContain('Today');
-    expect(t).toContain('This Week');
-    expect(t).toContain('This Month');
-    expect(t).toContain('Custom Range');
-    expect(t).toContain('Student Search');
-    expect(t).toContain('Subject');
-    expect(t).toContain('Tutor');
-    expect(t).toContain('Class Status');
-    expect(t).toContain('Exam Status');
+  it('shows a loading skeleton, not zeros, before the first load', () => {
+    expect(html).toContain('aria-label="Loading the dashboard"');
+    expect(html).not.toContain('data-testid="today-classes-group"');
   });
-
-  it('renders student overview cards scoped to the logged-in mentor', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
+  it('offers one search and keeps the rest behind More filters, with no dead complaint filters', () => {
     const t = text(html);
-
-    expect(t).toContain('Student Overview (Assigned Scope)');
-    expect(t).toContain('Total Assigned Students');
-    expect(t).toContain('Newly Received');
-    expect(t).toContain('Handover Pending');
-    expect(t).toContain('Handover In Progress');
-    expect(t).toContain('Awaiting Final Head Approval');
-    expect(t).toContain('Activated Students');
+    expect(t).toContain('Student name or ID');
+    expect(t).toContain('More filters');
+    expect(html).toContain('aria-expanded="false"');
+    expect(t).not.toContain('Complaint category');
+    expect(t).not.toContain('Response time status');
   });
-
-  it('strictly separates teaching hours metrics and displays the data integrity notice', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
+  it('offers the period choices as one grouped control', () => {
     const t = text(html);
-
-    expect(t).toContain('Teaching Hours Overview');
-    expect(t).toContain('Scheduled Hours');
-    expect(t).toContain('Tutor-Reported Hours');
-    expect(t).toContain('Mentor-Verified Hours');
-    expect(t).toContain('Remaining Unverified Hours');
-    expect(t).toContain('Verified Hours vs Scheduled');
-    expect(t).toContain(
-      'Only mentor-verified hours count toward student consumption and tutor payout'
-    );
+    for (const w of ['Today', 'This week', 'This month', 'Custom dates']) expect(t).toContain(w);
   });
+});
 
-  it('renders today class overview linking to filtered classes workspace', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
-    const t = text(html);
-
-    expect(t).toContain("Today's Class Overview");
-    expect(t).toContain('Total Classes Today');
-    expect(t).toContain('Upcoming Classes');
-    expect(t).toContain('Awaiting Tutor Updates');
-    expect(t).toContain('Awaiting Verification');
-    expect(t).toContain('Verified Classes');
-    expect(t).toContain('Not Conducted / Rescheduled');
-
-    expect(html).toContain('href="/mentoring/classes"');
-    expect(html).toContain('href="/mentoring/classes?classState=SCHEDULED"');
-    expect(html).toContain('href="/mentoring/classes?card=classes_awaiting_update"');
-    expect(html).toContain('href="/mentoring/classes?card=classes_awaiting_verification"');
-    expect(html).toContain('href="/mentoring/classes?card=classes_verified"');
+describe('Needs you now queue', () => {
+  const data = {
+    classes: [
+      { key: 'c1', state: 'AWAITING_MENTOR_VERIFICATION', studentName: 'Asha', subjectName: 'Maths' },
+      { key: 'c2', state: 'AWAITING_TUTOR_UPDATE', studentName: 'Ben', tutorName: 'Dr Rao' },
+      { key: 'c3', state: 'VERIFIED', studentName: 'Cy' },
+    ],
+    complaints: [{ id: 'k1', number: 'C-1', title: 'Late class', studentName: 'Dev', ack: { state: 'BREACHED' } }],
+    exams: [{ activationId: 'a1', subjectId: 's1', studentName: 'Eli', subjectName: 'Physics', due: true, scheduledExam: null }, { activationId: 'a2', subjectId: 's1', studentName: 'Fay', due: true, scheduledExam: { date: '2026-11-20' } }],
+    reviews: [{ activationId: 'a3', studentName: 'Gus', overdue: true }],
+    activations: [{ activationId: 'a4', studentName: 'Hal', blocked: true, stageNumber: 3, stageName: 'Parent orientation', daysPending: 6 }],
+  };
+  const verify = jest.fn();
+  const queue = buildQueue(data, verify);
+  it('lists only work that waits on the Mentor', () => {
+    expect(queue.map((i) => i.category).sort()).toEqual(['Class', 'Class', 'Complaint', 'Exam', 'Handover', 'Meeting']);
   });
-
-  it('renders the 7-stage handover roadmap with restricted final approval badge', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
-    const t = text(html);
-
-    expect(t).toContain('Phase 1 Handover Overview (7 Stages)');
-    expect(t).toContain('Student Allocation');
-    expect(t).toContain('Baseline Assessment');
-    expect(t).toContain('Parent Orientation');
-    expect(t).toContain('Teacher Matching');
-    expect(t).toContain('Schedule Setup');
-    expect(t).toContain('Demo & Transition');
-    expect(t).toContain('Final Handover');
-    expect(t).toContain('HEAD ONLY');
-    expect(t).toContain('Mentoring Head Only');
-    expect(t).toContain('Current Stage');
-    expect(t).toContain('Days Pending');
-    expect(t).toContain('Responsible Role');
-    expect(t).toContain('Next Required Action');
+  it('puts missed deadlines first and reserves red for them', () => {
+    const order = queue.map((i) => i.severity);
+    expect(order).toEqual([...order].sort((a, b) => ['danger', 'warning', 'info'].indexOf(a) - ['danger', 'warning', 'info'].indexOf(b)));
+    expect(queue.find((i) => i.id === 'class-verify-c1')?.severity).toBe('warning');
+    expect(queue.find((i) => i.id === 'complaint-k1')?.severity).toBe('danger');
   });
+  it('opens verification in place for a class', () => {
+    queue.find((i) => i.id === 'class-verify-c1')?.onActionClick?.();
+    expect(verify).toHaveBeenCalledWith('c1');
+  });
+  it('is empty when nothing waits', () => {
+    expect(buildQueue({ classes: [], complaints: [], exams: [], reviews: [], activations: [] }, verify)).toEqual([]);
+  });
+});
 
-  it('renders daily & upcoming operations sections', () => {
-    const html = render(React.createElement(MentorDashboard, {}));
-    const t = text(html);
-
-    expect(t).toContain('Daily & Upcoming Operations');
-    expect(t).toContain("Today's Classes");
-    expect(t).toContain('Upcoming Exams & 3-Hour Progress');
-    expect(t).toContain('Upcoming Parent Meetings');
-    expect(t).toContain('Pending Actions Queue');
+describe('Mentor dashboard copy and verification', () => {
+  it('opens verification in the shared dialog, not at the bottom of the page', () => {
+    expect(source).toContain('<Overlay');
+  });
+  it('says what failed instead of showing zero', () => {
+    expect(source).toContain('could not be loaded, so those figures show n/a instead of zero');
+  });
+  it('keeps UI copy free of em dashes and decorative bullets', () => {
+    const copy = source.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
+    expect(copy).not.toMatch(/[—–•]/);
   });
 });

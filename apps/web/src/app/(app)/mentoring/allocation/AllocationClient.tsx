@@ -2,12 +2,12 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { fmt } from '../labels';
+import { Banner, Empty, FIELD_LABEL, FOCUS, ListSkeleton, MUTED, Notice, PANEL, PageHeader, Section, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR } from '../mentoring-ui';
 
 export function AllocationClient() {
   const [queue, setQueue] = React.useState<any[]>([]);
@@ -37,75 +37,76 @@ export function AllocationClient() {
   const mentors = (load?.staff ?? []).filter((s: any) => s.role === 'MENTOR' && s.eligibleForManual);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-slate-900">Allocation and workload</h1>
-      {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader title="Allocation and workload" subtitle="Give new students a Mentor and keep each Mentor within capacity." />
+      {error && <Banner tone="error">{error}</Banner>}
+      {!load && !error && <ListSkeleton rows={4} label="Loading allocation" />}
 
       {load && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-          <h2 className="font-semibold">Automatic allocation</h2>
-          <div className="flex flex-wrap items-end gap-3 text-sm">
-            <label className="space-y-1"><span className="block text-slate-600">Mode</span>
+        <Section title="Automatic allocation">
+          <div className={`${PANEL} flex flex-wrap items-end gap-4 p-4 text-sm`}>
+            <label><span className={FIELD_LABEL}>Mode</span>
               <Select value={load.settings.allocationMode} onChange={(e) => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { allocationMode: e.target.value }))}>
                 <option value="AUTO">Automatic (balance workload)</option><option value="MANUAL">Manual only</option>
               </Select></label>
-            <label className="space-y-1"><span className="block text-slate-600">Default capacity per Mentor</span>
-              <div className="flex gap-2"><div className="w-24"><Input type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} /></div>
-                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { defaultCapacity: Number(cap) }))}>Save</Button></div></label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={load.settings.siblingAffinity} onChange={(e) => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { siblingAffinity: e.target.checked }))} /> Keep siblings with the same Mentor</label>
+            <div><span className={FIELD_LABEL}>Default capacity per Mentor</span>
+              <div className="flex gap-2"><div className="w-24"><Input aria-label="Default capacity per Mentor" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} /></div>
+                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { defaultCapacity: Number(cap) }))}>Save</Button></div></div>
+            <label className="flex min-h-9 items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={load.settings.siblingAffinity} onChange={(e) => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { siblingAffinity: e.target.checked }))} /> Keep siblings with the same Mentor</label>
             <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi('/mentoring/allocation/run-auto', 'POST', {}))}>Run automatic allocation on the queue</Button>
           </div>
-        </section>
+        </Section>
       )}
 
-      <section className="space-y-2">
-        <h2 className="font-semibold">Allocation queue ({queue.length})</h2>
-        <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 text-sm">
-          {queue.length === 0 && <p className="p-4 text-slate-600">No students are waiting for a Mentor.</p>}
-          {queue.length > 0 && load && mentors.length === 0 && (
-            <p className="p-4 text-amber-800 bg-amber-50">No eligible Mentors yet. Create Mentors in Settings → Users under the Mentoring department. Mentors created earlier appear after you open Mentoring → Staff and choose “Add missing Mentors”.</p>
-          )}
-          {queue.map((q) => (
-            <div key={q.activationId} className="p-3 flex flex-wrap items-center gap-3">
-              <Link href={`/mentoring/students/${q.activationId}`} className="font-medium text-brand-700 hover:underline">{q.studentName} ({q.studentBusinessId})</Link>
-              <span className="text-xs text-slate-600">Queued {fmt(q.queuedAt)}</span>
-              <Select className="w-64" value={pick[q.activationId] ?? ''} onChange={(e) => setPick({ ...pick, [q.activationId]: e.target.value })}>
-                <option value="">Choose Mentor…</option>
-                {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name} — {m.openStudents}/{m.capacity}</option>)}
-              </Select>
-              <Button size="sm" disabled={!pick[q.activationId]} isLoading={busy}
-                onClick={() => run(async () => {
-                  const m = mentors.find((x: any) => x.userId === pick[q.activationId]);
-                  const over = m && m.openStudents >= m.capacity ? window.prompt('This Mentor is at capacity. Reason to allocate anyway?') : undefined;
-                  if (m && m.openStudents >= m.capacity && !over) return;
-                  await mentoringApi(`/mentoring/allocation/${q.activationId}/assign`, 'POST', { mentorUserId: pick[q.activationId], ...(over ? { overCapacityReason: over } : {}) });
-                })}>Allocate</Button>
-            </div>
-          ))}
-        </div>
-      </section>
+      <Section title={`Allocation queue (${queue.length})`}>
+        {queue.length > 0 && load && mentors.length === 0 && (
+          <Notice tone="warning">No eligible Mentors yet. Create Mentors in Settings, Users under the Mentoring department. Mentors created earlier appear after you open Mentoring, Staff and choose "Add missing Mentors".</Notice>
+        )}
+        {load && queue.length === 0 && <Empty title="No students are waiting for a Mentor">New enrolled students appear here until they are allocated.</Empty>}
+        {queue.length > 0 && (
+          <ul className={`${PANEL} divide-y divide-slate-100 text-sm`} aria-label="Allocation queue">
+            {queue.map((q) => (
+              <li key={q.activationId} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <Link href={`/mentoring/students/${q.activationId}`} className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>{q.studentName} ({q.studentBusinessId})</Link>
+                <span className={`text-xs ${MUTED}`}>Queued {fmt(q.queuedAt)}</span>
+                <Select aria-label={`Mentor for ${q.studentName}`} className="w-64" value={pick[q.activationId] ?? ''} onChange={(e) => setPick({ ...pick, [q.activationId]: e.target.value })}>
+                  <option value="">Choose a Mentor</option>
+                  {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}, {m.openStudents} of {m.capacity} students</option>)}
+                </Select>
+                <Button size="sm" disabled={!pick[q.activationId]} isLoading={busy}
+                  onClick={() => run(async () => {
+                    const m = mentors.find((x: any) => x.userId === pick[q.activationId]);
+                    const over = m && m.openStudents >= m.capacity ? window.prompt('This Mentor is at capacity. Reason to allocate anyway?') : undefined;
+                    if (m && m.openStudents >= m.capacity && !over) return;
+                    await mentoringApi(`/mentoring/allocation/${q.activationId}/assign`, 'POST', { mentorUserId: pick[q.activationId], ...(over ? { overCapacityReason: over } : {}) });
+                  })}>Allocate</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
 
-      <section className="space-y-2">
-        <h2 className="font-semibold">Mentor and counselor workload</h2>
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600"><tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Open students</th><th className="px-3 py-2">Open tasks</th><th className="px-3 py-2">Status</th></tr></thead>
+      <Section title="Mentor and counselor workload">
+        <div className={TABLE_WRAP}>
+          <table className={TABLE}>
+            <caption className="sr-only">Workload of each Mentor and Demo Counselor</caption>
+            <thead className={THEAD}><tr>{['Name', 'Role', 'Open students', 'Open tasks', 'Status'].map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}</tr></thead>
             <tbody>
               {(load?.staff ?? []).map((s: any) => (
-                <tr key={s.userId} className="border-t border-slate-100">
-                  <td className="px-3 py-2">{s.name}</td><td className="px-3 py-2">{s.role === 'MENTOR' ? 'Mentor' : 'Demo Counselor'}</td>
-                  <td className="px-3 py-2">{s.role === 'MENTOR' ? `${s.openStudents} / ${s.capacity}` : '—'}</td>
-                  <td className="px-3 py-2">{s.openTasks}</td>
-                  <td className="px-3 py-2">
-                    {!s.eligibleForManual ? <><Badge variant="danger">Not eligible</Badge> <span className="text-xs text-slate-600">{s.ineligibleReason}</span></> : s.eligibleForAuto ? <Badge variant="success">Accepting</Badge> : <Badge>Manual only</Badge>}
-                    {s.userStatus === 'PENDING_SETUP' && <span className="ml-2 text-xs text-slate-600">Awaiting first sign-in</span>}
+                <tr key={s.userId} className={TR}>
+                  <td className={`${TD} font-medium text-slate-900`}>{s.name}</td><td className={TD}>{s.role === 'MENTOR' ? 'Mentor' : 'Demo Counselor'}</td>
+                  <td className={TD}>{s.role === 'MENTOR' ? `${s.openStudents} of ${s.capacity}` : 'Not used'}</td>
+                  <td className={TD}>{s.openTasks}</td>
+                  <td className={TD}>
+                    {!s.eligibleForManual ? <><StatusChip tone="danger">Not eligible</StatusChip> <span className={`text-xs ${MUTED}`}>{s.ineligibleReason}</span></> : s.eligibleForAuto ? <StatusChip tone="success">Accepting</StatusChip> : <StatusChip>Manual only</StatusChip>}
+                    {s.userStatus === 'PENDING_SETUP' && <span className={`ml-2 text-xs ${MUTED}`}>Awaiting first sign-in</span>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </section>
+      </Section>
     </div>
   );
 }

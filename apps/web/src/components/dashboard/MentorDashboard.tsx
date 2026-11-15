@@ -2,40 +2,19 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  FileText,
-  Filter,
-  GraduationCap,
-  MessageSquare,
-  RefreshCw,
-  Search,
-  UserCheck,
-  Users,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/Badge';
+import { ArrowRight, CheckCircle2, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '@/app/(app)/mentoring/mentoring-client';
 import { ClassWorkspaceDrawer } from '@/app/(app)/mentoring/ClassWorkspaceDrawer';
+import { STATE_TONE } from '@/app/(app)/mentoring/class-view';
 import { dayLabel, longDayLabel } from '@/app/(app)/mentoring/timetable-view';
+import { CLASS_STATES, EXAM_STATES } from '@/app/(app)/mentoring/dashboard-view';
 import {
-  CLASS_STATES,
-  COMPLAINT_CATEGORIES,
-  COMPLAINT_STATUSES,
-  EXAM_STATES,
-  PRIORITIES,
-  SLA_STATES,
-} from '@/app/(app)/mentoring/dashboard-view';
+  Banner, Empty, FIELD_LABEL, FOCUS, ListSkeleton, MUTED, Overlay, PANEL, PageHeader, ProgressBar, Section, Segmented, StatTile, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR, chipTone, linkButton,
+} from '@/app/(app)/mentoring/mentoring-ui';
+import type { ChipTone } from '@/app/(app)/mentoring/mentoring-ui';
 
 function formatHours(minutes: number): string {
   if (!minutes || minutes <= 0) return '0 hrs';
@@ -48,45 +27,60 @@ function formatHours(minutes: number): string {
 
 function formatMinute(min: number | null | undefined): string {
   if (min === null || min === undefined) return '';
-  const h = Math.floor(min / 60).toString().padStart(2, '0');
-  const m = (min % 60).toString().padStart(2, '0');
-  return `${h}:${m}`;
+  return `${Math.floor(min / 60).toString().padStart(2, '0')}:${(min % 60).toString().padStart(2, '0')}`;
 }
 
 export interface MentorDashboardProps {
-  searchParams?: {
-    from?: string;
-    to?: string;
-    period?: string;
-  };
+  searchParams?: { from?: string; to?: string; period?: string };
 }
 
-const HANDOVER_STAGES = [
-  { number: 1, name: 'Student Allocation', owner: 'Demo Counselor / Head' },
-  { number: 2, name: 'Baseline Assessment', owner: 'Mentor' },
-  { number: 3, name: 'Parent Orientation', owner: 'Mentor' },
-  { number: 4, name: 'Teacher Matching', owner: 'Mentor' },
-  { number: 5, name: 'Schedule Setup', owner: 'Mentor' },
-  { number: 6, name: 'Demo & Transition', owner: 'Mentor' },
-  { number: 7, name: 'Final Handover', owner: 'Mentoring Head Only' },
-];
+const PERIODS = [{ key: 'day', label: 'Today' }, { key: 'week', label: 'This week' }, { key: 'month', label: 'This month' }, { key: 'custom', label: 'Custom dates' }];
+const PERIOD_WORDS: Record<string, string> = { day: 'today', week: 'this week', month: 'this month' };
+const TOTAL_STAGES = 7;
+/** The parts of the page, by name, so a failed request can say what is missing instead of showing zeros. */
+const PARTS = ['Student counts and hours', 'Handovers', "Today's classes", 'Exams', 'Parent meetings', 'Complaints'] as const;
+
+type Severity = 'danger' | 'warning' | 'info';
+interface QueueItem {
+  id: string; student: string; title: string; category: 'Class' | 'Exam' | 'Meeting' | 'Complaint' | 'Handover'; severity: Severity; reason: string; actionText: string; actionHref?: string; onActionClick?: () => void;
+}
+const RANK: Record<Severity, number> = { danger: 0, warning: 1, info: 2 };
+const SEVERITY_TONE: Record<Severity, ChipTone> = { danger: 'danger', warning: 'warning', info: 'info' };
+
+/** Everything that waits on this Mentor, worst first. Red is kept for missed deadlines; work that is simply theirs to do is amber. */
+export function buildQueue(d: { classes: any[]; complaints: any[]; exams: any[]; reviews: any[]; activations: any[] }, onVerify: (key: string) => void): QueueItem[] {
+  const out: QueueItem[] = [];
+  for (const c of d.classes) {
+    if (c.state === 'AWAITING_MENTOR_VERIFICATION') out.push({ id: `class-verify-${c.key}`, student: c.studentName, title: `Verify the ${c.subjectName || 'class'} class of ${c.studentName}`, category: 'Class', severity: 'warning', reason: c.warning || 'Waiting for your verification', actionText: 'Verify class', onActionClick: () => onVerify(c.key) });
+    else if (c.state === 'AWAITING_TUTOR_UPDATE') out.push({ id: `class-update-${c.key}`, student: c.studentName, title: `${c.tutorName || 'The tutor'} has not sent the update for ${c.studentName}`, category: 'Class', severity: 'info', reason: 'Update missing', actionText: 'Follow up', actionHref: '/mentoring/classes?card=classes_awaiting_update' });
+  }
+  for (const comp of d.complaints) {
+    if (comp.ack?.state === 'BREACHED') out.push({ id: `complaint-${comp.id}`, student: comp.studentName, title: `Complaint ${comp.number}, ${comp.title} (${comp.studentName})`, category: 'Complaint', severity: 'danger', reason: 'Acknowledgement time missed', actionText: 'Handle complaint', actionHref: '/mentoring/complaints' });
+    else if (comp.ack?.state === 'APPROACHING') out.push({ id: `complaint-${comp.id}`, student: comp.studentName, title: `Complaint ${comp.number}, ${comp.title} (${comp.studentName})`, category: 'Complaint', severity: 'warning', reason: 'Acknowledgement due soon', actionText: 'Acknowledge', actionHref: '/mentoring/complaints' });
+  }
+  for (const e of d.exams) {
+    if (e.due && !e.scheduledExam) out.push({ id: `exam-due-${e.activationId}-${e.subjectId}`, student: e.studentName, title: `Schedule the ${e.subjectName} exam for ${e.studentName}`, category: 'Exam', severity: 'warning', reason: '3 verified hours reached', actionText: 'Schedule exam', actionHref: `/mentoring/students/${e.activationId}?panel=exams` });
+  }
+  for (const m of d.reviews) {
+    if (m.overdue) out.push({ id: `meeting-${m.activationId}`, student: m.studentName, title: `Monthly parent meeting for ${m.studentName}`, category: 'Meeting', severity: 'danger', reason: 'Overdue', actionText: 'Schedule meeting', actionHref: `/mentoring/students/${m.activationId}?panel=review` });
+  }
+  for (const act of d.activations) {
+    if (act.blocked) out.push({ id: `act-blocked-${act.activationId}`, student: act.studentName, title: `Handover of ${act.studentName} is blocked at stage ${act.stageNumber}, ${act.stageName}`, category: 'Handover', severity: 'danger', reason: `${act.daysPending} days pending`, actionText: 'Resolve block', actionHref: `/mentoring/students/${act.activationId}` });
+  }
+  return out.sort((a, b) => RANK[a.severity] - RANK[b.severity]);
+}
 
 export default function MentorDashboard({ searchParams }: MentorDashboardProps) {
-  // Period & Filter state
-  const [period, setPeriod] = React.useState<string>(searchParams?.period || 'week');
+  const [period, setPeriod] = React.useState<string>(searchParams?.from && searchParams?.to ? 'custom' : searchParams?.period || 'week');
   const [from, setFrom] = React.useState<string>(searchParams?.from || '');
   const [to, setTo] = React.useState<string>(searchParams?.to || '');
-  const [studentQuery, setStudentQuery] = React.useState<string>('');
-  const [subjectFilter, setSubjectFilter] = React.useState<string>('');
-  const [tutorFilter, setTutorFilter] = React.useState<string>('');
-  const [classStateFilter, setClassStateFilter] = React.useState<string>('');
-  const [examStateFilter, setExamStateFilter] = React.useState<string>('');
-  const [complaintCategoryFilter, setComplaintCategoryFilter] = React.useState<string>('');
-  const [complaintStatusFilter, setComplaintStatusFilter] = React.useState<string>('');
-  const [priorityFilter, setPriorityFilter] = React.useState<string>('');
-  const [slaStateFilter, setSlaStateFilter] = React.useState<string>('');
+  const [studentQuery, setStudentQuery] = React.useState('');
+  const [subjectFilter, setSubjectFilter] = React.useState('');
+  const [tutorFilter, setTutorFilter] = React.useState('');
+  const [classStateFilter, setClassStateFilter] = React.useState('');
+  const [examStateFilter, setExamStateFilter] = React.useState('');
+  const [moreFilters, setMoreFilters] = React.useState(false);
 
-  // Loaded data state
   const [summaryData, setSummaryData] = React.useState<any>(null);
   const [activationsData, setActivationsData] = React.useState<any[]>([]);
   const [todayClassesData, setTodayClassesData] = React.useState<any>(null);
@@ -94,25 +88,21 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
   const [reviewsData, setReviewsData] = React.useState<any>(null);
   const [complaintsData, setComplaintsData] = React.useState<any>(null);
 
-  // UI state
-  const [loading, setLoading] = React.useState<boolean>(true);
+  const [loading, setLoading] = React.useState(true);
+  const [loadedOnce, setLoadedOnce] = React.useState(false);
+  const [failed, setFailed] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [openClassKey, setOpenClassKey] = React.useState<string | null>(null);
 
-  // Fetch all dashboard data
   const loadDashboard = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Build overview query with period or custom range
       let overviewQuery = '';
-      if (from && to) {
-        overviewQuery = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-      } else if (period) {
-        overviewQuery = `?period=${encodeURIComponent(period)}`;
-      }
+      if (from && to) overviewQuery = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      else if (period && period !== 'custom') overviewQuery = `?period=${encodeURIComponent(period)}`;
 
-      const [overviewRes, activationsRes, todayRes, examsRes, reviewsRes, complaintsRes] = await Promise.allSettled([
+      const results = await Promise.allSettled([
         mentoringApi(`/mentoring/overview${overviewQuery}`),
         mentoringApi('/mentoring/overview/activations?pageSize=100'),
         mentoringApi('/mentoring/overview/today'),
@@ -120,1028 +110,318 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
         mentoringApi('/mentoring/reviews?pageSize=20'),
         mentoringApi('/mentoring/complaints?limit=50'),
       ]);
-
+      const [overviewRes, activationsRes, todayRes, examsRes, reviewsRes, complaintsRes] = results;
       if (overviewRes.status === 'fulfilled') setSummaryData(overviewRes.value);
       if (activationsRes.status === 'fulfilled') setActivationsData(activationsRes.value?.rows || []);
       if (todayRes.status === 'fulfilled') setTodayClassesData(todayRes.value);
       if (examsRes.status === 'fulfilled') setExamDueData(examsRes.value?.rows || []);
       if (reviewsRes.status === 'fulfilled') setReviewsData(reviewsRes.value);
       if (complaintsRes.status === 'fulfilled') setComplaintsData(complaintsRes.value);
+      setFailed(results.flatMap((r, i) => (r.status === 'rejected' ? [PARTS[i]] : [])));
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : 'Failed to load dashboard data.');
+      setError(e instanceof Error && e.message ? e.message : 'The dashboard could not be loaded.');
     } finally {
       setLoading(false);
+      setLoadedOnce(true);
     }
   }, [period, from, to]);
 
-  React.useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+  React.useEffect(() => { void loadDashboard(); }, [loadDashboard]);
 
-  // Derived subjects list for filtering
+  const q = studentQuery.toLowerCase().trim();
+  const matchesStudent = (name?: string, id?: string) => !q || !!name?.toLowerCase().includes(q) || !!id?.toLowerCase().includes(q);
+  const missing = (part: (typeof PARTS)[number]) => failed.includes(part);
+
   const allSubjects = React.useMemo(() => {
-    const subjectsMap = new Map<string, string>();
-    if (todayClassesData?.rows) {
-      for (const c of todayClassesData.rows) {
-        if (c.subjectName) subjectsMap.set(c.subjectName, c.subjectName);
-      }
-    }
-    if (examDueData) {
-      for (const e of examDueData) {
-        if (e.subjectName) subjectsMap.set(e.subjectName, e.subjectName);
-      }
-    }
-    return Array.from(subjectsMap.values());
+    const names = new Set<string>();
+    for (const c of todayClassesData?.rows ?? []) if (c.subjectName) names.add(c.subjectName);
+    for (const e of examDueData) if (e.subjectName) names.add(e.subjectName);
+    return Array.from(names);
   }, [todayClassesData?.rows, examDueData]);
 
-  // 1. Student overview counts
   const studentMetrics = React.useMemo(() => {
-    const total = activationsData.length;
-    const newStudents = activationsData.filter(
-      (a) => a.stageNumber === 1 || a.status === 'AWAITING_ALLOCATION' || a.status === 'PENDING_DEMO_COUNSELOR',
-    ).length;
-    const handoverPending = activationsData.filter(
-      (a) => a.status === 'AWAITING_ALLOCATION' || a.status === 'PENDING_DEMO_COUNSELOR' || a.status === 'PENDING_HEAD_ALLOCATION',
-    ).length;
-    const handoverInProgress = activationsData.filter(
-      (a) => a.status === 'HANDOVER_IN_PROGRESS' || (a.stageNumber >= 2 && a.stageNumber <= 6),
-    ).length;
-    const awaitingFinalApproval = activationsData.filter(
-      (a) => a.status === 'PENDING_FINAL_APPROVAL' || a.stageNumber === 7,
-    ).length;
-    const activated = summaryData?.summary?.activeStudents || activationsData.filter((a) => a.status === 'ACTIVE').length;
-
-    return { total, newStudents, handoverPending, handoverInProgress, awaitingFinalApproval, activated };
+    const awaiting = (a: any) => a.status === 'AWAITING_ALLOCATION' || a.status === 'PENDING_DEMO_COUNSELOR' || a.status === 'PENDING_HEAD_ALLOCATION';
+    return {
+      total: activationsData.length,
+      newStudents: activationsData.filter((a) => a.stageNumber === 1 || a.status === 'AWAITING_ALLOCATION' || a.status === 'PENDING_DEMO_COUNSELOR').length,
+      handoverPending: activationsData.filter(awaiting).length,
+      handoverInProgress: activationsData.filter((a) => a.status === 'HANDOVER_IN_PROGRESS' || (a.stageNumber >= 2 && a.stageNumber <= 6)).length,
+      awaitingFinalApproval: activationsData.filter((a) => a.status === 'PENDING_FINAL_APPROVAL' || a.stageNumber === 7).length,
+      activated: summaryData?.summary?.activeStudents || activationsData.filter((a) => a.status === 'ACTIVE').length,
+    };
   }, [activationsData, summaryData]);
 
-  // 2. Teaching hours metrics
-  const hoursMetrics = React.useMemo(() => {
+  const hours = React.useMemo(() => {
     const s = summaryData?.summary || {};
     const scheduled = s.scheduledMinutes || 0;
-    const reported = s.reportedMinutes || 0;
     const verified = s.consumedMinutes || 0;
-    const remaining = s.remainingMinutes || 0;
-    const progressPercent = scheduled > 0 ? Math.min(100, Math.round((verified / scheduled) * 100)) : 0;
-
     return {
-      scheduled: formatHours(scheduled),
-      reported: formatHours(reported),
-      verified: formatHours(verified),
-      remaining: formatHours(remaining),
-      progressPercent,
-      rawScheduled: scheduled,
-      rawVerified: verified,
+      scheduled: formatHours(scheduled), reported: formatHours(s.reportedMinutes || 0), verified: formatHours(verified), notVerified: formatHours(s.remainingMinutes || 0),
+      percent: scheduled > 0 ? Math.min(100, Math.round((verified / scheduled) * 100)) : 0,
     };
   }, [summaryData]);
 
-  // 3. Today's class metrics
-  const todayCounts = todayClassesData?.counts || {};
-  const todayTotal = todayClassesData?.total || Object.values(todayCounts).reduce((a: number, b: any) => a + Number(b || 0), 0) || 0;
-  const todayUpcoming = todayCounts.SCHEDULED || 0;
-  const todayAwaitingUpdate = todayCounts.AWAITING_TUTOR_UPDATE || 0;
-  const todayAwaitingVerification = todayCounts.AWAITING_MENTOR_VERIFICATION || 0;
-  const todayVerified = todayCounts.VERIFIED || 0;
-  const todayNotConductedOrRescheduled = (todayCounts.NOT_CONDUCTED || 0) + (todayCounts.RESCHEDULED || 0);
+  const counts = todayClassesData?.counts || {};
+  const todayTotal = todayClassesData?.total || Object.values(counts).reduce((a: number, b: any) => a + Number(b || 0), 0) || 0;
+  const waitingTutor = counts.AWAITING_TUTOR_UPDATE || 0;
+  const waitingMentor = counts.AWAITING_MENTOR_VERIFICATION || 0;
 
-  // Filtered Today's Classes list
-  const filteredTodayClasses = React.useMemo(() => {
-    if (!todayClassesData?.rows) return [];
-    let list = todayClassesData.rows;
-    if (studentQuery.trim()) {
-      const q = studentQuery.toLowerCase().trim();
-      list = list.filter((c: any) => c.studentName?.toLowerCase().includes(q) || c.studentId?.toLowerCase().includes(q));
-    }
-    if (subjectFilter) {
-      list = list.filter((c: any) => c.subjectName === subjectFilter);
-    }
-    if (tutorFilter.trim()) {
-      const q = tutorFilter.toLowerCase().trim();
-      list = list.filter((c: any) => c.tutorName?.toLowerCase().includes(q));
-    }
-    if (classStateFilter) {
-      list = list.filter((c: any) => c.state === classStateFilter);
-    }
-    return list;
-  }, [todayClassesData?.rows, studentQuery, subjectFilter, tutorFilter, classStateFilter]);
+  const todayClasses = React.useMemo(() => (todayClassesData?.rows ?? []).filter((c: any) =>
+    matchesStudent(c.studentName, c.studentId) && (!subjectFilter || c.subjectName === subjectFilter) && (!tutorFilter.trim() || c.tutorName?.toLowerCase().includes(tutorFilter.toLowerCase().trim())) && (!classStateFilter || c.state === classStateFilter),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [todayClassesData?.rows, q, subjectFilter, tutorFilter, classStateFilter]);
 
-  // Filtered Handover Activations list
-  const handoverActivations = React.useMemo(() => {
-    let list = activationsData.filter((a) => a.status !== 'ACTIVE' && a.status !== 'CANCELLED');
-    if (studentQuery.trim()) {
-      const q = studentQuery.toLowerCase().trim();
-      list = list.filter((a) => a.studentName?.toLowerCase().includes(q) || a.studentId?.toLowerCase().includes(q));
-    }
-    return list;
-  }, [activationsData, studentQuery]);
+  const handovers = React.useMemo(() => activationsData.filter((a) => a.status !== 'ACTIVE' && a.status !== 'CANCELLED' && matchesStudent(a.studentName, a.studentId)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [activationsData, q]);
 
-  // Filtered Upcoming Exams list
-  const filteredExams = React.useMemo(() => {
-    if (!examDueData) return [];
-    let list = examDueData;
-    if (studentQuery.trim()) {
-      const q = studentQuery.toLowerCase().trim();
-      list = list.filter((e) => e.studentName?.toLowerCase().includes(q) || e.studentId?.toLowerCase().includes(q));
-    }
-    if (subjectFilter) {
-      list = list.filter((e) => e.subjectName === subjectFilter);
-    }
-    if (examStateFilter) {
-      if (examStateFilter === 'SCHEDULED') list = list.filter((e) => !!e.scheduledExam);
-      else if (examStateFilter === 'READY_FOR_EXAM') list = list.filter((e) => e.due);
-    }
-    return list;
-  }, [examDueData, studentQuery, subjectFilter, examStateFilter]);
+  const exams = React.useMemo(() => examDueData.filter((e) => matchesStudent(e.studentName, e.studentId) && (!subjectFilter || e.subjectName === subjectFilter)
+    && (!examStateFilter || (examStateFilter === 'SCHEDULED' ? !!e.scheduledExam : examStateFilter === 'READY_FOR_EXAM' ? e.due : true))),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [examDueData, q, subjectFilter, examStateFilter]);
 
-  // Upcoming Parent Meetings list
-  const upcomingMeetings = React.useMemo(() => {
-    if (!reviewsData?.rows) return [];
-    let list = reviewsData.rows;
-    if (studentQuery.trim()) {
-      const q = studentQuery.toLowerCase().trim();
-      list = list.filter((m: any) => m.studentName?.toLowerCase().includes(q));
-    }
-    return list;
-  }, [reviewsData?.rows, studentQuery]);
+  const meetings = React.useMemo(() => (reviewsData?.rows ?? []).filter((m: any) => matchesStudent(m.studentName, m.studentId)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [reviewsData?.rows, q]);
 
-  // Consolidated Pending Actions Queue
-  const pendingActions = React.useMemo(() => {
-    const queue: Array<{
-      id: string;
-      title: string;
-      category: 'Class' | 'Exam' | 'Meeting' | 'Complaint' | 'Handover';
-      severity: 'danger' | 'warning' | 'info';
-      slaText?: string;
-      actionText: string;
-      actionHref?: string;
-      onActionClick?: () => void;
-    }> = [];
+  const queue = React.useMemo(() => buildQueue({ classes: todayClassesData?.rows ?? [], complaints: complaintsData?.rows ?? [], exams: examDueData, reviews: reviewsData?.rows ?? [], activations: activationsData }, setOpenClassKey), [todayClassesData?.rows, complaintsData?.rows, examDueData, reviewsData?.rows, activationsData]);
+  const visibleQueue = queue.filter((i) => matchesStudent(i.student));
 
-    // Classes awaiting verification (High/Danger)
-    if (todayClassesData?.rows) {
-      for (const c of todayClassesData.rows) {
-        if (c.state === 'AWAITING_MENTOR_VERIFICATION') {
-          queue.push({
-            id: `class-verify-${c.key}`,
-            title: `Verify class for ${c.studentName} (${c.subjectName || 'Class'})`,
-            category: 'Class',
-            severity: 'danger',
-            slaText: c.warning || 'Verification pending',
-            actionText: 'Verify Class',
-            onActionClick: () => setOpenClassKey(c.key),
-          });
-        } else if (c.state === 'AWAITING_TUTOR_UPDATE') {
-          queue.push({
-            id: `class-update-${c.key}`,
-            title: `Missing tutor update for ${c.studentName} (${c.tutorName || 'Tutor'})`,
-            category: 'Class',
-            severity: 'warning',
-            slaText: 'Update missing',
-            actionText: 'Follow Up',
-            actionHref: `/mentoring/classes?card=classes_awaiting_update`,
-          });
-        }
-      }
-    }
-
-    // Complaints breaching or approaching SLA
-    if (complaintsData?.rows) {
-      for (const comp of complaintsData.rows) {
-        if (comp.ack?.state === 'BREACHED') {
-          queue.push({
-            id: `complaint-${comp.id}`,
-            title: `Complaint ${comp.number}: ${comp.title} (${comp.studentName})`,
-            category: 'Complaint',
-            severity: 'danger',
-            slaText: 'Acknowledgement SLA Breached',
-            actionText: 'Handle Complaint',
-            actionHref: '/mentoring/complaints',
-          });
-        } else if (comp.ack?.state === 'APPROACHING') {
-          queue.push({
-            id: `complaint-${comp.id}`,
-            title: `Complaint ${comp.number}: ${comp.title} (${comp.studentName})`,
-            category: 'Complaint',
-            severity: 'warning',
-            slaText: 'Ack SLA Approaching',
-            actionText: 'Acknowledge',
-            actionHref: '/mentoring/complaints',
-          });
-        }
-      }
-    }
-
-    // Exams due for scheduling
-    if (examDueData) {
-      for (const e of examDueData) {
-        if (e.due && !e.scheduledExam) {
-          queue.push({
-            id: `exam-due-${e.activationId}-${e.subjectId}`,
-            title: `Exam due for ${e.studentName} in ${e.subjectName} (3.0 verified hours reached)`,
-            category: 'Exam',
-            severity: 'warning',
-            slaText: '3.0 hrs threshold met',
-            actionText: 'Schedule Exam',
-            actionHref: `/mentoring/students/${e.activationId}?panel=exams`,
-          });
-        }
-      }
-    }
-
-    // Overdue Parent Meetings
-    if (reviewsData?.rows) {
-      for (const m of reviewsData.rows) {
-        if (m.overdue) {
-          queue.push({
-            id: `meeting-${m.activationId}`,
-            title: `Monthly parent meeting overdue for ${m.studentName}`,
-            category: 'Meeting',
-            severity: 'danger',
-            slaText: 'Overdue',
-            actionText: 'Schedule Meeting',
-            actionHref: `/mentoring/students/${m.activationId}?panel=review`,
-          });
-        }
-      }
-    }
-
-    // Handover stages blocked or awaiting action
-    for (const act of activationsData) {
-      if (act.blocked) {
-        queue.push({
-          id: `act-blocked-${act.activationId}`,
-          title: `Handover blocked for ${act.studentName} (Stage ${act.stageNumber}: ${act.stageName})`,
-          category: 'Handover',
-          severity: 'danger',
-          slaText: `${act.daysPending} days pending`,
-          actionText: 'Resolve Block',
-          actionHref: `/mentoring/students/${act.activationId}`,
-        });
-      }
-    }
-
-    return queue;
-  }, [todayClassesData?.rows, complaintsData?.rows, examDueData, reviewsData?.rows, activationsData]);
-
-  const clearAllFilters = () => {
-    setStudentQuery('');
-    setSubjectFilter('');
-    setTutorFilter('');
-    setClassStateFilter('');
-    setExamStateFilter('');
-    setComplaintCategoryFilter('');
-    setComplaintStatusFilter('');
-    setPriorityFilter('');
-    setSlaStateFilter('');
-    setFrom('');
-    setTo('');
-    setPeriod('week');
-  };
-
-  const hasActiveFilters = !!(
-    studentQuery ||
-    subjectFilter ||
-    tutorFilter ||
-    classStateFilter ||
-    examStateFilter ||
-    complaintCategoryFilter ||
-    complaintStatusFilter ||
-    priorityFilter ||
-    slaStateFilter ||
-    from ||
-    to
-  );
+  const filtersActive = !!(studentQuery || subjectFilter || tutorFilter || classStateFilter || examStateFilter || from || to);
+  const clearFilters = () => { setStudentQuery(''); setSubjectFilter(''); setTutorFilter(''); setClassStateFilter(''); setExamStateFilter(''); setFrom(''); setTo(''); setPeriod('week'); };
+  const periodWords = period === 'custom' ? `${from || 'the start'} to ${to || 'today'}` : PERIOD_WORDS[period] ?? 'this period';
+  const value = (part: (typeof PARTS)[number], v: React.ReactNode) => (missing(part) ? 'n/a' : v);
+  const firstLoad = loading && !loadedOnce;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6" data-testid="dedicated-mentor-dashboard">
-      {/* ─── Header ───────────────────────────────────────────────────────────────────────────── */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Mentor Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {summaryData?.today ? `Today is ${longDayLabel(summaryData.today)}. ` : ''}
-            Operational overview of your assigned students, teaching hours, classes, exams, meetings, and complaints.
-          </p>
-        </div>
-
-        {/* Primary Workspace Quick-Links */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void loadDashboard()}
-            disabled={loading}
-            className="flex items-center gap-1.5"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'motion-safe:animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Link href="/mentoring/classes">
-            <Button size="sm" variant="outline" className="flex items-center gap-1">
-              <Calendar className="h-4 w-4" />
-              Classes
+      <PageHeader
+        title="Mentor dashboard"
+        subtitle={<>{summaryData?.today ? `Today is ${longDayLabel(summaryData.today)}. ` : ''}What needs you first, then your day, exams, parent meetings and new students.</>}
+        actions={(
+          <>
+            <Segmented label="Period for hours" value={period} onChange={(k) => { setPeriod(k); if (k !== 'custom') { setFrom(''); setTo(''); } }} items={PERIODS} />
+            <Button type="button" size="sm" variant="outline" onClick={() => void loadDashboard()} disabled={loading} aria-label="Refresh the dashboard" className="gap-1.5">
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />Refresh
             </Button>
-          </Link>
-          <Link href="/mentoring/exams">
-            <Button size="sm" variant="outline" className="flex items-center gap-1">
-              <GraduationCap className="h-4 w-4" />
-              Exams
-            </Button>
-          </Link>
-          <Link href="/mentoring/reviews">
-            <Button size="sm" variant="outline" className="flex items-center gap-1">
-              <Users className="h-4 w-4" />
-              Meetings
-            </Button>
-          </Link>
-          <Link href="/mentoring/complaints">
-            <Button size="sm" variant="outline" className="flex items-center gap-1">
-              <MessageSquare className="h-4 w-4" />
-              Complaints
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      {error && <p role="alert" className="rounded-md bg-red-50 p-4 text-sm font-medium text-red-700">{error}</p>}
-
-      {/* ─── Filter Bar ───────────────────────────────────────────────────────────────────────── */}
-      <section aria-label="Dashboard Filters" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs" data-testid="dashboard-filters-bar">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
-            <Filter className="h-3.5 w-3.5" />
-            Operational Filters
-          </div>
-
-          {/* Period selector tabs */}
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => { setPeriod('day'); setFrom(''); setTo(''); }}
-              className={`rounded-md px-3 py-1 font-medium transition-all ${period === 'day' && !from ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => { setPeriod('week'); setFrom(''); setTo(''); }}
-              className={`rounded-md px-3 py-1 font-medium transition-all ${period === 'week' && !from ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              This Week
-            </button>
-            <button
-              type="button"
-              onClick={() => { setPeriod('month'); setFrom(''); setTo(''); }}
-              className={`rounded-md px-3 py-1 font-medium transition-all ${period === 'month' && !from ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              This Month
-            </button>
-            <button
-              type="button"
-              onClick={() => { setPeriod(''); }}
-              className={`rounded-md px-3 py-1 font-medium transition-all ${!period || from ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              Custom Range
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Student Search</label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-600" />
-              <Input
-                placeholder="Student name or ID..."
-                value={studentQuery}
-                onChange={(e) => setStudentQuery(e.target.value)}
-                className="pl-8 text-xs"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Subject</label>
-            <Select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
-              <option value="">All Subjects</option>
-              {allSubjects.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Tutor</label>
-            <Input
-              placeholder="Filter by tutor..."
-              value={tutorFilter}
-              onChange={(e) => setTutorFilter(e.target.value)}
-              className="text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Class Status</label>
-            <Select value={classStateFilter} onChange={(e) => setClassStateFilter(e.target.value)}>
-              <option value="">All Class Statuses</option>
-              {CLASS_STATES.map(([val, lbl]) => (
-                <option key={val} value={val}>{lbl}</option>
-              ))}
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Exam Status</label>
-            <Select value={examStateFilter} onChange={(e) => setExamStateFilter(e.target.value)}>
-              <option value="">All Exam Statuses</option>
-              {EXAM_STATES.map(([val, lbl]) => (
-                <option key={val} value={val}>{lbl}</option>
-              ))}
-            </Select>
-          </div>
-        </div>
-
-        {/* Custom Date Range if active or toggled */}
-        {(!period || from || to) && (
-          <div className="grid grid-cols-2 gap-3 sm:w-1/2 pt-1 border-t border-slate-100">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">From Date</label>
-              <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPeriod(''); }} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">To Date</label>
-              <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPeriod(''); }} />
-            </div>
-          </div>
+          </>
         )}
+      />
 
-        {hasActiveFilters && (
-          <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-            <span className="text-slate-600">Filters applied</span>
-            <Button type="button" size="sm" variant="ghost" onClick={clearAllFilters} className="text-xs">
-              Clear All Filters
-            </Button>
-          </div>
-        )}
-      </section>
-
-      {/* ─── SECTION 1: Student Overview Metrics ──────────────────────────────────────────────── */}
-      <section aria-label="Student Overview" className="space-y-3" data-testid="student-overview-group">
-        <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-          <GraduationCap className="h-5 w-5 text-brand-600" />
-          Student Overview (Assigned Scope)
-        </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className="block text-2xl font-bold text-slate-900">{studentMetrics.total}</span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Total Assigned Students</span>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className={`block text-2xl font-bold ${studentMetrics.newStudents > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
-              {studentMetrics.newStudents}
-            </span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Newly Received</span>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className={`block text-2xl font-bold ${studentMetrics.handoverPending > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
-              {studentMetrics.handoverPending}
-            </span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Handover Pending</span>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className="block text-2xl font-bold text-slate-900">{studentMetrics.handoverInProgress}</span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Handover In Progress</span>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <span className={`block text-2xl font-bold ${studentMetrics.awaitingFinalApproval > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
-              {studentMetrics.awaitingFinalApproval}
-            </span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Awaiting Final Head Approval</span>
-          </div>
-
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-xs">
-            <span className="block text-2xl font-bold text-emerald-800">{studentMetrics.activated}</span>
-            <span className="block text-xs font-medium text-emerald-700 mt-1">Activated Students</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── SECTION 2: Teaching Hours Overview ────────────────────────────────────────────────── */}
-      <section aria-label="Teaching Hours Overview" className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs" data-testid="teaching-hours-group">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-              <Clock className="h-5 w-5 text-brand-600" />
-              Teaching Hours Overview
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-600">
-              Hours breakdown for selected period: <span className="font-semibold text-slate-700">{period === 'day' ? 'Today' : period === 'week' ? 'This Week' : period === 'month' ? 'This Month' : `${from || 'Start'} to ${to || 'End'}`}</span>.
-            </p>
-          </div>
-
-          <div className="text-right">
-            <span className="text-xs font-medium text-slate-600">Verification Progress</span>
-            <p className="text-sm font-bold text-slate-900">{hoursMetrics.progressPercent}% of scheduled</p>
-          </div>
-        </div>
-
-        {/* 4 strictly separated metric cards */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div className="rounded-lg bg-slate-50 p-3.5 border border-slate-100">
-            <span className="block text-xs font-medium text-slate-600">Scheduled Hours</span>
-            <span className="block text-xl font-bold text-slate-900 mt-1">{hoursMetrics.scheduled}</span>
-            <span className="block text-xs text-slate-600 mt-0.5">From approved schedule</span>
-          </div>
-
-          <div className="rounded-lg bg-slate-50 p-3.5 border border-slate-100">
-            <span className="block text-xs font-medium text-slate-600">Tutor-Reported Hours</span>
-            <span className="block text-xl font-bold text-slate-900 mt-1">{hoursMetrics.reported}</span>
-            <span className="block text-xs text-slate-600 mt-0.5">Reported by tutors</span>
-          </div>
-
-          <div className="rounded-lg bg-emerald-50 p-3.5 border border-emerald-100">
-            <span className="block text-xs font-medium text-emerald-800">Mentor-Verified Hours</span>
-            <span className="block text-xl font-bold text-emerald-900 mt-1">{hoursMetrics.verified}</span>
-            <span className="block text-xs text-emerald-700 mt-0.5">Consumed & payout authorized</span>
-          </div>
-
-          <div className="rounded-lg bg-amber-50 p-3.5 border border-amber-100">
-            <span className="block text-xs font-medium text-amber-700">Remaining Unverified Hours</span>
-            <span className="block text-xl font-bold text-amber-900 mt-1">{hoursMetrics.remaining}</span>
-            <span className="block text-xs text-amber-700 mt-0.5">Awaiting verification</span>
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="space-y-1.5 pt-2">
-          <div className="flex justify-between text-xs text-slate-600">
-            <span>Verified Hours vs Scheduled</span>
-            <span className="font-semibold">{hoursMetrics.verified} / {hoursMetrics.scheduled} ({hoursMetrics.progressPercent}%)</span>
-          </div>
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full bg-emerald-600 transition-all duration-300"
-              style={{ width: `${hoursMetrics.progressPercent}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Mandatory Policy Note */}
-        <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 flex items-start gap-2 border border-slate-200">
-          <AlertCircle className="h-4 w-4 text-brand-600 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold text-slate-800">Strict Data Integrity Notice:</span> Only mentor-verified hours count toward student consumption and tutor payout. Tutor-reported hours do not decrement student balances or authorise tutor pay until verified.
-          </div>
-        </div>
-      </section>
-
-      {/* ─── SECTION 3: Today's Class Overview ─────────────────────────────────────────────────── */}
-      <section aria-label="Today's Classes Overview" className="space-y-3" data-testid="today-classes-group">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-brand-600" />
-            Today&apos;s Class Overview
-          </h2>
-          <Link href="/mentoring/classes" className="text-xs font-medium text-brand-700 hover:underline flex items-center gap-1">
-            Open Classes Workspace <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Link
-            href="/mentoring/classes"
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition-all hover:border-brand-500 hover:shadow-sm"
-          >
-            <span className="block text-2xl font-bold text-slate-900">{todayTotal}</span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Total Classes Today</span>
-          </Link>
-
-          <Link
-            href="/mentoring/classes?classState=SCHEDULED"
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition-all hover:border-brand-500 hover:shadow-sm"
-          >
-            <span className="block text-2xl font-bold text-slate-900">{todayUpcoming}</span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Upcoming Classes</span>
-          </Link>
-
-          <Link
-            href="/mentoring/classes?card=classes_awaiting_update"
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition-all hover:border-brand-500 hover:shadow-sm"
-          >
-            <span className={`block text-2xl font-bold ${todayAwaitingUpdate > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
-              {todayAwaitingUpdate}
-            </span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Awaiting Tutor Updates</span>
-          </Link>
-
-          <Link
-            href="/mentoring/classes?card=classes_awaiting_verification"
-            className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-xs transition-all hover:border-amber-400 hover:shadow-sm"
-          >
-            <span className={`block text-2xl font-bold ${todayAwaitingVerification > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
-              {todayAwaitingVerification}
-            </span>
-            <span className="block text-xs font-medium text-amber-900 mt-1">Awaiting Verification</span>
-          </Link>
-
-          <Link
-            href="/mentoring/classes?card=classes_verified"
-            className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-xs transition-all hover:border-emerald-400 hover:shadow-sm"
-          >
-            <span className="block text-2xl font-bold text-emerald-800">{todayVerified}</span>
-            <span className="block text-xs font-medium text-emerald-700 mt-1">Verified Classes</span>
-          </Link>
-
-          <Link
-            href="/mentoring/classes?card=classes_not_conducted"
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition-all hover:border-brand-500 hover:shadow-sm"
-          >
-            <span className="block text-2xl font-bold text-slate-700">{todayNotConductedOrRescheduled}</span>
-            <span className="block text-xs font-medium text-slate-600 mt-1">Not Conducted / Rescheduled</span>
-          </Link>
-        </div>
-      </section>
-
-      {/* ─── SECTION 4: Handover Overview (7 Stages) ────────────────────────────────────────── */}
-      <section aria-label="Handover Overview" className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-xs" data-testid="handover-group">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            <UserCheck className="h-5 w-5 text-brand-600" />
-            Phase 1 Handover Overview (7 Stages)
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-600">
-            Complete stages 2–6 for your assigned students. Stage 7 final approval is strictly restricted to Mentoring Head.
-          </p>
-        </div>
-
-        {/* 7-Stage Visual Roadmap */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 text-xs">
-          {HANDOVER_STAGES.map((s) => (
-            <div
-              key={s.number}
-              className={`rounded-lg border p-2.5 ${s.number === 7 ? 'border-amber-200 bg-amber-50/60' : 'border-slate-200 bg-slate-50/70'}`}
-            >
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-                <span>Stage {s.number}</span>
-                {s.number === 7 && <span className="text-xs text-amber-700 font-bold">HEAD ONLY</span>}
-              </div>
-              <p className="font-semibold text-slate-900 mt-0.5 truncate" title={s.name}>{s.name}</p>
-              <p className="text-xs text-slate-600 mt-0.5">{s.owner}</p>
-            </div>
+      <nav aria-label="Mentoring workspaces" className="-mx-1 overflow-x-auto px-1">
+        <ul className="flex min-w-max gap-2">
+          {[['/mentoring/classes', 'Classes'], ['/mentoring/exams', 'Exams'], ['/mentoring/meetings', 'Meetings'], ['/mentoring/complaints', 'Complaints']].map(([href, label]) => (
+            <li key={href}><Link href={href} className={linkButton('secondary')}>{label}</Link></li>
           ))}
-        </div>
+        </ul>
+      </nav>
 
-        {/* Students in Handover Table */}
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full text-left text-sm" data-testid="handover-students-table">
-            <thead className="bg-slate-50 text-xs font-medium text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="px-3 py-2.5">Student</th>
-                <th className="px-3 py-2.5">Current Stage</th>
-                <th className="px-3 py-2.5">Days Pending</th>
-                <th className="px-3 py-2.5">Responsible Role</th>
-                <th className="px-3 py-2.5">Next Required Action</th>
-                <th className="px-3 py-2.5 text-right">Student Link</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {handoverActivations.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-600">
-                    No students currently pending in Phase 1 handover.
-                  </td>
-                </tr>
+      {error && <Banner tone="error" onRetry={() => void loadDashboard()}>{error}</Banner>}
+      {!error && failed.length > 0 && <Banner tone="warning" onRetry={() => void loadDashboard()}>{failed.join(', ')} could not be loaded, so those figures show n/a instead of zero.</Banner>}
+
+      <section aria-label="Find and filter" className={`${PANEL} space-y-3 p-4`} data-testid="dashboard-filters-bar">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[14rem] flex-1 text-sm">
+            <span className={FIELD_LABEL}>Student name or ID</span>
+            <span className="relative block">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-600" aria-hidden="true" />
+              <Input value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} className="pl-8" />
+            </span>
+          </label>
+          <Button type="button" size="sm" variant="outline" onClick={() => setMoreFilters((v) => !v)} aria-expanded={moreFilters} aria-controls="more-filters" className="gap-1.5">
+            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />More filters
+          </Button>
+          {filtersActive && <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>Clear filters</Button>}
+        </div>
+        {moreFilters && (
+          <div id="more-filters" className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm"><span className={FIELD_LABEL}>Subject</span><Select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}><option value="">All subjects</option>{allSubjects.map((s) => <option key={s} value={s}>{s}</option>)}</Select></label>
+            <label className="text-sm"><span className={FIELD_LABEL}>Tutor</span><Input value={tutorFilter} onChange={(e) => setTutorFilter(e.target.value)} /></label>
+            <label className="text-sm"><span className={FIELD_LABEL}>Class status</span><Select value={classStateFilter} onChange={(e) => setClassStateFilter(e.target.value)}><option value="">Any</option>{CLASS_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
+            <label className="text-sm"><span className={FIELD_LABEL}>Exam status</span><Select value={examStateFilter} onChange={(e) => setExamStateFilter(e.target.value)}><option value="">Any</option>{EXAM_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
+            {period === 'custom' && (
+              <>
+                <label className="text-sm"><span className={FIELD_LABEL}>Hours from</span><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+                <label className="text-sm"><span className={FIELD_LABEL}>Hours to</span><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+              </>
+            )}
+          </div>
+        )}
+        {!moreFilters && period === 'custom' && (
+          <div className="grid max-w-md grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+            <label className="text-sm"><span className={FIELD_LABEL}>Hours from</span><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+            <label className="text-sm"><span className={FIELD_LABEL}>Hours to</span><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+          </div>
+        )}
+      </section>
+
+      {firstLoad ? <ListSkeleton rows={5} label="Loading the dashboard" /> : (
+        <>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Section title={`Needs you now (${visibleQueue.length})`} aside="Worst first" className="lg:col-span-2">
+              {visibleQueue.length === 0 ? (
+                <div className={`${PANEL} flex flex-col items-center gap-2 px-6 py-10 text-center`} data-testid="queue-empty">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-700" aria-hidden="true" />
+                  <p className="text-base font-semibold text-slate-900">Nothing is waiting on you</p>
+                  <p className={`text-sm ${MUTED}`}>{filtersActive ? 'Clear the filters to see everything.' : 'New work appears here as classes, exams and complaints need you.'}</p>
+                </div>
               ) : (
-                handoverActivations.map((a) => (
-                  <tr key={a.activationId} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-3 py-2.5 font-medium text-slate-900">
-                      {a.studentName}
-                      {a.studentId ? <span className="ml-1 text-xs text-slate-600 font-normal">({a.studentId})</span> : null}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant={a.stageNumber === 7 ? 'warning' : 'default'} className="text-xs">
-                        Stage {a.stageNumber}: {a.stageName || a.statusLabel}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-700">
-                      <span className={a.daysPending > 5 ? 'font-semibold text-amber-700' : ''}>
-                        {a.daysPending} days
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs">
-                      {a.stageNumber === 7 ? (
-                        <span className="font-semibold text-amber-700">Mentoring Head (Restricted)</span>
-                      ) : (
-                        <span className="text-slate-700">{a.responsible}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-800 max-w-xs truncate" title={a.nextAction}>
-                      {a.nextAction}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <Link
-                        href={`/mentoring/students/${a.activationId}`}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
-                      >
-                        Open <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))
+                <ul className={`${PANEL} divide-y divide-slate-100`} aria-label="Pending actions">
+                  {visibleQueue.map((item) => (
+                    <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3" data-testid="pending-action-item" data-severity={item.severity}>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <StatusChip tone="neutral">{item.category}</StatusChip>
+                          <StatusChip tone={SEVERITY_TONE[item.severity]}>{item.reason}</StatusChip>
+                        </div>
+                        <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                      </div>
+                      {item.onActionClick
+                        ? <button type="button" onClick={item.onActionClick} className={linkButton(item.severity === 'info' ? 'secondary' : 'primary')}>{item.actionText}</button>
+                        : <Link href={item.actionHref ?? '#'} className={linkButton(item.severity === 'info' ? 'secondary' : 'primary')}>{item.actionText}</Link>}
+                    </li>
+                  ))}
+                </ul>
               )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            </Section>
 
-      {/* ─── SECTION 5: Daily & Upcoming Operations ────────────────────────────────────────────── */}
-      <section aria-label="Daily and Upcoming Operations" className="space-y-6" data-testid="daily-operations-group">
-        <h2 className="text-lg font-bold text-slate-900 border-b border-slate-200 pb-2">
-          Daily & Upcoming Operations
-        </h2>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Sub-section A: Today's Classes */}
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-brand-600" />
-                Today&apos;s Classes ({filteredTodayClasses.length})
-              </h3>
-              <Link href="/mentoring/classes" className="text-xs font-medium text-brand-700 hover:underline">
-                View All
-              </Link>
-            </div>
-
-            {filteredTodayClasses.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-600">No classes scheduled for today.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {filteredTodayClasses.map((c: any) => {
-                  const isAwaitingVerification = c.state === 'AWAITING_MENTOR_VERIFICATION';
-                  const isAwaitingUpdate = c.state === 'AWAITING_TUTOR_UPDATE';
-                  const isVerified = c.state === 'VERIFIED';
-                  const isCorrection = c.state === 'RETURNED_FOR_CORRECTION';
-
-                  let actionBadge = <Badge variant="default" className="text-xs">No action needed</Badge>;
-                  if (isAwaitingVerification) actionBadge = <Badge variant="warning" className="text-xs">Awaiting verification</Badge>;
-                  else if (isAwaitingUpdate) actionBadge = <Badge variant="info" className="text-xs">Follow up with tutor</Badge>;
-                  else if (isVerified) actionBadge = <Badge variant="success" className="text-xs">Verified</Badge>;
-                  else if (isCorrection) actionBadge = <Badge variant="danger" className="text-xs">Returned for correction</Badge>;
-
-                  return (
-                    <article
-                      key={c.key}
-                      className={`rounded-lg border p-3.5 transition-colors ${isAwaitingVerification ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 bg-white'}`}
-                      data-testid="today-class-card"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <h4 className="text-sm font-semibold text-slate-900">
-                            {c.studentName} — <span className="font-normal text-slate-600">{c.subjectName}</span>
-                          </h4>
-                          <p className="text-xs text-slate-600 mt-0.5">
-                            Tutor: {c.tutorName} • Time: {formatMinute(c.startMinute)} – {formatMinute(c.endMinute)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          {actionBadge}
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-                        <span className="text-slate-600">{c.stateLabel}</span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={isAwaitingVerification ? 'primary' : 'outline'}
-                          onClick={() => setOpenClassKey(c.key)}
-                          data-testid="open-verification-btn"
-                          className="text-xs h-7 px-2.5"
-                        >
-                          Open Verification
-                        </Button>
-                      </div>
-                    </article>
-                  );
-                })}
+            <Section title="Today" aside={<Link href="/mentoring/classes" className={`inline-flex items-center gap-1 rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>All classes <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>} className="" >
+              <div className="grid grid-cols-2 gap-3" data-testid="today-classes-group">
+                <StatTile href="/mentoring/classes" value={value("Today's classes", todayTotal)} label="Classes today" testId="stat-today" />
+                <StatTile href="/mentoring/classes?state=SCHEDULED" value={value("Today's classes", counts.SCHEDULED || 0)} label="Still to come" />
+                <StatTile href="/mentoring/classes?card=classes_awaiting_update" value={value("Today's classes", waitingTutor)} label="Waiting for the tutor" attention={waitingTutor > 0} />
+                <StatTile href="/mentoring/classes?card=classes_awaiting_verification" value={value("Today's classes", waitingMentor)} label="Waiting for you" attention={waitingMentor > 0} />
+                <StatTile href="/mentoring/classes?card=classes_verified" value={value("Today's classes", counts.VERIFIED || 0)} label="Verified" />
+                <StatTile href="/mentoring/classes?card=classes_not_conducted" value={value("Today's classes", (counts.NOT_CONDUCTED || 0) + (counts.RESCHEDULED || 0))} label="Not held or moved" />
               </div>
-            )}
+            </Section>
           </div>
 
-          {/* Sub-section B: Upcoming Exams */}
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <GraduationCap className="h-4 w-4 text-brand-600" />
-                Upcoming Exams & 3-Hour Progress
-              </h3>
-              <Link href="/mentoring/exams" className="text-xs font-medium text-brand-700 hover:underline">
-                View All
-              </Link>
-            </div>
-
-            {filteredExams.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-600">No exams or verified hours tracked.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {filteredExams.slice(0, 6).map((e: any) => {
-                  const verifiedHours = (e.verifiedMinutes / 60).toFixed(1);
-                  const thresholdHours = (e.thresholdMinutes / 60).toFixed(1);
-                  const status = e.scheduledExam
-                    ? `Scheduled (${dayLabel(e.scheduledExam.date)})`
-                    : e.due
-                    ? 'Eligible (3.0 hrs reached)'
-                    : 'Hours pending';
-
+          <Section title={`Today's classes (${todayClasses.length})`} aside={<Link href="/mentoring/classes" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
+            {todayClasses.length === 0 ? <Empty title="No classes today">{filtersActive ? 'No class matches these filters.' : 'Nothing is scheduled for today. Open Classes to look at another day.'}</Empty> : (
+              <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {todayClasses.map((c: any) => {
+                  const mine = c.state === 'AWAITING_MENTOR_VERIFICATION';
                   return (
-                    <article
-                      key={`${e.activationId}-${e.subjectId}`}
-                      className="rounded-lg border border-slate-200 bg-white p-3.5"
-                      data-testid="upcoming-exam-card"
-                    >
+                    <li key={c.key} className={`${PANEL} p-4 ${mine ? 'shadow-[inset_3px_0_0_0_#d97706]' : ''}`} data-testid="today-class-card">
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h4 className="text-sm font-semibold text-slate-900">{e.studentName}</h4>
-                          <p className="text-xs text-slate-600">{e.subjectName}</p>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900">{c.studentName}</p>
+                          <p className="text-sm text-slate-700">{c.subjectName}, {formatMinute(c.startMinute)} to {formatMinute(c.endMinute)}</p>
+                          <p className={`text-sm ${MUTED}`}>Tutor: {c.tutorName}</p>
                         </div>
-                        <Badge
-                          variant={e.scheduledExam ? 'info' : e.due ? 'success' : 'default'}
-                          className="text-xs"
-                        >
-                          {status}
-                        </Badge>
+                        <StatusChip tone={chipTone(STATE_TONE[c.state as keyof typeof STATE_TONE])}>{c.stateLabel}</StatusChip>
                       </div>
+                      <button type="button" onClick={() => setOpenClassKey(c.key)} data-testid="open-verification-btn" aria-label={`Open the ${c.subjectName} class of ${c.studentName}`} className={`${linkButton(mine ? 'primary' : 'secondary', true)} mt-3`}>
+                        {mine ? 'Verify class' : 'Open class'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
 
-                      {/* 3-hour verified progress bar */}
+          <div className="grid gap-6 lg:grid-cols-2" data-testid="daily-operations-group">
+            <Section title="Exams and the 3 hour mark" aside={<Link href="/mentoring/exams" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
+              {exams.length === 0 ? <Empty title="No exams to track">Exams appear once a student has verified class time.</Empty> : (
+                <ul className="space-y-3">
+                  {exams.slice(0, 6).map((e: any) => (
+                    <li key={`${e.activationId}-${e.subjectId}`} className={`${PANEL} p-4`} data-testid="upcoming-exam-card">
+                      <div className="flex items-start justify-between gap-2">
+                        <div><p className="font-semibold text-slate-900">{e.studentName}</p><p className={`text-sm ${MUTED}`}>{e.subjectName}</p></div>
+                        <StatusChip tone={e.scheduledExam ? 'info' : e.due ? 'success' : 'neutral'}>{e.scheduledExam ? `Scheduled ${dayLabel(e.scheduledExam.date)}` : e.due ? 'Ready to schedule' : 'Hours pending'}</StatusChip>
+                      </div>
                       <div className="mt-3 space-y-1">
-                        <div className="flex justify-between text-xs text-slate-600">
-                          <span>Verified Class Time</span>
-                          <span className="font-semibold">{verifiedHours} / {thresholdHours} hrs ({e.progressPercent}%)</span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className={`h-full ${e.due ? 'bg-emerald-600' : 'bg-brand-500'}`}
-                            style={{ width: `${e.progressPercent}%` }}
-                          />
-                        </div>
+                        <div className={`flex justify-between text-sm ${MUTED}`}><span>Verified class time</span><span className="font-medium text-slate-800">{(e.verifiedMinutes / 60).toFixed(1)} of {(e.thresholdMinutes / 60).toFixed(1)} hrs</span></div>
+                        <ProgressBar percent={e.progressPercent} label={`${e.studentName}, ${e.subjectName} verified time`} />
                       </div>
+                      <Link href={`/mentoring/students/${e.activationId}?panel=exams`} className={`${linkButton('secondary')} mt-3`}>Open student exams</Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
 
-                      <div className="mt-2.5 flex justify-end">
-                        <Link
-                          href={`/mentoring/students/${e.activationId}?panel=exams`}
-                          className="text-xs font-medium text-brand-700 hover:underline flex items-center gap-1"
-                        >
-                          Open Student Exams <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
+            <Section title="Parent meetings" aside={<Link href="/mentoring/meetings" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
+              {meetings.length === 0 ? <Empty title="No parent meetings coming up">Monthly meetings appear here when they are due.</Empty> : (
+                <ul className="space-y-3">
+                  {meetings.slice(0, 5).map((m: any) => {
+                    const prep = m.preparation;
+                    const done = prep?.examsReviewed && prep?.nextPlanApproved;
+                    const some = prep?.tutorObservations > 0 || prep?.examsReviewed;
+                    return (
+                      <li key={m.activationId} className={`${PANEL} p-4`} data-testid="upcoming-meeting-card">
+                        <div className="flex items-start justify-between gap-2">
+                          <div><p className="font-semibold text-slate-900">{m.studentName}</p><p className={`text-sm ${MUTED}`}>Parent: {m.parentName || 'not recorded'}. {m.date ? dayLabel(m.date) : 'Not scheduled'}</p></div>
+                          <StatusChip tone={m.overdue ? 'danger' : done ? 'success' : some ? 'warning' : 'neutral'}>{m.overdue ? 'Overdue' : done ? 'Prepared' : some ? 'Preparing' : 'Not prepared'}</StatusChip>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className={`text-sm ${MUTED}`}>{m.stateLabel}</span>
+                          <Link href={`/mentoring/students/${m.activationId}?panel=review`} className={linkButton('secondary')}>Open review</Link>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Section>
           </div>
 
-          {/* Sub-section C: Upcoming Parent Meetings */}
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <Users className="h-4 w-4 text-brand-600" />
-                Upcoming Parent Meetings
-              </h3>
-              <Link href="/mentoring/reviews" className="text-xs font-medium text-brand-700 hover:underline">
-                View All
-              </Link>
-            </div>
-
-            {upcomingMeetings.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-600">No upcoming parent meetings.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {upcomingMeetings.slice(0, 5).map((m: any) => {
-                  const prep = m.preparation;
-                  let prepLabel = 'Preparation Pending';
-                  let prepTone: 'default' | 'info' | 'success' | 'warning' = 'default';
-
-                  if (prep?.examsReviewed && prep?.nextPlanApproved) {
-                    prepLabel = 'Preparation Complete';
-                    prepTone = 'success';
-                  } else if (prep?.tutorObservations > 0 || prep?.examsReviewed) {
-                    prepLabel = 'Preparation In Progress';
-                    prepTone = 'warning';
-                  }
-
-                  return (
-                    <article
-                      key={m.activationId}
-                      className="rounded-lg border border-slate-200 bg-white p-3.5"
-                      data-testid="upcoming-meeting-card"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h4 className="text-sm font-semibold text-slate-900">{m.studentName}</h4>
-                          <p className="text-xs text-slate-600">
-                            Parent: {m.parentName || 'Parent'} • Date: {m.date ? dayLabel(m.date) : 'Unscheduled'}
-                          </p>
-                        </div>
-                        <Badge variant={m.overdue ? 'danger' : prepTone} className="text-xs">
-                          {m.overdue ? 'Overdue' : prepLabel}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-                        <span className="text-slate-600">Status: {m.stateLabel}</span>
-                        <Link
-                          href={`/mentoring/students/${m.activationId}?panel=review`}
-                          className="font-medium text-brand-700 hover:underline flex items-center gap-1"
-                        >
-                          Review Workspace <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </div>
-                    </article>
-                  );
-                })}
+          <Section title="New students in handover" aside={`${studentMetrics.total} assigned, ${studentMetrics.activated} active`} className="" >
+            <div data-testid="handover-group" className="space-y-3">
+              <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="student-overview-group">
+                <li><StatTile value={value('Handovers', studentMetrics.newStudents)} label="Newly received" attention={studentMetrics.newStudents > 0} /></li>
+                <li><StatTile value={value('Handovers', studentMetrics.handoverPending)} label="Waiting to start" attention={studentMetrics.handoverPending > 0} /></li>
+                <li><StatTile value={value('Handovers', studentMetrics.handoverInProgress)} label="In progress" /></li>
+                <li><StatTile value={value('Handovers', studentMetrics.awaitingFinalApproval)} label="Waiting for the Head" hint="Final approval is the Head's" attention={studentMetrics.awaitingFinalApproval > 0} /></li>
+                <li><StatTile value={value('Student counts and hours', studentMetrics.activated)} label="Active students" /></li>
+              </ul>
+              <div className={TABLE_WRAP}>
+                <table className={TABLE} data-testid="handover-students-table">
+                  <caption className="sr-only">Students in Phase 1 handover</caption>
+                  <thead className={THEAD}><tr>{['Student', 'Stage', 'Days waiting', 'Who acts', 'Next step'].map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}<th scope="col" className={TH}><span className="sr-only">Open</span></th></tr></thead>
+                  <tbody>
+                    {handovers.length === 0 ? <tr><td colSpan={6} className={`${TD} py-8 text-center ${MUTED}`}>No students are waiting in Phase 1 handover.</td></tr> : handovers.map((a) => (
+                      <tr key={a.activationId} className={TR}>
+                        <td className={`${TD} font-medium text-slate-900`}>{a.studentName}{a.studentId ? <span className={`ml-1.5 text-xs font-normal ${MUTED}`}>{a.studentId}</span> : null}</td>
+                        <td className={`${TD} min-w-[11rem]`}>
+                          <p className="text-slate-900">Stage {a.stageNumber} of {TOTAL_STAGES}{a.stageName ? `, ${a.stageName}` : ''}</p>
+                          <div className="mt-1.5"><ProgressBar percent={Math.round(((a.stageNumber || 0) / TOTAL_STAGES) * 100)} label={`${a.studentName} handover progress`} tone={a.stageNumber === 7 ? 'amber' : 'brand'} /></div>
+                        </td>
+                        <td className={`${TD} ${a.daysPending > 5 ? 'font-semibold text-amber-700' : 'text-slate-700'}`}>{a.daysPending} days</td>
+                        <td className={`${TD} text-slate-700`}>{a.stageNumber === 7 ? 'Mentoring Head only' : a.responsible}</td>
+                        <td className={`${TD} max-w-xs text-slate-800`}>{a.nextAction}</td>
+                        <td className={`${TD} text-right`}><Link href={`/mentoring/students/${a.activationId}`} className={linkButton('secondary')} aria-label={`Open ${a.studentName}`}>Open</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </div>
-
-          {/* Sub-section D: Pending Actions Queue */}
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-700" />
-                Pending Actions Queue ({pendingActions.length})
-              </h3>
-              <span className="text-xs text-slate-600">Prioritized Attention</span>
             </div>
+          </Section>
 
-            {pendingActions.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-600 flex flex-col items-center gap-2">
-                <CheckCircle2 className="h-8 w-8 text-emerald-700" />
-                <span>All caught up! No urgent pending actions required.</span>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                {pendingActions.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-start justify-between gap-3 rounded-lg border p-3 text-xs ${item.severity === 'danger' ? 'border-red-200 bg-red-50/50' : item.severity === 'warning' ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-slate-50/50'}`}
-                    data-testid="pending-action-item"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Badge variant="default" className="text-xs px-1.5 py-0">{item.category}</Badge>
-                        <Badge
-                          variant={item.severity === 'danger' ? 'danger' : item.severity === 'warning' ? 'warning' : 'info'}
-                          className="text-xs px-1.5 py-0"
-                        >
-                          {item.slaText || item.severity}
-                        </Badge>
-                      </div>
-                      <p className="font-semibold text-slate-900 truncate" title={item.title}>
-                        {item.title}
-                      </p>
-                    </div>
-
-                    <div className="shrink-0">
-                      {item.onActionClick ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={item.onActionClick}
-                          className="text-xs h-7 px-2.5"
-                        >
-                          {item.actionText}
-                        </Button>
-                      ) : item.actionHref ? (
-                        <Link href={item.actionHref}>
-                          <Button size="sm" variant="outline" className="text-xs h-7 px-2.5">
-                            {item.actionText}
-                          </Button>
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
+          <Section title="Teaching hours" aside={`Counted for ${periodWords}`}>
+            <div className={`${PANEL} space-y-4 p-4`} data-testid="teaching-hours-group">
+              <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                {[['Scheduled', hours.scheduled, 'From the approved timetable'], ['Reported by tutors', hours.reported, 'Not counted until you verify'], ['Verified by you', hours.verified, 'Counts for the student and tutor pay'], ['Not yet verified', hours.notVerified, 'Scheduled and still open']].map(([label, v, hint]) => (
+                  <div key={label}><dt className={`text-sm ${MUTED}`}>{label}</dt><dd className="mt-0.5 text-xl font-semibold text-slate-900">{missing('Student counts and hours') ? 'n/a' : v}</dd><dd className={`text-xs ${MUTED}`}>{hint}</dd></div>
                 ))}
+              </dl>
+              <div className="space-y-1.5">
+                <div className={`flex justify-between text-sm ${MUTED}`}><span>Verified against scheduled</span><span className="font-medium text-slate-800">{hours.verified} of {hours.scheduled} ({hours.percent}%)</span></div>
+                <ProgressBar percent={hours.percent} label="Verified hours against scheduled hours" />
               </div>
-            )}
-          </div>
-        </div>
-      </section>
+              <p className={`text-sm ${MUTED}`}>Only hours you verify count toward student consumption and tutor payout. Hours a tutor reports do not change a balance or release pay until you verify them.</p>
+            </div>
+          </Section>
+        </>
+      )}
 
-      {/* ─── Class Verification Drawer ───────────────────────────────────────────────────────── */}
       {openClassKey && (
-        <ClassWorkspaceDrawer
-          role="MENTOR"
-          classKey={openClassKey}
-          onClose={() => setOpenClassKey(null)}
-          onChanged={() => void loadDashboard()}
-        />
+        <Overlay title="Class verification" size="xl" testId="class-verification-overlay" onClose={() => setOpenClassKey(null)}>
+          <ClassWorkspaceDrawer role="MENTOR" classKey={openClassKey} onClose={() => setOpenClassKey(null)} onChanged={() => void loadDashboard()} />
+        </Overlay>
       )}
     </div>
   );

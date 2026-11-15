@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from 'react';
-import { Badge } from '@/components/ui/Badge';
+import { ToneBadge } from './mentoring-ui';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
@@ -32,8 +32,8 @@ export function StatusStrip({ c }: { c: WorkspaceData['class'] }) {
   return (
     <section aria-label="Class and documentation status" className="rounded-md border border-slate-200 bg-white p-3" data-testid="status-strip">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-600">Class</span><Badge variant={CONDUCT_TONE[c.classStatus] ?? 'default'} data-testid="class-status">{c.classStatusLabel}</Badge>
-        <span className="ml-3 text-xs text-slate-600">Documentation</span><Badge variant={DOC_TONE[c.documentation.status] ?? 'default'} data-testid="documentation-status">{c.documentation.label}</Badge>
+        <span className="text-xs text-slate-600">Class</span><ToneBadge variant={CONDUCT_TONE[c.classStatus] ?? 'default'} data-testid="class-status">{c.classStatusLabel}</ToneBadge>
+        <span className="ml-3 text-xs text-slate-600">Documentation</span><ToneBadge variant={DOC_TONE[c.documentation.status] ?? 'default'} data-testid="documentation-status">{c.documentation.label}</ToneBadge>
       </div>
       {missing.length > 0 && c.documentation.status !== 'NOT_REQUIRED' && (
         <ul className="mt-2 space-y-0.5 text-xs text-slate-700" aria-label="What is missing" data-testid="documentation-missing">{missing.map((m) => <li key={m}>{m}</li>)}</ul>
@@ -103,7 +103,7 @@ function FollowUpRow({ f, role, classKey, busy, canDecide, run }: { f: FollowUpI
     <li className="rounded-md border border-slate-200 bg-white p-3 text-sm" data-testid="follow-up" data-status={f.status}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-auto font-semibold text-slate-900">{f.title}</span>
-        <Badge variant={f.overdue ? 'danger' : closed ? 'success' : 'default'}>{FOLLOW_UP_STATUS_LABELS[f.status] ?? f.status}{f.overdue ? ', overdue' : ''}</Badge>
+        <ToneBadge variant={f.overdue ? 'danger' : closed ? 'success' : 'default'}>{FOLLOW_UP_STATUS_LABELS[f.status] ?? f.status}{f.overdue ? ', overdue' : ''}</ToneBadge>
       </div>
       <p className="text-xs text-slate-600">For {f.assigneeRole === 'TUTOR' ? `the tutor${f.assignee ? `, ${f.assignee}` : ''}` : 'the Mentor'}. Due {f.dueAt ? when(f.dueAt) : 'no date'}. Priority {f.priority.toLowerCase()}.</p>
       {f.description && <p className="mt-1 whitespace-pre-wrap text-slate-800">{f.description}</p>}
