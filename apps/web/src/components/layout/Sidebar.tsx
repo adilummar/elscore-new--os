@@ -51,7 +51,7 @@ export function Sidebar({ user }: { user: any }) {
 
   const topNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    ...(seesMentoringWork ? [{ name: "Mentoring", href: "/mentoring", icon: GraduationCap }] : []),
+    ...(seesMentoringWork ? [{ name: "Students", href: "/mentoring/students", icon: Users }, { name: "Mentoring", href: "/mentoring", icon: GraduationCap }] : []),
     { name: "Attendance", href: "/attendance", icon: Clock },
     ...(hasPermission("leave.request.own") || hasPermission("leave.read.all") ? [{ name: "Leaves", href: "/leaves", icon: Calendar }] : []),
     ...(hasPermission("attendance.read.team") || hasPermission("employee.read-all") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
@@ -75,7 +75,8 @@ export function Sidebar({ user }: { user: any }) {
       </div>
       <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3 custom-scrollbar">
         {topNavItems.map((item) => {
-          const isActive = isNavItemActive(item.href, pathname);
+          // Students is its own item, so Mentoring is not also lit while a student page is open.
+          const isActive = isNavItemActive(item.href, pathname) && !(item.name === "Mentoring" && seesMentoringWork && isNavItemActive("/mentoring/students", pathname));
           return (
             <Link
               key={item.name}

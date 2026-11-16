@@ -1,11 +1,10 @@
-import { ACTIVATION_LABELS } from '../labels';
+import { filtersFromParams } from '../student-hub-view';
 
 import { StudentListClient } from './StudentListClient';
 
-const ONBOARDING_STATUS = 'ACTIVATION_IN_PROGRESS';
-
-/** The list opens on a status when the address names a real one, so Phase 1 onboarding is one link away. */
-export default function MentoringStudentsPage({ searchParams }: { searchParams?: { status?: string } }) {
-  const status = typeof searchParams?.status === 'string' && ACTIVATION_LABELS[searchParams.status] ? searchParams.status : '';
-  return <StudentListClient title={status === ONBOARDING_STATUS ? 'Phase 1 onboarding' : 'Students'} initialStatus={status} />;
+/** The Students list. A link from the dashboard can open it with filters already applied. */
+export default function MentoringStudentsPage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
+  const get = (k: string) => { const v = searchParams?.[k]; return typeof v === 'string' ? v : null; };
+  const filters = filtersFromParams(get);
+  return <StudentListClient title={filters.status === 'ACTIVATION_IN_PROGRESS' ? 'Phase 1 onboarding' : 'Students'} initialFilters={filters} />;
 }

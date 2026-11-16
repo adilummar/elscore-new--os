@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, CheckCircle2, RefreshCw, Search, SlidersHorizontal, Users } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -11,6 +11,7 @@ import { ClassWorkspaceDrawer } from '@/app/(app)/mentoring/ClassWorkspaceDrawer
 import { STATE_TONE } from '@/app/(app)/mentoring/class-view';
 import { dayLabel, longDayLabel } from '@/app/(app)/mentoring/timetable-view';
 import { CLASS_STATES, EXAM_STATES } from '@/app/(app)/mentoring/dashboard-view';
+import { studentsHref } from '@/app/(app)/mentoring/student-hub-view';
 import {
   Banner, Empty, FIELD_LABEL, FOCUS, ListSkeleton, MUTED, Overlay, PANEL, PageHeader, ProgressBar, Section, Segmented, StatTile, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR, chipTone, linkButton,
 } from '@/app/(app)/mentoring/mentoring-ui';
@@ -195,16 +196,32 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
 
   return (
     <div className="mx-auto max-w-7xl space-y-6" data-testid="dedicated-mentor-dashboard">
-      <PageHeader
+<PageHeader
         title="Mentor dashboard"
         subtitle={<>{summaryData?.today ? `Today is ${longDayLabel(summaryData.today)}. ` : ''}What needs you first, then your day, exams, parent meetings and new students.</>}
         actions={(
-          <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={studentsHref()}>
+              <Button size="sm" variant="outline" className="flex items-center gap-1">
+                <Users className="h-4 w-4" aria-hidden="true" />
+                Students
+              </Button>
+            </Link>
+            <Link href={studentsHref({ pendingVerification: true })}>
+              <Button size="sm" variant="outline" className="flex items-center gap-1">
+                To verify
+              </Button>
+            </Link>
+            <Link href={studentsHref({ upcomingExam: true })}>
+              <Button size="sm" variant="outline" className="flex items-center gap-1">
+                Exams soon
+              </Button>
+            </Link>
             <Segmented label="Period for hours" value={period} onChange={(k) => { setPeriod(k); if (k !== 'custom') { setFrom(''); setTo(''); } }} items={PERIODS} />
             <Button type="button" size="sm" variant="outline" onClick={() => void loadDashboard()} disabled={loading} aria-label="Refresh the dashboard" className="gap-1.5">
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />Refresh
             </Button>
-          </>
+          </div>
         )}
       />
 

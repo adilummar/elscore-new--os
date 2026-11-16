@@ -9,6 +9,7 @@ import { MEETING_OPEN_STATUSES, assertMeetingStarted, assertWorkable, loadLocked
 import {
   HANDOVER_FIELDS,
   HANDOVER_FIELD_LABELS,
+  PROFILE_FIELD_KEYS,
   getHandoverField,
   isMeaningfulValue,
   isVerifiableField,
@@ -231,68 +232,135 @@ export class MentoringWorkflowService {
       this.assertMentor(activation, userId);
       this.assertWorkable(activation);
       this.assertMeetingStarted(activation);
+      return this.saveHandoverField(tx, activation, definition, fieldKey, rawValue, userId, basedOn);
+    });
+  }
 
-      const handover = await tx.enrollmentHandover.findUniqueOrThrow({
-        where: { id: activation.handoverId },
-        select: { id: true, transferredFields: true },
-      });
-      const transferred: Array<{ field: string; value: unknown }> = Array.isArray(handover.transferredFields)
-        ? (handover.transferredFields as unknown as Array<{ field: string; value: unknown }>)
-        : [];
-      const salesEntry = transferred.find((f) => f.field === fieldKey);
-      const existing = await tx.enrollmentHandoverField.findUnique({
-        where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
-      });
+  /**
+   * Saves one handover field inside the caller's transaction: validates it against its definition, keeps the Sales value beside the Mentoring
+   * value, refuses a stale edit, records the old and new value in the history and ends a confirmation that covered the old value. Shared by the
+   * workflow editor and the profile editor, so both follow the same rules.
+   */
+  private async saveHandoverField(
+    tx: PrismaTxClient,
+    activation: { id: string; handoverId: string },
+    definition: NonNullable<ReturnType<typeof getHandoverField>>,
+    fieldKey: string,
+    rawValue: unknown,
+    userId: string,
+    basedOn: unknown,
+    extra: Record<string, unknown> = {},
+  ) {
+    const activationId = activation.id;
+    const handover = await tx.enrollmentHandover.findUniqueOrThrow({
+      where: { id: activation.handoverId },
+      select: { id: true, transferredFields: true },
+    });
+    const transferred: Array<{ field: string; value: unknown }> = Array.isArray(handover.transferredFields)
+      ? (handover.transferredFields as unknown as Array<{ field: string; value: unknown }>)
+      : [];
+    const salesEntry = transferred.find((f) => f.field === fieldKey);
+    const existing = await tx.enrollmentHandoverField.findUnique({
+      where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
+    });
 
-      const previous = existing ? existing.value : salesEntry?.value ?? null;
+    const previous = existing ? existing.value : salesEntry?.value ?? null;
 
-      const referenceOptions = definition.optionsFrom ? await this.referenceOptions(tx) : undefined;
-      // A subject schedule is checked against the live subject and level lists. A subject or level the plan already uses
-      // stays selectable even if it was switched off since, so an existing plan can still be saved.
-      const scheduleReferences = definition.type === 'SCHEDULE' ? await this.scheduleReferences(tx, previous) : undefined;
-      const value = validateHandoverFieldValue(definition, rawValue, { today: new Date(), referenceOptions, scheduleReferences });
+    const referenceOptions = definition.optionsFrom ? await this.referenceOptions(tx) : undefined;
+    // A subject schedule is checked against the live subject and level lists. A subject or level the plan already uses
+    // stays selectable even if it was switched off since, so an existing plan can still be saved.
+    const scheduleReferences = definition.type === 'SCHEDULE' ? await this.scheduleReferences(tx, previous) : undefined;
+    const value = validateHandoverFieldValue(definition, rawValue, { today: new Date(), referenceOptions, scheduleReferences });
 
-      if (basedOn !== undefined) this.assertNotStale(basedOn, previous);
-      if (previous !== null && stableJson(previous) === stableJson(value)) {
-        return { fieldKey, value, changed: false as const };
+    if (basedOn !== undefined) this.assertNotStale(basedOn, previous);
+    if (previous !== null && stableJson(previous) === stableJson(value)) {
+      return { fieldKey, value, changed: false as const };
+    }
+
+    const origin = existing ? existing.origin : salesEntry ? ('MENTORING_UPDATED' as const) : ('MENTOR_COLLECTED' as const);
+    const saved = existing
+      ? await tx.enrollmentHandoverField.update({
+          where: { id: existing.id },
+          data: { value: value as Prisma.InputJsonValue, updatedByUserId: userId },
+        })
+      : await tx.enrollmentHandoverField.create({
+          data: {
+            handoverId: handover.id,
+            fieldKey,
+            value: value as Prisma.InputJsonValue,
+            origin,
+            ...(salesEntry ? { salesValue: salesEntry.value as Prisma.InputJsonValue } : {}),
+            createdByUserId: userId,
+            updatedByUserId: userId,
+          },
+        });
+
+    // A confirmation covers the value it was given for. Say in the history when this edit ends one.
+    const confirmation = await tx.enrollmentHandoverFieldVerification.findUnique({
+      where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
+    });
+    const verificationInvalidated = !!confirmation && stableJson(confirmation.verifiedValue) === stableJson(previous);
+
+    await this.history.record(tx, {
+      activationId,
+      type: 'HANDOVER_FIELD_UPDATED',
+      actorUserId: userId,
+      payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, verificationInvalidated, ...extra },
+    });
+    // A changed schedule may no longer suit the tutors already chosen for its subjects: check each one, and flag any
+    // that no longer fit for review instead of leaving a stale assignment in place.
+    if (fieldKey === 'timetable.schedule') {
+      await this.tutors.revalidateForSchedule(tx, activation, isScheduleValue(value) ? value : null, userId);
+    }
+    return { fieldKey, value: saved.value, origin: saved.origin, changed: true as const };
+  }
+
+  /**
+   * Edits the student and parent profile of an ACTIVATED student. The assigned Mentor may edit every student and parent field the admission
+   * handover holds. Each value is stored beside the Sales value exactly as in the workflow (the Sales snapshot, the Student and the Lead are never
+   * written), every change is recorded with the old and new value, and the whole edit is one transaction. It cannot change the activation status,
+   * a stage, the Mentor, a schedule, a tutor, an exam, a learning plan or a class. A confirmation that covered an old value ends, as it does everywhere.
+   */
+  async updateStudentProfile(
+    activationId: string,
+    input: { changes?: unknown; basedOn?: unknown; reason?: unknown },
+    userId: string,
+  ) {
+    const changes = input.changes;
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new BadRequestException('Send the fields to change');
+    const entries = Object.entries(changes as Record<string, unknown>);
+    if (entries.length === 0) throw new BadRequestException('Change at least one field');
+    if (entries.length > PROFILE_FIELD_KEYS.length) throw new BadRequestException('Too many fields');
+    for (const [key] of entries) {
+      if (!PROFILE_FIELD_KEYS.includes(key)) throw new BadRequestException(`"${key}" cannot be edited in the profile`);
+    }
+    const basedOn = input.basedOn && typeof input.basedOn === 'object' && !Array.isArray(input.basedOn) ? (input.basedOn as Record<string, unknown>) : {};
+    for (const key of Object.keys(basedOn)) if (!PROFILE_FIELD_KEYS.includes(key)) throw new BadRequestException(`"${key}" cannot be edited in the profile`);
+    if (input.reason !== undefined && input.reason !== null && typeof input.reason !== 'string') throw new BadRequestException('The reason must be text');
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (reason.length > 500) throw new BadRequestException('The reason must be 500 characters or fewer');
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const activation = await this.loadLocked(tx, activationId);
+      this.assertMentor(activation, userId);
+      if (activation.status !== 'ACTIVATED') throw new ConflictException('The profile is edited here after activation. Until then, use the activation workflow.');
+      // Every value is checked before the first is written, so one bad value never leaves the profile half changed.
+      const reference = await this.referenceOptions(tx);
+      for (const [fieldKey, raw] of entries) {
+        const definition = getHandoverField(fieldKey);
+        if (!definition) throw new BadRequestException(`"${fieldKey}" cannot be edited in the profile`);
+        validateHandoverFieldValue(definition, raw, { today: new Date(), referenceOptions: reference });
       }
-
-      const origin = existing ? existing.origin : salesEntry ? ('MENTORING_UPDATED' as const) : ('MENTOR_COLLECTED' as const);
-      const saved = existing
-        ? await tx.enrollmentHandoverField.update({
-            where: { id: existing.id },
-            data: { value: value as Prisma.InputJsonValue, updatedByUserId: userId },
-          })
-        : await tx.enrollmentHandoverField.create({
-            data: {
-              handoverId: handover.id,
-              fieldKey,
-              value: value as Prisma.InputJsonValue,
-              origin,
-              ...(salesEntry ? { salesValue: salesEntry.value as Prisma.InputJsonValue } : {}),
-              createdByUserId: userId,
-              updatedByUserId: userId,
-            },
-          });
-
-      // A confirmation covers the value it was given for. Say in the history when this edit ends one.
-      const confirmation = await tx.enrollmentHandoverFieldVerification.findUnique({
-        where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
-      });
-      const verificationInvalidated = !!confirmation && stableJson(confirmation.verifiedValue) === stableJson(previous);
-
-      await this.history.record(tx, {
-        activationId,
-        type: 'HANDOVER_FIELD_UPDATED',
-        actorUserId: userId,
-        payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, verificationInvalidated },
-      });
-      // A changed schedule may no longer suit the tutors already chosen for its subjects: check each one, and flag any
-      // that no longer fit for review instead of leaving a stale assignment in place.
-      if (fieldKey === 'timetable.schedule') {
-        await this.tutors.revalidateForSchedule(tx, activation, isScheduleValue(value) ? value : null, userId);
+      const results: Array<{ fieldKey: string; changed: boolean }> = [];
+      for (const [fieldKey, raw] of entries) {
+        const definition = getHandoverField(fieldKey);
+        if (!definition) throw new BadRequestException(`"${fieldKey}" cannot be edited in the profile`);
+        const r = await this.saveHandoverField(tx, activation, definition, fieldKey, raw, userId, fieldKey in basedOn ? basedOn[fieldKey] : undefined, {
+          source: 'ACTIVATED_PROFILE_EDIT', actorRole: 'ASSIGNED_MENTOR', ...(reason ? { remarks: reason } : {}),
+        });
+        results.push({ fieldKey, changed: r.changed });
       }
-      return { fieldKey, value: saved.value, origin: saved.origin, changed: true as const };
+      return { changed: results.filter((r) => r.changed).map((r) => r.fieldKey), unchanged: results.filter((r) => !r.changed).map((r) => r.fieldKey) };
     });
   }
 
