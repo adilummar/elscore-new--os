@@ -7,7 +7,38 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { fmt } from '../labels';
-import { Banner, Empty, FIELD_LABEL, FOCUS, ListSkeleton, MUTED, Notice, PANEL, PageHeader, Section, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR } from '../mentoring-ui';
+import {
+  Banner,
+  Empty,
+  FIELD_LABEL,
+  FOCUS,
+  ListSkeleton,
+  MUTED,
+  Notice,
+  Overlay,
+  PANEL,
+  PageHeader,
+  Section,
+  StatusChip,
+  TABLE,
+  TABLE_WRAP,
+  TD,
+  TH,
+  THEAD,
+  TR,
+} from '../mentoring-ui';
+
+interface OverCapacityTarget {
+  activationId: string;
+  studentName: string;
+  studentBusinessId: string;
+  mentor: {
+    userId: string;
+    name: string;
+    openStudents: number;
+    capacity: number;
+  };
+}
 
 export function AllocationClient() {
   const [queue, setQueue] = React.useState<any[]>([]);
@@ -17,6 +48,13 @@ export function AllocationClient() {
   const [pick, setPick] = React.useState<Record<string, string>>({});
   const [cap, setCap] = React.useState('');
 
+  // Over-capacity confirmation dialog state
+  const [target, setTarget] = React.useState<OverCapacityTarget | null>(null);
+  const [reason, setReason] = React.useState('');
+  const [reasonError, setReasonError] = React.useState<string | null>(null);
+  const [dialogError, setDialogError] = React.useState<string | null>(null);
+  const [dialogBusy, setDialogBusy] = React.useState(false);
+
   const refresh = React.useCallback(async () => {
     try {
       const [q, w] = await Promise.all([mentoringApi('/mentoring/allocation/queue'), mentoringApi('/mentoring/allocation/workload')]);
@@ -24,17 +62,87 @@ export function AllocationClient() {
       setLoad(w);
       setCap(String(w.settings.defaultCapacity));
       setError(null);
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) {
+      setError(e.message);
+    }
   }, []);
-  React.useEffect(() => { refresh(); }, [refresh]);
+
+  React.useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
-    try { await fn(); await refresh(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+    try {
+      await fn();
+      await refresh();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Same eligibility the server uses for manual assignment (account, role, employment, profile), not just "active".
   const mentors = (load?.staff ?? []).filter((s: any) => s.role === 'MENTOR' && s.eligibleForManual);
+
+  const handleAllocateClick = (q: any) => {
+    const mentorId = pick[q.activationId];
+    if (!mentorId) return;
+    const m = mentors.find((x: any) => x.userId === mentorId);
+    if (!m) return;
+
+    if (m.openStudents >= m.capacity) {
+      setTarget({
+        activationId: q.activationId,
+        studentName: q.studentName,
+        studentBusinessId: q.studentBusinessId,
+        mentor: {
+          userId: m.userId,
+          name: m.name,
+          openStudents: m.openStudents,
+          capacity: m.capacity,
+        },
+      });
+      setReason('');
+      setReasonError(null);
+      setDialogError(null);
+      return;
+    }
+
+    run(async () => {
+      await mentoringApi(`/mentoring/allocation/${q.activationId}/assign`, 'POST', { mentorUserId: mentorId });
+    });
+  };
+
+  const handleConfirmOverCapacity = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!target || dialogBusy) return;
+
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      setReasonError('Please provide a reason for allocating over capacity.');
+      return;
+    }
+
+    setReasonError(null);
+    setDialogError(null);
+    setDialogBusy(true);
+
+    try {
+      await mentoringApi(`/mentoring/allocation/${target.activationId}/assign`, 'POST', {
+        mentorUserId: target.mentor.userId,
+        overCapacityReason: trimmed,
+      });
+      setTarget(null);
+      setReason('');
+      await refresh();
+    } catch (err: any) {
+      setDialogError(err.message || 'Failed to allocate student.');
+    } finally {
+      setDialogBusy(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -45,14 +153,26 @@ export function AllocationClient() {
       {load && (
         <Section title="Automatic allocation">
           <div className={`${PANEL} flex flex-wrap items-end gap-4 p-4 text-sm`}>
-            <label><span className={FIELD_LABEL}>Mode</span>
+            <label>
+              <span className={FIELD_LABEL}>Mode</span>
               <Select value={load.settings.allocationMode} onChange={(e) => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { allocationMode: e.target.value }))}>
-                <option value="AUTO">Automatic (balance workload)</option><option value="MANUAL">Manual only</option>
-              </Select></label>
-            <div><span className={FIELD_LABEL}>Default capacity per Mentor</span>
-              <div className="flex gap-2"><div className="w-24"><Input aria-label="Default capacity per Mentor" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} /></div>
-                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { defaultCapacity: Number(cap) }))}>Save</Button></div></div>
-            <label className="flex min-h-9 items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={load.settings.siblingAffinity} onChange={(e) => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { siblingAffinity: e.target.checked }))} /> Keep siblings with the same Mentor</label>
+                <option value="AUTO">Automatic (balance workload)</option>
+                <option value="MANUAL">Manual only</option>
+              </Select>
+            </label>
+            <div>
+              <span className={FIELD_LABEL}>Default capacity per Mentor</span>
+              <div className="flex gap-2">
+                <div className="w-24">
+                  <Input aria-label="Default capacity per Mentor" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} />
+                </div>
+                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { defaultCapacity: Number(cap) }))}>Save</Button>
+              </div>
+            </div>
+            <label className="flex min-h-9 items-center gap-2">
+              <input type="checkbox" className="h-5 w-5" checked={load.settings.siblingAffinity} onChange={(e) => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { siblingAffinity: e.target.checked }))} />
+              Keep siblings with the same Mentor
+            </label>
             <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi('/mentoring/allocation/run-auto', 'POST', {}))}>Run automatic allocation on the queue</Button>
           </div>
         </Section>
@@ -60,7 +180,7 @@ export function AllocationClient() {
 
       <Section title={`Allocation queue (${queue.length})`}>
         {queue.length > 0 && load && mentors.length === 0 && (
-          <Notice tone="warning">No eligible Mentors yet. Create Mentors in Settings, Users under the Mentoring department. Mentors created earlier appear after you open Mentoring, Staff and choose "Add missing Mentors".</Notice>
+          <Notice tone="warning">No eligible Mentors yet. Create Mentors in Settings, Users under the Mentoring department. Mentors created earlier appear after you open Mentoring, Staff and choose &quot;Add missing Mentors&quot;.</Notice>
         )}
         {load && queue.length === 0 && <Empty title="No students are waiting for a Mentor">New enrolled students appear here until they are allocated.</Empty>}
         {queue.length > 0 && (
@@ -73,13 +193,9 @@ export function AllocationClient() {
                   <option value="">Choose a Mentor</option>
                   {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}, {m.openStudents} of {m.capacity} students</option>)}
                 </Select>
-                <Button size="sm" disabled={!pick[q.activationId]} isLoading={busy}
-                  onClick={() => run(async () => {
-                    const m = mentors.find((x: any) => x.userId === pick[q.activationId]);
-                    const over = m && m.openStudents >= m.capacity ? window.prompt('This Mentor is at capacity. Reason to allocate anyway?') : undefined;
-                    if (m && m.openStudents >= m.capacity && !over) return;
-                    await mentoringApi(`/mentoring/allocation/${q.activationId}/assign`, 'POST', { mentorUserId: pick[q.activationId], ...(over ? { overCapacityReason: over } : {}) });
-                  })}>Allocate</Button>
+                <Button size="sm" disabled={!pick[q.activationId]} isLoading={busy} onClick={() => handleAllocateClick(q)}>
+                  Allocate
+                </Button>
               </li>
             ))}
           </ul>
@@ -90,15 +206,26 @@ export function AllocationClient() {
         <div className={TABLE_WRAP}>
           <table className={TABLE}>
             <caption className="sr-only">Workload of each Mentor and Demo Counselor</caption>
-            <thead className={THEAD}><tr>{['Name', 'Role', 'Open students', 'Open tasks', 'Status'].map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}</tr></thead>
+            <thead className={THEAD}>
+              <tr>{['Name', 'Role', 'Open students', 'Open tasks', 'Status'].map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}</tr>
+            </thead>
             <tbody>
               {(load?.staff ?? []).map((s: any) => (
                 <tr key={s.userId} className={TR}>
-                  <td className={`${TD} font-medium text-slate-900`}>{s.name}</td><td className={TD}>{s.role === 'MENTOR' ? 'Mentor' : 'Demo Counselor'}</td>
+                  <td className={`${TD} font-medium text-slate-900`}>{s.name}</td>
+                  <td className={TD}>{s.role === 'MENTOR' ? 'Mentor' : 'Demo Counselor'}</td>
                   <td className={TD}>{s.role === 'MENTOR' ? `${s.openStudents} of ${s.capacity}` : 'Not used'}</td>
                   <td className={TD}>{s.openTasks}</td>
                   <td className={TD}>
-                    {!s.eligibleForManual ? <><StatusChip tone="danger">Not eligible</StatusChip> <span className={`text-xs ${MUTED}`}>{s.ineligibleReason}</span></> : s.eligibleForAuto ? <StatusChip tone="success">Accepting</StatusChip> : <StatusChip>Manual only</StatusChip>}
+                    {!s.eligibleForManual ? (
+                      <>
+                        <StatusChip tone="danger">Not eligible</StatusChip> <span className={`text-xs ${MUTED}`}>{s.ineligibleReason}</span>
+                      </>
+                    ) : s.eligibleForAuto ? (
+                      <StatusChip tone="success">Accepting</StatusChip>
+                    ) : (
+                      <StatusChip>Manual only</StatusChip>
+                    )}
                     {s.userStatus === 'PENDING_SETUP' && <span className={`ml-2 text-xs ${MUTED}`}>Awaiting first sign-in</span>}
                   </td>
                 </tr>
@@ -107,6 +234,105 @@ export function AllocationClient() {
           </table>
         </div>
       </Section>
+
+      {/* Accessible Over-capacity Confirmation Dialog */}
+      {target && (
+        <Overlay
+          variant="dialog"
+          size="md"
+          title="Mentor at capacity"
+          subtitle={`Over-capacity allocation for ${target.studentName} (${target.studentBusinessId})`}
+          onClose={() => {
+            if (!dialogBusy) {
+              setTarget(null);
+              setReason('');
+              setReasonError(null);
+              setDialogError(null);
+            }
+          }}
+          closeLabel="Cancel allocation"
+          testId="over-capacity-dialog"
+        >
+          <form onSubmit={handleConfirmOverCapacity} className="space-y-4">
+            <Notice tone="warning">
+              <strong>{target.mentor.name}</strong> is currently at capacity ({target.mentor.openStudents} of {target.mentor.capacity} students).
+              Allocating an additional student will exceed their limit and requires an explicit reason.
+            </Notice>
+
+            <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-center">
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Current Workload</span>
+                <span className="mt-1 block text-lg font-bold text-slate-900">{target.mentor.openStudents} students</span>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Proposed Workload</span>
+                <span className="mt-1 block text-lg font-bold text-amber-800">{target.mentor.openStudents + 1} students</span>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Capacity Limit</span>
+                <span className="mt-1 block text-lg font-bold text-slate-800">{target.mentor.capacity} students</span>
+              </div>
+            </div>
+
+            {dialogError && <Banner tone="error">{dialogError}</Banner>}
+
+            <div>
+              <label htmlFor="over-capacity-reason" className={FIELD_LABEL}>
+                Reason for exceeding capacity <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                id="over-capacity-reason"
+                className={`w-full rounded-md border p-2.5 text-sm transition-colors ${FOCUS} ${
+                  reasonError ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'
+                }`}
+                rows={3}
+                placeholder="Explain why this student is being assigned to a Mentor who is at capacity..."
+                value={reason}
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  if (reasonError && e.target.value.trim()) setReasonError(null);
+                }}
+                disabled={dialogBusy}
+                aria-required="true"
+                aria-invalid={!!reasonError}
+                aria-describedby={reasonError ? 'over-capacity-reason-error' : undefined}
+                autoFocus
+              />
+              {reasonError && (
+                <p id="over-capacity-reason-error" className="mt-1 text-xs font-medium text-red-600" role="alert">
+                  {reasonError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setTarget(null);
+                  setReason('');
+                  setReasonError(null);
+                  setDialogError(null);
+                }}
+                disabled={dialogBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                isLoading={dialogBusy}
+                disabled={dialogBusy}
+              >
+                Confirm allocation
+              </Button>
+            </div>
+          </form>
+        </Overlay>
+      )}
     </div>
   );
 }
