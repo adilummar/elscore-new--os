@@ -35,6 +35,12 @@ export class MentoringStudentHubController {
     return this.hub.studentClasses(id, await this.access.scopeFor(user.id), q);
   }
 
+  /** The profile fields with their current values and sources, for the edit form. */
+  @Get(':activationId/profile')
+  async profile(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
+    return this.hub.profile(id, await this.access.scopeFor(user.id));
+  }
+
   @Get(':activationId/communication')
   async communication(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
     return this.hub.communication(id, await this.access.scopeFor(user.id));

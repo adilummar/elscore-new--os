@@ -4,16 +4,18 @@ const c = (key: string, status: string, state: string, extra: Partial<{ schedule
 
 describe('class colours', () => {
   it('maps every state to one colour', () => {
-    expect(classTone({ status: 'VERIFIED', state: 'VERIFIED', consumption: 'CONSUMED' })).toBe('green');
+    expect(classTone({ status: 'VERIFIED', state: 'VERIFIED', consumption: 'CONSUMED' })).toBe('grey');
     expect(classTone({ status: 'SCHEDULED', state: 'SCHEDULED', consumption: 'NOT_CONSUMED' })).toBe('blue');
     expect(classTone({ status: 'RESCHEDULED', state: 'RESCHEDULED', consumption: 'NOT_CONSUMED' })).toBe('blue');
-    expect(classTone({ status: 'SCHEDULED', state: 'AWAITING_TUTOR_UPDATE', consumption: 'NOT_CONSUMED' })).toBe('yellow');
-    expect(classTone({ status: 'AWAITING_MENTOR_VERIFICATION', state: 'AWAITING_MENTOR_VERIFICATION', consumption: 'NOT_CONSUMED' })).toBe('yellow');
+    expect(classTone({ status: 'SCHEDULED', state: 'AWAITING_TUTOR_UPDATE', consumption: 'NOT_CONSUMED' })).toBe('amber');
+    expect(classTone({ status: 'AWAITING_MENTOR_VERIFICATION', state: 'AWAITING_MENTOR_VERIFICATION', consumption: 'NOT_CONSUMED' })).toBe('amber');
     expect(classTone({ status: 'NOT_CONDUCTED', state: 'NOT_CONDUCTED', consumption: 'NOT_CONSUMED' })).toBe('red');
-    expect(classTone({ status: 'CANCELLED', state: 'CANCELLED', consumption: 'NOT_CONSUMED' })).toBe('gray');
+    expect(classTone({ status: 'RETURNED_FOR_CORRECTION', state: 'RETURNED_FOR_CORRECTION', consumption: 'NOT_CONSUMED' })).toBe('red');
+    expect(classTone({ status: 'AWAITING_MENTOR_VERIFICATION', state: 'AWAITING_MENTOR_VERIFICATION', consumption: 'NOT_CONSUMED', attention: true })).toBe('red');
   });
 
-  it('never shows a verified record green unless it was consumed', () => {
+  it('never shows a cancelled class grey, and a verified record is grey only when it was consumed', () => {
+    expect(classTone({ status: 'CANCELLED', state: 'CANCELLED', consumption: 'NOT_CONSUMED' })).toBe('neutral');
     expect(classTone({ status: 'VERIFIED', state: 'VERIFIED', consumption: 'NOT_CONSUMED' })).toBe('red');
   });
 });
@@ -43,7 +45,7 @@ describe('consumption', () => {
 
 describe('the balance', () => {
   it('keeps allocated, scheduled, consumed and pending apart, and remaining is allocated minus consumed only', () => {
-    expect(balanceOf({ allocatedMinutes: 600, consumedMinutes: 180, scheduledMinutes: 300, pendingMinutes: 120 })).toEqual({ allocatedMinutes: 600, consumedMinutes: 180, scheduledMinutes: 300, pendingMinutes: 120, remainingMinutes: 420, over: false });
+    expect(balanceOf({ allocatedMinutes: 600, consumedMinutes: 180, scheduledMinutes: 300, pendingMinutes: 120 })).toEqual({ allocatedMinutes: 600, consumedMinutes: 180, scheduledMinutes: 300, pendingMinutes: 120, remainingMinutes: 420, over: false, consumedClasses: 0, scheduledClasses: null });
   });
 
   it('shows remaining as unavailable, not zero, when nothing was allocated', () => {

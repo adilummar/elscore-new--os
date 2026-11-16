@@ -4,7 +4,7 @@ const has = (...p: string[]) => (x: string) => p.includes(x);
 
 describe('the Mentoring shell', () => {
   it('shows Students first, then Classes, Exams, Meetings and Complaints, to anyone who can see students', () => {
-    expect(primaryNav(has('mentoring.student.read-assigned')).map((n) => n.label)).toEqual(['Students', 'Classes', 'Exams', 'Meetings', 'Complaints']);
+    expect(primaryNav(has('mentoring.student.read-assigned')).map((n) => n.label)).toEqual(['My Students', 'Classes', 'Exams', 'Meetings', 'Complaints']);
     expect(primaryNav(has('mentoring.student.read-all')).map((n) => n.label)).toEqual(['Students', 'Classes', 'Exams', 'Meetings', 'Complaints']);
   });
 
@@ -42,7 +42,7 @@ describe('the Mentoring shell', () => {
   it('builds breadcrumbs with a linked parent and an unlinked current page', () => {
     expect(breadcrumbsOf('/mentoring/classes')).toEqual([{ label: 'Mentoring', href: '/mentoring' }, { label: 'Classes' }]);
     expect(breadcrumbsOf('/mentoring/students/abc', 'Asha')).toEqual([
-      { label: 'Mentoring', href: '/mentoring' }, { label: 'Students', href: '/mentoring/students' }, { label: 'Asha' },
+      { label: 'Mentoring', href: '/mentoring' }, { label: 'My Students', href: '/mentoring/students' }, { label: 'Asha' },
     ]);
   });
 
@@ -50,8 +50,9 @@ describe('the Mentoring shell', () => {
     const labels = secondaryNav(has('mentoring.student.read-all')).map((n) => n.label);
     expect(labels).toEqual(expect.arrayContaining(['Department overview']));
     expect(primaryNav(has('mentoring.student.read-all'))[0].label).toBe('Students');
+    expect(primaryNav(has('mentoring.student.read-assigned'))[0]).toMatchObject({ label: 'My Students', href: '/mentoring/students', icon: 'students' });
     expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-all'))[1].label).toBe('Students');
-    expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-assigned'))[1].label).toBe('Students');
+    expect(breadcrumbsOf('/mentoring/students', undefined, has('mentoring.student.read-assigned'))[1].label).toBe('My Students');
   });
 
   it('tells items that share a page apart by their query', () => {

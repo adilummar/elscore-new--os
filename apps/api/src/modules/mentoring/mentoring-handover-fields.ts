@@ -94,6 +94,12 @@ export const HANDOVER_FIELDS: Readonly<Record<string, HandoverFieldDefinition>> 
   ).map((definition) => [definition.key, definition]),
 );
 
+/**
+ * The fields a Mentor may edit on an activated student's profile: every student and parent field, and the academic profile notes. The operational
+ * fields (tutor assignments, timetable, examination dates and portions) are not here, so a profile edit can never reach them.
+ */
+export const PROFILE_FIELD_KEYS: readonly string[] = Object.keys(HANDOVER_FIELDS).filter((k) => k.startsWith('student.') || k.startsWith('parent.') || ['academic.preferredLanguage', 'academic.previousMarks', 'academic.subjectNotes'].includes(k));
+
 /** Plain-language names, used in messages. The web page keeps its own presentation labels for the same keys. */
 export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
   'student.firstName': 'Student First Name',

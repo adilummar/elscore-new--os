@@ -6,6 +6,7 @@ import { addDays, isDateString } from '../tutor/tutor-calendar';
 
 import { MentoringAccessService, MentoringScope } from './mentoring-access.service';
 import { ClassView, MentoringClassService } from './mentoring-class.service';
+import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, PROFILE_FIELD_KEYS } from './mentoring-handover-fields';
 import { MentoringLearningPlanService } from './mentoring-learning-plan.service';
 import { localMomentOf } from './mentoring-sla';
 import { MentoringSlaService } from './mentoring-sla.service';
@@ -21,7 +22,7 @@ const OPEN_COMPLAINT = ['NEW', 'ACKNOWLEDGED', 'ASSIGNED', 'IN_PROGRESS', 'WAITI
 const OPEN_TASK = ['OPEN', 'IN_PROGRESS', 'ON_HOLD', 'SUBMITTED', 'RETURNED'] as const;
 const LIVE_ASSIGNMENT = ['ACTIVE', 'NEEDS_REVIEW'] as const;
 const STATUS_LABELS: Record<string, string> = {
-  AWAITING_ALLOCATION: 'Waiting for a Mentor', ACTIVATION_IN_PROGRESS: 'Onboarding', ACTIVATION_ON_HOLD: 'On hold', ACTIVATION_BLOCKED: 'Blocked', PENDING_FINAL_APPROVAL: 'Waiting for final approval', ACTIVATED: 'Active', CANCELLED: 'Cancelled',
+  AWAITING_ALLOCATION: 'Waiting for a Mentor', ACTIVATION_IN_PROGRESS: 'Activation in progress', ACTIVATION_ON_HOLD: 'On hold', ACTIVATION_BLOCKED: 'Blocked', PENDING_FINAL_APPROVAL: 'Waiting for final approval', ACTIVATED: 'Active', CANCELLED: 'Cancelled',
 };
 const dayOf = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 const fullName = (s: { firstName: string | null; lastName: string | null }) => `${s.firstName} ${s.lastName ?? ''}`.trim();
@@ -190,6 +191,8 @@ export class MentoringStudentHubService {
         consumedMinutes: consumed,
         scheduledMinutes: live.reduce((s, c) => s + c.scheduledMinutes, 0),
         pendingMinutes,
+        consumedClasses: mine.filter((c) => c.consumption === 'CONSUMED').length,
+        scheduledClasses: live.length,
       });
       const next = ahead.filter((c) => c.activationId === r.id && (c.status === 'SCHEDULED' || c.status === 'RESCHEDULED') && `${c.date}-${String(c.endMinute).padStart(4, '0')}` >= `${today}-0000`)[0];
       const exam = exams.find((e) => e.activationId === r.id);
@@ -213,6 +216,8 @@ export class MentoringStudentHubService {
     const mentorIds = [...new Set(acts.map((a) => a.currentMentorUserId).filter((u): u is string => !!u))];
     const employees = mentorIds.length ? await this.db.employee.findMany({ where: { userId: { in: mentorIds } }, select: { userId: true, firstName: true, lastName: true } }) : [];
     const mentorName = (id: string | null) => { const e = employees.find((x) => x.userId === id); return e ? `${e.firstName} ${e.lastName}`.trim() : null; };
+    const live = await this.db.mentoringTutorAssignment.findMany({ where: { activationId: { in: ids }, status: { in: [...LIVE_ASSIGNMENT] } }, select: { activationId: true, subjectId: true, tutorProfileId: true, scheduleSnapshot: true } });
+    const tutorRefs = live.length ? await this.tutors.refsFor([...new Set(live.map((l) => l.tutorProfileId))]) : [];
     const byId = new Map(acts.map((a) => [a.id, a]));
     return ids.map((id) => byId.get(id)).filter((a): a is NonNullable<typeof a> => !!a).map((a) => {
       const g = aggs.get(a.id) as Agg;
@@ -221,6 +226,8 @@ export class MentoringStudentHubService {
         grade: a.student.currentGrade ?? null, level: a.student.grade?.name ?? null,
         mentor: { userId: a.currentMentorUserId, name: mentorName(a.currentMentorUserId) }, isMine: a.currentMentorUserId === scope.userId,
         activatedAt: a.activatedAt ? a.activatedAt.toISOString() : null, status: a.status, statusLabel: STATUS_LABELS[a.status] ?? a.status,
+        subjects: [...new Set(live.filter((l) => l.activationId === a.id).map((l) => ((l.scheduleSnapshot ?? {}) as { subjectName?: string }).subjectName ?? '').filter(Boolean))],
+        tutors: [...new Set(live.filter((l) => l.activationId === a.id).map((l) => tutorRefs.find((t) => t.tutorProfileId === l.tutorProfileId)?.name ?? '').filter(Boolean))],
         balance: g.balance, nextClass: g.nextClass, nextExam: g.nextExam, nextMeeting: g.nextMeeting, pending: g.pending,
       };
     });
@@ -251,31 +258,40 @@ export class MentoringStudentHubService {
     const today = await this.today(now);
     const period = monthWindow(today);
     const agg = (await this.aggregate(scope, [{ id: a.id, studentId: a.studentId }], today, period, now)).get(a.id) as Agg;
-    const [assignments, mentor, stored, plan, group] = await Promise.all([
+    const [assignments, mentor, stored, plan, group, openComplaints, upcomingExams, openHolds] = await Promise.all([
       this.tutors.assignmentsFor(a.id),
       a.currentMentorUserId ? this.db.employee.findFirst({ where: { userId: a.currentMentorUserId }, select: { firstName: true, lastName: true } }) : Promise.resolve(null),
       this.classes.stored([a.id], { limit: 500 }, now),
       this.plans.get(a.id, scope).catch(() => null),
       Promise.resolve(null),
+      this.db.mentoringComplaint.count({ where: { activationId: a.id, status: { in: [...OPEN_COMPLAINT] as never } } }),
+      this.db.mentoringExam.count({ where: { activationId: a.id, dateKey: { not: null }, conducted: null, date: { gte: this.asDate(today) } } }),
+      this.db.workflowHold.count({ where: { activationId: a.id, resolvedAt: null } }),
     ]);
     const counts = countClasses(stored.map((c) => ({ key: c.key, status: c.status, state: c.state, scheduledMinutes: c.scheduledMinutes, verifiedMinutes: c.verified?.minutes ?? null })));
     const upcoming = (await this.classes.range(scope, today, addDays(today, LOOKAHEAD_DAYS), [a.id], {}, now)).filter((c) => c.status === 'SCHEDULED' || c.status === 'RESCHEDULED').length;
     const seeParent = this.access.canSeeParentContact(scope, a);
-    const parent = seeParent ? { name: fullName(a.lead), phone: a.lead.primaryPhone ?? a.lead.altPhone1 ?? a.lead.whatsappNumber ?? null } : null;
+    const eff = await this.effectiveProfile(a.handoverId);
+    const str = (k: string) => (typeof eff.value.get(k) === 'string' ? (eff.value.get(k) as string) : null);
+    const studentName = [str('student.firstName') ?? a.student.firstName, str('student.lastName') ?? a.student.lastName].filter(Boolean).join(' ').trim();
+    const parent = seeParent ? { name: str('parent.name') ?? fullName(a.lead), phone: str('parent.primaryPhone') ?? a.lead.primaryPhone ?? a.lead.altPhone1 ?? a.lead.whatsappNumber ?? null } : null;
     return {
       today, period,
       header: {
-        activationId: a.id, name: fullName(a.student), studentId: a.student.businessId, photoUrl: null as string | null,
-        grade: a.student.currentGrade ?? null, level: a.student.grade?.name ?? null, curriculum: a.student.curriculum?.name ?? null,
+        activationId: a.id, name: studentName || fullName(a.student), studentId: a.student.businessId, photoUrl: null as string | null,
+        grade: str('student.currentGrade') ?? a.student.currentGrade ?? null, level: a.student.grade?.name ?? null, curriculum: a.student.curriculum?.name ?? null, school: str('student.schoolName') ?? a.student.schoolName ?? null,
         status: a.status, statusLabel: STATUS_LABELS[a.status] ?? a.status, activatedAt: a.activatedAt ? a.activatedAt.toISOString() : null,
         mentor: { userId: a.currentMentorUserId, name: mentor ? `${mentor.firstName} ${mentor.lastName}`.trim() : null },
         group, parent, parentHidden: !seeParent,
       },
-      viewer: { isMentor: a.currentMentorUserId === scope.userId, canVerify: this.canVerify(a, scope), seesAll: scope.all, readOnly: !this.canVerify(a, scope) },
+      viewer: { isMentor: a.currentMentorUserId === scope.userId, canVerify: this.canVerify(a, scope), canEditProfile: this.canEditProfile(a, scope), seesAll: scope.all, readOnly: !this.canVerify(a, scope) },
       balance: agg.balance,
       cards: {
         upcomingClasses: upcoming, awaitingTutorUpdate: counts.awaitingTutor, awaitingMentorVerification: counts.awaitingMentor, returnedForCorrection: counts.returned,
-        nextExam: agg.nextExam, nextMeeting: agg.nextMeeting, pending: agg.pending,
+        nextClass: agg.nextClass, openComplaints, upcomingExams, nextExam: agg.nextExam, nextMeeting: agg.nextMeeting, pending: agg.pending,
+        /** A genuine activation workflow still open on an active student, such as a paused stage. The checklist is shown only then. */
+        pendingWorkflow: openHolds > 0,
+        recentClasses: stored.slice(0, 5).map((c) => ({ key: c.key, date: c.date, startMinute: c.startMinute, subjectName: c.subjectName, stateLabel: c.stateLabel, tone: classTone({ status: c.status, state: c.state, consumption: c.consumption, attention: c.sla?.state === 'BREACHED' || c.exception.status === 'REQUESTED' }) })),
         learningPlan: plan ? { status: plan.planStatus ?? plan.status, start: plan.summary.overallStart, endsOn: plan.summary.endsOn } : null,
       },
       tutors: assignments.map((t) => ({ subjectId: t.subjectId, subjectName: t.subjectName, tutorProfileId: t.tutorProfileId, tutorName: t.tutorName, status: t.status, sessions: t.sessions, meetLink: t.meetLink })),
@@ -306,13 +322,56 @@ export class MentoringStudentHubService {
       records: list.map((c) => ({
         key: c.key, sessionId: c.sessionId, date: c.date, startMinute: c.startMinute, endMinute: c.endMinute, scheduledMinutes: c.scheduledMinutes,
         subjectId: c.subjectId, subjectName: c.subjectName, tutorName: c.tutorName, status: c.status, state: c.state, stateLabel: c.stateLabel,
-        tone: classTone({ status: c.status, state: c.state, consumption: c.consumption }), moved: c.moved || c.status === 'RESCHEDULED',
+        tone: classTone({ status: c.status, state: c.state, consumption: c.consumption, attention: c.sla?.state === 'BREACHED' || c.exception.status === 'REQUESTED' }), moved: c.moved || c.status === 'RESCHEDULED',
         consumption: c.consumption, verifiedMinutes: c.verified?.minutes ?? null, tutorSubmitted: !!c.update, voiceUploaded: c.voice.uploaded,
         returned: c.returned, cancelled: c.cancelled,
       })),
       truncated: all.length >= 500,
       note: 'Only stored class records are listed. A class on the timetable that nothing has happened to yet is not a record and is counted under scheduled, not here.',
     };
+  }
+
+  // ─── Profile: the admission information, with its source ─────────────────────────────────────────────────────────
+  /** What each profile field reads as now: the Mentoring value when a Mentor saved one, otherwise the Sales value. Nothing here is written. */
+  private async effectiveProfile(handoverId: string) {
+    const [handover, rows] = await Promise.all([
+      this.db.enrollmentHandover.findUnique({ where: { id: handoverId }, select: { transferredFields: true } }),
+      this.db.enrollmentHandoverField.findMany({ where: { handoverId } }),
+    ]);
+    const sales = new Map<string, unknown>();
+    const list: Array<{ field: string; value: unknown }> = Array.isArray(handover?.transferredFields) ? (handover.transferredFields as unknown as Array<{ field: string; value: unknown }>) : [];
+    for (const e of list) if (e && typeof e.field === 'string') sales.set(e.field, e.value);
+    const value = new Map<string, unknown>(sales);
+    const origin = new Map<string, string>();
+    for (const r of rows) { value.set(r.fieldKey, r.value); origin.set(r.fieldKey, r.origin); }
+    return { value, sales, origin };
+  }
+
+  /**
+   * The profile as the edit form needs it: every student and parent field with its type, limits, current value, the Sales value beside it and who
+   * supplied it. Whether the caller may edit is decided here from the same rule the save uses (the assigned Mentor, after activation), and the save
+   * checks it again.
+   */
+  async profile(activationId: string, scope: MentoringScope) {
+    const a = await this.visible(activationId, scope);
+    const seeParent = this.access.canSeeParentContact(scope, a);
+    const eff = await this.effectiveProfile(a.handoverId);
+    const [grades, curricula] = await Promise.all([this.db.grade.findMany({ select: { name: true }, orderBy: { name: 'asc' } }), this.db.curriculum.findMany({ select: { name: true }, orderBy: { name: 'asc' } })]);
+    const REQUIRED = new Set(['student.firstName', 'parent.name', 'parent.primaryPhone']);
+    const fields = PROFILE_FIELD_KEYS.filter((k) => seeParent || !k.startsWith('parent.')).map((key) => {
+      const d = HANDOVER_FIELDS[key];
+      const options = d.options ?? (d.optionsFrom === 'GRADES' ? grades.map((g) => g.name) : d.optionsFrom === 'CURRICULA' ? curricula.map((c) => c.name) : undefined);
+      return {
+        key, label: HANDOVER_FIELD_LABELS[key] ?? key, group: key.startsWith('parent.') ? 'PARENT' : key.startsWith('student.') ? 'STUDENT' : 'ACADEMIC', type: d.type, options: options ?? null,
+        maxLength: d.maxLength ?? null, minDate: d.minDate ?? null, maxDate: d.maxDate ?? null, required: REQUIRED.has(key),
+        value: eff.value.get(key) ?? null, salesValue: eff.sales.get(key) ?? null, source: eff.origin.get(key) ?? (eff.sales.has(key) ? 'SALES' : 'NONE'),
+      };
+    });
+    return { fields, canEdit: this.canEditProfile(a, scope), parentHidden: !seeParent };
+  }
+
+  private canEditProfile(a: { currentMentorUserId: string | null; status: string }, scope: MentoringScope) {
+    return a.currentMentorUserId === scope.userId && scope.perms.has('mentoring.stage.work') && a.status === 'ACTIVATED';
   }
 
   // ─── Communication: records that exist ─────────────────────────────────────────────────────────────────────────

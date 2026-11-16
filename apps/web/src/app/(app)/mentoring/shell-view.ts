@@ -2,7 +2,7 @@
  * The Mentoring shell: which workspaces and supporting areas a person sees, which one is active, and the breadcrumb trail.
  * Pure rules over a permission list and a path. This only decides what to show; the API still decides what anyone may do.
  */
-export interface NavItem { href: string; label: string; section: string }
+export interface NavItem { href: string; label: string; section: string; icon?: 'students' }
 
 type Can = (permission: string) => boolean;
 
@@ -17,7 +17,7 @@ export const ONBOARDING_HREF = '/mentoring/students?status=ACTIVATION_IN_PROGRES
 export function primaryNav(can: Can): NavItem[] {
   if (!sees(can)) return [];
   return [
-    { href: '/mentoring/students', label: 'Students', section: 'students' },
+    { href: '/mentoring/students', label: wide(can) ? 'Students' : 'My Students', section: 'students', icon: 'students' },
     { href: '/mentoring/classes', label: 'Classes', section: 'classes' },
     { href: '/mentoring/exams', label: 'Exams', section: 'exams' },
     { href: '/mentoring/meetings', label: 'Meetings', section: 'meetings' },
@@ -72,7 +72,7 @@ export function readOnlyNotice(can: Can): string | null {
 
 const titleOf = (section: string, can?: Can): string => {
   const base: Record<string, string> = {
-    classes: 'Classes', exams: 'Exams', meetings: 'Meetings', complaints: 'Complaints', students: 'Students', tasks: 'Pending actions', allocation: 'Allocation',
+    classes: 'Classes', exams: 'Exams', meetings: 'Meetings', complaints: 'Complaints', students: can && wide(can) ? 'Students' : 'My Students', tasks: 'Pending actions', allocation: 'Allocation',
     approvals: 'Final approvals', staff: 'Mentors and counselors', dashboard: 'Work lists', overview: can && wide(can) ? 'Department overview' : 'Overview',
   };
   return base[section] ?? 'Mentoring';

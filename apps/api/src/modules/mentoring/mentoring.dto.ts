@@ -344,3 +344,11 @@ export class StudentHubClassesQueryDto {
   @IsOptional() @IsString() from?: string;
   @IsOptional() @IsString() to?: string;
 }
+
+/** An edit to the profile of an activated student. The service accepts only the profile field keys, and rejects any other. */
+export class UpdateProfileDto {
+  @IsDefined() changes!: unknown;
+  /** The value of each changed field as the Mentor saw it, so a save over someone else's newer edit is refused. */
+  @IsOptional() basedOn?: unknown;
+  @IsOptional() reason?: unknown;
+}

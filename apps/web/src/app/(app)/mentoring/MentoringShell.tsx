@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { ChevronRight, Eye } from 'lucide-react';
+import { ChevronRight, Eye, GraduationCap } from 'lucide-react';
 import { usePermissions } from '@/components/providers/AuthProvider';
 
 import { FOCUS } from './mentoring-ui';
@@ -58,6 +58,7 @@ export function MentoringShell({ children }: { children: React.ReactNode }) {
                   <li key={n.href}>
                     <Link href={n.href} aria-current={active ? 'page' : undefined}
                       className={`inline-flex min-h-11 items-center rounded-lg px-5 text-base font-semibold transition-colors ${FOCUS} ${active ? 'bg-primary text-white shadow-sm' : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-slate-900'}`}>
+                      {n.icon === 'students' && <GraduationCap aria-hidden="true" className="mr-2 h-5 w-5" />}
                       {n.label}
                     </Link>
                   </li>

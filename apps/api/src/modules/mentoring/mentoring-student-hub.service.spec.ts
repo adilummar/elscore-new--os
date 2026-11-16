@@ -213,6 +213,32 @@ describe('the Student Workspace', () => {
   });
 });
 
+describe('the lifecycle-aware cards', () => {
+  it('lists subjects and tutors on the list, and counts verified classes apart from hours', async () => {
+    const w = world();
+    await w.classes.tutorSubmitUpdate('u-meera', `as-class-A~${MON}~900`, good, at(MON, '17:00'));
+    await w.classes.verify(w.db.rows('mentoringClassSession')[0].id, {}, 'mentor-1', at(MON, '18:00'));
+    const row = (await w.hub.list(await w.scope('mentor-1'), { search: 'Asha' }, at(MON, '18:10'))).rows[0];
+    expect(row.subjects).toEqual(['English']);
+    expect(row.tutors).toEqual(['Meera Thomas']);
+    expect(row.balance).toMatchObject({ consumedClasses: 1, consumedMinutes: 65, scheduledClasses: 4 });
+  });
+
+  it('reports open complaints, upcoming exams and whether an activation workflow is genuinely pending', async () => {
+    const w = world();
+    w.db.seed('mentoringComplaint', { activationId: 'act-A', status: 'NEW' });
+    w.db.seed('mentoringComplaint', { activationId: 'act-A', status: 'RESOLVED' });
+    w.db.seed('mentoringExam', { activationId: 'act-A', subjectId: 'sub-en', title: 'T', date: day('2026-11-12'), startMinute: 600, endMinute: 660, dateKey: 'act-A:2026-11-12', conducted: null });
+    const mentor = await w.scope('mentor-1');
+    let ws = await w.hub.workspace('act-A', mentor, NOW);
+    expect(ws.cards).toMatchObject({ openComplaints: 1, upcomingExams: 1, pendingWorkflow: false });
+    expect(ws.cards.nextClass).toMatchObject({ date: MON });
+    w.db.seed('workflowHold', { activationId: 'act-A', resolvedAt: null });
+    ws = await w.hub.workspace('act-A', mentor, NOW);
+    expect(ws.cards.pendingWorkflow).toBe(true);
+  });
+});
+
 describe('the Classes tab', () => {
   it('lists stored records only: a timetable full of future classes is not a list of records', async () => {
     const w = world();
@@ -223,17 +249,17 @@ describe('the Classes tab', () => {
     expect(w.db.rows('mentoringClassSession')).toHaveLength(0);
   });
 
-  it('colours each record: yellow while it waits, green once verified and consumed, gray when cancelled', async () => {
+  it('colours each record: amber while it waits, grey once verified and consumed, neutral when cancelled', async () => {
     const w = world();
     const mentor = await w.scope('mentor-1');
     await w.classes.tutorSubmitUpdate('u-meera', `as-class-A~${MON}~900`, good, at(MON, '17:00'));
     await w.classes.cancel('as-class-A~2026-11-16~900', 'Holiday', 'mentor-1', NOW);
     const waiting = await w.hub.studentClasses('act-A', mentor, {}, at(MON, '17:30'));
-    expect(waiting.records.map((r) => [r.date, r.tone, r.consumption])).toEqual([['2026-11-16', 'gray', 'NOT_CONSUMED'], [MON, 'yellow', 'NOT_CONSUMED']]);
+    expect(waiting.records.map((r) => [r.date, r.tone, r.consumption])).toEqual([['2026-11-16', 'neutral', 'NOT_CONSUMED'], [MON, 'amber', 'NOT_CONSUMED']]);
     expect(waiting.counts.allTime).toMatchObject({ records: 2, consumedClasses: 0, awaitingMentor: 1, cancelled: 1 });
     await w.classes.verify(w.db.rows('mentoringClassSession').find((s) => s.status === 'AWAITING_MENTOR_VERIFICATION')!.id, {}, 'mentor-1', at(MON, '18:00'));
     const done = await w.hub.studentClasses('act-A', mentor, {}, at(MON, '18:10'));
-    expect(done.records.find((r) => r.date === MON)).toMatchObject({ tone: 'green', consumption: 'CONSUMED', verifiedMinutes: 65 });
+    expect(done.records.find((r) => r.date === MON)).toMatchObject({ tone: 'grey', consumption: 'CONSUMED', verifiedMinutes: 65 });
     expect(done.counts.allTime).toMatchObject({ consumedClasses: 1, consumedMinutes: 65, awaitingMentor: 0, cancelled: 1 });
     expect(done.balance).toMatchObject({ allocatedMinutes: 240, consumedMinutes: 65, remainingMinutes: 175 });
     expect(done.canVerify).toBe(true);

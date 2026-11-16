@@ -25,6 +25,7 @@ import {
   TimetableQueryDto,
   UpdateChecklistItemDto,
   UpdateHandoverFieldDto,
+  UpdateProfileDto,
 } from './mentoring.dto';
 
 /**
@@ -98,6 +99,16 @@ export class MentoringWorkflowController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.workflow.updateHandoverField(id, fieldKey, dto.value, user.id, dto.basedOn);
+  }
+
+  /**
+   * Edit the student and parent profile of an activated student (assigned Mentor). Only the profile fields are accepted, all in one transaction,
+   * each recorded with its old and new value. The activation, its stages and every operational record are untouched.
+   */
+  @Patch(':activationId/profile')
+  @RequirePermissions('mentoring.stage.work')
+  updateProfile(@Param('activationId') id: string, @Body() dto: UpdateProfileDto, @CurrentUser() user: RequestUser) {
+    return this.workflow.updateStudentProfile(id, dto, user.id);
   }
 
   /** Confirm a field with the parent, or withdraw the confirmation (assigned Mentor). Separate from collecting the value. */

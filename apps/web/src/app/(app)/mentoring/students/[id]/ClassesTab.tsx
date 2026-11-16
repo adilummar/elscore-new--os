@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { audioUrl } from '../../workspace-view';
 import { ClassWorkspaceDrawer } from '../../ClassWorkspaceDrawer';
 import { mentoringApi } from '../../mentoring-client';
-import { ClassCounts, ClassRecord, ClassesData, TONES, TONE_ORDER, clock, dateText, minutesText } from '../../student-hub-view';
+import { ClassCounts, ClassRecord, ClassesData, TONES, TONE_ORDER, Window, clock, dateText, minutesText, shiftAnchor, weekdayOf, windowOf } from '../../student-hub-view';
 
 const STATE_FILTERS: Array<[string, string]> = [
   ['', 'All records'], ['AWAITING_TUTOR_UPDATE', 'Awaiting tutor update'], ['AWAITING_MENTOR_VERIFICATION', 'Awaiting Mentor verification'], ['RETURNED_FOR_CORRECTION', 'Returned for correction'],
@@ -20,16 +20,20 @@ export function ClassesTab({ activationId }: { activationId: string }) {
   const [data, setData] = React.useState<ClassesData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [state, setState] = React.useState('');
+  const [view, setView] = React.useState<Window>('month');
+  const [anchor, setAnchor] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [open, setOpen] = React.useState<ClassRecord | null>(null);
   const [reload, setReload] = React.useState(0);
 
   React.useEffect(() => {
     let live = true;
-    mentoringApi(`/mentoring/mentor-students/${activationId}/classes${state ? `?state=${encodeURIComponent(state)}` : ''}`)
+    const w = windowOf(view, anchor);
+    const q = [state ? `state=${encodeURIComponent(state)}` : '', w ? `from=${w.from}&to=${w.to}` : ''].filter(Boolean).join('&');
+    mentoringApi(`/mentoring/mentor-students/${activationId}/classes${q ? `?${q}` : ''}`)
       .then((d: ClassesData) => { if (live) { setData(d); setError(null); } })
       .catch((e: unknown) => { if (live) setError(e instanceof Error && e.message ? e.message : 'The classes could not be loaded.'); });
     return () => { live = false; };
-  }, [activationId, state, reload]);
+  }, [activationId, state, view, anchor, reload]);
 
   if (error) return <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error} <button type="button" className="underline" onClick={() => setReload((n) => n + 1)}>Try again</button></p>;
   if (!data) return <p className="text-sm text-slate-500">Loading the classes</p>;
@@ -63,30 +67,51 @@ export function ClassesTab({ activationId }: { activationId: string }) {
       </div>
       <Totals all={data.counts.allTime} />
 
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Timeline range">
+        {([['week', 'Week'], ['month', 'Month'], ['all', 'All records']] as Array<[Window, string]>).map(([k, label]) => (
+          <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)} className={`min-h-11 rounded-md border px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${view === k ? 'border-brand-600 bg-brand-50 font-semibold text-brand-700' : 'border-slate-300 bg-white text-slate-700'}`}>{label}</button>
+        ))}
+        {view !== 'all' && (
+          <>
+            <button type="button" className="min-h-11 rounded-md border border-slate-300 px-3 text-sm" aria-label={view === 'week' ? 'Previous week' : 'Previous month'} onClick={() => setAnchor(shiftAnchor(view, anchor, -1))}>Previous</button>
+            <button type="button" className="min-h-11 rounded-md border border-slate-300 px-3 text-sm" onClick={() => setAnchor(new Date().toISOString().slice(0, 10))}>Today</button>
+            <button type="button" className="min-h-11 rounded-md border border-slate-300 px-3 text-sm" aria-label={view === 'week' ? 'Next week' : 'Next month'} onClick={() => setAnchor(shiftAnchor(view, anchor, 1))}>Next</button>
+            <span className="text-sm text-slate-700" data-testid="timeline-range">{dateText(windowOf(view, anchor)!.from)} to {dateText(windowOf(view, anchor)!.to)}</span>
+          </>
+        )}
+      </div>
+
       {data.records.length === 0
-        ? <p className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500" data-testid="classes-empty">No class records yet. A record appears when something happens to a scheduled class, such as a reminder or the tutor&apos;s update.</p>
+        ? <p className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-600" data-testid="classes-empty">{view === 'all' ? 'No class records yet. A record appears when something happens to a scheduled class, such as a reminder or the tutor’s update.' : 'No class records in this period.'}</p>
         : (
-          <ul className="space-y-2" aria-label="Class records">
-            {data.records.map((r) => (
-              <li key={r.key}>
-                <button type="button" onClick={() => setOpen(r)} data-testid="class-record" data-tone={r.tone} data-key={r.key}
-                  className={`flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-l-4 border-slate-200 bg-white p-3 text-left text-sm hover:bg-slate-50 ${TONES[r.tone].bar}`}>
-                  <span className="font-medium text-slate-900">{dateText(r.date)}, {clock(r.startMinute)} to {clock(r.endMinute)}</span>
-                  <span>{r.subjectName}</span>
-                  <span className="text-slate-600">{r.tutorName}</span>
-                  <Badge className={`ml-auto ${TONES[r.tone].chip}`}>{r.stateLabel}</Badge>
-                  <span className="w-full text-xs text-slate-500">
-                    {r.consumption === 'CONSUMED' ? `Consumed: ${minutesText(r.verifiedMinutes)} verified` : 'Not consumed'}
-                    {r.moved ? ' · Moved from its original time' : ''}
-                    {r.tutorSubmitted ? ' · Tutor update sent' : ''}
-                    {r.voiceUploaded ? ' · Voice recording uploaded' : ''}
-                    {r.returned ? ` · Returned: ${r.returned.reason}` : ''}
-                    {r.cancelled ? ` · Cancelled: ${r.cancelled.reason}` : ''}
-                  </span>
-                </button>
+          <ol className="space-y-4" aria-label="Class timeline">
+            {groupByDate(data.records).map(([date, records]) => (
+              <li key={date}>
+                <h3 className="mb-1 text-sm font-semibold text-slate-900">{weekdayOf(date)}, {dateText(date)}</h3>
+                <ul className="space-y-2">
+                  {records.map((r) => (
+                    <li key={r.key}>
+                      <button type="button" onClick={() => setOpen(r)} data-testid="class-record" data-tone={r.tone} data-key={r.key}
+                        className={`flex min-h-11 w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-l-4 border-slate-200 bg-white p-3 text-left text-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${TONES[r.tone].bar}`}>
+                        <span className="font-medium text-slate-900">{clock(r.startMinute)} to {clock(r.endMinute)} <span className="font-normal text-slate-600">({minutesText(r.scheduledMinutes)})</span></span>
+                        <span className={r.tone === 'neutral' ? 'line-through' : ''}>{r.subjectName}</span>
+                        <span className="text-slate-600">{r.tutorName}</span>
+                        <Badge className={`ml-auto ${TONES[r.tone].chip}`}>{r.stateLabel}</Badge>
+                        <span className="w-full text-xs text-slate-600">
+                          {r.consumption === 'CONSUMED' ? `Consumed: ${minutesText(r.verifiedMinutes)} verified` : 'Not consumed'}
+                          {r.moved ? ' · Moved from its original time' : ''}
+                          {r.tutorSubmitted ? ' · Tutor update sent' : ''}
+                          {r.voiceUploaded ? ' · Voice recording uploaded' : ''}
+                          {r.returned ? ` · Returned: ${r.returned.reason}` : ''}
+                          {r.cancelled ? ` · Cancelled: ${r.cancelled.reason}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
-          </ul>
+          </ol>
         )}
       {data.truncated && <p className="text-xs text-amber-800">Only the 500 most recent records are shown.</p>}
       {open && <ClassDrawer record={open} canVerify={data.canVerify} onClose={() => setOpen(null)} onChanged={() => setReload((n) => n + 1)} />}
@@ -205,4 +230,11 @@ function Summary({ d }: { d: Detail }) {
       </section>
     </div>
   );
+}
+
+/** Groups records by day, oldest day first, keeping each day's classes in time order. */
+export function groupByDate(records: ClassRecord[]): Array<[string, ClassRecord[]]> {
+  const days = new Map<string, ClassRecord[]>();
+  for (const r of records) days.set(r.date, [...(days.get(r.date) ?? []), r]);
+  return [...days.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([d, list]) => [d, [...list].sort((p, q) => p.startMinute - q.startMinute)]);
 }

@@ -9,16 +9,20 @@
  * Remaining is allocated minus consumed and exists only when an allocation exists. Nothing here ever invents a figure.
  */
 
-export type ClassTone = 'green' | 'blue' | 'yellow' | 'red' | 'gray';
+export type ClassTone = 'grey' | 'blue' | 'amber' | 'red' | 'neutral';
 
-export interface ToneInput { status: string; state: string; consumption: 'CONSUMED' | 'NOT_CONSUMED' }
+export interface ToneInput { status: string; state: string; consumption: 'CONSUMED' | 'NOT_CONSUMED'; /** A missed response deadline or an exception the Head has to decide. */ attention?: boolean }
 
-/** The colour of a class record: green verified and consumed, blue upcoming, yellow waiting for the tutor or the Mentor, red needs attention, gray cancelled. */
+/**
+ * The colour of a class record. Grey: verified and consumed. Blue: upcoming. Amber: waiting for the tutor or the Mentor. Red: a missed deadline,
+ * a class that was not held, a class sent back, or a genuine exception. Neutral: cancelled, kept apart from grey so a cancelled class never
+ * looks consumed.
+ */
 export function classTone(c: ToneInput): ClassTone {
-  if (c.status === 'CANCELLED' || c.state === 'CANCELLED') return 'gray';
-  if (c.status === 'VERIFIED') return c.consumption === 'CONSUMED' ? 'green' : 'red';
-  if (c.status === 'NOT_CONDUCTED' || c.state === 'NOT_CONDUCTED') return 'red';
-  if (c.state === 'AWAITING_TUTOR_UPDATE' || c.state === 'AWAITING_MENTOR_VERIFICATION' || c.state === 'RETURNED_FOR_CORRECTION') return 'yellow';
+  if (c.status === 'CANCELLED' || c.state === 'CANCELLED') return 'neutral';
+  if (c.status === 'VERIFIED') return c.consumption === 'CONSUMED' ? 'grey' : 'red';
+  if (c.status === 'NOT_CONDUCTED' || c.state === 'NOT_CONDUCTED' || c.state === 'RETURNED_FOR_CORRECTION' || c.attention) return 'red';
+  if (c.state === 'AWAITING_TUTOR_UPDATE' || c.state === 'AWAITING_MENTOR_VERIFICATION') return 'amber';
   return 'blue';
 }
 
@@ -70,10 +74,13 @@ export interface Balance {
   /** Null (unavailable) when nothing was allocated. Never negative. */
   remainingMinutes: number | null;
   over: boolean;
+  /** Verified classes this period. A class count of what was allocated is not stored, so there is no remaining count. */
+  consumedClasses: number;
+  scheduledClasses: number | null;
 }
 
 /** Remaining is allocated minus consumed. Pending and scheduled time is reported beside it and never subtracted. */
-export function balanceOf(input: { allocatedMinutes: number | null; consumedMinutes: number; scheduledMinutes: number | null; pendingMinutes: number }): Balance {
+export function balanceOf(input: { allocatedMinutes: number | null; consumedMinutes: number; scheduledMinutes: number | null; pendingMinutes: number; consumedClasses?: number; scheduledClasses?: number | null }): Balance {
   const a = input.allocatedMinutes;
   return {
     allocatedMinutes: a,
@@ -82,6 +89,8 @@ export function balanceOf(input: { allocatedMinutes: number | null; consumedMinu
     pendingMinutes: input.pendingMinutes,
     remainingMinutes: a === null ? null : Math.max(0, a - input.consumedMinutes),
     over: a !== null && input.consumedMinutes > a,
+    consumedClasses: input.consumedClasses ?? 0,
+    scheduledClasses: input.scheduledClasses ?? null,
   };
 }
 
