@@ -70,10 +70,11 @@ describe('opening a student', () => {
 describe('the Students list page', () => {
   it('renders the filters, the column headings and a loading state before any data arrives', () => {
     const html = renderToStaticMarkup(React.createElement(StudentListClient, {}));
-    for (const t of ['Search by name or student ID', 'All grades', 'All subjects', 'Any class consumption', 'Classes waiting for my verification', 'Exam in the next two weeks', 'Student', 'Grade / level', 'Tutors', 'Mentor', 'Activated', 'Status', 'Pending']) expect(html).toContain(t);
+    for (const t of ['Search by name or student ID', 'All grades', 'All subjects', 'More filters', 'Classes waiting for my verification', 'Exam in the next two weeks', 'Student', 'Grade', 'Tutors', 'Mentor', 'Activated', 'Status', 'Pending']) expect(html).toContain(t);
+    expect(html).not.toContain('Any class consumption'); // kept behind More filters until asked for
     // The directory is deliberately short: classes, exams, meetings and subjects live in the Student Workspace.
     expect(html).not.toMatch(/<th[^>]*>(Subjects|Next class|Next exam|Next parent meeting|Classes and hours this month)</);
-    expect((html.match(/<th /g) ?? []).length).toBe(7);
+    expect((html.match(/<th /g) ?? []).length).toBe(8); // the seven columns and a visually hidden Open column
     expect(html).toContain('aria-busy="true"');
   });
 

@@ -137,8 +137,8 @@ describe('the subject schedule editor', () => {
   it('offers Add subject, and Sales subjects that are not in the plan yet as quick additions', () => {
     const t = text(render(handover(plan(english()))));
     expect(t).toContain('Add subject');
-    expect(t).toContain('Add Mathematics (Grade 8) from Sales');
-    expect(text(render(handover(plan(maths()))))).not.toContain('Add Mathematics (Grade 8) from Sales');
+    expect(t).toContain('Add Mathematics from Sales');
+    expect(text(render(handover(plan(maths()))))).not.toContain('Add Mathematics from Sales');
   });
 
   it('tells the Mentor what Sales recorded for a subject already in the plan', () => {
@@ -269,7 +269,25 @@ describe('the schedule screen follows the Unslop rules', () => {
   });
 
   it('writes buttons and labels in sentence case', () => {
-    for (const label of ['Add subject', 'Remove subject', 'Edit session durations', 'Add to subject list', 'Required level', 'Preferred days']) expect(t).toContain(label);
+    for (const label of ['Add subject', 'Remove subject', 'Edit session durations', 'Add to subject list', 'Preferred days']) expect(t).toContain(label);
     expect(t).not.toMatch(/Add Subject|Remove Subject|Edit Session Durations|Restore Equal Distribution/);
+  });
+});
+
+describe('one grade only: subjects take the student\'s Grade / Class', () => {
+  const html = render(handover(plan(english())));
+
+  it('asks for no level on a subject card, and shows the level the subject uses', () => {
+    expect(html).not.toContain('Required level');
+    expect(html).not.toContain('Select a level');
+    expect(text(html)).toContain('Grade 8');
+  });
+
+  it('a new subject, and a Sales subject added from the list, are given the student\'s grade by the editor', () => {
+    const source = require('fs').readFileSync(require('path').join(__dirname, 'students/[id]/SubjectScheduleEditor.tsx'), 'utf8');
+    expect(source).toContain('const withGrade');
+    expect(source).toContain("set([...subjects, withGrade(newSubject('WEEKLY'))])");
+    expect(source).toContain('studentGrade');
+    expect(source).not.toContain('aria-label={`Required level');
   });
 });

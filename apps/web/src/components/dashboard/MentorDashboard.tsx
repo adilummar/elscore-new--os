@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, RefreshCw, Search, SlidersHorizontal, Users } from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, Inbox, MessageSquare, RefreshCw, Search, SlidersHorizontal, Users, Video } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -195,29 +195,20 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
   const value = (part: (typeof PARTS)[number], v: React.ReactNode) => (missing(part) ? 'n/a' : v);
   const firstLoad = loading && !loadedOnce;
 
+  const examsToSchedule = examDueData.filter((e) => e.due && !e.scheduledExam).length;
+  const meetingsOverdue = (reviewsData?.rows ?? []).filter((m: any) => m.overdue).length;
+  const complaintRows: any[] = complaintsData?.rows ?? [];
+  const complaintsUrgent = complaintRows.filter((c) => c.ack?.state === 'BREACHED' || c.ack?.state === 'APPROACHING').length;
+  const urgentCount = queue.filter((i) => i.severity === 'danger').length;
+  const kpi = (part: (typeof PARTS)[number], v: number) => (loading && !loadedOnce ? '...' : missing(part) ? 'n/a' : v);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6" data-testid="dedicated-mentor-dashboard">
-<PageHeader
+      <PageHeader
         title="Mentor dashboard"
         subtitle={<>{summaryData?.today ? `Today is ${longDayLabel(summaryData.today)}. ` : ''}What needs you first, then your day, exams, parent meetings and new students.</>}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={studentsHref()}>
-              <Button size="sm" variant="outline" className="flex items-center gap-1">
-                <Users className="h-4 w-4" aria-hidden="true" />
-                Students
-              </Button>
-            </Link>
-            <Link href={studentsHref({ pendingVerification: true })}>
-              <Button size="sm" variant="outline" className="flex items-center gap-1">
-                To verify
-              </Button>
-            </Link>
-            <Link href={studentsHref({ upcomingExam: true })}>
-              <Button size="sm" variant="outline" className="flex items-center gap-1">
-                Exams soon
-              </Button>
-            </Link>
             <Segmented label="Period for hours" value={period} onChange={(k) => { setPeriod(k); if (k !== 'custom') { setFrom(''); setTo(''); } }} items={PERIODS} />
             <Button type="button" size="sm" variant="outline" onClick={() => void loadDashboard()} disabled={loading} aria-label="Refresh the dashboard" className="gap-1.5">
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />Refresh
@@ -226,168 +217,208 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
         )}
       />
 
-      <nav aria-label="Mentoring workspaces" className="-mx-1 overflow-x-auto px-1">
-        <ul className="flex min-w-max gap-2">
-          {[['/mentoring/classes', 'Classes'], ['/mentoring/exams', 'Exams'], ['/mentoring/meetings', 'Meetings'], ['/mentoring/complaints', 'Complaints']].map(([href, label]) => (
-            <li key={href}><Link href={href} className={linkButton('secondary')}>{label}</Link></li>
+      <nav aria-label="Mentoring workspaces" data-testid="dashboard-kpis">
+        <ul className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <li className="col-span-2 lg:col-span-1">
+            <a href="#needs-you" className={`flex h-full flex-col justify-between rounded-xl p-4 text-white shadow-card transition-shadow hover:shadow-floating ${FOCUS} ${urgentCount > 0 ? 'bg-rose-700' : queue.length > 0 ? 'bg-amber-700' : 'bg-brand-700'}`}>
+              <span className="flex items-center gap-2 text-sm font-medium text-white/90"><Inbox className="h-4 w-4" aria-hidden="true" />Needs you now</span>
+              <span className="mt-3 block text-3xl font-semibold leading-none" data-testid="kpi-needs-you">{loading && !loadedOnce ? '...' : queue.length}</span>
+              <span className="mt-1.5 block text-xs text-white/85">{queue.length === 0 ? 'You are all caught up' : urgentCount > 0 ? `${urgentCount} past the deadline` : 'Work waiting for you'}</span>
+            </a>
+          </li>
+          {[
+            { href: '/mentoring/classes', label: 'Classes', Icon: CalendarDays, value: kpi("Today's classes", todayTotal), hint: waitingMentor > 0 ? `${waitingMentor} to verify` : 'today', attention: waitingMentor > 0 },
+            { href: '/mentoring/exams', label: 'Exams', Icon: ClipboardCheck, value: kpi('Exams', examsToSchedule), hint: 'ready to schedule', attention: examsToSchedule > 0 },
+            { href: '/mentoring/meetings', label: 'Meetings', Icon: Video, value: kpi('Parent meetings', meetingsOverdue), hint: 'overdue', attention: meetingsOverdue > 0 },
+            { href: '/mentoring/complaints', label: 'Complaints', Icon: MessageSquare, value: kpi('Complaints', complaintsUrgent), hint: 'to acknowledge', attention: complaintsUrgent > 0 },
+          ].map(({ href, label, Icon, value: v, hint, attention }) => (
+            <li key={href}>
+              <Link href={href} className={`${PANEL} group block h-full p-4 transition-shadow hover:shadow-floating ${FOCUS}`}>
+                <span className="flex items-center justify-between text-sm font-medium text-slate-700">
+                  <span className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${attention ? 'bg-amber-100 text-amber-800' : 'bg-brand-50 text-brand-700'}`}><Icon className="h-4 w-4" aria-hidden="true" /></span>{label}</span>
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-600 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+                </span>
+                <span className={`mt-3 block text-3xl font-semibold leading-none ${attention ? 'text-amber-800' : 'text-slate-900'}`}>{v}</span>
+                <span className={`mt-1.5 block text-xs ${MUTED}`}>{hint}</span>
+              </Link>
+            </li>
           ))}
         </ul>
       </nav>
 
-      <DashboardCapacity />
-
       {error && <Banner tone="error" onRetry={() => void loadDashboard()}>{error}</Banner>}
       {!error && failed.length > 0 && <Banner tone="warning" onRetry={() => void loadDashboard()}>{failed.join(', ')} could not be loaded, so those figures show n/a instead of zero.</Banner>}
 
-      <section aria-label="Find and filter" className={`${PANEL} space-y-3 p-4`} data-testid="dashboard-filters-bar">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="min-w-[14rem] flex-1 text-sm">
-            <span className={FIELD_LABEL}>Student name or ID</span>
-            <span className="relative block">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-600" aria-hidden="true" />
-              <Input value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} className="pl-8" />
-            </span>
-          </label>
-          <Button type="button" size="sm" variant="outline" onClick={() => setMoreFilters((v) => !v)} aria-expanded={moreFilters} aria-controls="more-filters" className="gap-1.5">
-            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />More filters
-          </Button>
-          {filtersActive && <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>Clear filters</Button>}
-        </div>
-        {moreFilters && (
-          <div id="more-filters" className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-sm"><span className={FIELD_LABEL}>Subject</span><Select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}><option value="">All subjects</option>{allSubjects.map((s) => <option key={s} value={s}>{s}</option>)}</Select></label>
-            <label className="text-sm"><span className={FIELD_LABEL}>Tutor</span><Input value={tutorFilter} onChange={(e) => setTutorFilter(e.target.value)} /></label>
-            <label className="text-sm"><span className={FIELD_LABEL}>Class status</span><Select value={classStateFilter} onChange={(e) => setClassStateFilter(e.target.value)}><option value="">Any</option>{CLASS_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
-            <label className="text-sm"><span className={FIELD_LABEL}>Exam status</span><Select value={examStateFilter} onChange={(e) => setExamStateFilter(e.target.value)}><option value="">Any</option>{EXAM_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
-            {period === 'custom' && (
-              <>
+      <div className="grid items-start gap-6 lg:grid-cols-3">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <section aria-label="Find and filter" className={`${PANEL} space-y-3 p-3`} data-testid="dashboard-filters-bar">
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="min-w-[14rem] flex-1 text-sm">
+                <span className={FIELD_LABEL}>Student name or ID</span>
+                <span className="relative block">
+                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-600" aria-hidden="true" />
+                  <Input value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} className="pl-8" />
+                </span>
+              </label>
+              <Link href={studentsHref()}><Button size="sm" variant="outline" className="flex items-center gap-1"><Users className="h-4 w-4" aria-hidden="true" />Students</Button></Link>
+              <Link href={studentsHref({ pendingVerification: true })}><Button size="sm" variant="outline">To verify</Button></Link>
+              <Link href={studentsHref({ upcomingExam: true })}><Button size="sm" variant="outline">Exams soon</Button></Link>
+              <Button type="button" size="sm" variant="outline" onClick={() => setMoreFilters((v) => !v)} aria-expanded={moreFilters} aria-controls="more-filters" className="gap-1.5">
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />More filters
+              </Button>
+              {filtersActive && <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>Clear filters</Button>}
+            </div>
+            {moreFilters && (
+              <div id="more-filters" className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                <label className="text-sm"><span className={FIELD_LABEL}>Subject</span><Select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}><option value="">All subjects</option>{allSubjects.map((s) => <option key={s} value={s}>{s}</option>)}</Select></label>
+                <label className="text-sm"><span className={FIELD_LABEL}>Tutor</span><Input value={tutorFilter} onChange={(e) => setTutorFilter(e.target.value)} /></label>
+                <label className="text-sm"><span className={FIELD_LABEL}>Class status</span><Select value={classStateFilter} onChange={(e) => setClassStateFilter(e.target.value)}><option value="">Any</option>{CLASS_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
+                <label className="text-sm"><span className={FIELD_LABEL}>Exam status</span><Select value={examStateFilter} onChange={(e) => setExamStateFilter(e.target.value)}><option value="">Any</option>{EXAM_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
+                {period === 'custom' && (
+                  <>
+                    <label className="text-sm"><span className={FIELD_LABEL}>Hours from</span><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+                    <label className="text-sm"><span className={FIELD_LABEL}>Hours to</span><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+                  </>
+                )}
+              </div>
+            )}
+            {!moreFilters && period === 'custom' && (
+              <div className="grid max-w-md grid-cols-2 gap-3 border-t border-slate-100 pt-3">
                 <label className="text-sm"><span className={FIELD_LABEL}>Hours from</span><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
                 <label className="text-sm"><span className={FIELD_LABEL}>Hours to</span><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-              </>
-            )}
-          </div>
-        )}
-        {!moreFilters && period === 'custom' && (
-          <div className="grid max-w-md grid-cols-2 gap-3 border-t border-slate-100 pt-3">
-            <label className="text-sm"><span className={FIELD_LABEL}>Hours from</span><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-            <label className="text-sm"><span className={FIELD_LABEL}>Hours to</span><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-          </div>
-        )}
-      </section>
-
-      {firstLoad ? <ListSkeleton rows={5} label="Loading the dashboard" /> : (
-        <>
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Section title={`Needs you now (${visibleQueue.length})`} aside="Worst first" className="lg:col-span-2">
-              {visibleQueue.length === 0 ? (
-                <div className={`${PANEL} flex flex-col items-center gap-2 px-6 py-10 text-center`} data-testid="queue-empty">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-700" aria-hidden="true" />
-                  <p className="text-base font-semibold text-slate-900">Nothing is waiting on you</p>
-                  <p className={`text-sm ${MUTED}`}>{filtersActive ? 'Clear the filters to see everything.' : 'New work appears here as classes, exams and complaints need you.'}</p>
-                </div>
-              ) : (
-                <ul className={`${PANEL} divide-y divide-slate-100`} aria-label="Pending actions">
-                  {visibleQueue.map((item) => (
-                    <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3" data-testid="pending-action-item" data-severity={item.severity}>
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                          <StatusChip tone="neutral">{item.category}</StatusChip>
-                          <StatusChip tone={SEVERITY_TONE[item.severity]}>{item.reason}</StatusChip>
-                        </div>
-                        <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                      </div>
-                      {item.onActionClick
-                        ? <button type="button" onClick={item.onActionClick} className={linkButton(item.severity === 'info' ? 'secondary' : 'primary')}>{item.actionText}</button>
-                        : <Link href={item.actionHref ?? '#'} className={linkButton(item.severity === 'info' ? 'secondary' : 'primary')}>{item.actionText}</Link>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-
-            <Section title="Today" aside={<Link href="/mentoring/classes" className={`inline-flex items-center gap-1 rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>All classes <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>} className="" >
-              <div className="grid grid-cols-2 gap-3" data-testid="today-classes-group">
-                <StatTile href="/mentoring/classes" value={value("Today's classes", todayTotal)} label="Classes today" testId="stat-today" />
-                <StatTile href="/mentoring/classes?state=SCHEDULED" value={value("Today's classes", counts.SCHEDULED || 0)} label="Still to come" />
-                <StatTile href="/mentoring/classes?card=classes_awaiting_update" value={value("Today's classes", waitingTutor)} label="Waiting for the tutor" attention={waitingTutor > 0} />
-                <StatTile href="/mentoring/classes?card=classes_awaiting_verification" value={value("Today's classes", waitingMentor)} label="Waiting for you" attention={waitingMentor > 0} />
-                <StatTile href="/mentoring/classes?card=classes_verified" value={value("Today's classes", counts.VERIFIED || 0)} label="Verified" />
-                <StatTile href="/mentoring/classes?card=classes_not_conducted" value={value("Today's classes", (counts.NOT_CONDUCTED || 0) + (counts.RESCHEDULED || 0))} label="Not held or moved" />
               </div>
-            </Section>
-          </div>
-
-          <Section title={`Today's classes (${todayClasses.length})`} aside={<Link href="/mentoring/classes" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
-            {todayClasses.length === 0 ? <Empty title="No classes today">{filtersActive ? 'No class matches these filters.' : 'Nothing is scheduled for today. Open Classes to look at another day.'}</Empty> : (
-              <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {todayClasses.map((c: any) => {
-                  const mine = c.state === 'AWAITING_MENTOR_VERIFICATION';
-                  return (
-                    <li key={c.key} className={`${PANEL} p-4 ${mine ? 'shadow-[inset_3px_0_0_0_#d97706]' : ''}`} data-testid="today-class-card">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-900">{c.studentName}</p>
-                          <p className="text-sm text-slate-700">{c.subjectName}, {formatMinute(c.startMinute)} to {formatMinute(c.endMinute)}</p>
-                          <p className={`text-sm ${MUTED}`}>Tutor: {c.tutorName}</p>
-                        </div>
-                        <StatusChip tone={chipTone(STATE_TONE[c.state as keyof typeof STATE_TONE])}>{c.stateLabel}</StatusChip>
-                      </div>
-                      <button type="button" onClick={() => setOpenClassKey(c.key)} data-testid="open-verification-btn" aria-label={`Open the ${c.subjectName} class of ${c.studentName}`} className={`${linkButton(mine ? 'primary' : 'secondary', true)} mt-3`}>
-                        {mine ? 'Verify class' : 'Open class'}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
             )}
-          </Section>
+          </section>
 
-          <div className="grid gap-6 lg:grid-cols-2" data-testid="daily-operations-group">
-            <Section title="Exams and the 3 hour mark" aside={<Link href="/mentoring/exams" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
-              {exams.length === 0 ? <Empty title="No exams to track">Exams appear once a student has verified class time.</Empty> : (
-                <ul className="space-y-3">
-                  {exams.slice(0, 6).map((e: any) => (
-                    <li key={`${e.activationId}-${e.subjectId}`} className={`${PANEL} p-4`} data-testid="upcoming-exam-card">
-                      <div className="flex items-start justify-between gap-2">
-                        <div><p className="font-semibold text-slate-900">{e.studentName}</p><p className={`text-sm ${MUTED}`}>{e.subjectName}</p></div>
-                        <StatusChip tone={e.scheduledExam ? 'info' : e.due ? 'success' : 'neutral'}>{e.scheduledExam ? `Scheduled ${dayLabel(e.scheduledExam.date)}` : e.due ? 'Ready to schedule' : 'Hours pending'}</StatusChip>
-                      </div>
-                      <div className="mt-3 space-y-1">
-                        <div className={`flex justify-between text-sm ${MUTED}`}><span>Verified class time</span><span className="font-medium text-slate-800">{(e.verifiedMinutes / 60).toFixed(1)} of {(e.thresholdMinutes / 60).toFixed(1)} hrs</span></div>
-                        <ProgressBar percent={e.progressPercent} label={`${e.studentName}, ${e.subjectName} verified time`} />
-                      </div>
-                      <Link href={`/mentoring/students/${e.activationId}?panel=exams`} className={`${linkButton('secondary')} mt-3`}>Open student exams</Link>
+          {firstLoad ? <ListSkeleton rows={5} label="Loading the dashboard" /> : (
+            <>
+              <div id="needs-you" className="scroll-mt-20">
+                <Section title={`Needs you now (${visibleQueue.length})`} aside="Worst first">
+                  {visibleQueue.length === 0 ? (
+                    <div className={`${PANEL} flex flex-col items-center gap-2 px-6 py-8 text-center`} data-testid="queue-empty">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-700" aria-hidden="true" />
+                      <p className="text-base font-semibold text-slate-900">Nothing is waiting on you</p>
+                      <p className={`text-sm ${MUTED}`}>{filtersActive ? 'Clear the filters to see everything.' : 'New work appears here as classes, exams and complaints need you.'}</p>
+                    </div>
+                  ) : (
+                    <ul className={`${PANEL} divide-y divide-slate-100`} aria-label="Pending actions">
+                      {visibleQueue.map((item) => (
+                        <li key={item.id} className={`flex flex-wrap items-center justify-between gap-3 border-l-4 px-4 py-3 ${item.severity === 'danger' ? 'border-l-rose-600' : item.severity === 'warning' ? 'border-l-amber-500' : 'border-l-sky-400'}`} data-testid="pending-action-item" data-severity={item.severity}>
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                              <StatusChip tone="neutral">{item.category}</StatusChip>
+                              <StatusChip tone={SEVERITY_TONE[item.severity]}>{item.reason}</StatusChip>
+                            </div>
+                            <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                          </div>
+                          {item.onActionClick
+                            ? <button type="button" onClick={item.onActionClick} className={linkButton(item.severity === 'info' ? 'secondary' : 'primary')}>{item.actionText}</button>
+                            : <Link href={item.actionHref ?? '#'} className={linkButton(item.severity === 'info' ? 'secondary' : 'primary')}>{item.actionText}</Link>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Section>
+              </div>
+
+              <Section title={`Today's classes (${todayClasses.length})`} aside={<Link href="/mentoring/classes" className={`inline-flex items-center gap-1 rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>All classes <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}>
+                <ul className="flex flex-wrap gap-2" data-testid="today-classes-group" aria-label="Today at a glance">
+                  {[
+                    { href: '/mentoring/classes', label: 'Classes today', v: todayTotal, testId: 'stat-today', attention: false },
+                    { href: '/mentoring/classes?state=SCHEDULED', label: 'Still to come', v: counts.SCHEDULED || 0, attention: false },
+                    { href: '/mentoring/classes?card=classes_awaiting_update', label: 'Waiting for the tutor', v: waitingTutor, attention: waitingTutor > 0 },
+                    { href: '/mentoring/classes?card=classes_awaiting_verification', label: 'Waiting for you', v: waitingMentor, attention: waitingMentor > 0 },
+                    { href: '/mentoring/classes?card=classes_verified', label: 'Verified', v: counts.VERIFIED || 0, attention: false },
+                    { href: '/mentoring/classes?card=classes_not_conducted', label: 'Not held or moved', v: (counts.NOT_CONDUCTED || 0) + (counts.RESCHEDULED || 0), attention: false },
+                  ].map((s) => (
+                    <li key={s.label}>
+                      <a href={s.href} data-testid={s.testId} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${FOCUS} ${s.attention ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                        <span className="font-semibold">{value("Today's classes", s.v)}</span>{s.label}
+                      </a>
                     </li>
                   ))}
                 </ul>
-              )}
-            </Section>
+                {todayClasses.length === 0 ? <Empty title="No classes today">{filtersActive ? 'No class matches these filters.' : 'Nothing is scheduled for today. Open Classes to look at another day.'}</Empty> : (
+                  <ul className="grid gap-3 md:grid-cols-2">
+                    {todayClasses.map((c: any) => {
+                      const mine = c.state === 'AWAITING_MENTOR_VERIFICATION';
+                      return (
+                        <li key={c.key} className={`${PANEL} p-4 ${mine ? 'shadow-[inset_3px_0_0_0_#d97706]' : ''}`} data-testid="today-class-card">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900">{c.studentName}</p>
+                              <p className="text-sm text-slate-700">{c.subjectName}, {formatMinute(c.startMinute)} to {formatMinute(c.endMinute)}</p>
+                              <p className={`text-sm ${MUTED}`}>Tutor: {c.tutorName}</p>
+                            </div>
+                            <StatusChip tone={chipTone(STATE_TONE[c.state as keyof typeof STATE_TONE])}>{c.stateLabel}</StatusChip>
+                          </div>
+                          <button type="button" onClick={() => setOpenClassKey(c.key)} data-testid="open-verification-btn" aria-label={`Open the ${c.subjectName} class of ${c.studentName}`} className={`${linkButton(mine ? 'primary' : 'secondary', true)} mt-3`}>
+                            {mine ? 'Verify class' : 'Open class'}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Section>
+            </>
+          )}
+        </div>
 
-            <Section title="Parent meetings" aside={<Link href="/mentoring/meetings" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
-              {meetings.length === 0 ? <Empty title="No parent meetings coming up">Monthly meetings appear here when they are due.</Empty> : (
-                <ul className="space-y-3">
-                  {meetings.slice(0, 5).map((m: any) => {
-                    const prep = m.preparation;
-                    const done = prep?.examsReviewed && prep?.nextPlanApproved;
-                    const some = prep?.tutorObservations > 0 || prep?.examsReviewed;
-                    return (
-                      <li key={m.activationId} className={`${PANEL} p-4`} data-testid="upcoming-meeting-card">
+        <aside aria-label="Capacity, exams and meetings" className="min-w-0 space-y-6" data-testid="dashboard-rail">
+          <DashboardCapacity />
+          {!firstLoad && (
+            <div className="space-y-6" data-testid="daily-operations-group">
+              <Section title="Exams and the 3 hour mark" aside={<Link href="/mentoring/exams" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
+                {exams.length === 0 ? <Empty title="No exams to track">Exams appear once a student has verified class time.</Empty> : (
+                  <ul className="space-y-3">
+                    {exams.slice(0, 5).map((e: any) => (
+                      <li key={`${e.activationId}-${e.subjectId}`} className={`${PANEL} p-4`} data-testid="upcoming-exam-card">
                         <div className="flex items-start justify-between gap-2">
-                          <div><p className="font-semibold text-slate-900">{m.studentName}</p><p className={`text-sm ${MUTED}`}>Parent: {m.parentName || 'not recorded'}. {m.date ? dayLabel(m.date) : 'Not scheduled'}</p></div>
-                          <StatusChip tone={m.overdue ? 'danger' : done ? 'success' : some ? 'warning' : 'neutral'}>{m.overdue ? 'Overdue' : done ? 'Prepared' : some ? 'Preparing' : 'Not prepared'}</StatusChip>
+                          <div><p className="font-semibold text-slate-900">{e.studentName}</p><p className={`text-sm ${MUTED}`}>{e.subjectName}</p></div>
+                          <StatusChip tone={e.scheduledExam ? 'info' : e.due ? 'success' : 'neutral'}>{e.scheduledExam ? `Scheduled ${dayLabel(e.scheduledExam.date)}` : e.due ? 'Ready to schedule' : 'Hours pending'}</StatusChip>
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className={`text-sm ${MUTED}`}>{m.stateLabel}</span>
-                          <Link href={`/mentoring/students/${m.activationId}?panel=review`} className={linkButton('secondary')}>Open review</Link>
+                        <div className="mt-3 space-y-1">
+                          <div className={`flex justify-between text-sm ${MUTED}`}><span>Verified class time</span><span className="font-medium text-slate-800">{(e.verifiedMinutes / 60).toFixed(1)} of {(e.thresholdMinutes / 60).toFixed(1)} hrs</span></div>
+                          <ProgressBar percent={e.progressPercent} label={`${e.studentName}, ${e.subjectName} verified time`} />
                         </div>
+                        <Link href={`/mentoring/students/${e.activationId}?panel=exams`} className={`${linkButton('secondary')} mt-3`}>Open student exams</Link>
                       </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Section>
-          </div>
+                    ))}
+                  </ul>
+                )}
+              </Section>
 
+              <Section title="Parent meetings" aside={<Link href="/mentoring/meetings" className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>View all</Link>}>
+                {meetings.length === 0 ? <Empty title="No parent meetings coming up">Monthly meetings appear here when they are due.</Empty> : (
+                  <ul className="space-y-3">
+                    {meetings.slice(0, 5).map((m: any) => {
+                      const prep = m.preparation;
+                      const done = prep?.examsReviewed && prep?.nextPlanApproved;
+                      const some = prep?.tutorObservations > 0 || prep?.examsReviewed;
+                      return (
+                        <li key={m.activationId} className={`${PANEL} p-4`} data-testid="upcoming-meeting-card">
+                          <div className="flex items-start justify-between gap-2">
+                            <div><p className="font-semibold text-slate-900">{m.studentName}</p><p className={`text-sm ${MUTED}`}>Parent: {m.parentName || 'not recorded'}. {m.date ? dayLabel(m.date) : 'Not scheduled'}</p></div>
+                            <StatusChip tone={m.overdue ? 'danger' : done ? 'success' : some ? 'warning' : 'neutral'}>{m.overdue ? 'Overdue' : done ? 'Prepared' : some ? 'Preparing' : 'Not prepared'}</StatusChip>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between gap-2">
+                            <span className={`text-sm ${MUTED}`}>{m.stateLabel}</span>
+                            <Link href={`/mentoring/students/${m.activationId}?panel=review`} className={linkButton('secondary')}>Open review</Link>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Section>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {!firstLoad && (
+        <>
           <Section title="New students in handover" aside={`${studentMetrics.total} assigned, ${studentMetrics.activated} active`} className="" >
             <div data-testid="handover-group" className="space-y-3">
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="student-overview-group">

@@ -1,11 +1,14 @@
 "use client";
 
 import * as React from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import {
   ChecklistItemView,
+  ChecklistSummaryView,
+  GroupSummaryView,
   ITEM_STATUS_LABELS,
   computeProgress,
   describeRequirements,
@@ -53,9 +56,27 @@ interface PanelProps {
   onUpdate: (itemKey: string, update: ItemUpdate) => Promise<void>;
   onAuthorizeException: (itemKey: string, reason: string) => Promise<void>;
   onDirtyChange: (id: string, dirty: boolean) => void;
+  /** Group and overall completion from the API. Without it the page counts from the items it shows. */
+  summary?: ChecklistSummaryView | null;
+  /** The student's history, so each requirement can show what happened to it. */
+  events?: HistoryEvent[];
 }
 
-function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuthorizeException, onDirtyChange }: Omit<PanelProps, 'items'> & { item: ChecklistItemView }) {
+/** One entry of the student's history, as far as a requirement needs it. */
+export interface HistoryEvent {
+  id: string;
+  type: string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  reason?: string | null;
+  actorName?: string | null;
+  createdAt: string;
+  payload?: { itemKey?: string; newReason?: string | null } | null;
+}
+
+const STATUS_WORDS: Record<string, string> = { PENDING_COLLECTION: 'Pending', COLLECTED: 'Collected', VERIFIED: 'Completed', UNAVAILABLE: 'Unavailable', NOT_APPLICABLE: 'Not applicable' };
+
+function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuthorizeException, onDirtyChange, events }: Omit<PanelProps, 'items' | 'summary'> & { item: ChecklistItemView }) {
   const [open, setOpen] = React.useState(false);
   const [exceptionOpen, setExceptionOpen] = React.useState(false);
   const [state, setState] = React.useState(item.state);
@@ -75,6 +96,10 @@ function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuth
   const waitingFor = missingInformation(item);
   const blocked = waitingFor.length > 0 && item.state !== 'VERIFIED';
   const needsReason = state === 'UNAVAILABLE' || state === 'NOT_APPLICABLE';
+  // An action cannot be marked unavailable. Only the Mentoring Head can excuse it, with an authorised exception.
+  const choices = item.allowsUnavailable === false ? STATE_CHOICES.filter(([value]) => value !== 'UNAVAILABLE' && value !== 'NOT_APPLICABLE') : STATE_CHOICES;
+  const collectedInfo = (item.requires ?? []).filter((r) => r.collected).map((r) => r.label);
+  const history = (events ?? []).filter((e) => e.payload?.itemKey === item.key && (e.type === 'CHECKLIST_UPDATED' || e.type === 'EXCEPTION_AUTHORIZED'));
   const detailsDirty = state !== item.state || note !== (item.note ?? '') || reason !== (item.reason ?? '') || evidence !== (item.evidenceRef ?? '');
   React.useEffect(() => {
     onDirtyChange(`item:${item.key}`, open && detailsDirty);
@@ -101,7 +126,7 @@ function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuth
   };
 
   const saveDetails = () => {
-    if (needsReason && !reason.trim()) { setError('A reason is required when an item is unavailable or not applicable'); return; }
+    if (needsReason && reason.trim().length < 5) { setError('A reason is required when an item is unavailable or not applicable. Say why in a few words.'); return; }
     return run(
       () => onUpdate(item.key, { state, note: note.trim() || null, evidenceRef: evidence.trim() || null, ...(needsReason ? { reason: reason.trim() } : {}) }),
       () => setOpen(false),
@@ -128,6 +153,7 @@ function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuth
             {!item.mandatory && <span className="ml-2 text-xs text-slate-500">Advisory</span>}
             {status !== 'PENDING' && status !== 'COMPLETED' && !(status === 'EXCEPTION' && item.exceptionDetail) && <span className={`ml-2 text-xs ${STATUS_TONE[status] ?? ''}`}>{ITEM_STATUS_LABELS[status]}</span>}
           </p>
+          {collectedInfo.length > 0 && <p className="break-words text-xs text-slate-600 [overflow-wrap:anywhere]">Collected: {collectedInfo.join(', ')}</p>}
           {blocked && <p className="text-xs text-amber-800">Waiting for {waitingFor.join(', ')}</p>}
           {(item.updatedByName || item.updatedAt) && item.state !== 'PENDING_COLLECTION' && (
             <p className="text-xs text-slate-500">{item.state === 'VERIFIED' ? 'Completed' : 'Updated'}{item.updatedByName ? ` by ${item.updatedByName}` : ''}{item.updatedAt ? `, ${fmt(item.updatedAt)}` : ''}</p>
@@ -152,11 +178,12 @@ function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuth
       {open && editable && (
         <div className="ml-7 grid gap-2 rounded-md bg-slate-50 p-2 md:grid-cols-2">
           <Select aria-label={`${item.label} status`} value={state} onChange={(e) => setState(e.target.value)}>
-            {STATE_CHOICES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {choices.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </Select>
           <Input aria-label={`${item.label} evidence link or reference`} placeholder="Evidence link or reference (optional)" value={evidence} onChange={(e) => setEvidence(e.target.value)} />
           <textarea aria-label={`${item.label} comment`} rows={2} placeholder="Comment (optional)" className={`${AREA_CLASS} md:col-span-2`} value={note} onChange={(e) => setNote(e.target.value)} />
           {needsReason && <Input aria-label={`${item.label} reason`} placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} />}
+          {item.allowsUnavailable === false && <p className="text-xs text-slate-600 md:col-span-2">This requirement cannot be marked unavailable. Complete it, or ask the Mentoring Head to authorise an exception.</p>}
           {error && <p role="alert" className="text-xs font-medium text-red-600 md:col-span-2">{error}</p>}
           <div className="flex gap-2 md:col-span-2">
             <Button type="button" size="sm" isLoading={saving} onClick={saveDetails}>Save</Button>
@@ -177,12 +204,60 @@ function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuth
         </div>
       )}
       {!open && !exceptionOpen && error && <p role="alert" className="ml-7 text-xs font-medium text-red-600">{error}</p>}
+      {history.length > 0 && (
+        <details className="ml-7 text-xs text-slate-600" data-testid="item-history">
+          <summary className="min-h-[1.75rem] cursor-pointer py-1 text-slate-700 hover:underline">History ({history.length})</summary>
+          <ul role="list" className="space-y-1 pb-1">
+            {history.map((e) => (
+              <li key={e.id} className="break-words [overflow-wrap:anywhere]">
+                {fmt(e.createdAt)}{e.actorName ? `, ${e.actorName}` : ''}:{' '}
+                {e.type === 'EXCEPTION_AUTHORIZED' ? 'exception authorised' : `${STATUS_WORDS[e.fromStatus ?? ''] ?? e.fromStatus ?? 'Pending'} to ${STATUS_WORDS[e.toStatus ?? ''] ?? e.toStatus ?? ''}`}
+                {e.reason ? `. Reason: ${e.reason}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </li>
   );
 }
 
 /** A stage's checklist: progress, then the requirements, each saved on its own with who, when, comment and evidence. */
-export function ChecklistPanel({ items, ...rest }: PanelProps) {
+/**
+ * One of the requirement groups. It shows its name, how many of its requirements are resolved and one status, and opens to show the
+ * individual requirements. A group is Complete only when every requirement in it is completed or has an authorised exception.
+ */
+function RequirementGroup({ label, group, startOpen, children }: { label: string; group: Pick<GroupSummaryView, 'total' | 'completed' | 'unavailable' | 'excepted' | 'pending' | 'status'>; startOpen: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(startOpen);
+  const done = group.completed + group.unavailable + group.excepted;
+  const status = group.status === 'COMPLETE' ? 'Complete' : group.status === 'IN_PROGRESS' ? 'In progress' : 'Not started';
+  const tone = group.status === 'COMPLETE' ? 'bg-emerald-50 text-emerald-800' : group.status === 'IN_PROGRESS' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700';
+  const bar = group.status === 'COMPLETE' ? 'bg-emerald-500' : 'bg-brand-500';
+  const percent = group.total === 0 ? 0 : Math.round((done / group.total) * 100);
+  const parts = [`${group.total} requirements`, `${group.completed} completed`, `${group.pending} pending`];
+  if (group.unavailable > 0) parts.push(`${group.unavailable} unavailable`);
+  if (group.excepted > 0) parts.push(`${group.excepted} excepted`);
+  return (
+    <details open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} className="mt-3 rounded-lg ring-1 ring-slate-200/70" role="group" aria-label={label} data-group-status={status.toLowerCase().replace(' ', '-')}>
+      <summary className="block min-h-[2.75rem] cursor-pointer list-none rounded-lg px-3 py-2.5 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+        <span className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-slate-900">{label}</span>
+          <span className="flex items-center gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{status}</span>
+            <ChevronDown aria-hidden="true" className={`h-4 w-4 text-slate-500 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
+          </span>
+        </span>
+        <span className="mt-1 block text-xs text-slate-600" data-testid="group-counts">{parts.join(' | ')}</span>
+        <span className="mt-2 block h-1.5 w-full overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${label} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+          <span className={`block h-full rounded-full ${bar}`} style={{ width: `${percent}%` }} />
+        </span>
+      </summary>
+      <div className="px-3 pb-2">{children}</div>
+    </details>
+  );
+}
+
+export function ChecklistPanel({ items, summary, ...rest }: PanelProps) {
   const progress = computeProgress(items);
   const groups = groupChecklist(items);
   const outstanding = progress.outstandingMandatory.length;
@@ -191,6 +266,9 @@ export function ChecklistPanel({ items, ...rest }: PanelProps) {
     <section aria-label="Checklist" className="rounded-xl bg-white p-4 text-sm shadow-card ring-1 ring-slate-200/70 sm:p-5">
       <div className="space-y-1">
         <p className="font-semibold text-slate-900">{describeRequirements(progress)}</p>
+        {summary && summary.groupsTotal > 0 && (
+          <p className="text-xs text-slate-600" data-testid="groups-complete">{summary.groupsComplete} of {summary.groupsTotal} groups complete{summary.complete ? '. Every group is complete.' : ''}</p>
+        )}
         <p className="text-xs text-slate-500">
           {outstanding > 0 ? `${outstanding} still to resolve before the stage can be completed` : 'Every requirement is resolved'}
           {progress.resolvedOther - progress.exceptions > 0 ? `, ${progress.resolvedOther - progress.exceptions} marked unavailable or not applicable` : ''}
@@ -203,18 +281,35 @@ export function ChecklistPanel({ items, ...rest }: PanelProps) {
 
       {groups.map((group) => {
         const resolved = group.items.filter(isItemResolved).length;
+        const holdsBack = (i: ChecklistItemView) => i.mandatory && !isItemResolved(i); // an advisory check never holds a group back
+        const firstOpen = groups.find((g) => g.items.some(holdsBack));
+        // The API's calculation when it sent one; otherwise counted from the items shown.
+        const fromApi = summary?.groups.find((g) => g.key === group.key);
+        const pendingCount = group.items.filter(holdsBack).length;
+        const counted: GroupSummaryView['status'] = pendingCount === 0 ? 'COMPLETE' : resolved === 0 ? 'NOT_STARTED' : 'IN_PROGRESS';
+        const figures = fromApi ?? {
+          total: group.items.length,
+          completed: group.items.filter((i) => i.state === 'VERIFIED' && !i.exception).length,
+          unavailable: group.items.filter((i) => (i.state === 'UNAVAILABLE' || i.state === 'NOT_APPLICABLE') && !i.exception).length,
+          excepted: group.items.filter((i) => i.exception).length,
+          pending: pendingCount,
+          status: counted,
+        };
+        if (!group.label) {
+          return (
+            <div key={group.key ?? 'items'} className="mt-3" role="group" aria-label="Requirements">
+              <ul role="list" className="divide-y divide-slate-100">
+                {group.items.map((item) => <ItemRow key={item.key} item={item} {...rest} />)}
+              </ul>
+            </div>
+          );
+        }
         return (
-          <div key={group.key ?? 'items'} className="mt-3" role="group" aria-label={group.label ?? 'Requirements'}>
-            {group.label && (
-              <h3 className="flex items-baseline justify-between gap-2 border-t border-slate-100 pt-3 text-sm font-medium text-slate-700">
-                {group.label}
-                <span className="text-xs font-normal text-slate-500">{resolved} of {group.items.length}</span>
-              </h3>
-            )}
+          <RequirementGroup key={group.key ?? 'items'} label={group.label} group={figures} startOpen={firstOpen === group}>
             <ul role="list" className="divide-y divide-slate-100">
               {group.items.map((item) => <ItemRow key={item.key} item={item} {...rest} />)}
             </ul>
-          </div>
+          </RequirementGroup>
         );
       })}
     </section>

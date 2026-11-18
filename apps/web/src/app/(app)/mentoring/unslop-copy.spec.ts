@@ -107,7 +107,7 @@ describe('copy written in the redesigned source files', () => {
 
   it('the API checklist wording for Stage 1 and Stage 2 follows the same rules', () => {
     const constants = readFileSync(join(__dirname, '../../../../../api/src/modules/mentoring/mentoring.constants.ts'), 'utf8');
-    const labels = Array.from(constants.matchAll(/(?:confirmInfo|meetingConduct|m)\('[a-z_]+', '([^']+)'/g)).map((m) => m[1]);
+    const labels = Array.from(constants.matchAll(/(?:confirmInfo|meetingConduct|m|studentParent|academicTutor|expectationsLearning|meetingFollowUp|whatsappSetup|introductions|classAccess|classCommunication|planPrepared|strengthsActions|learningGoals|tutorAndParent|scheduleConfirmed|remindersSent|academicPrep|readinessConfirmed)\('[a-z_]+', '([^']+)'/g)).map((m) => m[1]);
     expect(labels.length).toBeGreaterThan(20);
     for (const label of labels) {
       expect(label).not.toMatch(/[–—]/);

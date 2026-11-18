@@ -29,10 +29,9 @@ const NOT_COLLECTED_IN_SALES = [
   'parent.relationship',
   'tutor.assignments',
   'academic.preferredLanguage',
-  'academic.previousMarks',
+  'academic.previousPerformance',
   'timetable.schedule',
-  'examination.upcomingDates',
-  'examination.syllabusPortions',
+  'examination.upcoming',
   'parentExpectations',
   'studentEngagement',
 ] as const;
@@ -160,7 +159,6 @@ export class MentoringHandoverService {
       take('student.dateOfBirth', 'STUDENT', student.dateOfBirth?.toISOString().slice(0, 10));
       take('student.gender', 'STUDENT', text(student.gender));
       take('student.schoolName', 'STUDENT', text(student.schoolName));
-      take('student.currentGrade', 'STUDENT', text(student.currentGrade));
       take('student.grade', 'STUDENT', student.grade?.name);
       take('student.curriculum', 'STUDENT', student.curriculum?.name);
       take('student.cityLocation', 'STUDENT', text(student.cityLocation));
@@ -169,8 +167,8 @@ export class MentoringHandoverService {
       const parentName = [text(lead.firstName), text(lead.lastName)].filter(Boolean).join(' ');
       take('parent.name', 'LEAD', parentName || null);
       take('parent.primaryPhone', 'LEAD', text(lead.primaryPhone));
-      take('parent.altPhone1', 'LEAD', text(lead.altPhone1));
-      take('parent.altPhone2', 'LEAD', text(lead.altPhone2));
+      // One alternate / emergency number: the second Sales number is used when the first is empty.
+      take('parent.altPhone1', 'LEAD', text(lead.altPhone1) ?? text(lead.altPhone2));
       take('parent.whatsappNumber', 'LEAD', text(lead.whatsappNumber));
 
       const requirements = student.requirements.map((r) => ({

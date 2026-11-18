@@ -32,6 +32,12 @@ export interface HandoverFieldDefinition {
   columns?: readonly RowColumn[];
   maxLength?: number;
   maxRows?: number;
+  /** ROWS only: no two rows may have the same value in this column (for example one tutor per subject). */
+  uniqueColumn?: string;
+  /** SELECT only: the Mentor may type a value that is not in the list (a language nobody listed yet). */
+  allowCustom?: boolean;
+  /** True when the Mentor may leave the field empty. Optional fields never block a requirement and are not counted as still to collect. */
+  optional?: boolean;
   /** Earliest / latest accepted calendar date for DATE fields. */
   minDate?: string;
   maxDate?: 'TODAY';
@@ -40,56 +46,59 @@ export interface HandoverFieldDefinition {
 export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 export const GENDERS = ['Male', 'Female', 'Other'] as const;
 export const RELATIONSHIPS = ['Mother', 'Father', 'Guardian', 'Other'] as const;
-export const LANGUAGES = ['English', 'Hindi', 'Tamil', 'Malayalam', 'Telugu', 'Kannada', 'Marathi', 'Bengali', 'Gujarati', 'Other'] as const;
+export const LANGUAGES = ['English', 'Hindi', 'Tamil', 'Malayalam', 'Telugu', 'Kannada', 'Marathi', 'Bengali', 'Gujarati'] as const; // another language is added from the list's last option
 
 const text = (key: string, maxLength = 200): HandoverFieldDefinition => ({ key, type: 'TEXT', maxLength });
 const phone = (key: string): HandoverFieldDefinition => ({ key, type: 'PHONE' });
 const area = (key: string, maxLength = 2000): HandoverFieldDefinition => ({ key, type: 'TEXTAREA', maxLength });
 const choice = (key: string, options: readonly string[]): HandoverFieldDefinition => ({ key, type: 'SELECT', options });
+/** Marks a field as one the Mentor may leave empty. */
+const optional = (definition: HandoverFieldDefinition): HandoverFieldDefinition => ({ ...definition, optional: true });
 const col = (key: string, label: string, type: RowColumn['type'] = 'text', options?: readonly string[]): RowColumn => ({ key, label, type, options, required: true });
+const optionalCol = (key: string, label: string, type: RowColumn['type'] = 'text'): RowColumn => ({ key, label, type, required: false });
 
 export const HANDOVER_FIELDS: Readonly<Record<string, HandoverFieldDefinition>> = Object.fromEntries(
   (
     [
       text('student.firstName', 100),
-      text('student.lastName', 100),
-      { key: 'student.dateOfBirth', type: 'DATE', minDate: '1990-01-01', maxDate: 'TODAY' },
+      optional(text('student.lastName', 100)),
+      optional({ key: 'student.dateOfBirth', type: 'DATE', minDate: '1990-01-01', maxDate: 'TODAY' }),
       choice('student.gender', GENDERS),
-      text('student.schoolName'),
-      text('student.currentGrade', 100),
+      optional(text('student.schoolName')),
       { key: 'student.grade', type: 'SELECT', optionsFrom: 'GRADES' },
       { key: 'student.curriculum', type: 'SELECT', optionsFrom: 'CURRICULA' },
-      text('student.cityLocation'),
+      optional(text('student.cityLocation')),
       area('student.notes'),
       text('parent.name'),
-      phone('parent.primaryPhone'),
-      phone('parent.altPhone1'),
-      phone('parent.altPhone2'),
-      phone('parent.whatsappNumber'),
       choice('parent.relationship', RELATIONSHIPS),
-      choice('academic.preferredLanguage', LANGUAGES),
-      area('academic.previousMarks'),
-      area('parentExpectations'),
-      area('studentEngagement'),
-      area('student.learningConcerns'),
-      area('tutor.requirements'),
-      area('academic.subjectNotes'),
-      { key: 'tutor.assignments', type: 'ROWS', maxRows: 20, columns: [col('subject', 'Subject'), col('tutor', 'Tutor')] },
+      phone('parent.primaryPhone'),
+      phone('parent.whatsappNumber'),
+      // One alternate / emergency number. The second alternate number of earlier handovers is shown here when this one is empty.
+      optional(phone('parent.altPhone1')),
+      { ...choice('academic.preferredLanguage', LANGUAGES), allowCustom: true },
+      // Academic requirements, in separate fields instead of one large note.
+      area('academic.weakAreas'),
+      area('academic.learningRequirements'),
+      area('academic.examPreparation'),
+      optional(area('academic.subjectNotes')),
+      // What the parent prefers in a tutor. Optional: a parent may have no preference.
+      optional(text('tutor.preferredQualifications', 300)),
+      optional({ ...choice('tutor.preferredLanguage', LANGUAGES), allowCustom: true }),
+      optional(area('tutor.requirements')),
+      { key: 'tutor.assignments', type: 'ROWS', maxRows: 20, uniqueColumn: 'subject', columns: [col('subject', 'Subject'), col('tutor', 'Tutor')] },
       // One schedule per subject (frequency, hours, days, session lengths and times). Rules live in subject-schedule.ts.
       // Values saved before this existed are a plain list of day/start/end rows; they stay readable and are replaced on the next save.
       { key: 'timetable.schedule', type: 'SCHEDULE' },
-      {
-        key: 'examination.upcomingDates',
-        type: 'ROWS',
-        maxRows: 20,
-        columns: [col('subject', 'Subject / exam'), col('date', 'Date', 'date')],
-      },
-      {
-        key: 'examination.syllabusPortions',
-        type: 'ROWS',
-        maxRows: 20,
-        columns: [col('subject', 'Subject'), col('portions', 'Syllabus / portions')],
-      },
+      // Academic performance and examinations. Earlier marks and the two older examination lists stay readable (see handover-legacy.ts).
+      { key: 'academic.previousPerformance', type: 'ROWS', maxRows: 30, columns: [col('subject', 'Subject'), col('marks', 'Marks / grade'), optionalCol('term', 'Examination or term')] },
+      optional(text('academic.previousPerformanceReason', 300)),
+      optional(area('academic.previousMarks')),
+      { key: 'examination.upcoming', type: 'ROWS', maxRows: 30, columns: [col('subject', 'Subject'), col('date', 'Examination date', 'date'), col('portions', 'Syllabus / portions')] },
+      optional(text('examination.upcomingReason', 300)),
+      // Student learning profile: three separate fields under one heading.
+      area('parentExpectations'),
+      area('studentEngagement'),
+      area('student.learningConcerns'),
     ] as HandoverFieldDefinition[]
   ).map((definition) => [definition.key, definition]),
 );
@@ -107,27 +116,32 @@ export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
   'student.dateOfBirth': 'Date of Birth',
   'student.gender': 'Gender',
   'student.schoolName': 'School Name',
-  'student.currentGrade': 'Current Grade (as entered)',
   'student.grade': 'Grade / Class',
   'student.curriculum': 'Curriculum / Board',
-  'student.cityLocation': 'City / Location',
+  'student.cityLocation': 'City / Country',
   'student.notes': 'Student Notes',
   'student.learningConcerns': 'Learning Difficulties or Concerns',
   'parent.name': 'Parent / Guardian Name',
-  'parent.primaryPhone': 'Parent Contact Number',
-  'parent.altPhone1': 'Alternate Contact Number 1',
-  'parent.altPhone2': 'Alternate Contact Number 2',
-  'parent.whatsappNumber': 'Parent WhatsApp Number',
   'parent.relationship': 'Relationship to Student',
-  'academic.subjects': 'Subjects',
-  'academic.subjectNotes': 'Subject Requirement Details',
+  'parent.primaryPhone': 'Primary Contact Number',
+  'parent.whatsappNumber': 'WhatsApp Number',
+  'parent.altPhone1': 'Alternate / Emergency Contact Number',
+  'academic.subjects': 'Subjects Required',
+  'academic.weakAreas': 'Academic Difficulties / Weak Areas',
+  'academic.learningRequirements': 'Specific Learning Requirements',
+  'academic.examPreparation': 'Examination Preparation Requirements',
+  'academic.subjectNotes': 'Other Academic Notes',
   'academic.preferredLanguage': 'Preferred Language',
-  'academic.previousMarks': 'Previous Academic Marks',
-  'tutor.requirements': 'Tutor Requirements',
+  'academic.previousPerformance': 'Previous Academic Performance',
+  'academic.previousPerformanceReason': 'Reason Marks Are Unavailable',
+  'academic.previousMarks': 'Earlier Note on Previous Marks',
+  'tutor.preferredQualifications': 'Preferred Tutor Qualifications / Experience',
+  'tutor.preferredLanguage': 'Preferred Teaching Language',
+  'tutor.requirements': 'Other Tutor Requirements',
   'tutor.assignments': 'Tutor Assignment',
   'timetable.schedule': 'Preferred Timetable / Schedule',
-  'examination.upcomingDates': 'Upcoming Examination Dates',
-  'examination.syllabusPortions': 'Examination Syllabus / Portions',
+  'examination.upcoming': 'Upcoming Examination Details',
+  'examination.upcomingReason': 'Reason Examination Details Are Pending or Unavailable',
   parentExpectations: 'Parent Expectations',
   studentEngagement: 'Student Engagement',
 };
@@ -237,6 +251,14 @@ export function validateHandoverFieldValue(definition: HandoverFieldDefinition, 
     case 'SELECT': {
       const options = definition.options ?? (definition.optionsFrom ? context.referenceOptions?.[definition.optionsFrom] : undefined) ?? [];
       if (options.length === 0) fail('There are no options available for this field yet');
+      if (definition.allowCustom && typeof raw === 'string' && !options.includes(raw.trim())) {
+        // Another value is allowed: a short name made of letters, spaces and common name marks. A listed name keeps its listed spelling.
+        const custom = raw.trim().replace(/\s+/g, ' ');
+        const listed = options.find((o) => o.toLowerCase() === custom.toLowerCase());
+        if (listed) return listed;
+        if (!/^[\p{L}][\p{L} .'()-]{0,59}$/u.test(custom)) fail('Enter the language name using letters only, up to 60 characters');
+        return custom;
+      }
       return pick(raw, options, 'The selection');
     }
     case 'ROWS': {
@@ -244,7 +266,7 @@ export function validateHandoverFieldValue(definition: HandoverFieldDefinition, 
       const maxRows = definition.maxRows ?? 20;
       if (raw.length > maxRows) fail(`No more than ${maxRows} rows are allowed`);
       const columns = definition.columns ?? [];
-      return raw.map((row, index) => {
+      const rows = raw.map((row, index) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) fail(`Row ${index + 1} is not valid`);
         const input = row as Record<string, unknown>;
         const unknown = Object.keys(input).filter((k) => !columns.some((c) => c.key === k));
@@ -265,6 +287,15 @@ export function validateHandoverFieldValue(definition: HandoverFieldDefinition, 
         if (out.start && out.end && out.end <= out.start) fail(`Row ${index + 1}: the end time must be after the start time`);
         return out;
       });
+      if (definition.uniqueColumn) {
+        const seen = new Set<string>();
+        for (const [index, out] of rows.entries()) {
+          const value = (out[definition.uniqueColumn] ?? '').toLowerCase();
+          if (value && seen.has(value)) fail(`Row ${index + 1}: ${out[definition.uniqueColumn]} is already in the list. Each one can appear only once.`);
+          seen.add(value);
+        }
+      }
+      return rows;
     }
     case 'SCHEDULE': {
       const parsed = parseSchedule(raw, context.scheduleReferences ?? { subjects: [], grades: [] });

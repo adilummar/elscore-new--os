@@ -27,8 +27,8 @@ const subject = { requirementId: 'req-1', subject: 'Mathematics', curriculum: 'C
 
 describe('field labels', () => {
   it('the backend reports the fields this test expects (guards the parser)', () => {
-    expect(takenFields.length).toBeGreaterThanOrEqual(15);
-    expect(notCollectedInSales).toHaveLength(9);
+    expect(takenFields.length).toBeGreaterThanOrEqual(13);
+    expect(notCollectedInSales).toHaveLength(8);
   });
 
   it.each(backendFields)('%s has a business label that is not a raw path', (field) => {
@@ -46,15 +46,14 @@ describe('field labels', () => {
     expect(handoverFieldLabel('student.curriculum')).toBe('Curriculum / Board');
     expect(handoverFieldLabel('student.notes')).toBe('Student Notes');
     expect(handoverFieldLabel('parent.name')).toBe('Parent / Guardian Name');
-    expect(handoverFieldLabel('parent.primaryPhone')).toBe('Parent Contact Number');
-    expect(handoverFieldLabel('parent.whatsappNumber')).toBe('Parent WhatsApp Number');
+    expect(handoverFieldLabel('parent.primaryPhone')).toBe('Primary Contact Number');
+    expect(handoverFieldLabel('parent.whatsappNumber')).toBe('WhatsApp Number');
     expect(handoverFieldLabel('parent.relationship')).toBe('Relationship to Student');
     expect(handoverFieldLabel('tutor.assignments')).toBe('Tutor Assignment');
     expect(handoverFieldLabel('academic.preferredLanguage')).toBe('Preferred Language');
-    expect(handoverFieldLabel('academic.previousMarks')).toBe('Previous Academic Marks');
+    expect(handoverFieldLabel('academic.previousPerformance')).toBe('Previous Academic Performance');
     expect(handoverFieldLabel('timetable.schedule')).toBe('Preferred Timetable / Schedule');
-    expect(handoverFieldLabel('examination.upcomingDates')).toBe('Upcoming Examination Dates');
-    expect(handoverFieldLabel('examination.syllabusPortions')).toBe('Examination Syllabus / Portions');
+    expect(handoverFieldLabel('examination.upcoming')).toBe('Upcoming Examination Details');
     expect(handoverFieldLabel('parentExpectations')).toBe('Parent Expectations');
     expect(handoverFieldLabel('studentEngagement')).toBe('Student Engagement');
     expect(handoverFieldLabel('student.dateOfBirth')).toBe('Date of Birth');
@@ -83,7 +82,7 @@ describe('what counts as collected', () => {
     const result = presentHandover({ transferredFields: [transferred('academic.previousMarks', 0), transferred('student.gender', false)], missingFields: [] });
     expect(result.collected.map((f) => [f.label, f.value])).toEqual([
       ['Gender', 'No'],
-      ['Previous Academic Marks', '0'],
+      ['Earlier Note on Previous Marks', '0'],
     ]);
     expect(result.missing).toHaveLength(0);
   });
@@ -121,9 +120,9 @@ describe('presentHandover', () => {
     expect(collected.map((f) => [f.label, f.value, f.status])).toEqual([
       ['Student First Name', 'Asha', 'COLLECTED'],
       ['Date of Birth', '12 May 2015', 'COLLECTED'],
-      ['Parent Contact Number', '9876543210', 'COLLECTED'],
-      ['Subjects', 'Mathematics (CBSE · Grade 8) · 12 hrs / month', 'COLLECTED'],
-      ['Subjects', 'Science (CBSE · Grade 8)', 'COLLECTED'],
+      ['Primary Contact Number', '9876543210', 'COLLECTED'],
+      ['Subjects Required', 'Mathematics (CBSE · Grade 8) · 12 hrs / month', 'COLLECTED'],
+      ['Subjects Required', 'Science (CBSE · Grade 8)', 'COLLECTED'],
     ]);
     expect(missing.map((f) => [f.label, f.status, f.value])).toEqual([
       ['Gender', 'NOT_PROVIDED', null],
@@ -168,7 +167,7 @@ describe('presentHandover', () => {
   it('an empty subject list is shown as still required, not as collected', () => {
     const { collected, missing } = presentHandover({ transferredFields: [{ field: 'academic.subjects', value: [] }], missingFields: [] });
     expect(collected).toHaveLength(0);
-    expect(missing.map((f) => f.label)).toEqual(['Subjects']);
+    expect(missing.map((f) => f.label)).toEqual(['Subjects Required']);
   });
 
   it('handles long values without altering them', () => {

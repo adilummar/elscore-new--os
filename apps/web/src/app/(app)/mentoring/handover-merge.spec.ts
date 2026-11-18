@@ -96,7 +96,7 @@ describe('structured values are shown as readable lines, not JSON', () => {
 describe('history of a field change', () => {
   it('names the field in business words and shows from and to', () => {
     expect(describeFieldChange({ fieldKey: 'parent.primaryPhone', previous: '+971500000000', next: '+971501112222' })).toEqual({
-      label: 'Parent Contact Number', from: '+971500000000', to: '+971501112222',
+      label: 'Primary Contact Number', from: '+971500000000', to: '+971501112222',
     });
   });
 

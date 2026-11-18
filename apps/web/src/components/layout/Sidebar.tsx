@@ -21,6 +21,7 @@ import {
 import { logout } from "@/lib/api/auth";
 import { usePermissions } from "@/components/providers/AuthProvider";
 import { getHrSubItems, isHrRouteActive, isNavItemActive } from "./sidebar-navigation";
+import { MentoringNav } from "./MentoringNav";
 
 export function Sidebar({ user }: { user: any }) {
   const pathname = usePathname();
@@ -46,12 +47,13 @@ export function Sidebar({ user }: { user: any }) {
     }
   }, [pathname]);
 
-  // People who run Mentoring classes get it right under Dashboard, because it is where they work. It opens on Classes.
+  // People who run Mentoring classes get the Mentoring group right under Dashboard, because it is where they work. It holds every Mentoring page.
   const seesMentoringWork = hasPermission("mentoring.student.read-all") || hasPermission("mentoring.student.read-assigned");
 
   const topNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    ...(seesMentoringWork ? [{ name: "Students", href: "/mentoring/students", icon: Users }, { name: "Mentoring", href: "/mentoring", icon: GraduationCap }] : []),
+  ];
+  const afterMentoringNavItems = [
     { name: "Attendance", href: "/attendance", icon: Clock },
     ...(hasPermission("leave.request.own") || hasPermission("leave.read.all") ? [{ name: "Leaves", href: "/leaves", icon: Calendar }] : []),
     ...(hasPermission("attendance.read.team") || hasPermission("employee.read-all") ? [{ name: "Staffs", href: "/staffs", icon: Users }] : []),
@@ -75,8 +77,32 @@ export function Sidebar({ user }: { user: any }) {
       </div>
       <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3 custom-scrollbar">
         {topNavItems.map((item) => {
-          // Students is its own item, so Mentoring is not also lit while a student page is open.
-          const isActive = isNavItemActive(item.href, pathname) && !(item.name === "Mentoring" && seesMentoringWork && isNavItemActive("/mentoring/students", pathname));
+          const isActive = isNavItemActive(item.href, pathname);
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-primary-hover text-white shadow-sm"
+                  : "text-primary-soft hover:bg-primary-hover/50 hover:text-white"
+              )}
+            >
+              <item.icon className="w-5 h-5 opacity-90" />
+              {item.name}
+            </Link>
+          );
+        })}
+
+        {seesMentoringWork && (
+          <React.Suspense fallback={null}>
+            <MentoringNav hasPermission={hasPermission} />
+          </React.Suspense>
+        )}
+
+        {afterMentoringNavItems.map((item) => {
+          const isActive = isNavItemActive(item.href, pathname);
           return (
             <Link
               key={item.name}

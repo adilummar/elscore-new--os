@@ -21,6 +21,8 @@ export interface ChecklistItemDefinition {
    * a real value; otherwise the Mentor marks it unavailable with a reason. Having a value never completes the item.
    */
   fields?: readonly string[];
+  /** A handover field in which the Mentor records why the information is unavailable. A reason there stands in for the missing fields. */
+  reasonField?: string;
 }
 
 /**
@@ -45,18 +47,40 @@ export const STAGES: readonly StageDefinition[] = [
 
 const m = (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: true });
 /** Mandatory item that belongs to a named requirement group. */
-const g = (group: string, groupLabel: string) => (key: string, label: string, fields?: readonly string[]): ChecklistItemDefinition => ({
+const g = (group: string, groupLabel: string) => (key: string, label: string, fields?: readonly string[], reasonField?: string): ChecklistItemDefinition => ({
   key,
   label,
   mandatory: true,
   group,
   groupLabel,
   ...(fields ? { fields } : {}),
+  ...(reasonField ? { reasonField } : {}),
 });
 
-const confirmInfo = g('confirm_information', 'Confirmed with the parent');
-const meetingConduct = g('meeting_conduct', 'Meeting and follow-up');
+// The sixteen requirements are shown as four groups. Item keys do not change, so rows saved earlier keep counting.
+const studentParent = g('student_parent_verification', 'Student & Parent Verification');
+const academicTutor = g('academic_tutor_requirements', 'Academic & Tutor Requirements');
+const expectationsLearning = g('expectations_learning_assessment', 'Expectations & Learning Assessment');
+const meetingFollowUp = g('meeting_communication_followup', 'Meeting, Communication & Follow-up');
 const a = (key: string, label: string): ChecklistItemDefinition => ({ key, label, mandatory: false });
+/** The same item written as advisory: it shows in its group and can be completed, but never blocks the group or the stage. */
+const advisory = (make: ReturnType<typeof g>) => (key: string, label: string): ChecklistItemDefinition => ({ ...make(key, label), mandatory: false });
+
+// Stage 4, Group Creation
+const whatsappSetup = g('whatsapp_group_setup', 'WhatsApp Group Setup');
+const introductions = g('introductions_welcome', 'Introductions & Welcome');
+const classAccess = g('timetable_class_access', 'Timetable & Class Access');
+const classCommunication = g('class_communication_readiness', 'Class Communication & Readiness');
+// Stage 5, Individual Learning Plan
+const planPrepared = g('plan_prepared', 'Individual learning plan prepared');
+const strengthsActions = g('strengths_weaknesses_actions', 'Strengths, weaknesses and improvement actions');
+const learningGoals = g('learning_goals', 'Short-term and long-term learning goals');
+const tutorAndParent = g('tutor_input_parent_sharing', 'Tutor input and sharing with parent');
+// Stage 6, Class Readiness
+const scheduleConfirmed = g('class_schedule_confirmed', 'Class Schedule Confirmed');
+const remindersSent = g('reminders_sent', 'Reminders Sent');
+const academicPrep = g('academic_preparation', 'Academic Preparation Completed');
+const readinessConfirmed = g('class_readiness_confirmed', 'Class Readiness Confirmed');
 
 /**
  * Mandatory completion requirements per stage, taken from the approved Mentoring specification.
@@ -73,22 +97,22 @@ export const CHECKLIST: Record<number, readonly ChecklistItemDefinition[]> = {
   // cannot be completed while that information is missing. The last six items are the approved Stage 2 requirements
   // and keep their keys, so rows saved earlier still count.
   2: [
-    confirmInfo('student_parent_details_verified', 'Student and parent details verified', ['student.firstName', 'student.lastName', 'student.dateOfBirth', 'parent.name']),
-    confirmInfo('parent_relationship_confirmed', 'Parent relationship confirmed', ['parent.relationship']),
-    confirmInfo('contact_information_verified', 'Contact information verified', ['parent.primaryPhone']),
-    confirmInfo('preferred_language_collected', 'Preferred language collected', ['academic.preferredLanguage']),
-    confirmInfo('tutor_subject_requirements_confirmed', 'Tutor and subject requirements confirmed', ['academic.subjects', 'tutor.requirements']),
-    confirmInfo('academic_requirements_recorded', 'Academic requirements recorded', ['academic.subjectNotes']),
-    confirmInfo('previous_marks_collected', 'Previous marks collected, or marked unavailable with a reason', ['academic.previousMarks']),
-    confirmInfo('examination_details_recorded', 'Examination details recorded, or marked pending or unavailable with a reason', ['examination.upcomingDates', 'examination.syllabusPortions']),
-    confirmInfo('parent_expectations_documented', 'Parent expectations and concerns documented', ['parentExpectations']),
-    confirmInfo('student_engagement_discussed', 'Student engagement and learning concerns discussed', ['studentEngagement', 'student.learningConcerns']),
-    meetingConduct('additional_info_collected', 'Additional student information collected'),
-    meetingConduct('methodology_explained', 'Teaching methodology explained and recorded'),
-    meetingConduct('meet_and_timetable_instructions', 'Google Meet and timetable instructions communicated'),
-    meetingConduct('admission_info_updated', 'Missing admission information updated'),
-    meetingConduct('meeting_notes_followups', 'Meeting notes and follow-up actions recorded'),
-    meetingConduct('parent_acknowledgement', 'Parent acknowledgement recorded (or authorised exception)'),
+    studentParent('student_parent_details_verified', 'Student and parent details verified, including Date of Birth', ['student.firstName', 'parent.name']),
+    studentParent('parent_relationship_confirmed', 'Parent relationship confirmed', ['parent.relationship']),
+    studentParent('contact_information_verified', 'Contact information verified', ['parent.primaryPhone']),
+    studentParent('preferred_language_collected', 'Preferred language collected', ['academic.preferredLanguage']),
+    academicTutor('tutor_subject_requirements_confirmed', 'Tutor and subject requirements confirmed', ['academic.subjects']),
+    academicTutor('academic_requirements_recorded', 'Academic requirements and subject details recorded', ['academic.weakAreas', 'academic.learningRequirements', 'academic.examPreparation']),
+    academicTutor('previous_marks_collected', 'Previous academic marks collected, or marked unavailable with a reason', ['academic.previousPerformance'], 'academic.previousPerformanceReason'),
+    academicTutor('examination_details_recorded', 'Examination details recorded, or marked pending or unavailable with a reason, including examination dates and syllabus / portions', ['examination.upcoming'], 'examination.upcomingReason'),
+    expectationsLearning('parent_expectations_documented', 'Parent expectations and concerns documented', ['parentExpectations']),
+    expectationsLearning('student_engagement_discussed', 'Student engagement and learning concerns discussed, including learning difficulties', ['studentEngagement', 'student.learningConcerns']),
+    meetingFollowUp('additional_info_collected', 'Additional student information collected'),
+    meetingFollowUp('methodology_explained', 'Teaching methodology explained and recorded'),
+    meetingFollowUp('meet_and_timetable_instructions', 'Google Meet and timetable instructions communicated'),
+    meetingFollowUp('admission_info_updated', 'Missing admission information updated'),
+    meetingFollowUp('meeting_notes_followups', 'Meeting notes and follow-up actions recorded'),
+    meetingFollowUp('parent_acknowledgement', 'Parent acknowledgement recorded, or authorised exception documented'),
   ],
   3: [
     m('all_subjects_scheduled', 'All enrolled subjects scheduled'),
@@ -104,35 +128,39 @@ export const CHECKLIST: Record<number, readonly ChecklistItemDefinition[]> = {
     m('daily_visibility_enabled', 'Daily schedule visibility enabled'),
     m('reminders_active', 'Reminder configuration active'),
   ],
+  // Stages 4, 5 and 6 show a few named requirements, each holding the checks that were already there. Item keys do not change,
+  // so rows saved earlier keep counting. A group is complete when all its mandatory checks are. Advisory checks never hold one back.
   4: [
-    m('group_created', 'Dedicated WhatsApp group created'),
-    m('group_dp', 'Group DP set (academy logo and student ID)'),
-    m('members_verified', 'Mentor, tutors and parents added and verified'),
-    m('welcome_messages', 'Welcome messages and introductions sent'),
-    m('timetable_receipt', 'Timetable shared and receipt verified'),
-    m('mentor_intro_voice', 'Mentor introduction voice message shared'),
-    m('meet_link_shared', 'Common Google Meet link shared and verified'),
-    m('class_update_format', 'Class-update format shared and acknowledged by tutors'),
-    a('class_start_announcement', 'Class-start announcement sent'),
+    whatsappSetup('group_created', 'Dedicated WhatsApp group created'),
+    whatsappSetup('group_dp', 'Group DP set (academy logo and student ID)'),
+    whatsappSetup('members_verified', 'Mentor, tutors and parents added and verified'),
+    introductions('welcome_messages', 'Welcome messages and introductions sent'),
+    introductions('mentor_intro_voice', 'Mentor introduction voice message shared'),
+    classAccess('timetable_receipt', 'Timetable shared and receipt verified'),
+    classAccess('meet_link_shared', 'Common Google Meet link shared and verified'),
+    classCommunication('class_update_format', 'Class-update format shared and acknowledged by tutors'),
+    advisory(classCommunication)('class_start_announcement', 'Class-start announcement sent'),
   ],
+  // Stage 5: four requirements. Two checks of the earlier plan are not among them, so they stay on record as advisory.
   5: [
-    m('plan_prepared', 'Individual learning plan prepared'),
-    m('priorities_set', 'Subject priorities (high / medium / low) set'),
-    m('strengths_weaknesses', 'Strengths and weaknesses recorded, each weakness with an improvement action'),
-    m('short_term_goals', 'Short-term goals defined'),
-    m('long_term_goals', 'Long-term goals defined and linked'),
-    m('tutor_contributions', 'Tutor observations incorporated'),
-    m('plan_shared_with_parent', 'Plan shared with parent'),
-    m('parent_ack_plan', 'Parent feedback and acknowledgement recorded'),
+    planPrepared('plan_prepared', 'Individual learning plan prepared'),
+    advisory(planPrepared)('priorities_set', 'Subject priorities (high / medium / low) set'),
+    strengthsActions('strengths_weaknesses', 'Student strengths, weaknesses and improvement actions recorded'),
+    learningGoals('short_term_goals', 'Short-term learning goals defined'),
+    learningGoals('long_term_goals', 'Long-term learning goals defined'),
+    tutorAndParent('tutor_contributions', 'Tutor input obtained'),
+    tutorAndParent('plan_shared_with_parent', 'Learning plan shared with parent'),
+    advisory(tutorAndParent)('parent_ack_plan', 'Parent feedback and acknowledgement recorded'),
   ],
+  // Stage 6: four requirements.
   6: [
-    m('schedule_verified', 'Class schedule verified'),
-    m('tutor_reminder', 'Tutor reminder sent'),
-    m('parent_reminder', 'Parent reminder sent with Meet link'),
-    m('materials_confirmed', 'Learning materials confirmed'),
-    m('lesson_plan_approved', 'Pre-class lesson plan approved'),
-    m('meet_link_accessible', 'Meet link accessible'),
-    m('tutor_ready', 'Tutor ready'),
+    scheduleConfirmed('schedule_verified', 'Class date, time and subject verified'),
+    remindersSent('tutor_reminder', 'Tutor reminder sent'),
+    remindersSent('parent_reminder', 'Parent reminder sent with Google Meet link'),
+    academicPrep('materials_confirmed', 'Learning materials confirmed'),
+    academicPrep('lesson_plan_approved', 'Pre-class lesson plan reviewed and approved'),
+    readinessConfirmed('tutor_ready', 'Tutor availability confirmed'),
+    readinessConfirmed('meet_link_accessible', 'Google Meet link tested and accessible'),
   ],
   7: [
     m('class_update_verified', 'Class update received and verified'),

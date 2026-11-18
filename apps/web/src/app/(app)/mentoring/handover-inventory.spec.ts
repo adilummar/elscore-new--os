@@ -18,26 +18,26 @@ const rowOf = (handover: unknown, key: string) => buildInventory(handover).secti
 
 describe('the field inventory', () => {
   it('covers the whole required list, once each, with a human label for every field', () => {
-    expect(ALL_FIELD_KEYS).toHaveLength(28);
-    expect(new Set(ALL_FIELD_KEYS).size).toBe(28);
+    expect(ALL_FIELD_KEYS).toHaveLength(33);
+    expect(new Set(ALL_FIELD_KEYS).size).toBe(33);
     for (const key of ALL_FIELD_KEYS) expect(handoverFieldLabel(key)).toMatch(/^[A-Z][^.]*$/); // starts with a capital and is never a raw dotted path or camelCase key
-    expect(FIELD_SECTIONS.map((s) => s.label)).toEqual(['Student', 'Parent and contact', 'Subjects, tutor and timetable', 'Marks and examinations', 'Expectations and engagement']);
+    expect(FIELD_SECTIONS.map((s) => s.label)).toEqual(['Student', 'Parent and contact', 'Subjects, tutor and timetable', 'Marks and examinations', 'Student learning profile']);
   });
 
   it('includes the fields the owner listed', () => {
     const labels = ALL_FIELD_KEYS.map(handoverFieldLabel);
     for (const expected of ['Student First Name', 'Student Last Name', 'Date of Birth', 'Gender', 'School Name', 'Grade / Class', 'Curriculum / Board', 'Parent / Guardian Name', 'Relationship to Student',
-      'Parent Contact Number', 'Parent WhatsApp Number', 'Alternate Contact Number 1', 'Alternate Contact Number 2', 'Preferred Language', 'Subjects', 'Tutor Requirements', 'Previous Academic Marks',
-      'Upcoming Examination Dates', 'Examination Syllabus / Portions', 'Preferred Timetable / Schedule', 'Parent Expectations', 'Student Engagement', 'Learning Difficulties or Concerns']) {
+      'Primary Contact Number', 'WhatsApp Number', 'Alternate / Emergency Contact Number', 'Preferred Language', 'Subjects Required', 'Other Tutor Requirements', 'Previous Academic Performance',
+      'Upcoming Examination Details', 'Academic Difficulties / Weak Areas', 'Specific Learning Requirements', 'Examination Preparation Requirements', 'Preferred Tutor Qualifications / Experience', 'Preferred Teaching Language', 'Preferred Timetable / Schedule', 'Parent Expectations', 'Student Engagement', 'Learning Difficulties or Concerns']) {
       expect(labels).toContain(expected);
     }
   });
 
   it('counts by field and the counts add up', () => {
     const inventory = buildInventory(base());
-    expect(inventory.total).toBe(28);
+    expect(inventory.total).toBe(32); // the 33 fields, less the earlier marks note, which is shown only when it holds something
     expect(inventory.collected).toBe(3);
-    expect(inventory.pending).toBe(25);
+    expect(inventory.pending).toBe(29);
     expect(inventory.collected + inventory.pending).toBe(inventory.total);
   });
 
@@ -67,12 +67,12 @@ describe('the field inventory', () => {
     const inventory = buildInventory(base({ transferredFields: [...base().transferredFields, sales('student.hobby', 'Chess')] }));
     const other = inventory.sections.find((s) => s.key === 'other')!;
     expect(other.rows).toEqual([expect.objectContaining({ label: 'Hobby', value: 'Chess' })]);
-    expect(inventory.total).toBe(29);
+    expect(inventory.total).toBe(33);
   });
 
   it('survives missing or malformed input', () => {
     for (const input of [undefined, null, {}, { transferredFields: 'x', missingFields: null, fieldValues: 5, fieldVerifications: 'y', editableFields: {} }]) {
-      expect(buildInventory(input).total).toBe(28);
+      expect(buildInventory(input).total).toBe(32);
       expect(buildInventory(input).collected).toBe(0);
     }
   });
@@ -116,10 +116,10 @@ describe('the Stage 1 overview', () => {
     expect(overview.received.map((r) => [r.label, r.value, r.note])).toEqual([
       ['Student First Name', 'Asha', 'Sales student record'],
       ['Date of Birth', '12 May 2015', 'Sales student record'],
-      ['Parent Contact Number', '+971500000000', 'Sales lead record'],
+      ['Primary Contact Number', '+971500000000', 'Sales lead record'],
     ]);
-    expect(overview.required).toHaveLength(25);
-    expect(overview.received.length + overview.required.length + overview.collectedSince).toBe(28);
+    expect(overview.required).toHaveLength(29);
+    expect(overview.received.length + overview.required.length + overview.collectedSince).toBe(32);
   });
 
   it('always shows the value Sales sent, never a Mentoring correction', () => {
@@ -154,18 +154,18 @@ describe('the Stage 2 filters', () => {
   const keys = (filter: Parameters<typeof matchesFilter>[0]) => rows.filter((r) => matchesFilter(filter, r)).map((r) => r.fieldKey);
 
   it('All shows every field', () => {
-    expect(keys('ALL')).toHaveLength(28);
+    expect(keys('ALL')).toHaveLength(32);
   });
 
   it('Pending collection shows only fields with no value', () => {
     expect(keys('PENDING')).toContain('parent.relationship');
     expect(keys('PENDING')).not.toContain('student.firstName');
-    expect(keys('PENDING')).toHaveLength(28 - 4);
+    expect(keys('PENDING')).toHaveLength(32 - 4);
   });
 
   it('the filter counts match the summary', () => {
     const inventory = buildInventory(handover);
-    expect([inventory.total, inventory.collected, inventory.pending]).toEqual([28, 4, 24]);
+    expect([inventory.total, inventory.collected, inventory.pending]).toEqual([32, 4, 28]);
     expect(keys('PENDING').length).toBe(inventory.pending);
   });
 
@@ -182,5 +182,32 @@ describe('where a pending field says it came from', () => {
     expect(rowOf(base(), 'student.gender').sourceText).toBe('Not provided by Sales');
     expect(rowOf(base(), 'parent.relationship').sourceText).toBe('Not collected by Sales');
     expect(rowOf(base(), 'tutor.requirements').sourceText).toBe('Not collected by Sales');
+  });
+});
+
+describe('optional fields', () => {
+  const OPTIONAL = ['student.lastName', 'student.dateOfBirth', 'student.schoolName', 'student.cityLocation', 'tutor.requirements'];
+  const withOptional = () => base({ editableFields: OPTIONAL.map((key) => ({ ...editor(key, key === 'tutor.requirements' ? 'TEXTAREA' : 'TEXT'), optional: true })) });
+
+  it('an empty optional field is shown, but it is not counted as still to collect', () => {
+    const inventory = buildInventory(withOptional());
+    expect(inventory.optionalPending).toBe(4); // date of birth came from Sales, so it is not empty
+    expect(inventory.pending).toBe(32 - 3 - 4); // the 3 collected fields and the 4 empty optional ones are not outstanding
+    expect(rowOf(withOptional(), 'student.lastName')).toMatchObject({ optional: true, collection: 'PENDING' });
+    expect(rowOf(withOptional(), 'student.gender')).toMatchObject({ optional: false });
+  });
+
+  it('the Stage 1 overview lists them apart from what is still required', () => {
+    const overview = buildOverview(withOptional());
+    expect(overview.optional.map((r) => r.fieldKey).sort()).toEqual(OPTIONAL.filter((k) => k !== 'student.dateOfBirth').sort());
+    expect(overview.required.some((r) => OPTIONAL.includes(r.fieldKey))).toBe(false);
+  });
+
+  it('the retired second grade field is never offered, even when an earlier handover carries it', () => {
+    const old = base({ transferredFields: [sales('student.currentGrade', '8'), sales('student.firstName', 'Asha')], missingFields: [] });
+    expect(buildInventory(old).sections.flatMap((s) => s.rows).some((r) => r.fieldKey === 'student.currentGrade')).toBe(false);
+    expect(buildInventory(old).sections.some((s) => s.key === 'other')).toBe(false);
+    expect(buildOverview(old).received.some((r) => r.fieldKey === 'student.currentGrade')).toBe(false);
+    expect(FIELD_SECTIONS.flatMap((s) => s.fields)).not.toContain('student.currentGrade');
   });
 });

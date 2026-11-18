@@ -174,7 +174,8 @@ describe('MentoringHandoverService', () => {
       expect(missing).toEqual(
         expect.arrayContaining([
           { field: 'student.dateOfBirth', reason: 'NOT_PROVIDED' },
-          { field: 'academic.previousMarks', reason: 'NOT_COLLECTED_IN_SALES' },
+          { field: 'academic.previousPerformance', reason: 'NOT_COLLECTED_IN_SALES' },
+          { field: 'examination.upcoming', reason: 'NOT_COLLECTED_IN_SALES' },
           { field: 'tutor.assignments', reason: 'NOT_COLLECTED_IN_SALES' },
           { field: 'timetable.schedule', reason: 'NOT_COLLECTED_IN_SALES' },
         ]),

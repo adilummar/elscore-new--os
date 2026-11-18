@@ -1,5 +1,4 @@
-import { TAB_FOR_PANEL, tabOf, wantsActivationWorkflow } from '../../student-hub-view';
-import { panelOf } from '../../dashboard-view';
+import { TAB_FOR_PANEL, tabOf, wantsActivationWorkflow, workspacePanelOf } from '../../student-hub-view';
 
 import { StudentHubWorkspace } from './StudentHubWorkspace';
 import { StudentWorkspaceClient } from './StudentWorkspaceClient';
@@ -9,7 +8,7 @@ import { StudentWorkspaceClient } from './StudentWorkspaceClient';
  * still being onboarded; every older link to a panel such as ?panel=classes opens the matching tab here.
  */
 export default function MentoringStudentPage({ params, searchParams }: { params: { id: string }; searchParams?: { panel?: string; tab?: string } }) {
-  if (wantsActivationWorkflow(searchParams?.panel)) return <StudentWorkspaceClient activationId={params.id} initialPanel={panelOf(searchParams?.panel)} />;
+  if (wantsActivationWorkflow(searchParams?.panel)) return <StudentWorkspaceClient activationId={params.id} initialPanel={workspacePanelOf(searchParams?.panel)} />;
   const fromPanel = searchParams?.panel ? TAB_FOR_PANEL[searchParams.panel] : undefined;
-  return <StudentHubWorkspace activationId={params.id} initialTab={searchParams?.tab ? tabOf(searchParams.tab) : fromPanel} />;
+  return <StudentHubWorkspace activationId={params.id} initialTab={searchParams?.tab ? tabOf(searchParams.tab) : fromPanel} initialPanel={workspacePanelOf(searchParams?.panel)} />;
 }

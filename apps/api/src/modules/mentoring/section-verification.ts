@@ -4,6 +4,7 @@ import { ActivationVerificationSection } from '@prisma/client';
 
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
+import { withLegacyValues } from './handover-legacy';
 import { HANDOVER_FIELDS, isMeaningfulValue, stableJson } from './mentoring-handover-fields';
 
 /**
@@ -30,31 +31,38 @@ export const VERIFICATION_SECTIONS: readonly SectionDefinition[] = [
   {
     id: 'STUDENT_PARENT_INFO',
     label: 'Student & Parent Information',
-    covers: 'Student personal information, parent information, contact information, address and background.',
+    covers: 'Student profile, parent and contact information, and preferred language.',
     fields: [
-      'student.firstName', 'student.lastName', 'student.dateOfBirth', 'student.gender', 'student.schoolName', 'student.currentGrade', 'student.grade',
+      'student.firstName', 'student.lastName', 'student.dateOfBirth', 'student.gender', 'student.schoolName', 'student.grade',
       'student.curriculum', 'student.cityLocation', 'student.notes',
-      'parent.name', 'parent.primaryPhone', 'parent.altPhone1', 'parent.altPhone2', 'parent.whatsappNumber', 'parent.relationship',
+      'parent.name', 'parent.relationship', 'parent.primaryPhone', 'parent.whatsappNumber', 'parent.altPhone1', 'parent.altPhone2',
       'academic.preferredLanguage',
     ],
   },
   {
     id: 'SUBJECTS_TUTORS_TIMETABLE',
     label: 'Subjects, Tutors & Timetable',
-    covers: 'Subjects and monthly hours, tutor requirements and assignments, and the class timetable.',
-    fields: ['academic.subjectNotes', 'tutor.requirements', 'tutor.assignments', 'timetable.schedule'],
+    covers: 'Academic requirements, tutor preferences and assignments, and the class timetable.',
+    fields: [
+      'academic.weakAreas', 'academic.learningRequirements', 'academic.examPreparation', 'academic.subjectNotes',
+      'tutor.preferredQualifications', 'tutor.preferredLanguage', 'tutor.requirements', 'tutor.assignments', 'timetable.schedule',
+    ],
     includesTutorsAndSubjects: true,
   },
   {
     id: 'MARKS_EXAMINATIONS',
     label: 'Marks & Examinations',
-    covers: 'Previous marks, upcoming examination dates and syllabus portions.',
-    fields: ['academic.previousMarks', 'examination.upcomingDates', 'examination.syllabusPortions'],
+    covers: 'Previous academic performance and upcoming examination details.',
+    // The older fields stay in the fingerprint so earlier information is still covered by the verification.
+    fields: [
+      'academic.previousPerformance', 'academic.previousPerformanceReason', 'academic.previousMarks',
+      'examination.upcoming', 'examination.upcomingReason', 'examination.upcomingDates', 'examination.syllabusPortions',
+    ],
   },
   {
     id: 'EXPECTATIONS_ENGAGEMENT',
-    label: 'Expectations & Engagement',
-    covers: 'Student and parent expectations, engagement requirements and learning concerns.',
+    label: 'Student Learning Profile',
+    covers: 'Parent expectations, student engagement, and learning difficulties or concerns.',
     fields: ['parentExpectations', 'studentEngagement', 'student.learningConcerns'],
   },
 ];
@@ -93,7 +101,7 @@ async function effectiveValues(db: Db, handoverId: string): Promise<Map<string, 
   for (const entry of transferred) if (entry && typeof entry.field === 'string') out.set(entry.field, entry.value);
   const rows = await db.enrollmentHandoverField.findMany({ where: { handoverId } });
   for (const row of rows) out.set(row.fieldKey, row.value);
-  return out;
+  return withLegacyValues(out);
 }
 
 /** The current fingerprint of every section for an activation. */

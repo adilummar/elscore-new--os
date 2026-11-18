@@ -16,27 +16,32 @@ export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
   'student.dateOfBirth': 'Date of Birth',
   'student.gender': 'Gender',
   'student.schoolName': 'School Name',
-  'student.currentGrade': 'Current Grade (as entered)',
   'student.grade': 'Grade / Class',
   'student.curriculum': 'Curriculum / Board',
-  'student.cityLocation': 'City / Location',
+  'student.cityLocation': 'City / Country',
   'student.notes': 'Student Notes',
   'student.learningConcerns': 'Learning Difficulties or Concerns',
   'parent.name': 'Parent / Guardian Name',
-  'parent.primaryPhone': 'Parent Contact Number',
-  'parent.altPhone1': 'Alternate Contact Number 1',
-  'parent.altPhone2': 'Alternate Contact Number 2',
-  'parent.whatsappNumber': 'Parent WhatsApp Number',
   'parent.relationship': 'Relationship to Student',
-  'academic.subjects': 'Subjects',
-  'academic.subjectNotes': 'Subject Requirement Details',
+  'parent.primaryPhone': 'Primary Contact Number',
+  'parent.whatsappNumber': 'WhatsApp Number',
+  'parent.altPhone1': 'Alternate / Emergency Contact Number',
+  'academic.subjects': 'Subjects Required',
+  'academic.weakAreas': 'Academic Difficulties / Weak Areas',
+  'academic.learningRequirements': 'Specific Learning Requirements',
+  'academic.examPreparation': 'Examination Preparation Requirements',
+  'academic.subjectNotes': 'Other Academic Notes',
   'academic.preferredLanguage': 'Preferred Language',
-  'academic.previousMarks': 'Previous Academic Marks',
-  'tutor.requirements': 'Tutor Requirements',
+  'academic.previousPerformance': 'Previous Academic Performance',
+  'academic.previousPerformanceReason': 'Reason Marks Are Unavailable',
+  'academic.previousMarks': 'Earlier Note on Previous Marks',
+  'tutor.preferredQualifications': 'Preferred Tutor Qualifications / Experience',
+  'tutor.preferredLanguage': 'Preferred Teaching Language',
+  'tutor.requirements': 'Other Tutor Requirements',
   'tutor.assignments': 'Tutor Assignment',
   'timetable.schedule': 'Preferred Timetable / Schedule',
-  'examination.upcomingDates': 'Upcoming Examination Dates',
-  'examination.syllabusPortions': 'Examination Syllabus / Portions',
+  'examination.upcoming': 'Upcoming Examination Details',
+  'examination.upcomingReason': 'Reason Examination Details Are Pending or Unavailable',
   parentExpectations: 'Parent Expectations',
   studentEngagement: 'Student Engagement',
 };
@@ -135,6 +140,10 @@ export interface EditableFieldMeta {
   options: string[] | null;
   columns: Array<{ key: string; label: string; type: 'text' | 'date' | 'time' | 'select'; options?: string[]; required: boolean }> | null;
   maxLength: number | null;
+  /** True when the Mentor may leave the field empty. */
+  optional?: boolean;
+  /** SELECT only: a value outside the list is accepted (another language). */
+  allowCustom?: boolean;
   minDate: string | null;
   maxDate: string | null;
   /** Subject schedule only: what the editor chooses from and what this person may do. */

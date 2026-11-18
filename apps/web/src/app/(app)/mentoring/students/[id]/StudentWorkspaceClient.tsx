@@ -12,7 +12,7 @@ import { computeProgress, describeRequirements, isItemResolved } from '../../che
 import { buildOverview } from '../../handover-inventory';
 import { describeFieldChange, handoverFieldLabel } from '../../handover-presentation';
 import { PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
-import { initialsOf } from '../../student-hub-view';
+import { WorkspacePanel, initialsOf } from '../../student-hub-view';
 import { ChecklistPanel, ItemUpdate } from './ChecklistPanel';
 import { EarlierResults } from './EarlierResults';
 import { HandoverOverview } from './HandoverOverview';
@@ -26,7 +26,7 @@ import { LearningPlanPanel } from './LearningPlanPanel';
 import { MonthlyReviewPanel } from './MonthlyReviewPanel';
 import { TimetablePanel } from './TimetablePanel';
 
-type Panel = 'checklist' | 'classes' | 'exams' | 'review' | 'complaints' | 'tasks' | 'history';
+type Panel = WorkspacePanel;
 
 export function StudentWorkspaceClient({ activationId, initialWorkspace, initialPanel }: { activationId: string; initialWorkspace?: any; initialPanel?: Panel }) {
   const [ws, setWs] = React.useState<any>(initialWorkspace ?? null);
@@ -37,6 +37,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const [busy, setBusy] = React.useState(false);
   const [form, setForm] = React.useState<null | 'pause' | 'block' | 'return' | 'task'>(null);
   const [handoverOpen, setHandoverOpen] = React.useState(false);
+  // The sections of a student are links in the sidebar (?panel=), so the address decides which one shows.
+  React.useEffect(() => { setPanel(initialPanel ?? 'checklist'); }, [initialPanel]);
 
   const load = React.useCallback(async () => {
     try {
@@ -74,7 +76,15 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
     if (dirtyCount === 0) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
+    // The sections of a student are links in the sidebar, which Next opens without unloading the page. Ask before any link that would
+    // throw away an unsaved edit.
+    const askBeforeLink = (event: MouseEvent) => {
+      const link = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!link || link.target === '_blank' || event.defaultPrevented || event.metaKey || event.ctrlKey) return;
+      if (!window.confirm('You have unsaved changes. Leave without saving?')) { event.preventDefault(); event.stopPropagation(); }
+    };
+    document.addEventListener('click', askBeforeLink, true);
+    return () => { window.removeEventListener('beforeunload', warn); document.removeEventListener('click', askBeforeLink, true); };
   }, [dirtyCount]);
   const confirmLeave = () => dirtyIds.current.size === 0 || window.confirm('You have unsaved changes. Leave without saving?');
 
@@ -207,13 +217,7 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
         </ol>
       </nav>
 
-      <div role="tablist" aria-label="Student workspace" className="-mx-1 flex gap-1 overflow-x-auto border-b border-slate-200 px-1 text-sm">
-        {(['checklist', 'classes', 'exams', 'review', 'complaints', 'tasks', 'history'] as Panel[]).map((p) => (
-          <button key={p} type="button" role="tab" aria-selected={panel === p} onClick={() => confirmLeave() && setPanel(p)} className={`-mb-px min-h-[2.75rem] whitespace-nowrap border-b-2 px-3 ${panel === p ? 'border-brand-600 font-semibold text-slate-900' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
-            {p === 'checklist' ? 'Checklist' : p === 'classes' ? 'Daily classes' : p === 'exams' ? 'Weekly exams' : p === 'review' ? 'Monthly review' : p === 'complaints' ? 'Complaints' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
-          </button>
-        ))}
-      </div>
+      {/* The sections of a student (Checklist, Daily classes, Weekly exams, Monthly review, Complaints, Tasks, History) are in the sidebar. */}
 
       {panel === 'checklist' && stage && (
         <div className="space-y-4">
@@ -331,6 +335,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                 <div id="meeting-checklist" className="min-w-0 space-y-3 xl:sticky xl:top-4">
                   <ChecklistPanel
                     items={checklist}
+                    summary={stage.summary ?? null}
+                    events={events}
                     editable={Boolean(stageOpen)}
                     canAuthorizeException={Boolean(can.authorizeException) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
                     busy={busy}
@@ -350,6 +356,8 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
           {stage.number > 2 && (
             <ChecklistPanel
               items={checklist}
+              summary={stage.summary ?? null}
+              events={events}
               editable={Boolean(stageOpen)}
               canAuthorizeException={Boolean(can.authorizeException) && activation.status !== 'ACTIVATED' && activation.status !== 'CANCELLED'}
               busy={busy}

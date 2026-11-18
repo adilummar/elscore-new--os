@@ -175,6 +175,13 @@ export const tabOf = (value: unknown): TabKey => (TABS.find(([k]) => k === value
 
 /** The older student page panels that now live in a tab. The activation checklist and tasks stay on the older page. */
 export const TAB_FOR_PANEL: Record<string, TabKey> = { classes: 'classes', exams: 'exams', review: 'plan', complaints: 'complaints', history: 'activation' };
+/** The sections of a student that the sidebar links to (?panel=), in order. */
+export const WORKSPACE_PANELS = ['checklist', 'classes', 'exams', 'review', 'complaints', 'tasks', 'history'] as const;
+export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number];
+/** The panel an address asks for. Anything else is not a panel. */
+export const workspacePanelOf = (value: unknown): WorkspacePanel | undefined =>
+  typeof value === 'string' && (WORKSPACE_PANELS as readonly string[]).includes(value) ? (value as WorkspacePanel) : undefined;
+
 /** Whether the address asks for the activation workflow page. Anything else opens the workspace. */
 export const wantsActivationWorkflow = (panel: unknown): boolean => panel === 'checklist' || panel === 'tasks';
 

@@ -59,13 +59,13 @@ describe('Stage 1 is a handover overview', () => {
 
   it('has two sections, Received from Sales and Still required, with the real counts', () => {
     expect(t).toContain('Received from Sales 5');
-    expect(t).toContain('Still required 23');
-    expect(t).toContain('5 received, 23 still required');
+    expect(t).toContain('Still required 27');
+    expect(t).toContain('5 received, 27 still required');
     expect(t).toContain('Handed over on');
   });
 
   it('shows actual values with business labels and where Sales took them from', () => {
-    for (const [label, value] of [['Student First Name', 'Asha'], ['Parent / Guardian Name', 'Priya Menon'], ['Parent Contact Number', '9876543210'], ['Subjects', 'Mathematics (CBSE · Grade 8) · 8 hrs / month']]) {
+    for (const [label, value] of [['Student First Name', 'Asha'], ['Parent / Guardian Name', 'Priya Menon'], ['Primary Contact Number', '9876543210'], ['Subjects Required', 'Mathematics (CBSE · Grade 8) · 8 hrs / month']]) {
       expect(t).toContain(`${label} ${value}`);
     }
     expect(t).toContain('Sales lead record');
@@ -74,10 +74,10 @@ describe('Stage 1 is a handover overview', () => {
   });
 
   it('explains each missing field and marks it with a small red indicator', () => {
-    expect(t).toContain('Still required 23 Not asked during the Sales admission. The Mentor collects this. Where Sales left a field blank, the row says so.');
+    expect(t).toContain('Still required 27 Not asked during the Sales admission. The Mentor collects this. Where Sales left a field blank, the row says so.');
     expect(count(t, 'Not asked during the Sales admission')).toBe(1); // said once, not on every row
     expect(t).toContain('Gender Sales did not enter this information.');
-    expect(count(html, 'aria-label="Missing"')).toBe(23);
+    expect(count(html, 'aria-label="Missing"')).toBe(27);
     expect(count(html, 'aria-label="Received"')).toBe(5);
   });
 
@@ -102,14 +102,14 @@ describe('Stage 1 is a handover overview', () => {
 
   it('keeps the original Sales value when Mentoring has changed it since, and says so', () => {
     const changed = text(render(workspace(MENTOR, { handover: { ...handover(), fieldValues: [{ fieldKey: 'parent.primaryPhone', value: '9000000000', origin: 'MENTORING_UPDATED', salesValue: '9876543210', updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:00:00Z' }] } })));
-    expect(changed).toContain('Parent Contact Number 9876543210');
+    expect(changed).toContain('Primary Contact Number 9876543210');
     expect(changed).not.toContain('9000000000');
     expect(changed).toContain('Updated in the parent meeting; this is the value Sales sent.');
   });
 
   it('a field the Mentor has collected since is no longer still required, and is counted separately', () => {
     const later = text(render(workspace(MENTOR, { handover: { ...handover(), fieldValues: [{ fieldKey: 'parent.relationship', value: 'Mother', origin: 'MENTOR_COLLECTED', salesValue: null, updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:00:00Z' }] } })));
-    expect(later).toContain('5 received, 22 still required, 1 collected since by the Mentor');
+    expect(later).toContain('5 received, 26 still required, 1 collected since by the Mentor');
     expect(later).not.toContain('Relationship to Student');
   });
 });
@@ -135,12 +135,12 @@ describe('Stage 1 completion action by role', () => {
 
   it('both buttons open one confirmation dialog that states the counts and what completing does', () => {
     expect(render(workspace(MENTOR))).not.toContain('role="dialog"'); // closed until the Mentor asks for it
-    const open = renderToStaticMarkup(React.createElement(HandoverReview, { item: review() as any, stageStatus: 'IN_PROGRESS', editable: true, received: 5, required: 23, onSubmit: async () => undefined, defaultOpen: true }));
+    const open = renderToStaticMarkup(React.createElement(HandoverReview, { item: review() as any, stageStatus: 'IN_PROGRESS', editable: true, received: 5, required: 27, onSubmit: async () => undefined, defaultOpen: true }));
     const t = text(open);
     expect(open).toContain('role="dialog"');
     expect(open).toContain('aria-modal="true"');
     expect(t).toContain('what Sales handed over (5 items received)');
-    expect(t).toContain('what is still required (23 items)');
+    expect(t).toContain('what is still required (27 items)');
     expect(t).toContain('Missing information does not stop you here.');
     expect(t).toContain('Completing Stage 1 moves the student to the Meeting with Parents. The original Sales data is not changed.');
     expect(t).toContain('Cancel');
@@ -150,7 +150,7 @@ describe('Stage 1 completion action by role', () => {
   it('completing works with every field still missing: the number of required items never disables the action', () => {
     const none = workspace(MENTOR, { handover: { transferredFields: [], missingFields: [], fieldValues: [], fieldVerifications: [], editableFields: [] } });
     expect(enabled(render(none), ACTION)).toBe(true);
-    expect(text(render(none))).toContain('28 still required');
+    expect(text(render(none))).toContain('32 still required');
   });
 
   it('a recorded review that is waiting to be completed keeps the same button and says so', () => {

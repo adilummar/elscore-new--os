@@ -63,6 +63,8 @@ interface EditorProps {
   /** What is stored now. A timetable saved before subject schedules is shown as an earlier timetable. */
   previous?: unknown;
   suggestions?: ScheduleSuggestion[];
+  /** The student's Grade / Class. Every subject uses it as its level, so the card does not ask for one. */
+  studentGrade?: string | null;
   /** Adds a subject to the master list. Offered only to people who may manage reference data; the API checks again. */
   onCreateSubject?: (name: string) => Promise<void>;
   /** Tutor selection for each subject. Omitted where tutors cannot be chosen. */
@@ -210,21 +212,6 @@ function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disab
           </Select>
         </label>
         <label className="block text-xs text-slate-600">
-          Required level
-          <Select
-            aria-label={`Required level ${index + 1}`}
-            disabled={disabled}
-            value={subject.gradeId}
-            onChange={(e) => {
-              const ref = meta.grades.find((g) => g.id === e.target.value);
-              onChange({ ...subject, gradeId: ref?.id ?? '', gradeName: ref?.name ?? '' });
-            }}
-          >
-            <option value="">Select a level</option>
-            {meta.grades.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </Select>
-        </label>
-        <label className="block text-xs text-slate-600">
           How often
           <Select aria-label={`Frequency ${index + 1}`} disabled={disabled} value={subject.frequency} onChange={(e) => { setCustomizing(false); onChange(setFrequency(subject, e.target.value as Frequency)); }}>
             {FREQUENCIES.map((f) => <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>)}
@@ -339,7 +326,7 @@ function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disab
         </div>
       </div>
       {mismatch && <p role="alert" className="mt-1 text-xs font-medium text-amber-700">{mismatch}</p>}
-      {!mismatch && problem && <p className="mt-1 text-xs text-amber-700">Still needed: {problem}</p>}
+      {!mismatch && problem && <p className="mt-1 text-xs text-amber-700">Still needed: {problem === 'Choose the required level.' ? "Set the student's Grade / Class first. Subjects use it as their level." : problem}</p>}
 
       {tutorTools && subject.subjectId && <AssignedTutor subjectId={subject.subjectId} subjectName={subject.subjectName} tools={tutorTools} saved={saved} />}
     </section>
@@ -347,7 +334,7 @@ function SubjectCard({ index, baseId, subject, meta, takenIds, salesHours, disab
 }
 
 /** Stage 2 editor for the preferred timetable: one card per subject, each with its own frequency, hours and days. */
-export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabled = false, previous, suggestions = [], onCreateSubject, tutorTools }: EditorProps) {
+export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabled = false, previous, suggestions = [], studentGrade, onCreateSubject, tutorTools }: EditorProps) {
   const lists = meta.schedule ?? { subjects: [], grades: [], defaultSessionMinutes: 60, canAddSubject: false };
   const [newName, setNewName] = React.useState('');
   const [adding, setAdding] = React.useState(false);
@@ -363,11 +350,19 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
   const legacy = Array.isArray(previous) ? previous.filter((r): r is Record<string, string> => !!r && typeof r === 'object') : [];
 
   const byName = (list: Array<{ id: string; name: string }>, name: string) => list.find((r) => r.name.toLowerCase() === name.trim().toLowerCase());
+  // One grade only: the student's Grade / Class. A subject never asks for its own level.
+  const grade = studentGrade ? byName(lists.grades, studentGrade) : undefined;
+  const withGrade = (s: SubjectSchedule): SubjectSchedule => (grade ? { ...s, gradeId: grade.id, gradeName: grade.name } : s);
   const fromSales = (s: ScheduleSuggestion) => {
     const subject = byName(lists.subjects, s.subject);
-    const grade = byName(lists.grades, s.grade);
-    set([...subjects, { ...newSubject('WEEKLY'), subjectId: subject?.id ?? '', subjectName: subject?.name ?? '', gradeId: grade?.id ?? '', gradeName: grade?.name ?? '' }]);
+    set([...subjects, withGrade({ ...newSubject('WEEKLY'), subjectId: subject?.id ?? '', subjectName: subject?.name ?? '' })]);
   };
+  // A subject that has no level yet (added before the student's grade was set, or saved by an older version) takes the student's grade.
+  const needsGrade = !!grade && subjects.some((s) => !s.gradeId);
+  React.useEffect(() => {
+    if (needsGrade) set(subjects.map((s) => (s.gradeId ? s : withGrade(s))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsGrade, grade?.id]);
   const pending = suggestions.filter((s) => {
     const ref = byName(lists.subjects, s.subject);
     return !ref || !taken.has(ref.id);
@@ -398,7 +393,7 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
         </div>
       )}
 
-      {subjects.length === 0 && <p className="text-sm text-slate-500">No subjects yet. Add a subject, then set its level, how often it meets, the hours and the days.</p>}
+      {subjects.length === 0 && <p className="text-sm text-slate-500">No subjects yet. Add a subject, then set how often it meets, the hours and the days.</p>}
 
       {subjects.map((subject, index) => (
         <SubjectCard
@@ -418,12 +413,12 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
       ))}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant="outline" disabled={disabled || subjects.length >= 15} onClick={() => set([...subjects, newSubject('WEEKLY')])}>
+        <Button type="button" size="sm" variant="outline" disabled={disabled || subjects.length >= 15} onClick={() => set([...subjects, withGrade(newSubject('WEEKLY'))])}>
           <Plus aria-hidden className="mr-1 h-3.5 w-3.5" />Add subject
         </Button>
         {pending.map((s) => (
           <button key={`${s.subject}-${s.grade}`} type="button" disabled={disabled} className={chip(false)} onClick={() => fromSales(s)}>
-            Add {s.subject}{s.grade ? ` (${s.grade})` : ''} from Sales
+            Add {s.subject} from Sales
           </button>
         ))}
       </div>

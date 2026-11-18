@@ -30,29 +30,43 @@ export const FIELD_SECTIONS: readonly FieldSection[] = [
   {
     key: 'student',
     label: 'Student',
-    fields: ['student.firstName', 'student.lastName', 'student.dateOfBirth', 'student.gender', 'student.schoolName', 'student.grade', 'student.curriculum', 'student.currentGrade', 'student.cityLocation', 'student.notes'],
+    fields: ['student.firstName', 'student.lastName', 'student.dateOfBirth', 'student.gender', 'student.schoolName', 'student.grade', 'student.curriculum', 'student.cityLocation', 'student.notes'],
   },
   {
     key: 'parent',
     label: 'Parent and contact',
-    fields: ['parent.name', 'parent.relationship', 'parent.primaryPhone', 'parent.whatsappNumber', 'parent.altPhone1', 'parent.altPhone2', 'academic.preferredLanguage'],
+    fields: ['parent.name', 'parent.relationship', 'parent.primaryPhone', 'parent.whatsappNumber', 'parent.altPhone1', 'academic.preferredLanguage'],
   },
   {
     key: 'subjects',
     label: 'Subjects, tutor and timetable',
-    fields: ['academic.subjects', 'academic.subjectNotes', 'tutor.requirements', 'tutor.assignments', 'timetable.schedule'],
+    fields: [
+      'academic.subjects', 'academic.weakAreas', 'academic.learningRequirements', 'academic.examPreparation', 'academic.subjectNotes',
+      'tutor.preferredQualifications', 'tutor.preferredLanguage', 'tutor.requirements', 'tutor.assignments', 'timetable.schedule',
+    ],
   },
   {
     key: 'academic',
     label: 'Marks and examinations',
-    fields: ['academic.previousMarks', 'examination.upcomingDates', 'examination.syllabusPortions'],
+    fields: ['academic.previousPerformance', 'academic.previousPerformanceReason', 'academic.previousMarks', 'examination.upcoming', 'examination.upcomingReason'],
   },
   {
     key: 'expectations',
-    label: 'Expectations and engagement',
+    label: 'Student learning profile',
     fields: ['parentExpectations', 'studentEngagement', 'student.learningConcerns'],
   },
 ];
+
+/** Fields an earlier handover may still carry but that are no longer asked for. "Current Grade (as entered)" was a second grade beside Grade / Class. */
+const RETIRED_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'student.currentGrade',
+  // Combined into other fields. Their saved values are shown there (the API derives the combined field), and nothing is deleted.
+  'parent.altPhone2',
+  'examination.upcomingDates',
+  'examination.syllabusPortions',
+]);
+/** Kept only to show what an earlier version saved: never asked for, and shown only when it holds a value. */
+const SHOWN_ONLY_WHEN_FILLED: ReadonlySet<string> = new Set(['academic.previousMarks']);
 
 export const ALL_FIELD_KEYS: readonly string[] = FIELD_SECTIONS.flatMap((s) => s.fields);
 
@@ -81,6 +95,8 @@ export interface InventoryRow {
   hint: string | null;
   /** Null when the field cannot be edited here (the Sales subject list). */
   editor: EditableFieldMeta | null;
+  /** The Mentor may leave this field empty. An empty optional field is not "still to collect" and blocks nothing. */
+  optional: boolean;
 }
 
 export interface InventorySection {
@@ -93,7 +109,9 @@ export interface Inventory {
   sections: InventorySection[];
   total: number;
   collected: number;
+  /** Required fields still empty. Optional empty fields are counted apart. */
   pending: number;
+  optionalPending: number;
 }
 
 interface FieldValueRow {
@@ -140,6 +158,7 @@ export function buildInventory(handover: unknown): Inventory {
         fieldKey, label, value: null, rawValue: null, collection: 'PENDING',
         sourceText: pending && pending.hint !== DEFAULT_PENDING_HINT ? 'Not provided by Sales' : 'Not collected by Sales', salesValue: null,
         hint: pending?.hint ?? DEFAULT_PENDING_HINT, editor: pending?.editor ?? editors.get(fieldKey) ?? null,
+        optional: (pending?.editor ?? editors.get(fieldKey))?.optional === true,
       };
     }
     const first = parts[0];
@@ -161,22 +180,29 @@ export function buildInventory(handover: unknown): Inventory {
       salesValue: first.salesValue,
       hint: null,
       editor: first.editor,
+      optional: (first.editor ?? editors.get(fieldKey))?.optional === true,
     };
   };
 
   const known = new Set(ALL_FIELD_KEYS);
-  const extras = [...collectedByField.keys(), ...missingByField.keys()].filter((key, index, all) => !known.has(key) && all.indexOf(key) === index);
+  const extras = [...collectedByField.keys(), ...missingByField.keys()].filter((key, index, all) => !known.has(key) && !RETIRED_FIELD_KEYS.has(key) && all.indexOf(key) === index);
   const sections: InventorySection[] = [
-    ...FIELD_SECTIONS.map((section) => ({ key: section.key, label: section.label, rows: section.fields.map(rowFor) })),
+    ...FIELD_SECTIONS.map((section) => ({
+      key: section.key,
+      label: section.label,
+      rows: section.fields.map(rowFor).filter((row) => !(SHOWN_ONLY_WHEN_FILLED.has(row.fieldKey) && row.collection === 'PENDING')),
+    })),
     ...(extras.length > 0 ? [{ key: 'other', label: 'Other information', rows: extras.map(rowFor) }] : []),
   ];
   const rows = sections.flatMap((s) => s.rows);
   const collectedRows = rows.filter((r) => r.collection !== 'PENDING');
+  const emptyRows = rows.filter((r) => r.collection === 'PENDING');
   return {
     sections,
     total: rows.length,
     collected: collectedRows.length,
-    pending: rows.length - collectedRows.length,
+    pending: emptyRows.filter((r) => !r.optional).length,
+    optionalPending: emptyRows.filter((r) => r.optional).length,
   };
 }
 
@@ -203,6 +229,8 @@ export interface OverviewRow {
 export interface HandoverOverview {
   received: OverviewRow[];
   required: OverviewRow[];
+  /** Empty fields the Mentor may leave empty. Listed apart from the required ones. */
+  optional: OverviewRow[];
   /** Fields Sales did not have that the Mentor has collected since. */
   collectedSince: number;
 }
@@ -235,7 +263,7 @@ export function buildOverview(handover: unknown): HandoverOverview {
         : isMeaningfulValue(value)
           ? Array.isArray(value) ? formatRowsValue(field, value) : formatHandoverValue(field, value)
           : '';
-    if (!text || receivedKeys.has(field)) continue;
+    if (!text || receivedKeys.has(field) || RETIRED_FIELD_KEYS.has(field)) continue;
     receivedKeys.add(field);
     received.push({
       fieldKey: field,
@@ -250,13 +278,14 @@ export function buildOverview(handover: unknown): HandoverOverview {
   received.sort((a, b) => order(a.fieldKey) - order(b.fieldKey));
 
   const required: OverviewRow[] = [];
+  const optional: OverviewRow[] = [];
   for (const section of inventory.sections) {
     for (const row of section.rows) {
       if (row.collection !== 'PENDING') continue;
-      required.push({ fieldKey: row.fieldKey, label: row.label, value: null, note: row.hint ?? DEFAULT_PENDING_HINT, changedSince: false });
+      (row.optional ? optional : required).push({ fieldKey: row.fieldKey, label: row.label, value: null, note: row.hint ?? DEFAULT_PENDING_HINT, changedSince: false });
     }
   }
 
   const collectedSince = Array.from(rowOf.values()).filter((r) => r.collection === 'COLLECTED' && !receivedKeys.has(r.fieldKey)).length;
-  return { received, required, collectedSince };
+  return { received, required, optional, collectedSince };
 }

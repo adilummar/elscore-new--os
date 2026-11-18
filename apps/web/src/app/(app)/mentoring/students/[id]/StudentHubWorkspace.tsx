@@ -23,7 +23,7 @@ import { TimetablePanel } from './TimetablePanel';
  * for final approval) opens the existing seven-stage activation workspace, with its permissions and verification untouched. An activated student
  * opens an operational workspace instead, and the activation checklist appears only while a genuine workflow is pending.
  */
-export function StudentHubWorkspace({ activationId, initialTab }: { activationId: string; initialTab?: TabKey }) {
+export function StudentHubWorkspace({ activationId, initialTab, initialPanel }: { activationId: string; initialTab?: TabKey; initialPanel?: React.ComponentProps<typeof StudentWorkspaceClient>['initialPanel'] }) {
   const [ws, setWs] = React.useState<WorkspaceData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [tab, setTab] = React.useState<TabKey>(initialTab ?? 'overview');
@@ -42,7 +42,7 @@ export function StudentHubWorkspace({ activationId, initialTab }: { activationId
   if (error) return <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error} <button type="button" className="underline" onClick={() => setReload((n) => n + 1)}>Try again</button></p>;
   if (!ws) return <p className="text-sm text-slate-500" aria-live="polite">Loading the student</p>;
   // Not activated yet: the existing activation workspace is the profile.
-  if (profileModeOf(ws.header.status) === 'ACTIVATION') return <StudentWorkspaceClient activationId={activationId} />;
+  if (profileModeOf(ws.header.status) === 'ACTIVATION') return <StudentWorkspaceClient activationId={activationId} initialPanel={initialPanel} />;
 
   const h = ws.header;
   const choose = (k: TabKey) => {

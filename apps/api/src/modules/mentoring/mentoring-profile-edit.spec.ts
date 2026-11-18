@@ -64,8 +64,8 @@ describe('Editing the profile of an activated student', () => {
     const w = world();
     const changes: Record<string, unknown> = {
       'student.firstName': 'Ashwin', 'student.lastName': 'Kumar', 'student.dateOfBirth': '2015-06-01', 'student.gender': 'Female', 'student.schoolName': 'New School',
-      'student.currentGrade': '9', 'student.grade': 'Grade 9', 'student.curriculum': 'CBSE', 'student.cityLocation': 'Dubai', 'student.notes': 'Likes maths', 'student.learningConcerns': 'Reading speed',
-      'parent.name': 'New Parent', 'parent.primaryPhone': '+971 50 111 2222', 'parent.altPhone1': '+971 50 333 4444', 'parent.altPhone2': '+971 50 555 6666', 'parent.whatsappNumber': '+971 50 777 8888', 'parent.relationship': 'Mother',
+      'student.grade': 'Grade 9', 'student.curriculum': 'CBSE', 'student.cityLocation': 'Dubai', 'student.notes': 'Likes maths', 'student.learningConcerns': 'Reading speed',
+      'parent.name': 'New Parent', 'parent.primaryPhone': '+971 50 111 2222', 'parent.altPhone1': '+971 50 333 4444', 'parent.whatsappNumber': '+971 50 777 8888', 'parent.relationship': 'Mother',
       'academic.preferredLanguage': 'English', 'academic.previousMarks': '80%', 'academic.subjectNotes': 'Needs help',
     };
     // Every supported student and parent field is covered by this test: if a field is added to the handover, this fails until it is considered.
@@ -127,7 +127,7 @@ describe('Editing the profile of an activated student', () => {
   it('rejects unknown, unauthorised and operational fields, so nothing can be mass assigned', async () => {
     const w = world();
     const ops = operational(w.db);
-    for (const key of ['status', 'currentMentorUserId', 'student.id', 'tutor.assignments', 'timetable.schedule', 'examination.upcomingDates', 'parentExpectations', '__proto__', 'constructor']) {
+    for (const key of ['status', 'currentMentorUserId', 'student.id', 'tutor.assignments', 'timetable.schedule', 'examination.upcoming', 'parentExpectations', '__proto__', 'constructor']) {
       await expect(w.workflow.updateStudentProfile('act-1', { changes: { [key]: 'x' } }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
     }
     await expect(w.workflow.updateStudentProfile('act-1', { changes: { 'student.schoolName': 'ok' }, basedOn: { status: 'x' } }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
