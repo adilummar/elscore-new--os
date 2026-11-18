@@ -164,7 +164,7 @@ describe('Stage 1 completion action by role', () => {
     const html = render(workspace(MENTOR, stage1('COMPLETED', { state: 'VERIFIED', updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:00:00Z' }, { completedAt: '2026-11-03T09:05:00Z' })));
     const t = text(html);
     expect(t).toMatch(/Stage 1 completed by Mina Mentor on .+\. Active stage: Meeting with Parents\./);
-    expect(/<button[^>]*>[^]*?1\. Admission Handover[^]*?<svg[^>]*lucide-check/.test(html)).toBe(true); // check mark in the Stage 1 chip
+    expect(/<button[^>]*>(?:(?!<\/button>)[^])*?<svg[^>]*lucide-check(?:(?!<\/button>)[^])*?Admission Handover/.test(html)).toBe(true); // check mark in the Stage 1 chip
     expect(buttons(html, ACTION)).toBe(0);
     expect(buttons(html, 'Confirm and complete Stage 1')).toBe(0);
   });

@@ -128,17 +128,17 @@ describe('student details page with partial or absent data', () => {
 
   it('says the Mentor is unallocated and shows parent details as not provided when they are missing', () => {
     const t = text(render(workspace({ activation: { id: 'a1', status: 'AWAITING_ALLOCATION', currentStage: 1, currentMentorUserId: null, currentMentorName: null }, parent: null })));
-    expect(t).toContain('Mentor: unallocated');
+    expect(t).toContain('Mentor unallocated');
     expect(t).toContain('details not provided');
     expect(t).toContain('Awaiting allocation');
   });
 
   it('shows the assigned Mentor', () => {
-    expect(text(render(workspace()))).toContain('Mentor: Ravi Kumar');
+    expect(text(render(workspace()))).toContain('Mentor Ravi Kumar');
   });
 
   it('shows what is known when parent information is incomplete', () => {
-    expect(text(render(workspace({ parent: { name: 'Priya Menon', primaryPhone: null } })))).toContain('Parent / Guardian: Priya Menon');
+    expect(text(render(workspace({ parent: { name: 'Priya Menon', primaryPhone: null } })))).toContain('Parent / Guardian Priya Menon');
   });
 
   it('with nothing received, shows the full required list and an empty-state message', () => {

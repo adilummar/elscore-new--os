@@ -12,6 +12,7 @@ import { computeProgress, describeRequirements, isItemResolved } from '../../che
 import { buildOverview } from '../../handover-inventory';
 import { describeFieldChange, handoverFieldLabel } from '../../handover-presentation';
 import { PRIORITY_LABELS, REASON_LABELS, fmt, pretty, statusVariant } from '../../labels';
+import { initialsOf } from '../../student-hub-view';
 import { ChecklistPanel, ItemUpdate } from './ChecklistPanel';
 import { EarlierResults } from './EarlierResults';
 import { HandoverOverview } from './HandoverOverview';
@@ -149,18 +150,25 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
   const stageOpen = canWork && (stage?.status === 'IN_PROGRESS' || stage?.status === 'PENDING_REVIEW');
 
   return (
-    <div className="max-w-6xl mx-auto space-y-4">
-      <Link href="/mentoring/students" className="text-sm text-brand-700 hover:underline">← All students</Link>
+    <div className="mx-auto max-w-7xl space-y-4">
+      <Link href="/mentoring/students" className="inline-flex min-h-[2.75rem] items-center text-sm text-brand-700 hover:underline">← All students</Link>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">{[student.firstName, student.lastName].filter(Boolean).join(' ') || 'Student'} {student.businessId && <span className="text-slate-500 font-normal">({student.businessId})</span>}</h1>
-          <p className="text-sm text-slate-600">{student.grade?.name ?? student.currentGrade ?? 'Grade n/a'} · {student.curriculum?.name ?? 'Curriculum n/a'}</p>
-          <p className="text-sm text-slate-600">Mentor: {activation.currentMentorName ?? <em>unallocated</em>}</p>
-          <p className="text-sm text-slate-600">Parent / Guardian: {parentLine || <em>details not provided</em>}</p>
+      <header className="rounded-xl bg-white p-4 shadow-card ring-1 ring-slate-200/70 sm:p-5" data-testid="student-header">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span aria-hidden="true" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-50 text-base font-semibold text-brand-700">{initialsOf([student.firstName, student.lastName].filter(Boolean).join(' '))}</span>
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-semibold tracking-tight text-slate-900">{[student.firstName, student.lastName].filter(Boolean).join(' ') || 'Student'} {student.businessId && <span className="font-normal text-slate-500">({student.businessId})</span>}</h1>
+              <p className="text-sm text-slate-600">{student.grade?.name ?? student.currentGrade ?? 'Grade n/a'} · {student.curriculum?.name ?? 'Curriculum n/a'}</p>
+            </div>
+          </div>
+          {activation.status && <Badge variant={statusVariant(activation.status)}>{pretty(activation.status)}</Badge>}
         </div>
-        {activation.status && <Badge variant={statusVariant(activation.status)}>{pretty(activation.status)}</Badge>}
-      </div>
+        <dl className="mt-4 grid gap-x-6 gap-y-3 border-t border-slate-100 pt-4 text-sm sm:grid-cols-2">
+          <div><dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Mentor</dt><dd className="mt-0.5 text-slate-900">{activation.currentMentorName ?? <em>unallocated</em>}</dd></div>
+          <div><dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Parent / Guardian</dt><dd className="mt-0.5 text-slate-900">{parentLine || <em>details not provided</em>}</dd></div>
+        </dl>
+      </header>
 
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {notice && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>}
@@ -178,27 +186,44 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {stages.map((s: any) => (
-          <button key={s.number} onClick={() => confirmLeave() && setStageNo(s.number)}
-            className={`rounded-md border px-3 py-2 text-left text-xs ${s.number === stage?.number ? 'border-brand-600 bg-brand-50' : 'border-slate-200 bg-white'}`}>
-            <div className="font-semibold text-slate-800">{s.number}. {s.name}</div>
-            <div className="mt-1"><Badge variant={statusVariant(s.status)}>{s.status === 'COMPLETED' && <Check aria-hidden className="mr-1 h-3 w-3" />}{pretty(s.status)}</Badge></div>
-          </button>
-        ))}
-      </div>
+      <nav aria-label="Activation stages" className="-mx-1 overflow-x-auto px-1 pb-1">
+        <ol className="grid min-w-[44rem] grid-cols-7 gap-2" data-testid="stage-stepper">
+          {stages.map((s: any) => {
+            const current = s.number === stage?.number;
+            const done = s.status === 'COMPLETED';
+            return (
+              <li key={s.number}>
+                <button type="button" onClick={() => confirmLeave() && setStageNo(s.number)} aria-current={current ? 'step' : undefined}
+                  className={`flex h-full w-full flex-col gap-1.5 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${current ? 'bg-brand-50 ring-2 ring-brand-600' : 'bg-white ring-1 ring-slate-200 hover:bg-slate-50'}`}>
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden="true" className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${done ? 'bg-emerald-600 text-white' : current ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{done ? <Check className="h-3.5 w-3.5" /> : s.number}</span>
+                    <span className={`text-xs font-medium ${done ? 'text-emerald-700' : current ? 'text-brand-800' : 'text-slate-500'}`}>{pretty(s.status)}</span>
+                  </span>
+                  <span className="text-xs font-semibold leading-snug text-slate-800"><span className="sr-only">{s.number}. </span>{s.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
 
-      <div className="flex gap-4 border-b border-slate-200 text-sm">
+      <div role="tablist" aria-label="Student workspace" className="-mx-1 flex gap-1 overflow-x-auto border-b border-slate-200 px-1 text-sm">
         {(['checklist', 'classes', 'exams', 'review', 'complaints', 'tasks', 'history'] as Panel[]).map((p) => (
-          <button key={p} onClick={() => confirmLeave() && setPanel(p)} className={`pb-2 ${panel === p ? 'border-b-2 border-brand-600 font-semibold' : 'text-slate-500'}`}>
+          <button key={p} type="button" role="tab" aria-selected={panel === p} onClick={() => confirmLeave() && setPanel(p)} className={`-mb-px min-h-[2.75rem] whitespace-nowrap border-b-2 px-3 ${panel === p ? 'border-brand-600 font-semibold text-slate-900' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
             {p === 'checklist' ? 'Checklist' : p === 'classes' ? 'Daily classes' : p === 'exams' ? 'Weekly exams' : p === 'review' ? 'Monthly review' : p === 'complaints' ? 'Complaints' : p === 'tasks' ? `Tasks (${tasks.length})` : 'History'}
           </button>
         ))}
       </div>
 
       {panel === 'checklist' && stage && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white px-4 py-3 shadow-card ring-1 ring-slate-200/70" data-testid="stage-actions">
+            <div className="mr-auto min-w-0">
+              <p className="text-sm font-semibold text-slate-900">Stage {stage.number}: {stage.name}</p>
+              {stage.number !== 1 && (stage.status === 'IN_PROGRESS' || stage.status === 'PENDING_REVIEW') && (
+                <p className="text-xs text-slate-600">{progress.outstandingMandatory.length > 0 ? `${progress.outstandingMandatory.length} requirements left before this stage can be completed` : 'Every requirement is resolved. You can complete this stage.'}</p>
+              )}
+            </div>
             {canWork && stage.status === 'NOT_STARTED' && (
               <Button size="sm" isLoading={busy} onClick={() => run(() => mentoringApi(`${base}/stages/${stage.number}/start`, 'POST', {}))}>Start stage {stage.number}</Button>
             )}

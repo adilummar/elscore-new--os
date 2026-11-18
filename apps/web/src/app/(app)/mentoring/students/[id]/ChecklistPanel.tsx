@@ -128,7 +128,7 @@ function ItemRow({ item, editable, canAuthorizeException, busy, onUpdate, onAuth
             {!item.mandatory && <span className="ml-2 text-xs text-slate-500">Advisory</span>}
             {status !== 'PENDING' && status !== 'COMPLETED' && !(status === 'EXCEPTION' && item.exceptionDetail) && <span className={`ml-2 text-xs ${STATUS_TONE[status] ?? ''}`}>{ITEM_STATUS_LABELS[status]}</span>}
           </p>
-          {blocked && <p className="text-xs text-red-700">Waiting for {waitingFor.join(', ')}</p>}
+          {blocked && <p className="text-xs text-amber-800">Waiting for {waitingFor.join(', ')}</p>}
           {(item.updatedByName || item.updatedAt) && item.state !== 'PENDING_COLLECTION' && (
             <p className="text-xs text-slate-500">{item.state === 'VERIFIED' ? 'Completed' : 'Updated'}{item.updatedByName ? ` by ${item.updatedByName}` : ''}{item.updatedAt ? `, ${fmt(item.updatedAt)}` : ''}</p>
           )}
@@ -188,7 +188,7 @@ export function ChecklistPanel({ items, ...rest }: PanelProps) {
   const outstanding = progress.outstandingMandatory.length;
 
   return (
-    <section aria-label="Checklist" className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+    <section aria-label="Checklist" className="rounded-xl bg-white p-4 text-sm shadow-card ring-1 ring-slate-200/70 sm:p-5">
       <div className="space-y-1">
         <p className="font-semibold text-slate-900">{describeRequirements(progress)}</p>
         <p className="text-xs text-slate-500">

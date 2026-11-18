@@ -124,10 +124,10 @@ describe('Stage 2 shows every field, existing and pending, as an editable card',
     expect(row(html, 'parent.primaryPhone')).toContain('placeholder="e.g. +91 98765 43210"');
   });
 
-  it('marks every missing field with a small red indicator', () => {
+  it('marks every missing field with a small amber indicator', () => {
     expect(count(html, 'data-status="pending"')).toBe(24);
     expect(count(html, '>Pending collection<')).toBe(24 + 1); // 24 cards and the summary tile
-    expect(html).toContain('bg-red-500');
+    expect(html).toContain('bg-amber-500');
   });
 
   it('exposes no raw field path', () => {
