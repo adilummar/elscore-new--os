@@ -32,13 +32,12 @@ function handover(stored: unknown, over: { meta?: EditableFieldMeta; verified?: 
     ],
     missingFields: [],
     fieldValues: stored === undefined ? [] : [{ fieldKey: KEY, value: stored, origin: 'MENTOR_COLLECTED', salesValue: null, updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:40:00Z', collectedByName: 'Mina Mentor', collectedAt: '2026-11-03T09:40:00Z' }],
-    fieldVerifications: over.verified || over.changed ? [{ fieldKey: KEY, verified: !over.changed, changedSinceVerified: !!over.changed, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:50:00Z' }] : [],
     editableFields: [over.meta ?? scheduleMeta()],
   };
 }
 
 const render = (h: unknown, props: Record<string, unknown> = {}) =>
-  renderToStaticMarkup(React.createElement(InformationWorkspace, { handover: h, canEdit: true, onSave: async () => undefined, onVerify: async () => undefined, ...props } as never));
+  renderToStaticMarkup(React.createElement(InformationWorkspace, { handover: h, canEdit: true, onSave: async () => undefined, onVerifySection: async () => undefined, ...props } as never));
 const text = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 const pressedDays = (markup: string) => Array.from(markup.matchAll(/<button[^>]*aria-label="(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"[^>]*aria-pressed="true"/g)).map((m) => m[1]);
 const count = (markup: string, needle: string) => markup.split(needle).length - 1;
@@ -177,18 +176,12 @@ describe('the subject schedule editor', () => {
   });
 });
 
-describe('the schedule card keeps the collection and verification workflow', () => {
-  it('shows the source, the status and the verification checkbox', () => {
+describe('the schedule card keeps the collection workflow', () => {
+  it('shows the source and the collection status, and no tick of its own', () => {
     const t = text(render(handover(plan(english()))));
     expect(t).toContain('Preferred Timetable / Schedule');
     expect(t).toContain('Source: Collected by Mina Mentor');
-    expect(t).toContain('Not verified');
-    expect(t).toContain('I have verified this information');
-  });
-
-  it('shows verified, and shows changed since verified after an edit', () => {
-    expect(text(render(handover(plan(english()), { verified: true })))).toContain('Verified by Mina Mentor');
-    expect(text(render(handover(plan(english()), { changed: true })))).toContain('Changed since verified');
+    expect(t).not.toContain('I have verified this information');
   });
 
   it('the schedule counts as one collected field, and as pending when nothing is saved', () => {

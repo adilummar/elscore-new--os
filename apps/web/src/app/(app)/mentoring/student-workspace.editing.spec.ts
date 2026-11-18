@@ -38,9 +38,11 @@ const handover = () => ({
     { fieldKey: 'parent.primaryPhone', value: '+971501112222', origin: 'MENTORING_UPDATED', salesValue: '+971500000000', updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:30:00Z', collectedByName: 'Mina Mentor', collectedAt: '2026-11-03T09:30:00Z' },
     { fieldKey: 'student.gender', value: 'Female', origin: 'MENTOR_COLLECTED', salesValue: null, updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:40:00Z', collectedByName: 'Mina Mentor', collectedAt: '2026-11-03T09:40:00Z' },
   ],
-  fieldVerifications: [
-    { fieldKey: 'student.firstName', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:10:00Z' },
-    { fieldKey: 'parent.primaryPhone', verified: false, changedSinceVerified: true, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:05:00Z' },
+  sectionVerifications: [
+    { sectionId: 'STUDENT_PARENT_INFO', label: 'Student & Parent Information', covers: 'Student personal information, parent information, contact information, address and background.', fieldKeys: ['student.firstName', 'parent.primaryPhone'], status: 'VERIFIED', verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:10:00Z' },
+    { sectionId: 'SUBJECTS_TUTORS_TIMETABLE', label: 'Subjects, Tutors & Timetable', covers: 'Subjects and monthly hours, tutor requirements and assignments, and the class timetable.', fieldKeys: [], status: 'NOT_VERIFIED', verifiedByName: null, verifiedAt: null },
+    { sectionId: 'MARKS_EXAMINATIONS', label: 'Marks & Examinations', covers: 'Previous marks, upcoming examination dates and syllabus portions.', fieldKeys: [], status: 'NOT_VERIFIED', verifiedByName: null, verifiedAt: null },
+    { sectionId: 'EXPECTATIONS_ENGAGEMENT', label: 'Expectations & Engagement', covers: 'Student and parent expectations, engagement requirements and learning concerns.', fieldKeys: [], status: 'NOT_VERIFIED', verifiedByName: null, verifiedAt: null },
   ],
   editableFields: [
     meta('student.firstName', 'TEXT'), meta('student.dateOfBirth', 'DATE', { maxDate: '2026-11-07' }), meta('parent.primaryPhone', 'PHONE'), meta('student.gender', 'SELECT', { options: ['Male', 'Female', 'Other'] }),
@@ -145,30 +147,27 @@ describe('Stage 2 shows every field, existing and pending, as an editable card',
 describe('the summary and the filters come from the stored data', () => {
   const t = text(render(workspace(MENTOR)));
 
-  it('shows total, collected, pending, verified and collected-but-not-verified fields', () => {
+  it('shows total, collected and pending fields', () => {
     expect(t).toContain('Total fields 28');
     expect(t).toContain('Collected 4');
     expect(t).toContain('Pending collection 24');
-    expect(t).toContain('Verified 1');
-    expect(t).toContain('Collected, not verified 3');
+    expect(t).not.toContain('Collected, not verified');
   });
 
-  it('offers the four filters with their counts, and All is selected first', () => {
+  it('offers the two collection filters with their counts, and All is selected first', () => {
     const html = render(workspace(MENTOR));
     expect(html).toMatch(/aria-pressed="true"[^>]*>All 28/);
-    expect(count(html, 'aria-pressed=')).toBe(4);
-    for (const label of ['All 28', 'Pending collection 24', 'Not verified 3', 'Verified 1']) expect(t).toContain(label);
+    expect(count(html, 'aria-pressed=')).toBe(2);
+    for (const label of ['All 28', 'Pending collection 24']) expect(t).toContain(label);
+    for (const label of ['Not verified 3', 'Verified 1']) expect(t).not.toContain(label);
   });
 
-  it('the numbers move with the data: verifying a field and collecting another changes every count', () => {
+  it('the numbers move with the data: collecting a field changes the counts', () => {
     const next = handover();
-    next.fieldVerifications.push({ fieldKey: 'student.gender', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:50:00Z' } as any);
     next.fieldValues.push({ fieldKey: 'parent.relationship', value: 'Mother', origin: 'MENTOR_COLLECTED', salesValue: null, updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:55:00Z', collectedByName: 'Mina Mentor', collectedAt: '2026-11-03T09:55:00Z' } as any);
     const after = text(render(workspace(MENTOR, { handover: next })));
     expect(after).toContain('Collected 5');
     expect(after).toContain('Pending collection 23');
-    expect(after).toContain('Verified 2');
-    expect(after).toContain('Collected, not verified 3'); // phone, subjects and the new relationship
   });
 
   it('hides filtered-out cards instead of removing them, so an unsaved draft survives a filter change', () => {
@@ -178,33 +177,35 @@ describe('the summary and the filters come from the stored data', () => {
   });
 });
 
-describe('collection status and verification status are separate on each card', () => {
+describe('verification is per section, not per field', () => {
   const html = render(workspace(MENTOR));
-  const checkbox = (key: string) => /<input[^>]*type="checkbox"[^>]*>/.exec(row(html, key))?.[0] ?? '';
+  const panel = html.slice(html.indexOf('data-testid="section-verification"'), html.indexOf('aria-label="Show"'));
 
-  it('a verified value shows Verified, a checked box, who verified it and when', () => {
-    expect(checkbox('student.firstName')).toMatch(/\schecked=""/);
-    expect(text(row(html, 'student.firstName'))).toContain('Verified');
-    expect(text(row(html, 'student.firstName'))).toContain('Verified by Mina Mentor');
-    expect(text(row(html, 'student.firstName'))).toContain('I have verified this information');
+  it('shows exactly the four sections, each with one status and one action, in order', () => {
+    expect(count(panel, 'data-section=')).toBe(4);
+    const order = Array.from(panel.matchAll(/data-section="([A-Z_]+)"/g)).map((x) => x[1]);
+    expect(order).toEqual(['STUDENT_PARENT_INFO', 'SUBJECTS_TUTORS_TIMETABLE', 'MARKS_EXAMINATIONS', 'EXPECTATIONS_ENGAGEMENT']);
+    for (const label of ['Student &amp; Parent Information', 'Subjects, Tutors &amp; Timetable', 'Marks &amp; Examinations', 'Expectations &amp; Engagement']) expect(panel).toContain(label);
+    expect(text(panel)).toContain('1 of 4 sections verified');
+    expect(count(panel, 'Verify section:') + count(panel, 'Withdraw verification:')).toBe(4);
   });
 
-  it('a collected value that nobody has confirmed shows Not verified with an unchecked, usable box', () => {
-    expect(text(row(html, 'student.gender'))).toContain('Not verified');
-    expect(checkbox('student.gender')).not.toMatch(/\schecked=""/);
-    expect(checkbox('student.gender')).not.toMatch(/\sdisabled=""/);
-    expect(text(row(html, 'academic.subjects'))).toContain('Not verified'); // a Sales value is not verified just because Sales sent it
+  it('a verified section says who verified it and when; the others say Not Verified', () => {
+    const verified = /<li[^>]*data-section="STUDENT_PARENT_INFO".*?<\/li>/s.exec(panel)![0];
+    expect(text(verified)).toContain('Verified by Mina Mentor');
+    expect(verified).toContain('Withdraw verification');
+    const other = /<li[^>]*data-section="MARKS_EXAMINATIONS".*?<\/li>/s.exec(panel)![0];
+    expect(text(other)).toContain('Not Verified');
+    expect(other).toContain('Verify section');
   });
 
-  it('a value edited after it was verified shows Changed since verified and must be confirmed again', () => {
-    expect(text(row(html, 'parent.primaryPhone'))).toContain('Changed since verified');
-    expect(checkbox('parent.primaryPhone')).not.toMatch(/\schecked=""/);
-    expect(text(row(html, 'parent.primaryPhone'))).not.toContain('Verified by');
-  });
-
-  it('a pending field cannot be verified: its box is disabled and says why', () => {
-    expect(checkbox('parent.relationship')).toMatch(/\sdisabled=""/);
-    expect(row(html, 'parent.relationship')).toContain('title="Enter and save a value first"');
+  it('the field cards carry no verification ticks, statuses or text of their own', () => {
+    const cards = html.slice(html.indexOf('aria-label="Show"'), html.indexOf('id="meeting-checklist"'));
+    expect(cards).not.toContain('I have verified this information');
+    expect(cards).not.toMatch(/data-verification=/);
+    expect(count(cards, 'type="checkbox"')).toBe(0);
+    expect(text(row(html, 'student.gender'))).toContain('Collected');
+    expect(text(row(html, 'parent.relationship'))).toContain('Pending collection');
   });
 
   it('nothing is saved until the Mentor changes something: there is no Save button on an untouched card', () => {
@@ -220,22 +221,24 @@ describe('collection status and verification status are separate on each card', 
 });
 
 describe('who can edit and verify', () => {
-  it('the assigned Mentor gets an input and a verification box on every card whose value Sales or the Mentor can change', () => {
+  it('the assigned Mentor gets an input on every card whose value Sales or the Mentor can change, and the four section actions', () => {
     const html = render(workspace(MENTOR));
-    expect(count(html, 'type="checkbox"') - count(/<section aria-label="Checklist".*?<\/section>/s.exec(html)![0], 'type="checkbox"')).toBe(28); // one box per field
+    expect(count(html, 'Verify section:') + count(html, 'Withdraw verification:')).toBe(4);
     expect(row(html, 'academic.subjects')).not.toMatch(/<(input[^>]*type="(text|tel|date)"|select|textarea)/); // the Sales subject list is not editable
-    expect(row(html, 'academic.subjects')).toMatch(/type="checkbox"/); // but it can still be verified
+    expect(row(html, 'academic.subjects')).not.toMatch(/type="checkbox"/); // and carries no tick of its own
     expect(text(row(html, 'academic.subjects'))).toContain('Set by Sales and locked after handover');
   });
 
-  it.each([['the Mentoring Head', HEAD], ['the CEO / CO_FOUNDER', CEO], ['a Demo Counselor', COUNSELOR]])('%s sees the values and statuses but no input, checkbox or Save', (_label, viewer) => {
+  it.each([['the Mentoring Head', HEAD], ['the CEO / CO_FOUNDER', CEO], ['a Demo Counselor', COUNSELOR]])('%s sees the values and section statuses but no input, verify action or Save', (_label, viewer) => {
     const html = render(workspace(viewer));
     const fields = html.slice(html.indexOf('aria-label="Student information"'), html.indexOf('id="meeting-checklist"'));
     expect(text(fields)).toContain('Collected 4');
     expect(fields).not.toMatch(/<(input|select|textarea)\b/);
     expect(count(fields, '>Save<')).toBe(0);
     expect(text(row(html, 'student.firstName'))).toContain('Asha');
-    expect(text(row(html, 'student.firstName'))).toContain('Verified');
+    expect(text(fields)).toContain('1 of 4 sections verified');
+    expect(fields).not.toContain('Verify section');
+    expect(fields).not.toContain('Withdraw verification');
   });
 
   it('nobody can edit while the workflow is not in progress or the meeting has not started (the server says so through canEditHandover)', () => {
@@ -355,9 +358,10 @@ describe('earlier Stage 1 results are kept and shown read-only on Stage 2', () =
 describe('what the page sends to the API', () => {
   const page = () => require('fs').readFileSync(require('path').join(__dirname, 'students/[id]/StudentWorkspaceClient.tsx'), 'utf8').replace(/\r\n/g, '\n');
 
-  it('saves a field with PUT, verifies it with PUT to its own route, saves a checklist item with PATCH and records an exception with POST', () => {
+  it('saves a field with PUT, verifies a section with PUT to its own route, saves a checklist item with PATCH and records an exception with POST', () => {
     expect(page()).toContain("mentoringApi(`${base}/handover/fields/${fieldKey}`, 'PUT', { value, basedOn: basedOn ?? null })");
-    expect(page()).toContain("mentoringApi(`${base}/handover/fields/${fieldKey}/verification`, 'PUT', { verified, basedOn: basedOn ?? null })");
+    expect(page()).toContain("mentoringApi(`${base}/verification/sections/${sectionId}`, 'PUT', { verified })");
+    expect(page()).not.toContain('/verification`, \'PUT\', { verified, basedOn');
     expect(page()).toContain("mentoringApi(`${base}/stages/${stage.number}/items/${itemKey}`, 'PATCH', update)");
     expect(page()).toContain("mentoringApi(`${base}/stages/${stage.number}/exceptions/${itemKey}`, 'POST', { reason })");
     expect(page()).toContain('await load()');
@@ -365,7 +369,7 @@ describe('what the page sends to the API', () => {
 
   it('confirms every save with the field name, so the Mentor sees what changed', () => {
     expect(page()).toContain('setNotice(`${handoverFieldLabel(fieldKey)} saved.`)');
-    expect(page()).toContain('setNotice(verified ?');
+    expect(page()).toContain("setNotice(verified ? 'Section verified.'");
   });
 
   it('guards unsaved edits: browser close, stage change and panel change', () => {

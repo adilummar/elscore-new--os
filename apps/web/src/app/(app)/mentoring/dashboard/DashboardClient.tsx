@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/Select';
 import {
   COMPLAINT_CATEGORIES, COMPLAINT_STATUSES, CLASS_STATES, Card, DashFilters, DashRow, EXAM_STATES, GROUPS, MEETING_STATES, PERIODS, PRIORITIES, Records, SLA_STATES, Summary, attention, classCardHref, emptyFilters, filtersActive, hrefOf, pageText, queryOf,
 } from '../dashboard-view';
+import { DashboardCapacity } from '../CapacityPanels';
 import { mentoringApi } from '../mentoring-client';
 import { Banner, FIELD_LABEL, ListSkeleton, MUTED, PANEL, PageHeader, StatusChip, TABLE, TABLE_WRAP, TD, TH, THEAD, TR, linkButton, FOCUS } from '../mentoring-ui';
 import { dayLabel } from '../timetable-view';
@@ -149,6 +150,7 @@ export function DashboardClient({ initialCard }: { initialCard?: string } = {}) 
     <div className="mx-auto max-w-7xl space-y-5" data-testid="mentor-dashboard">
       <PageHeader title="Mentor dashboard" actions={<Link href="/mentoring/classes" className={linkButton('secondary')} data-testid="daily-class-list-link">Open the daily class list</Link>}
         subtitle={summary ? <>Today is {dayLabel(summary.today)}.{summary.window ? ` Showing ${dayLabel(summary.window.from)} to ${dayLabel(summary.window.to)}.` : ''} Each number is counted by the server for the students you may see.</> : undefined} />
+      <DashboardCapacity />
       <FilterBar f={filters} onChange={setFilters} onClear={() => setFilters(emptyFilters())} />
       {error && <Banner tone="error">{error}</Banner>}
       {!summary && !error && <ListSkeleton rows={3} label="Loading the dashboard" />}

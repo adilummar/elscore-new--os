@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { statusVariant } from '../labels';
 import {
-  CONSUMPTION_CHOICES, HubList, HubRow, ListFilters, SORT_CHOICES, STATUS_CHOICES, clock, dateText, emptyListFilters, initialsOf, listQuery, minutesText, rowHref, whenText,
+  CONSUMPTION_CHOICES, HubList, HubRow, ListFilters, SORT_CHOICES, STATUS_CHOICES, dateText, emptyListFilters, initialsOf, listQuery, rowHref,
 } from '../student-hub-view';
 
 const CELL = 'px-3 py-2 align-top';
@@ -47,7 +47,7 @@ export function StudentListClient({ title = 'Students', initialFilters, fixedSta
     <div className="mx-auto max-w-7xl space-y-4" data-testid="students-list">
       <header className="space-y-1">
         <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-        <p className="text-sm text-slate-600">Classes are counted from the Mentor-verified class records for {data ? dateText(data.period.from).slice(3) : 'this month'}. Allocated time is the monthly hours on the student&apos;s requirements.</p>
+        <p className="text-sm text-slate-600">Open a student to see their classes, exams, parent meetings and hours for this month in the Student Workspace.</p>
       </header>
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="search" aria-label="Filter students">
@@ -99,15 +99,14 @@ export function StudentListClient({ title = 'Students', initialFilters, fixedSta
         <table className="min-w-full text-sm" aria-busy={loading}>
           <thead className="bg-slate-50 text-left text-slate-600">
             <tr>
-              <th className={CELL}>Student</th><th className={CELL}>Grade / level</th><th className={CELL}>Subjects</th><th className={CELL}>Tutors</th><th className={CELL}>Mentor</th><th className={CELL}>Activated</th><th className={CELL}>Status</th>
-              <th className={CELL}>Classes and hours this month</th><th className={CELL}>Next class</th><th className={CELL}>Next exam</th><th className={CELL}>Next parent meeting</th><th className={CELL}>Pending</th>
+              <th className={CELL}>Student</th><th className={CELL}>Grade / level</th><th className={CELL}>Tutors</th><th className={CELL}>Mentor</th><th className={CELL}>Activated</th><th className={CELL}>Status</th><th className={CELL}>Pending</th>
             </tr>
           </thead>
           <tbody>
-            {loading && !data && Array.from({ length: 5 }).map((_, i) => <tr key={i} className="border-t border-slate-100"><td colSpan={12} className="px-3 py-4"><div className="h-4 animate-pulse rounded bg-slate-100" /></td></tr>)}
+            {loading && !data && Array.from({ length: 5 }).map((_, i) => <tr key={i} className="border-t border-slate-100"><td colSpan={7} className="px-3 py-4"><div className="h-4 animate-pulse rounded bg-slate-100" /></td></tr>)}
             {data?.rows.map((r) => <Row key={r.activationId} r={r} />)}
             {data && data.rows.length === 0 && (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-slate-500" data-testid="students-empty">{filtering ? 'No students match these filters.' : 'No students are assigned to you yet.'}</td></tr>
+              <tr><td colSpan={7} className="px-3 py-10 text-center text-slate-500" data-testid="students-empty">{filtering ? 'No students match these filters.' : 'No students are assigned to you yet.'}</td></tr>
             )}
           </tbody>
         </table>
@@ -123,7 +122,6 @@ export function StudentListClient({ title = 'Students', initialFilters, fixedSta
 }
 
 function Row({ r }: { r: HubRow }) {
-  const b = r.balance;
   return (
     <tr className="border-t border-slate-100" data-testid="student-row" data-id={r.activationId}>
       <td className={CELL}>
@@ -136,21 +134,10 @@ function Row({ r }: { r: HubRow }) {
         </Link>
       </td>
       <td className={CELL}>{r.grade ?? <span className="text-slate-600">n/a</span>}{r.level && <span className="block text-xs text-slate-500">{r.level}</span>}</td>
-      <td className={CELL}>{r.subjects.length ? r.subjects.join(', ') : <span className="text-slate-600">n/a</span>}</td>
       <td className={CELL}>{r.tutors.length ? r.tutors.join(', ') : <span className="text-slate-600">n/a</span>}</td>
       <td className={CELL}>{r.mentor.name ?? <span className="text-slate-600">Unallocated</span>}</td>
       <td className={CELL}>{r.activatedAt ? dateText(r.activatedAt) : <span className="text-slate-400">Not yet</span>}</td>
       <td className={CELL}><Badge variant={statusVariant(r.status)}>{r.statusLabel}</Badge></td>
-      <td className={CELL} data-testid="student-balance">
-        <dl className="grid grid-cols-[auto_auto] gap-x-3 text-xs">
-          <dt className="text-slate-600">Allocated</dt><dd>{minutesText(b.allocatedMinutes)} · classes n/a</dd>
-          <dt className="text-slate-600">Consumed</dt><dd>{minutesText(b.consumedMinutes)} · {b.consumedClasses} class{b.consumedClasses === 1 ? '' : 'es'}</dd>
-          <dt className="text-slate-600">Remaining</dt><dd>{minutesText(b.remainingMinutes)} · classes n/a{b.over && <span className="ml-1 text-red-700">over</span>}</dd>
-        </dl>
-      </td>
-      <td className={CELL}>{r.nextClass ? <>{dateText(r.nextClass.date)}, {clock(r.nextClass.startMinute)}<span className="block text-xs text-slate-500">{r.nextClass.subjectName}</span></> : <span className="text-slate-400">None in 2 weeks</span>}</td>
-      <td className={CELL}>{r.nextExam ? <>{whenText(r.nextExam)}<span className="block text-xs text-slate-500">{r.nextExam.title}</span></> : <span className="text-slate-400">None scheduled</span>}</td>
-      <td className={CELL}>{r.nextMeeting ? whenText(r.nextMeeting) : <span className="text-slate-400">None scheduled</span>}</td>
       <td className={CELL}>
         {r.pending.total > 0
           ? <Badge variant="warning" title={`${r.pending.verification} to verify, ${r.pending.complaints} complaints, ${r.pending.tasks} tasks`}>{r.pending.total} pending</Badge>

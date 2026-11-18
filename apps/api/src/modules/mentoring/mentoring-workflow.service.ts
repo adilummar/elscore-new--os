@@ -12,7 +12,6 @@ import {
   PROFILE_FIELD_KEYS,
   getHandoverField,
   isMeaningfulValue,
-  isVerifiableField,
   stableJson,
   validateHandoverFieldValue,
 } from './mentoring-handover-fields';
@@ -20,6 +19,7 @@ import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { MentoringTutorService } from './mentoring-tutor.service';
 import { LEGACY_STAGE1_ITEMS, TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
+import { isSectionId, reconcileSectionVerifications, sectionStates, setSectionVerification as setSectionVerificationInTx } from './section-verification';
 import { DEFAULT_SESSION_MINUTES, Reference, ScheduleReferences, isScheduleValue } from './subject-schedule';
 
 export interface HoldInput {
@@ -295,17 +295,14 @@ export class MentoringWorkflowService {
           },
         });
 
-    // A confirmation covers the value it was given for. Say in the history when this edit ends one.
-    const confirmation = await tx.enrollmentHandoverFieldVerification.findUnique({
-      where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
-    });
-    const verificationInvalidated = !!confirmation && stableJson(confirmation.verifiedValue) === stableJson(previous);
+    // A section verification covers the information it was given for. Edits return the affected section, and only that one, to Not Verified.
+    const sectionsInvalidated = await reconcileSectionVerifications(tx, activationId, userId);
 
     await this.history.record(tx, {
       activationId,
       type: 'HANDOVER_FIELD_UPDATED',
       actorUserId: userId,
-      payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, verificationInvalidated, ...extra },
+      payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, sectionsInvalidated, ...extra },
     });
     // A changed schedule may no longer suit the tutors already chosen for its subjects: check each one, and flag any
     // that no longer fit for review instead of leaving a stale assignment in place.
@@ -365,62 +362,18 @@ export class MentoringWorkflowService {
   }
 
   /**
-   * Records that the Mentor confirmed a field with the parent (or withdraws that confirmation). This is a separate fact
-   * from the value being present: a Sales value stays "not verified" until the Mentor confirms it, and the stored
-   * confirmation covers the value as it was. If the value changes later the field counts as not verified again.
-   * The Sales snapshot and the value itself are never touched.
+   * Verifies one of the four activation sections (or withdraws the verification). One action per section: the individual fields stay
+   * viewable and editable but carry no ticks of their own. The change is audited (activation, section, status, user, time), and editing
+   * information inside a verified section later returns that section, and only that section, to Not Verified.
    */
-  async setHandoverFieldVerification(activationId: string, fieldKey: string, input: { verified: boolean; note?: string | null; basedOn?: unknown }, userId: string) {
-    if (!isVerifiableField(fieldKey)) throw new BadRequestException('This information cannot be verified here');
-    const note = input.note?.trim() || null;
-    if (note && note.length > 1000) throw new BadRequestException('The note must be 1000 characters or fewer');
-
+  async setSectionVerification(activationId: string, sectionId: string, input: { verified: boolean }, userId: string) {
+    if (!isSectionId(sectionId)) throw new BadRequestException('Unknown verification section');
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const activation = await this.loadLocked(tx, activationId);
       this.assertMentor(activation, userId);
       this.assertWorkable(activation);
       this.assertMeetingStarted(activation);
-
-      const existing = await tx.enrollmentHandoverFieldVerification.findUnique({
-        where: { handoverId_fieldKey: { handoverId: activation.handoverId, fieldKey } },
-      });
-
-      if (!input.verified) {
-        if (!existing) return { fieldKey, verified: false as const, changed: false as const };
-        await tx.enrollmentHandoverFieldVerification.delete({ where: { id: existing.id } });
-        await this.history.record(tx, {
-          activationId,
-          type: 'HANDOVER_FIELD_UNVERIFIED',
-          actorUserId: userId,
-          payload: { fieldKey, previousVerifiedValue: existing.verifiedValue, previousVerifiedByUserId: existing.verifiedByUserId, previousVerifiedAt: existing.verifiedAt },
-        });
-        return { fieldKey, verified: false as const, changed: true as const };
-      }
-
-      const current = (await this.effectiveHandoverValues(tx, activation.handoverId)).get(fieldKey);
-      if (!isMeaningfulValue(current)) {
-        throw new ConflictException('There is nothing to verify yet. Collect this information first.');
-      }
-      if (input.basedOn !== undefined) this.assertNotStale(input.basedOn, current);
-      if (existing && stableJson(existing.verifiedValue) === stableJson(current)) {
-        return { fieldKey, verified: true as const, changed: false as const };
-      }
-
-      const saved = existing
-        ? await tx.enrollmentHandoverFieldVerification.update({
-            where: { id: existing.id },
-            data: { verifiedValue: current as Prisma.InputJsonValue, note, verifiedByUserId: userId, verifiedAt: new Date() },
-          })
-        : await tx.enrollmentHandoverFieldVerification.create({
-            data: { handoverId: activation.handoverId, fieldKey, verifiedValue: current as Prisma.InputJsonValue, note, verifiedByUserId: userId, verifiedAt: new Date() },
-          });
-      await this.history.record(tx, {
-        activationId,
-        type: 'HANDOVER_FIELD_VERIFIED',
-        actorUserId: userId,
-        payload: { fieldKey, value: current, note },
-      });
-      return { fieldKey, verified: true as const, changed: true as const, verifiedAt: saved.verifiedAt };
+      return setSectionVerificationInTx(tx, activation, sectionId, input.verified, userId);
     });
   }
 
@@ -886,12 +839,9 @@ export class MentoringWorkflowService {
     const seeParent = this.access.canSeeParentContact(scope, activation);
     const isMentorOrHead = scope.all || activation.currentMentorUserId === scope.userId;
 
-    const [fieldRows, verificationRows, referenceOptions, storedSchedule] = await Promise.all([
+    const [fieldRows, referenceOptions, storedSchedule] = await Promise.all([
       activation.handoverId
         ? this.prisma.enrollmentHandoverField.findMany({ where: { handoverId: activation.handoverId } })
-        : Promise.resolve([]),
-      activation.handoverId
-        ? this.prisma.enrollmentHandoverFieldVerification.findMany({ where: { handoverId: activation.handoverId } })
         : Promise.resolve([]),
       this.referenceOptions(this.prisma as unknown as PrismaTxClient),
       activation.handoverId
@@ -920,7 +870,8 @@ export class MentoringWorkflowService {
       actorIds.add(f.updatedByUserId);
       if (f.createdByUserId) actorIds.add(f.createdByUserId);
     }
-    for (const v of verificationRows) actorIds.add(v.verifiedByUserId);
+    const sections = await sectionStates(this.prisma, activationId);
+    for (const sec of sections) if (sec.verifiedByUserId) actorIds.add(sec.verifiedByUserId);
     for (const st of activation.stages) {
       for (const c of st.checklist) if (c.updatedByUserId) actorIds.add(c.updatedByUserId);
       for (const e of st.exceptions) actorIds.add(e.authorizedByUserId);
@@ -1006,23 +957,17 @@ export class MentoringWorkflowService {
           collectedByName: nameFor(f.createdByUserId ?? f.updatedByUserId),
           collectedAt: f.createdAt,
         })),
-      // Meeting verification, separate from whether a value exists. `verified` is true only while the current value is
-      // still the one the Mentor confirmed; `changedSinceVerified` flags a confirmation the value has since outgrown.
-      fieldVerifications: verificationRows
-        .filter((v) => seeParent || !PARENT_CONTACT_FIELDS.has(v.fieldKey))
-        .map((v) => {
-          const current = effectiveValues.get(v.fieldKey);
-          const matches = stableJson(v.verifiedValue) === stableJson(current ?? null);
-          return {
-            fieldKey: v.fieldKey,
-            verified: matches,
-            changedSinceVerified: !matches,
-            note: v.note,
-            verifiedByUserId: v.verifiedByUserId,
-            verifiedByName: nameFor(v.verifiedByUserId),
-            verifiedAt: v.verifiedAt,
-          };
-        }),
+      // Section verification: exactly four sections, one status each. A section is Verified only while the information it covers is
+      // unchanged since it was verified (the state is brought up to date before it is read).
+      sectionVerifications: sections.map((sec) => ({
+        sectionId: sec.id,
+        label: sec.label,
+        covers: sec.covers,
+        fieldKeys: sec.fieldKeys.filter((k) => seeParent || !PARENT_CONTACT_FIELDS.has(k)),
+        status: sec.status,
+        verifiedByName: nameFor(sec.verifiedByUserId),
+        verifiedAt: sec.verifiedAt,
+      })),
       editableFields: Object.values(HANDOVER_FIELDS).map((d) => ({
         key: d.key,
         type: d.type,

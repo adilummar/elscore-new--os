@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from 'react';
-import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { InventoryRow, RowFilter, buildInventory, matchesFilter } from '../../handover-inventory';
-import { isStaleMessage, saveField, setVerification, verifyBlockedReason } from '../../field-actions';
+import { isStaleMessage, saveField } from '../../field-actions';
 import { EditorValue, initialEditorValue, isEditorDirty } from '../../handover-editing';
 import { isScheduleValue } from '../../subject-schedule';
 import { FieldInput } from './FieldInput';
+import { SectionVerificationPanel } from './SectionVerificationPanel';
 import { TutorTools } from '../../tutor-types';
 import { ScheduleSuggestion, SubjectScheduleView } from './SubjectScheduleEditor';
 
@@ -20,7 +20,6 @@ interface CardProps {
   visible: boolean;
   canEdit: boolean;
   onSave: (fieldKey: string, value: unknown, basedOn: unknown) => Promise<void>;
-  onVerify: (fieldKey: string, verified: boolean, basedOn: unknown) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDirtyChange: (id: string, dirty: boolean) => void;
   suggestions: ScheduleSuggestion[];
@@ -37,26 +36,10 @@ function StatusText({ row, dirty }: { row: InventoryRow; dirty: boolean }) {
       </span>
     );
   }
-  const unsaved = dirty ? <span className="text-xs font-medium text-amber-700">Unsaved changes</span> : null;
-  if (row.verification === 'VERIFIED') {
-    return (
-      <span className="inline-flex items-center gap-2">
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check aria-hidden className="h-3.5 w-3.5" />Verified</span>
-        {unsaved}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`text-xs font-medium ${row.verification === 'CHANGED' ? 'text-amber-700' : 'text-slate-600'}`}>
-        {row.verification === 'CHANGED' ? 'Changed since verified' : 'Not verified'}
-      </span>
-      {unsaved}
-    </span>
-  );
+  return dirty ? <span className="text-xs font-medium text-amber-700">Unsaved changes</span> : <span className="text-xs text-slate-600">Collected</span>;
 }
 
-function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirtyChange, suggestions, onCreateSubject, tutorTools }: CardProps) {
+function FieldCard({ row, visible, canEdit, onSave, onRefresh, onDirtyChange, suggestions, onCreateSubject, tutorTools }: CardProps) {
   const meta = row.editor;
   const editable = canEdit && meta !== null;
   const serverSig = JSON.stringify(row.rawValue ?? null);
@@ -65,7 +48,6 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
   // The stored value this draft started from. A save is checked against it, so a change made by someone else is caught.
   const [base, setBase] = React.useState<unknown>(row.rawValue ?? null);
   const [saving, setSaving] = React.useState(false);
-  const [verifying, setVerifying] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
 
@@ -117,22 +99,11 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
     await onRefresh();
   };
 
-  const toggleVerified = async (checked: boolean) => {
-    setVerifying(true);
-    setError(null);
-    const outcome = await setVerification(checked, { collection: row.collection, hasUnsavedChange: dirty, storedValue: row.rawValue }, (verified, basedOn) => onVerify(row.fieldKey, verified, basedOn));
-    if (outcome.kind !== 'done') setError(outcome.message);
-    setVerifying(false);
-  };
-
-  const verifyDisabledReason = verifyBlockedReason(row.collection, dirty);
-
   return (
     <li
       className={`${visible ? '' : 'hidden '}rounded-md border border-slate-200 p-3 ${wide ? 'sm:col-span-2' : ''}`}
       data-field={row.fieldKey}
       data-status={pending ? 'pending' : 'collected'}
-      data-verification={pending ? 'none' : row.verification.toLowerCase()}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <label htmlFor={inputId} className="text-sm font-medium text-slate-800">{row.label}</label>
@@ -166,25 +137,11 @@ function FieldCard({ row, visible, canEdit, onSave, onVerify, onRefresh, onDirty
         <div className="min-w-0 space-y-0.5 text-xs text-slate-500">
           {row.sourceText && <p>Source: {row.sourceText}</p>}
           {row.salesValue && <p className="break-words [overflow-wrap:anywhere]">Sales value: {row.salesValue}</p>}
-          {row.verification !== 'NOT_VERIFIED' && !pending && row.verifiedText && (
-            <p className={row.verification === 'VERIFIED' ? 'text-emerald-700' : 'text-amber-700'}>{row.verifiedText}</p>
-          )}
           {row.fieldKey === 'academic.subjects' && <p>{SUBJECTS_NOTE}</p>}
         </div>
 
         {canEdit && (
           <div className="flex flex-wrap items-center gap-3">
-            <label className={`inline-flex items-center gap-2 text-xs ${verifyDisabledReason ? 'text-slate-400' : 'text-slate-700'}`} title={verifyDisabledReason ?? undefined}>
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-slate-300"
-                checked={row.verification === 'VERIFIED'}
-                disabled={Boolean(verifyDisabledReason) || verifying || saving}
-                onChange={(e) => toggleVerified(e.target.checked)}
-                aria-label={`I have verified this information: ${row.label}`}
-              />
-              I have verified this information
-            </label>
             {dirty && editable && (
               <span className="flex items-center gap-2">
                 <Button type="button" size="sm" isLoading={saving} onClick={save}>Save</Button>
@@ -214,7 +171,8 @@ interface Props {
   /** True only for the assigned Mentor while the workflow is in progress and the meeting is open. The API checks the same. */
   canEdit?: boolean;
   onSave?: (fieldKey: string, value: unknown, basedOn: unknown) => Promise<void>;
-  onVerify?: (fieldKey: string, verified: boolean, basedOn: unknown) => Promise<void>;
+  /** Verifies or withdraws one of the four sections. The API checks who may and what the section covers. */
+  onVerifySection?: (sectionId: string, verified: boolean) => Promise<void>;
   onRefresh?: () => Promise<void>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
   /** Adds a subject to the master list. Only passed for people who may manage reference data. */
@@ -234,23 +192,22 @@ function salesSuggestions(handover: unknown): ScheduleSuggestion[] {
     .filter((l) => l.subject);
 }
 
-const FILTERS: Array<[Filter, string]> = [['ALL', 'All'], ['PENDING', 'Pending collection'], ['NOT_VERIFIED', 'Not verified'], ['VERIFIED', 'Verified']];
+const FILTERS: Array<[Filter, string]> = [['ALL', 'All'], ['PENDING', 'Pending collection']];
 
 /**
- * Stage 2. Every field is a card the Mentor can edit in place, save, and confirm with a checkbox. Saving a value and
- * verifying it are separate actions with separate stored records; a verified value that is edited stops counting as
- * verified until it is confirmed again. All counts come from the stored values and confirmations.
+ * Stage 2. Every field is a card the Mentor can edit in place and save. Verification is not per field: the four sections above the fields
+ * each have one Verify action, and editing information in a verified section returns that section to Not Verified (the API does this).
  */
-export function InformationWorkspace({ handover, canEdit = false, onSave, onVerify, onRefresh, onDirtyChange, onCreateSubject, tutorTools }: Props) {
+export function InformationWorkspace({ handover, canEdit = false, onSave, onVerifySection, onRefresh, onDirtyChange, onCreateSubject, tutorTools }: Props) {
   const inventory = buildInventory(handover);
   const suggestions = React.useMemo(() => salesSuggestions(handover), [handover]);
   const [filter, setFilter] = React.useState<Filter>('ALL');
   const save = onSave ?? (async () => undefined);
-  const verify = onVerify ?? (async () => undefined);
+  const verifySection = onVerifySection ?? (async () => undefined);
   const refresh = onRefresh ?? (async () => undefined);
   const dirty = onDirtyChange ?? (() => undefined);
 
-  const counts: Record<Filter, number> = { ALL: inventory.total, PENDING: inventory.pending, NOT_VERIFIED: inventory.unverified, VERIFIED: inventory.verified };
+  const counts: Record<Filter, number> = { ALL: inventory.total, PENDING: inventory.pending };
   const visible = (row: InventoryRow) => matchesFilter(filter, row);
   const anyVisible = inventory.sections.some((s) => s.rows.some(visible));
 
@@ -258,8 +215,6 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
     ['Total fields', inventory.total, 'text-slate-900'],
     ['Collected', inventory.collected, 'text-slate-900'],
     ['Pending collection', inventory.pending, 'text-red-700'],
-    ['Verified', inventory.verified, 'text-emerald-700'],
-    ['Collected, not verified', inventory.unverified, 'text-amber-700'],
   ];
 
   return (
@@ -273,6 +228,8 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
           </div>
         ))}
       </dl>
+
+      <SectionVerificationPanel handover={handover} canEdit={canEdit} onVerify={async (id, verified) => { await verifySection(id, verified); }} />
 
       <div role="group" aria-label="Show" className="mt-3 flex flex-wrap gap-1">
         {FILTERS.map(([key, label]) => (
@@ -301,7 +258,7 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
               {/* Cards are hidden, not removed, when filtered out, so an unsaved draft is never lost by changing the filter. */}
               <ul role="list" className="mt-2 grid gap-2 sm:grid-cols-2">
                 {section.rows.map((row) => (
-                  <FieldCard key={row.fieldKey} row={row} visible={visible(row)} canEdit={canEdit} onSave={save} onVerify={verify} onRefresh={refresh} onDirtyChange={dirty} suggestions={suggestions} onCreateSubject={onCreateSubject} tutorTools={tutorTools} />
+                  <FieldCard key={row.fieldKey} row={row} visible={visible(row)} canEdit={canEdit} onSave={save} onRefresh={refresh} onDirtyChange={dirty} suggestions={suggestions} onCreateSubject={onCreateSubject} tutorTools={tutorTools} />
                 ))}
               </ul>
             </div>
@@ -309,7 +266,7 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
         })}
         {!anyVisible && (
           <p className="py-4 text-slate-500">
-            {filter === 'PENDING' ? 'Nothing is pending collection.' : filter === 'VERIFIED' ? 'Nothing has been verified yet.' : 'Everything collected has been verified.'}
+            Nothing is pending collection.
           </p>
         )}
       </div>

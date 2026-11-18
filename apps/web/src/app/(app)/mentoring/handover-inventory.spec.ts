@@ -10,7 +10,7 @@ const editor = (key: string, type = 'TEXT') => ({ key, type, options: null, colu
 const base = (over: Record<string, unknown> = {}) => ({
   transferredFields: [sales('student.firstName', 'Asha'), sales('parent.primaryPhone', '+971500000000', 'LEAD'), sales('student.dateOfBirth', '2015-05-12')],
   missingFields: [{ field: 'parent.relationship', reason: 'NOT_COLLECTED_IN_SALES' }, { field: 'student.gender', reason: 'NOT_PROVIDED' }],
-  fieldValues: [], fieldVerifications: [], editableFields: [editor('student.firstName'), editor('parent.relationship', 'SELECT'), editor('tutor.requirements', 'TEXTAREA')],
+  fieldValues: [], editableFields: [editor('student.firstName'), editor('parent.relationship', 'SELECT'), editor('tutor.requirements', 'TEXTAREA')],
   ...over,
 });
 
@@ -39,12 +39,11 @@ describe('the field inventory', () => {
     expect(inventory.collected).toBe(3);
     expect(inventory.pending).toBe(25);
     expect(inventory.collected + inventory.pending).toBe(inventory.total);
-    expect(inventory.verified + inventory.unverified).toBe(inventory.collected);
   });
 
   it('never invents a value: a field with no data is pending with no value', () => {
     for (const key of ['parent.relationship', 'student.gender', 'tutor.requirements', 'academic.preferredLanguage']) {
-      expect(rowOf(base(), key)).toMatchObject({ collection: 'PENDING', value: null, rawValue: null, verification: 'NOT_VERIFIED', verifiedText: null });
+      expect(rowOf(base(), key)).toMatchObject({ collection: 'PENDING', value: null, rawValue: null });
     }
   });
 
@@ -79,14 +78,14 @@ describe('the field inventory', () => {
   });
 });
 
-describe('collection status and verification status are tracked separately', () => {
-  it('a Sales value is collected from Sales and not verified', () => {
-    expect(rowOf(base(), 'student.firstName')).toMatchObject({ collection: 'FROM_SALES', sourceText: 'Received from Sales', verification: 'NOT_VERIFIED', value: 'Asha' });
+describe('collection status is tracked per field', () => {
+  it('a Sales value is collected from Sales', () => {
+    expect(rowOf(base(), 'student.firstName')).toMatchObject({ collection: 'FROM_SALES', sourceText: 'Received from Sales', value: 'Asha' });
   });
 
-  it('a Mentor value is collected by the Mentor and still not verified', () => {
+  it('a Mentor value is collected by the Mentor', () => {
     const row = rowOf(base({ fieldValues: [mentoring('parent.relationship', 'Mother')] }), 'parent.relationship');
-    expect(row).toMatchObject({ collection: 'COLLECTED', value: 'Mother', verification: 'NOT_VERIFIED' });
+    expect(row).toMatchObject({ collection: 'COLLECTED', value: 'Mother' });
     expect(row.sourceText).toMatch(/^Collected by Mina Mentor/);
   });
 
@@ -96,26 +95,6 @@ describe('collection status and verification status are tracked separately', () 
     expect(row.sourceText).toMatch(/^Updated by Mina Mentor/);
   });
 
-  it('a confirmation turns the row to verified and says who confirmed it', () => {
-    const handover = base({ fieldVerifications: [{ fieldKey: 'student.firstName', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:10:00Z' }] });
-    expect(rowOf(handover, 'student.firstName')).toMatchObject({ collection: 'FROM_SALES', verification: 'VERIFIED' });
-    expect(rowOf(handover, 'student.firstName').verifiedText).toMatch(/^Verified by Mina Mentor/);
-    const counts = buildInventory(handover);
-    expect([counts.verified, counts.unverified]).toEqual([1, 2]);
-  });
-
-  it('a confirmation the value has outgrown is shown as changed and does not count as verified', () => {
-    const handover = base({ fieldVerifications: [{ fieldKey: 'student.firstName', verified: false, changedSinceVerified: true, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:10:00Z' }] });
-    expect(rowOf(handover, 'student.firstName')).toMatchObject({ verification: 'CHANGED', verifiedText: 'Changed since it was verified' });
-    expect(buildInventory(handover).verified).toBe(0);
-  });
-
-  it('a pending field cannot be verified, even if a stale confirmation exists', () => {
-    const handover = base({ fieldVerifications: [{ fieldKey: 'parent.relationship', verified: true, changedSinceVerified: false }] });
-    expect(rowOf(handover, 'parent.relationship')).toMatchObject({ collection: 'PENDING', verification: 'NOT_VERIFIED' });
-    expect(buildInventory(handover).verified).toBe(0);
-  });
-
   it('several Sales subject lines are one field', () => {
     const subjects = sales('academic.subjects', [{ requirementId: 'r1', subject: 'Maths', curriculum: 'CBSE', grade: 'Grade 8' }, { requirementId: 'r2', subject: 'Science', curriculum: 'CBSE', grade: 'Grade 8' }], 'REQUIREMENT');
     const handover = base({ transferredFields: [subjects] });
@@ -123,7 +102,7 @@ describe('collection status and verification status are tracked separately', () 
     expect(rowOf(handover, 'academic.subjects').value).toBe('Maths (CBSE · Grade 8)\nScience (CBSE · Grade 8)');
   });
 
-  it('the subjects row carries the whole stored list, so verifying it is not refused as changed by someone else', () => {
+  it('the subjects row carries the whole stored list, so saving it is not refused as changed by someone else', () => {
     const list = [{ requirementId: 'r1', subject: 'Maths', curriculum: 'CBSE', grade: 'Grade 8' }, { requirementId: 'r2', subject: 'Science', curriculum: 'CBSE', grade: 'Grade 8' }];
     const handover = base({ transferredFields: [sales('academic.subjects', list, 'REQUIREMENT')] });
     // This is the value the page sends as "based on"; the API compares it with the stored Sales value for the field.
@@ -167,13 +146,9 @@ describe('the Stage 1 overview', () => {
 });
 
 describe('the Stage 2 filters', () => {
-  // Pending (relationship), collected from Sales and not verified (first name), verified (date of birth), changed since verified (phone), collected by the Mentor (gender).
+  // Pending (relationship), collected from Sales (first name, date of birth), updated by Mentoring (phone), collected by the Mentor (gender).
   const handover = base({
     fieldValues: [mentoring('parent.primaryPhone', '+971501112222', { origin: 'MENTORING_UPDATED', salesValue: '+971500000000' }), mentoring('student.gender', 'Female')],
-    fieldVerifications: [
-      { fieldKey: 'student.dateOfBirth', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:10:00Z' },
-      { fieldKey: 'parent.primaryPhone', verified: false, changedSinceVerified: true, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:05:00Z' },
-    ],
   });
   const rows = buildInventory(handover).sections.flatMap((s) => s.rows);
   const keys = (filter: Parameters<typeof matchesFilter>[0]) => rows.filter((r) => matchesFilter(filter, r)).map((r) => r.fieldKey);
@@ -188,25 +163,18 @@ describe('the Stage 2 filters', () => {
     expect(keys('PENDING')).toHaveLength(28 - 4);
   });
 
-  it('Not verified shows collected fields that are not confirmed, including one whose confirmation went stale, and never a pending field', () => {
-    expect(keys('NOT_VERIFIED').sort()).toEqual(['parent.primaryPhone', 'student.firstName', 'student.gender']);
-  });
-
-  it('Verified shows only fields whose current value is confirmed', () => {
-    expect(keys('VERIFIED')).toEqual(['student.dateOfBirth']);
-  });
-
-  it('the filter counts match the summary, and Not verified plus Verified equals Collected', () => {
+  it('the filter counts match the summary', () => {
     const inventory = buildInventory(handover);
-    expect([inventory.total, inventory.collected, inventory.pending, inventory.verified, inventory.unverified]).toEqual([28, 4, 24, 1, 3]);
-    expect(keys('NOT_VERIFIED').length + keys('VERIFIED').length).toBe(inventory.collected);
+    expect([inventory.total, inventory.collected, inventory.pending]).toEqual([28, 4, 24]);
     expect(keys('PENDING').length).toBe(inventory.pending);
   });
 
-  it('a pending field is never listed as verified, even if a stale confirmation row exists for it', () => {
-    const stale = buildInventory(base({ fieldVerifications: [{ fieldKey: 'parent.relationship', verified: true, changedSinceVerified: false }] })).sections.flatMap((s) => s.rows);
-    expect(stale.filter((r) => matchesFilter('VERIFIED', r)).map((r) => r.fieldKey)).not.toContain('parent.relationship');
+  it('there is no per-field verification status or filter any more', () => {
+    const row = rows[0] as unknown as Record<string, unknown>;
+    expect('verification' in row).toBe(false);
+    expect('verifiedText' in row).toBe(false);
   });
+
 });
 
 describe('where a pending field says it came from', () => {

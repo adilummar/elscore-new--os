@@ -192,7 +192,7 @@ describe('Local (version 2) Stage 1 data meets the redesigned workflow', () => {
     w.db.seed('enrollmentHandoverField', { handoverId: 'ho-1', fieldKey: 'parent.relationship', value: 'Mother', origin: 'MENTOR_COLLECTED', salesValue: null, updatedByUserId: 'mentor-1' });
     const view: any = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover;
     expect(view.fieldValues).toEqual([expect.objectContaining({ fieldKey: 'parent.relationship', value: 'Mother', origin: 'MENTOR_COLLECTED', collectedByName: 'Mina Mentor' })]);
-    expect(view.fieldVerifications).toEqual([]);
+    expect(view.sectionVerifications.map((x: any) => x.status)).toEqual(['NOT_VERIFIED', 'NOT_VERIFIED', 'NOT_VERIFIED', 'NOT_VERIFIED']);
   });
 });
 
@@ -247,7 +247,7 @@ describe('The Sales handover is never changed by the new workflow', () => {
     await w.workflow.startStage('act-1', 2, 'mentor-1');
     await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1');
     await w.workflow.updateHandoverField('act-1', 'parent.primaryPhone', '9876543210', 'mentor-1');
-    await w.workflow.setHandoverFieldVerification('act-1', 'student.firstName', { verified: true }, 'mentor-1');
+    await w.workflow.setSectionVerification('act-1', 'STUDENT_PARENT_INFO', { verified: true }, 'mentor-1');
     for (const d of getChecklistDefinition(2)) {
       await w.workflow.updateChecklistItem('act-1', 2, d.key, d.fields ? { state: 'UNAVAILABLE', reason: 'Not provided' } : { state: 'VERIFIED' }, 'mentor-1');
     }

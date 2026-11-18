@@ -132,11 +132,6 @@ export const HANDOVER_FIELD_LABELS: Readonly<Record<string, string>> = {
   studentEngagement: 'Student Engagement',
 };
 
-/** Fields the Mentor can verify during the parent meeting: every editable field plus the read-only Sales subjects. */
-export function isVerifiableField(key: string): boolean {
-  return key === 'academic.subjects' || getHandoverField(key) !== undefined;
-}
-
 const PLACEHOLDER_TEXT = new Set(['null', 'undefined', 'nan']);
 
 /** True when the value is real information: not empty or blank, not a placeholder such as "null" or "-", not an empty list. */

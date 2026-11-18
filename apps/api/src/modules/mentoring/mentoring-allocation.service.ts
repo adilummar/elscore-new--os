@@ -3,6 +3,8 @@ import { MentorAssignmentType, MentoringSetting, Prisma } from '@prisma/client';
 
 import { PrismaService, PrismaTxClient } from '../../common/prisma/prisma.service';
 
+import { wouldExceed } from './mentor-capacity';
+import { MentoringCapacityService } from './mentoring-capacity.service';
 import { mentorIneligibleReason } from './mentoring-eligibility';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { openStage } from './mentoring-stage.helpers';
@@ -24,7 +26,9 @@ export const ALLOCATION_RULE_VERSION = 'LEAST_LOADED_V1';
 
 export interface MentorCandidate {
   userId: string;
+  /** Monthly hours already allocated to the Mentor. */
   load: number;
+  /** The Mentor's monthly hour limit. */
   capacity: number;
   lastAssignedAt: Date | null;
 }
@@ -35,17 +39,18 @@ export interface AllocationChoice {
 }
 
 /**
- * Pure selection rule (unit-tested):
- *  1. Only mentors with spare capacity are eligible.
+ * Pure selection rule (unit-tested). Load and capacity are monthly hours; the student's full monthly hours are charged.
+ *  1. Only mentors who can take the student's full monthly hours without passing their limit are eligible.
  *  2. If siblings from the same lead already have a mentor who is still eligible, use that mentor.
  *  3. Otherwise the lowest load wins; ties go to the lowest load/capacity ratio, then the mentor who
  *     was assigned a student least recently (never-assigned first), then the lowest user id.
  */
 export function chooseMentor(
   candidates: MentorCandidate[],
-  opts: { siblingMentorIds?: string[]; siblingAffinity?: boolean } = {},
+  opts: { siblingMentorIds?: string[]; siblingAffinity?: boolean; studentHours?: number } = {},
 ): AllocationChoice | null {
-  const eligible = candidates.filter((c) => c.load < c.capacity);
+  const studentHours = opts.studentHours ?? 0;
+  const eligible = candidates.filter((c) => c.capacity > 0 && !wouldExceed(c.capacity, c.load, studentHours));
   if (eligible.length === 0) return null;
 
   if (opts.siblingAffinity && opts.siblingMentorIds?.length) {
@@ -73,6 +78,7 @@ export class MentoringAllocationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly history: MentoringHistoryService,
+    private readonly capacity: MentoringCapacityService,
   ) {}
 
   // ─── Settings ──────────────────────────────────────────────────────────────
@@ -84,6 +90,8 @@ export class MentoringAllocationService {
         id: 'default',
         allocationMode: 'AUTO',
         defaultCapacity: 40,
+        defaultMonthlyHourLimit: new Prisma.Decimal(160),
+        capacityWarningPercent: 80,
         siblingAffinity: true,
         updatedByUserId: null,
         updatedAt: new Date(0),
@@ -92,7 +100,7 @@ export class MentoringAllocationService {
   }
 
   async updateSettings(
-    dto: { allocationMode?: 'AUTO' | 'MANUAL'; defaultCapacity?: number; siblingAffinity?: boolean },
+    dto: { allocationMode?: 'AUTO' | 'MANUAL'; defaultMonthlyHourLimit?: number; capacityWarningPercent?: number; siblingAffinity?: boolean },
     actorUserId: string,
   ) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
@@ -154,30 +162,25 @@ export class MentoringAllocationService {
     );
   }
 
-  private async candidates(tx: PrismaTxClient, settings: MentoringSetting, onlyAccepting: boolean): Promise<MentorCandidate[]> {
+  private async candidates(tx: PrismaTxClient, onlyAccepting: boolean): Promise<MentorCandidate[]> {
     const allProfiles = await tx.mentoringStaffProfile.findMany({ where: { role: 'MENTOR', isActive: true } });
     if (allProfiles.length === 0) return [];
     const ids = allProfiles.map((p) => p.userId);
 
-    const [facts, loads, lastAssigned] = await Promise.all([
+    const [facts, capacities, lastAssigned] = await Promise.all([
       this.eligibilityFacts(tx, ids),
-      tx.mentoringActivation.groupBy({
-        by: ['currentMentorUserId'],
-        where: { currentMentorUserId: { in: ids }, status: { notIn: [...CLOSED_ACTIVATION_STATUSES] } },
-        _count: { _all: true },
-      }),
+      this.capacity.capacities(tx, ids),
       tx.mentorAssignment.groupBy({ by: ['mentorUserId'], where: { mentorUserId: { in: ids } }, _max: { startedAt: true } }),
     ]);
 
-    const loadMap = new Map(loads.map((l) => [l.currentMentorUserId as string, l._count._all]));
     const lastMap = new Map(lastAssigned.map((l) => [l.mentorUserId, l._max.startedAt ?? null]));
 
     return allProfiles
       .filter((p) => this.ineligibleReason(p, facts.get(p.userId), onlyAccepting) === null)
       .map((p) => ({
         userId: p.userId,
-        load: loadMap.get(p.userId) ?? 0,
-        capacity: p.capacity ?? settings.defaultCapacity,
+        load: capacities.get(p.userId)?.allocatedHours ?? 0,
+        capacity: capacities.get(p.userId)?.limitHours ?? 0,
         lastAssignedAt: lastMap.get(p.userId) ?? null,
       }));
   }
@@ -187,14 +190,11 @@ export class MentoringAllocationService {
       const settings = await this.getSettings(tx);
       const profiles = await tx.mentoringStaffProfile.findMany({ orderBy: { createdAt: 'asc' } });
       const ids = profiles.map((p) => p.userId);
-      const [facts, employees, loads, taskLoads, queued] = await Promise.all([
+      const mentorIds = profiles.filter((p) => p.role === 'MENTOR').map((p) => p.userId);
+      const [facts, employees, caps, taskLoads, queued] = await Promise.all([
         this.eligibilityFacts(tx, ids),
         tx.employee.findMany({ where: { userId: { in: ids } }, select: { userId: true, firstName: true, lastName: true, employmentStatus: true } }),
-        tx.mentoringActivation.groupBy({
-          by: ['currentMentorUserId'],
-          where: { currentMentorUserId: { in: ids }, status: { notIn: [...CLOSED_ACTIVATION_STATUSES] } },
-          _count: { _all: true },
-        }),
+        this.capacity.capacities(tx, mentorIds),
         tx.mentoringTask.groupBy({
           by: ['assigneeUserId'],
           where: { assigneeUserId: { in: ids }, status: { in: ['OPEN', 'IN_PROGRESS', 'RETURNED', 'ON_HOLD'] } },
@@ -203,7 +203,6 @@ export class MentoringAllocationService {
         tx.mentoringActivation.count({ where: { status: 'AWAITING_ALLOCATION' } }),
       ]);
       const emp = new Map(employees.map((e) => [e.userId, e]));
-      const loadMap = new Map(loads.map((l) => [l.currentMentorUserId as string, l._count._all]));
       const taskMap = new Map(taskLoads.map((l) => [l.assigneeUserId, l._count._all]));
 
       return {
@@ -228,8 +227,12 @@ export class MentoringAllocationService {
             team: p.team,
             isActive: p.isActive,
             acceptsAllocation: p.acceptsAllocation,
-            capacity: p.role === 'MENTOR' ? (p.capacity ?? settings.defaultCapacity) : null,
-            openStudents: p.role === 'MENTOR' ? (loadMap.get(p.userId) ?? 0) : null,
+            monthlyHourLimit: caps.get(p.userId)?.limitHours ?? null,
+            allocatedHours: caps.get(p.userId)?.allocatedHours ?? null,
+            remainingHours: caps.get(p.userId)?.remainingHours ?? null,
+            utilizationPercent: caps.get(p.userId)?.utilizationPercent ?? null,
+            capacityState: caps.get(p.userId)?.state ?? null,
+            openStudents: caps.get(p.userId)?.students.length ?? null,
             openTasks: taskMap.get(p.userId) ?? 0,
           };
         }),
@@ -244,11 +247,16 @@ export class MentoringAllocationService {
       select: {
         id: true,
         createdAt: true,
+        studentId: true,
         student: { select: { businessId: true, firstName: true, lastName: true } },
         lead: { select: { businessId: true } },
       },
     });
+    const hours = new Map<string, number>();
+    for (const r of rows) hours.set(r.studentId, await this.capacity.studentHours(this.prisma, r.studentId));
     return rows.map((r) => ({
+      /** The student's full monthly hours: what assigning them costs the Mentor's capacity. */
+      monthlyHours: hours.get(r.studentId) ?? 0,
       activationId: r.id,
       queuedAt: r.createdAt,
       studentBusinessId: r.student.businessId,
@@ -282,7 +290,8 @@ export class MentoringAllocationService {
     if (settings.allocationMode !== 'AUTO') return this.queueInTx(tx, activation.id, 'MANUAL_MODE');
 
     await this.lockAllocation(tx);
-    const candidates = await this.candidates(tx, settings, true);
+    const candidates = await this.candidates(tx, true);
+    const studentHours = (await this.capacity.studentHours(tx, activation.studentId));
 
     const siblings = await tx.mentoringActivation.findMany({
       where: { leadId: activation.leadId, id: { not: activation.id }, currentMentorUserId: { not: null }, status: { notIn: [...CLOSED_ACTIVATION_STATUSES] } },
@@ -291,6 +300,7 @@ export class MentoringAllocationService {
     const choice = chooseMentor(candidates, {
       siblingAffinity: settings.siblingAffinity,
       siblingMentorIds: siblings.map((s) => s.currentMentorUserId as string),
+      studentHours,
     });
     if (!choice) return this.queueInTx(tx, activation.id, 'NO_ELIGIBLE_MENTOR');
 
@@ -303,6 +313,7 @@ export class MentoringAllocationService {
       decision: {
         rule: ALLOCATION_RULE_VERSION,
         chosen: choice.mentorUserId,
+        studentHours,
         candidates: candidates.map((c) => ({ userId: c.userId, load: c.load, capacity: c.capacity })),
       },
     });
@@ -425,7 +436,11 @@ export class MentoringAllocationService {
 
   // ─── Manual allocation by the Mentoring Head ───────────────────────────────
 
-  private async assertAssignable(tx: PrismaTxClient, mentorUserId: string, overCapacityReason?: string) {
+  private async assertAssignable(
+    tx: PrismaTxClient,
+    p: { mentorUserId: string; activationId: string; overCapacityReason?: string | null; actorUserId: string; action: string },
+  ) {
+    const { mentorUserId } = p;
     const profile = await tx.mentoringStaffProfile.findUnique({ where: { userId: mentorUserId } });
     if (!profile) {
       throw new BadRequestException(
@@ -436,15 +451,8 @@ export class MentoringAllocationService {
     const reason = this.ineligibleReason(profile, facts.get(mentorUserId), false);
     if (reason) throw new BadRequestException(`The selected user cannot be assigned students: ${reason}`);
 
-    const settings = await this.getSettings(tx);
-    const load = await tx.mentoringActivation.count({
-      where: { currentMentorUserId: mentorUserId, status: { notIn: [...CLOSED_ACTIVATION_STATUSES] } },
-    });
-    const capacity = profile.capacity ?? settings.defaultCapacity;
-    if (load >= capacity && !overCapacityReason?.trim()) {
-      throw new ConflictException(`Mentor is at capacity (${load}/${capacity}). Provide overCapacityReason to override.`);
-    }
-    return { load, capacity };
+    const check = await this.capacity.assertCanTake(tx, p);
+    return { load: check.allocatedBefore, capacity: check.limitHours, check };
   }
 
   private async loadOpenActivation(tx: PrismaTxClient, activationId: string) {
@@ -462,14 +470,14 @@ export class MentoringAllocationService {
       const activation = await this.loadOpenActivation(tx, activationId);
       if (activation.currentMentorUserId) throw new ConflictException('Student already has a Mentor. Use reassign.');
       await this.lockAllocation(tx);
-      const { load, capacity } = await this.assertAssignable(tx, dto.mentorUserId, dto.overCapacityReason);
+      const { load, capacity, check } = await this.assertAssignable(tx, { mentorUserId: dto.mentorUserId, activationId, overCapacityReason: dto.overCapacityReason, actorUserId, action: 'ASSIGN' });
       await this.assignInTx(tx, {
         activationId,
         mentorUserId: dto.mentorUserId,
         type: 'MANUAL',
         reason: dto.reason?.trim() || 'Manual allocation',
         actorUserId,
-        decision: { rule: 'MANUAL', load, capacity, overCapacityReason: dto.overCapacityReason ?? null },
+        decision: { rule: 'MANUAL', load, capacity, studentHours: check.studentHours, overCapacity: check.overCapacity, overCapacityReason: check.overCapacity ? dto.overCapacityReason ?? null : null },
       });
       return { activationId, mentorUserId: dto.mentorUserId };
     });
@@ -481,26 +489,26 @@ export class MentoringAllocationService {
       if (!activation.currentMentorUserId) throw new ConflictException('Student has no Mentor yet. Use assign.');
       if (activation.currentMentorUserId === dto.mentorUserId) throw new ConflictException('Student is already with this Mentor');
       await this.lockAllocation(tx);
-      const { load, capacity } = await this.assertAssignable(tx, dto.mentorUserId, dto.overCapacityReason);
+      const { load, capacity, check } = await this.assertAssignable(tx, { mentorUserId: dto.mentorUserId, activationId, overCapacityReason: dto.overCapacityReason, actorUserId, action: 'REASSIGN' });
       await this.assignInTx(tx, {
         activationId,
         mentorUserId: dto.mentorUserId,
         type: 'MANUAL',
         reason: dto.reason,
         actorUserId,
-        decision: { rule: 'MANUAL_REASSIGN', from: activation.currentMentorUserId, load, capacity },
+        decision: { rule: 'MANUAL_REASSIGN', from: activation.currentMentorUserId, load, capacity, studentHours: check.studentHours, overCapacity: check.overCapacity, overCapacityReason: check.overCapacity ? dto.overCapacityReason ?? null : null },
       });
       return { activationId, mentorUserId: dto.mentorUserId };
     });
   }
 
-  async temporaryTransfer(activationId: string, dto: { mentorUserId: string; reason: string; expectedReturnAt: Date }, actorUserId: string) {
+  async temporaryTransfer(activationId: string, dto: { mentorUserId: string; reason: string; expectedReturnAt: Date; overCapacityReason?: string }, actorUserId: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const activation = await this.loadOpenActivation(tx, activationId);
       if (!activation.currentMentorUserId) throw new ConflictException('Student has no Mentor to transfer from');
       if (activation.currentMentorUserId === dto.mentorUserId) throw new ConflictException('Student is already with this Mentor');
       await this.lockAllocation(tx);
-      await this.assertAssignable(tx, dto.mentorUserId, 'temporary transfer');
+      await this.assertAssignable(tx, { mentorUserId: dto.mentorUserId, activationId, overCapacityReason: dto.overCapacityReason, actorUserId, action: 'TEMPORARY_TRANSFER' });
       await this.assignInTx(tx, {
         activationId,
         mentorUserId: dto.mentorUserId,
@@ -514,7 +522,7 @@ export class MentoringAllocationService {
     });
   }
 
-  async endTransfer(activationId: string, actorUserId: string) {
+  async endTransfer(activationId: string, actorUserId: string, overCapacityReason?: string) {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       await this.loadOpenActivation(tx, activationId);
       const current = await tx.mentorAssignment.findFirst({ where: { activationId, currentKey: activationId } });
@@ -522,7 +530,7 @@ export class MentoringAllocationService {
         throw new ConflictException('There is no temporary transfer to end');
       }
       await this.lockAllocation(tx);
-      await this.assertAssignable(tx, current.returnToUserId, 'returning from temporary transfer');
+      await this.assertAssignable(tx, { mentorUserId: current.returnToUserId, activationId, overCapacityReason, actorUserId, action: 'END_TRANSFER' });
       await this.assignInTx(tx, {
         activationId,
         mentorUserId: current.returnToUserId,

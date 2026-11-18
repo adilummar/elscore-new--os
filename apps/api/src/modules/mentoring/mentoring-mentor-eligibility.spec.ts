@@ -11,6 +11,7 @@ import { UserService } from '../user/user.service';
 import { MentoringAllocationController } from './mentoring-allocation.controller';
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { mentorIneligibleReason } from './mentoring-eligibility';
+import { MentoringCapacityService } from './mentoring-capacity.service';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringStaffService } from './mentoring-staff.service';
 import { FakeDb } from './testing/mentoring-fake-db';
@@ -28,7 +29,7 @@ function world() {
   const db = new FakeDb();
   const audit = { recordInTx: jest.fn().mockResolvedValue(undefined), record: jest.fn().mockResolvedValue(undefined) };
   const history = new MentoringHistoryService(audit as any);
-  const allocation = new MentoringAllocationService(db as any, history);
+  const allocation = new MentoringAllocationService(db as any, history, new MentoringCapacityService(db as any));
   const staff = new MentoringStaffService(db as any, history);
   const rbac = { invalidateCache: jest.fn().mockResolvedValue(undefined) };
   const users = new UserService(
@@ -56,8 +57,10 @@ function world() {
     );
   const userId = (email: string) => db.rows('user').find((u) => u.email === email)!.id as string;
   const profileOf = (id: string) => db.rows('mentoringStaffProfile').find((p) => p.userId === id);
-  const awaiting = (id = 'act-1', leadId = 'lead-1') =>
-    db.seed('mentoringActivation', { id, leadId, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'AWAITING_ALLOCATION', currentStage: 1, currentMentorUserId: null });
+  const awaiting = (id = 'act-1', leadId = 'lead-1') => {
+    db.seed('requirement', { studentId: `stu-${id}`, monthlyHours: 1 });
+    return db.seed('mentoringActivation', { id, leadId, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'AWAITING_ALLOCATION', currentStage: 1, currentMentorUserId: null });
+  };
   const activation = (id = 'act-1') => db.rows('mentoringActivation').find((a) => a.id === id)!;
   const setMode = (allocationMode: 'AUTO' | 'MANUAL') => Object.assign(db.rows('mentoringSetting')[0], { allocationMode });
 
@@ -65,10 +68,11 @@ function world() {
   const profile = (id: string, o: { role?: string; active?: boolean; accepting?: boolean; userStatus?: string; employment?: string; roles?: string[]; capacity?: number | null; load?: number } = {}) => {
     db.seed('user', { id, status: o.userStatus ?? 'ACTIVE' });
     db.seed('employee', { userId: id, firstName: id, lastName: 'M', employmentStatus: o.employment ?? 'ACTIVE' });
-    db.seed('mentoringStaffProfile', { userId: id, role: o.role ?? 'MENTOR', capacity: o.capacity ?? null, isActive: o.active ?? true, acceptsAllocation: o.accepting ?? true });
+    db.seed('mentoringStaffProfile', { userId: id, role: o.role ?? 'MENTOR', monthlyHourLimit: o.capacity ?? null, isActive: o.active ?? true, acceptsAllocation: o.accepting ?? true });
     for (const code of o.roles ?? ['MENTOR']) db.seed('userRole', { userId: id, roleId: roles[code], role: { code } });
     for (let i = 0; i < (o.load ?? 0); i++) {
       db.seed('mentoringActivation', { id: `${id}-open-${i}`, leadId: `L-${id}-${i}`, studentId: `S-${id}-${i}`, status: 'ACTIVATION_IN_PROGRESS', currentStage: 1, currentMentorUserId: id });
+      db.seed('requirement', { studentId: `S-${id}-${i}`, monthlyHours: 1 });
     }
   };
   return { db, audit, allocation, staff, users, userRoles, roles, departments, createUser, userId, profileOf, awaiting, activation, setMode, profile };
@@ -141,7 +145,7 @@ describe('2, 5. The created Mentor appears in the eligible-Mentor API and the wo
     const load = await w.allocation.workload();
     const row = load.staff.find((s: any) => s.userId === id)!;
     expect(row).toMatchObject({
-      name: expect.stringContaining('Asha'), role: 'MENTOR', openStudents: 0, openTasks: 0, capacity: 40,
+      name: expect.stringContaining('Asha'), role: 'MENTOR', openStudents: 0, openTasks: 0, monthlyHourLimit: 160,
       isActive: true, userStatus: 'PENDING_SETUP', employmentStatus: 'ACTIVE', eligibleForManual: true, eligibleForAuto: true, ineligibleReason: null,
     });
   });
@@ -189,7 +193,7 @@ describe('3, 4. Manual allocation', () => {
     w.profile('m1', { load: 3 });
     w.awaiting();
     await w.allocation.allocate('act-1', { mentorUserId: 'm1' }, HEAD);
-    expect(w.db.rows('mentorAssignment')[0].decision).toMatchObject({ rule: 'MANUAL', load: 3, capacity: 40 });
+    expect(w.db.rows('mentorAssignment')[0].decision).toMatchObject({ rule: 'MANUAL', load: 3, capacity: 160 });
     expect(w.db.rows('mentoringEvent').map((e) => e.type)).toEqual(expect.arrayContaining(['MENTOR_ALLOCATED']));
   });
 
@@ -212,7 +216,7 @@ describe('6. Automatic allocation', () => {
 
     expect(result).toEqual({ allocated: true, mentorUserId: id });
     expect(w.db.rows('mentorAssignment')[0]).toMatchObject({ type: 'AUTO', mentorUserId: id });
-    expect(w.db.rows('mentorAssignment')[0].decision.candidates).toEqual([{ userId: id, load: 0, capacity: 40 }]);
+    expect(w.db.rows('mentorAssignment')[0].decision.candidates).toEqual([{ userId: id, load: 0, capacity: 160 }]);
   });
 
   it('the Head can run allocation for students already waiting when the mode is switched on', async () => {

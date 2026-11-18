@@ -5,6 +5,7 @@ import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator
 
 import { MentoringAccessService } from './mentoring-access.service';
 import { HANDOVER_FIELDS, PROFILE_FIELD_KEYS } from './mentoring-handover-fields';
+import { currentFingerprints } from './section-verification';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringStudentHubService } from './mentoring-student-hub.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
@@ -157,12 +158,18 @@ describe('Editing the profile of an activated student', () => {
     await expect(w.workflow.updateStudentProfile('act-1', { changes: { 'student.schoolName': 'Fresh write' }, basedOn: { 'student.schoolName': 'Mentor A school' } }, 'mentor-1')).resolves.toMatchObject({ changed: ['student.schoolName'] });
   });
 
-  it('ends a confirmation that covered the old value, in the history, without reopening a stage', async () => {
+  it('ends a section verification that covered the old value, in the history, without reopening a stage', async () => {
     const w = world();
-    w.db.seed('enrollmentHandoverFieldVerification', { handoverId: 'ho-1', fieldKey: 'parent.primaryPhone', verifiedValue: SALES_PHONE, verifiedByUserId: 'mentor-1', verifiedAt: new Date() });
+    const fp = await currentFingerprints(w.db as any, { id: 'act-1', handoverId: 'ho-1', studentId: 'stu-1' });
+    for (const sectionId of ['STUDENT_PARENT_INFO', 'MARKS_EXAMINATIONS']) {
+      w.db.seed('activationSectionVerification', { activationId: 'act-1', sectionId, verified: true, fingerprint: fp[sectionId as keyof typeof fp], verifiedByUserId: 'mentor-1', verifiedAt: new Date() });
+    }
     await w.workflow.updateStudentProfile('act-1', { changes: { 'parent.primaryPhone': '+971 50 111 2222' } }, 'mentor-1');
     const e = w.db.rows('mentoringEvent').find((x) => x.type === 'HANDOVER_FIELD_UPDATED')!;
-    expect(e.payload.verificationInvalidated).toBe(true);
+    expect(e.payload.sectionsInvalidated).toEqual(['STUDENT_PARENT_INFO']);
+    const state = (id: string) => w.db.rows('activationSectionVerification').find((r) => r.sectionId === id)!.verified;
+    expect(state('STUDENT_PARENT_INFO')).toBe(false);
+    expect(state('MARKS_EXAMINATIONS')).toBe(true);
     expect(w.db.rows('mentoringStage').every((s) => s.status === 'COMPLETED')).toBe(true);
   });
 });

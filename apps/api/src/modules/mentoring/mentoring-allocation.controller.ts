@@ -9,6 +9,7 @@ import { MentoringAllocationService } from './mentoring-allocation.service';
 import { MentoringStaffService } from './mentoring-staff.service';
 import {
   AssignMentorDto,
+  EndTransferDto,
   ReassignMentorDto,
   ReturnToQueueDto,
   TransferMentorDto,
@@ -74,8 +75,8 @@ export class MentoringAllocationController {
 
   @Post('allocation/:activationId/end-transfer')
   @RequirePermissions('mentoring.allocation.manage')
-  endTransfer(@Param('activationId') id: string, @CurrentUser() user: RequestUser) {
-    return this.allocation.endTransfer(id, user.id);
+  endTransfer(@Param('activationId') id: string, @Body() dto: EndTransferDto, @CurrentUser() user: RequestUser) {
+    return this.allocation.endTransfer(id, user.id, dto?.overCapacityReason);
   }
 
   @Post('allocation/:activationId/return-to-queue')

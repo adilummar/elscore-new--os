@@ -14,7 +14,6 @@ const ROLE_CODE: Record<MentoringStaffRole, string> = {
 
 export interface UpsertStaffDto {
   role: MentoringStaffRole;
-  capacity?: number | null;
   isActive?: boolean;
   acceptsAllocation?: boolean;
   team?: string | null;
@@ -82,10 +81,10 @@ export class MentoringStaffService {
 
   /** The user must already hold the matching role (role assignment stays in the existing user management). */
   async upsert(userId: string, dto: UpsertStaffDto, actorUserId: string) {
-    if (dto.role === 'DEMO_COUNSELOR' && (dto.capacity !== undefined && dto.capacity !== null)) {
-      throw new BadRequestException('Capacity applies to Mentors only');
+    // A Mentor's monthly hour limit is set only through the capacity endpoint (Mentoring Head), where every change is audited.
+    if ('capacity' in (dto as object) || 'monthlyHourLimit' in (dto as object)) {
+      throw new BadRequestException('Set a Mentor\'s monthly hour limit from the Capacity screen');
     }
-    if ((dto.capacity !== undefined && dto.capacity !== null) && dto.capacity < 1) throw new BadRequestException('Capacity must be at least 1');
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const roleCount = await tx.userRole.count({ where: { userId, role: { code: ROLE_CODE[dto.role] } } });
@@ -98,7 +97,6 @@ export class MentoringStaffService {
         create: {
           userId,
           role: dto.role,
-          capacity: dto.capacity ?? null,
           isActive: dto.isActive ?? true,
           acceptsAllocation: dto.acceptsAllocation ?? true,
           team: dto.team ?? null,
@@ -106,7 +104,6 @@ export class MentoringStaffService {
         },
         update: {
           role: dto.role,
-          ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           ...(dto.acceptsAllocation !== undefined ? { acceptsAllocation: dto.acceptsAllocation } : {}),
           ...(dto.team !== undefined ? { team: dto.team } : {}),

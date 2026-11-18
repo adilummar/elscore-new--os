@@ -57,7 +57,6 @@ export const FIELD_SECTIONS: readonly FieldSection[] = [
 export const ALL_FIELD_KEYS: readonly string[] = FIELD_SECTIONS.flatMap((s) => s.fields);
 
 export type CollectionStatus = 'FROM_SALES' | 'UPDATED' | 'COLLECTED' | 'PENDING';
-export type VerificationStatus = 'VERIFIED' | 'NOT_VERIFIED' | 'CHANGED';
 
 export const COLLECTION_LABELS: Readonly<Record<CollectionStatus, string>> = {
   FROM_SALES: 'Received from Sales',
@@ -78,8 +77,6 @@ export interface InventoryRow {
   sourceText: string | null;
   /** The original Sales value, only when Mentoring has replaced it. */
   salesValue: string | null;
-  verification: VerificationStatus;
-  verifiedText: string | null;
   /** Why a pending field is pending. */
   hint: string | null;
   /** Null when the field cannot be edited here (the Sales subject list). */
@@ -97,9 +94,6 @@ export interface Inventory {
   total: number;
   collected: number;
   pending: number;
-  verified: number;
-  /** Collected values the Mentor has not confirmed with the parent yet (or that changed since). */
-  unverified: number;
 }
 
 interface FieldValueRow {
@@ -110,14 +104,6 @@ interface FieldValueRow {
   updatedAt?: string | null;
   collectedByName?: string | null;
   collectedAt?: string | null;
-}
-
-interface VerificationRow {
-  fieldKey: string;
-  verified?: boolean;
-  changedSinceVerified?: boolean;
-  verifiedByName?: string | null;
-  verifiedAt?: string | null;
 }
 
 const list = <T>(value: unknown, guard: (row: unknown) => row is T): T[] => (Array.isArray(value) ? value.filter(guard) : []);
@@ -131,7 +117,7 @@ export const DEFAULT_PENDING_HINT = 'Not asked during the Sales admission. The M
 
 /** One row per field (several Sales subject lines are one field), grouped into sections, with real counts. */
 export function buildInventory(handover: unknown): Inventory {
-  const source = (handover && typeof handover === 'object' ? handover : {}) as { fieldValues?: unknown; fieldVerifications?: unknown; editableFields?: unknown };
+  const source = (handover && typeof handover === 'object' ? handover : {}) as { fieldValues?: unknown; editableFields?: unknown };
   const { collected, missing } = presentHandover(handover);
   // A field that is in no Sales list (one added after the handover was captured) still needs its input definition.
   const editors = new Map<string, EditableFieldMeta>(
@@ -140,7 +126,6 @@ export function buildInventory(handover: unknown): Inventory {
       .map((e) => [e.key, e]),
   );
   const valueRows = new Map(list<FieldValueRow>(source.fieldValues, hasKey).map((r) => [r.fieldKey, r]));
-  const verifications = new Map(list<VerificationRow>(source.fieldVerifications, hasKey).map((r) => [r.fieldKey, r]));
 
   const collectedByField = new Map<string, PresentedField[]>();
   for (const row of collected) collectedByField.set(row.fieldKey, [...(collectedByField.get(row.fieldKey) ?? []), row]);
@@ -154,7 +139,7 @@ export function buildInventory(handover: unknown): Inventory {
       return {
         fieldKey, label, value: null, rawValue: null, collection: 'PENDING',
         sourceText: pending && pending.hint !== DEFAULT_PENDING_HINT ? 'Not provided by Sales' : 'Not collected by Sales', salesValue: null,
-        verification: 'NOT_VERIFIED', verifiedText: null, hint: pending?.hint ?? DEFAULT_PENDING_HINT, editor: pending?.editor ?? editors.get(fieldKey) ?? null,
+        hint: pending?.hint ?? DEFAULT_PENDING_HINT, editor: pending?.editor ?? editors.get(fieldKey) ?? null,
       };
     }
     const first = parts[0];
@@ -166,8 +151,6 @@ export function buildInventory(handover: unknown): Inventory {
         : collection === 'COLLECTED'
           ? byLine(`Collected by ${detail?.collectedByName ?? 'Mentoring'}`, fmtDate(detail?.collectedAt ?? first.updatedAt))
           : byLine(`Updated${first.updatedByName ? ` by ${first.updatedByName}` : ' by Mentoring'}`, fmtDate(first.updatedAt));
-    const check = verifications.get(fieldKey);
-    const verification: VerificationStatus = check?.verified ? 'VERIFIED' : check ? 'CHANGED' : 'NOT_VERIFIED';
     return {
       fieldKey,
       label,
@@ -176,13 +159,6 @@ export function buildInventory(handover: unknown): Inventory {
       collection,
       sourceText,
       salesValue: first.salesValue,
-      verification,
-      verifiedText:
-        verification === 'VERIFIED'
-          ? byLine(`Verified${check?.verifiedByName ? ` by ${check.verifiedByName}` : ''}`, fmtDate(check?.verifiedAt))
-          : verification === 'CHANGED'
-            ? 'Changed since it was verified'
-            : null,
       hint: null,
       editor: first.editor,
     };
@@ -196,31 +172,19 @@ export function buildInventory(handover: unknown): Inventory {
   ];
   const rows = sections.flatMap((s) => s.rows);
   const collectedRows = rows.filter((r) => r.collection !== 'PENDING');
-  const verified = collectedRows.filter((r) => r.verification === 'VERIFIED').length;
   return {
     sections,
     total: rows.length,
     collected: collectedRows.length,
     pending: rows.length - collectedRows.length,
-    verified,
-    unverified: collectedRows.length - verified,
   };
 }
 
-export type RowFilter = 'ALL' | 'PENDING' | 'NOT_VERIFIED' | 'VERIFIED';
+export type RowFilter = 'ALL' | 'PENDING';
 
-/** The rows each Stage 2 filter shows. "Not verified" means collected, and not (or no longer) confirmed. */
-export function matchesFilter(filter: RowFilter, row: Pick<InventoryRow, 'collection' | 'verification'>): boolean {
-  switch (filter) {
-    case 'PENDING':
-      return row.collection === 'PENDING';
-    case 'NOT_VERIFIED':
-      return row.collection !== 'PENDING' && row.verification !== 'VERIFIED';
-    case 'VERIFIED':
-      return row.collection !== 'PENDING' && row.verification === 'VERIFIED';
-    default:
-      return true;
-  }
+/** The rows each Stage 2 filter shows. Verification is per section now, so the filters are about collection only. */
+export function matchesFilter(filter: RowFilter, row: Pick<InventoryRow, 'collection'>): boolean {
+  return filter === 'PENDING' ? row.collection === 'PENDING' : true;
 }
 
 // ─── Stage 1 overview ──────────────────────────────────────────────────────────

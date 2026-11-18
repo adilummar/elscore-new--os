@@ -12,6 +12,7 @@ import { MentoringAllocationService } from './mentoring-allocation.service';
 import { assertMeetingStarted, assertWorkable, loadLockedActivation } from './mentoring-guards';
 import { stableJson } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
+import { reconcileSectionVerifications } from './section-verification';
 import { ScheduleValue, SubjectSchedule, isScheduleValue } from './subject-schedule';
 import {
   BusyBlock,
@@ -491,6 +492,8 @@ export class MentoringTutorService {
           sessions: resolved.required.map((r) => r.label),
         },
       });
+      // Changing a tutor changes the Subjects, Tutors & Timetable information: that section, and only that one, returns to Not Verified.
+      await reconcileSectionVerifications(tx, activationId, userId);
       return (await this.assignmentViews(tx, [created]))[0];
     });
   }
@@ -543,6 +546,7 @@ export class MentoringTutorService {
         reason: why,
         payload: { subjectId, tutorProfileId: current.tutorProfileId, tutorName: tutor?.name ?? null },
       });
+      await reconcileSectionVerifications(tx, activationId, userId);
       return { removed: true };
     });
   }

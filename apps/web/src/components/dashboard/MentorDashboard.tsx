@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '@/app/(app)/mentoring/mentoring-client';
+import { DashboardCapacity } from '@/app/(app)/mentoring/CapacityPanels';
 import { ClassWorkspaceDrawer } from '@/app/(app)/mentoring/ClassWorkspaceDrawer';
 import { STATE_TONE } from '@/app/(app)/mentoring/class-view';
 import { dayLabel, longDayLabel } from '@/app/(app)/mentoring/timetable-view';
@@ -232,6 +233,8 @@ export default function MentorDashboard({ searchParams }: MentorDashboardProps) 
           ))}
         </ul>
       </nav>
+
+      <DashboardCapacity />
 
       {error && <Banner tone="error" onRetry={() => void loadDashboard()}>{error}</Banner>}
       {!error && failed.length > 0 && <Banner tone="warning" onRetry={() => void loadDashboard()}>{failed.join(', ')} could not be loaded, so those figures show n/a instead of zero.</Banner>}

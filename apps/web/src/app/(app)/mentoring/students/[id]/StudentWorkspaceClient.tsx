@@ -287,9 +287,9 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                       setNotice(`${handoverFieldLabel(fieldKey)} saved.`);
                       await load();
                     }}
-                    onVerify={async (fieldKey, verified, basedOn) => {
-                      await mentoringApi(`${base}/handover/fields/${fieldKey}/verification`, 'PUT', { verified, basedOn: basedOn ?? null });
-                      setNotice(verified ? `${handoverFieldLabel(fieldKey)} verified.` : `Verification of ${handoverFieldLabel(fieldKey)} withdrawn.`);
+                    onVerifySection={async (sectionId, verified) => {
+                      await mentoringApi(`${base}/verification/sections/${sectionId}`, 'PUT', { verified });
+                      setNotice(verified ? 'Section verified.' : 'Section verification withdrawn.');
                       await load();
                     }}
                     onRefresh={load}

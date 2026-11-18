@@ -7,6 +7,8 @@ import MentorDashboard, { buildQueue } from '@/components/dashboard/MentorDashbo
 
 jest.mock('../mentoring/mentoring-client', () => ({ mentoringApi: jest.fn(() => new Promise(() => undefined)) }));
 jest.mock('next/link', () => ({ __esModule: true, default: ({ href, children, ...rest }: any) => React.createElement('a', { href, ...rest }, children) }));
+// The capacity card reads the signed-in user's permissions; it has its own tests (mentoring/capacity.spec.ts).
+jest.mock('../mentoring/CapacityPanels', () => ({ DashboardCapacity: () => React.createElement('div', { 'data-testid': 'capacity-slot' }) }));
 jest.mock('../mentoring/ClassWorkspaceDrawer', () => ({ ClassWorkspaceDrawer: () => React.createElement('div', null, 'Drawer') }));
 
 const text = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();

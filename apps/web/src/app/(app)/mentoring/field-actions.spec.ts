@@ -1,4 +1,4 @@
-import { isStaleMessage, saveField, setVerification, verifyBlockedReason } from './field-actions';
+import { isStaleMessage, saveField } from './field-actions';
 import { EditableFieldMeta } from './handover-presentation';
 
 const meta = (type: EditableFieldMeta['type'], extra: Partial<EditableFieldMeta> = {}): EditableFieldMeta => ({ key: 'k', type, options: null, columns: null, maxLength: null, minDate: null, maxDate: null, ...extra });
@@ -58,50 +58,5 @@ describe('saving a field', () => {
     expect(isStaleMessage(STALE)).toBe(true);
     expect(isStaleMessage('The server is not reachable')).toBe(false);
     expect(isStaleMessage(null)).toBe(false);
-  });
-});
-
-describe('verifying a field', () => {
-  const stored = { collection: 'FROM_SALES' as const, hasUnsavedChange: false, storedValue: 'Asha' };
-
-  it('is blocked, without calling the API, while there is nothing to verify', async () => {
-    const send = jest.fn();
-    await expect(setVerification(true, { ...stored, collection: 'PENDING', storedValue: null }, send)).resolves.toEqual({ kind: 'blocked', message: 'Enter and save a value first' });
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it('is blocked while the Mentor has an unsaved change, so an unsaved value can never be confirmed', async () => {
-    const send = jest.fn();
-    await expect(setVerification(true, { ...stored, hasUnsavedChange: true }, send)).resolves.toEqual({ kind: 'blocked', message: 'Save your change first' });
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it('is an explicit action on the stored value: verified true, with the value the Mentor was looking at', async () => {
-    const send = jest.fn().mockResolvedValue(undefined);
-    await expect(setVerification(true, stored, send)).resolves.toEqual({ kind: 'done' });
-    expect(send).toHaveBeenCalledWith(true, 'Asha');
-  });
-
-  it('withdrawing a verification is its own explicit call, not a silent erase', async () => {
-    const send = jest.fn().mockResolvedValue(undefined);
-    await expect(setVerification(false, stored, send)).resolves.toEqual({ kind: 'done' });
-    expect(send).toHaveBeenCalledWith(false, 'Asha');
-  });
-
-  it('reports an API failure and succeeds on retry', async () => {
-    const send = jest.fn().mockRejectedValueOnce(new Error('Gateway timeout')).mockResolvedValueOnce(undefined);
-    await expect(setVerification(true, stored, send)).resolves.toEqual({ kind: 'failed', message: 'Gateway timeout' });
-    await expect(setVerification(true, stored, send)).resolves.toEqual({ kind: 'done' });
-  });
-
-  it('recognises a stale confirmation: the value changed under the Mentor, so it is not confirmed', async () => {
-    await expect(setVerification(true, stored, () => Promise.reject(new Error(STALE)))).resolves.toEqual({ kind: 'stale', message: STALE });
-  });
-
-  it('the checkbox reasons agree with the outcomes', () => {
-    expect(verifyBlockedReason('PENDING', false)).toBe('Enter and save a value first');
-    expect(verifyBlockedReason('COLLECTED', true)).toBe('Save your change first');
-    expect(verifyBlockedReason('FROM_SALES', false)).toBeNull();
-    expect(verifyBlockedReason('UPDATED', false)).toBeNull();
   });
 });

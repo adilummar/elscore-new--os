@@ -7,9 +7,10 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator';
 
 import { MentoringAccessService } from './mentoring-access.service';
-import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, getHandoverField, isVerifiableField, validateHandoverFieldValue } from './mentoring-handover-fields';
+import { HANDOVER_FIELDS, HANDOVER_FIELD_LABELS, getHandoverField, validateHandoverFieldValue } from './mentoring-handover-fields';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { unresolvedMandatoryItems } from './mentoring-stage.helpers';
+import { unassignedFields } from './section-verification';
 import { MentoringTutorService } from './mentoring-tutor.service';
 import { MentoringWorkflowController } from './mentoring-workflow.controller';
 import { MentoringWorkflowService } from './mentoring-workflow.service';
@@ -323,9 +324,9 @@ describe('Information is collected in Stage 2, not Stage 1', () => {
   it('nothing can be saved or verified while the Meeting with Parents has not started', async () => {
     const w = world({ at: 1 });
     await expect(w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(w.workflow.setSectionVerification('act-1', 'STUDENT_PARENT_INFO', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
     expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0);
-    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
+    expect(w.db.rows('activationSectionVerification')).toHaveLength(0);
     expect((await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).viewer.canEditHandover).toBe(false);
   });
 
@@ -337,72 +338,8 @@ describe('Information is collected in Stage 2, not Stage 1', () => {
   });
 });
 
-describe('Collection and verification are separate facts', () => {
-  const verified = (w: ReturnType<typeof world>) => w.db.rows('enrollmentHandoverFieldVerification');
+describe('Who collected a value', () => {
   const read = async (w: ReturnType<typeof world>, user = 'mentor-1'): Promise<any> => (await w.workflow.getWorkspace('act-1', await w.scope(user))).handover;
-
-  it('a Sales value is collected but not verified until the Mentor confirms it', async () => {
-    const w = world();
-    const view = await read(w);
-    expect(view.transferredFields.find((f: any) => f.field === 'parent.primaryPhone')).toBeDefined();
-    expect(view.fieldVerifications).toEqual([]);
-  });
-
-  it('collecting or editing a value never verifies it', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', 'parent.primaryPhone', '9876543210', 'mentor-1');
-    expect(verified(w)).toHaveLength(0);
-    expect((await read(w)).fieldVerifications).toEqual([]);
-  });
-
-  it('verifying a Sales value records who and when, keeps the Sales data untouched and adds history', async () => {
-    const w = world();
-    const before = salesDataOf(w.db);
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true, note: 'Confirmed on the call' }, 'mentor-1')).resolves.toMatchObject({ verified: true, changed: true });
-
-    expect(salesDataOf(w.db)).toEqual(before);
-    expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0); // verifying does not create a Mentoring value
-    expect(verified(w)[0]).toMatchObject({ fieldKey: 'parent.primaryPhone', verifiedValue: SALES_PHONE, verifiedByUserId: 'mentor-1', note: 'Confirmed on the call' });
-    expect((await read(w)).fieldVerifications).toEqual([
-      expect.objectContaining({ fieldKey: 'parent.primaryPhone', verified: true, changedSinceVerified: false, verifiedByName: 'Mina Mentor', verifiedAt: expect.any(Date), note: 'Confirmed on the call' }),
-    ]);
-    expect(w.db.rows('mentoringEvent').find((e) => e.type === 'HANDOVER_FIELD_VERIFIED')).toMatchObject({ actorUserId: 'mentor-1', payload: { fieldKey: 'parent.primaryPhone', value: SALES_PHONE } });
-  });
-
-  it('the read-only Sales subjects can be verified too', async () => {
-    const w = world();
-    w.db.rows('enrollmentHandover')[0].transferredFields.push({ field: 'academic.subjects', source: 'REQUIREMENT', value: [{ requirementId: 'r1', subject: 'Maths', curriculum: 'CBSE', grade: 'Grade 8', monthlyHours: '8' }] });
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'academic.subjects', { verified: true }, 'mentor-1')).resolves.toMatchObject({ verified: true });
-  });
-
-  it('a field with no value cannot be verified', async () => {
-    const w = world();
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.relationship', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
-    expect(verified(w)).toHaveLength(0);
-  });
-
-  it('changing a verified value makes it unverified again, without deleting the earlier confirmation', async () => {
-    const w = world();
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', 'parent.primaryPhone', '9876543210', 'mentor-1');
-
-    expect((await read(w)).fieldVerifications).toEqual([expect.objectContaining({ fieldKey: 'parent.primaryPhone', verified: false, changedSinceVerified: true })]);
-    expect(verified(w)).toHaveLength(1); // the earlier confirmation is kept for the record
-
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
-    expect(verified(w)).toHaveLength(1);
-    expect((await read(w)).fieldVerifications).toEqual([expect.objectContaining({ verified: true, changedSinceVerified: false })]);
-  });
-
-  it('verifying twice changes nothing; withdrawing removes the confirmation and is recorded', async () => {
-    const w = world();
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1')).resolves.toMatchObject({ changed: false });
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: false }, 'mentor-1')).resolves.toMatchObject({ verified: false, changed: true });
-    expect(verified(w)).toHaveLength(0);
-    expect(w.db.rows('mentoringEvent').map((e) => e.type)).toEqual(expect.arrayContaining(['HANDOVER_FIELD_VERIFIED', 'HANDOVER_FIELD_UNVERIFIED']));
-  });
 
   it('who collected a value is recorded when it is first saved and survives later corrections by someone else', async () => {
     const w = world();
@@ -419,32 +356,6 @@ describe('Collection and verification are separate facts', () => {
     expect((await read(w)).fieldValues[0]).toMatchObject({ fieldKey: 'student.gender', collectedByName: 'Mina Mentor', collectedAt: expect.any(Date) });
   });
 
-  it('only the assigned Mentor can verify; the Head, the CEO and a Counselor cannot', async () => {
-    const w = world();
-    for (const user of ['head-1', 'mentor-2', 'counselor-1', 'ceo-1']) {
-      await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
-    }
-    expect(verified(w)).toHaveLength(0);
-  });
-
-  it('refuses fields that do not exist and a workflow that is on hold', async () => {
-    const w = world();
-    for (const key of ['student.businessId', '__proto__', 'unknown.field']) {
-      await expect(w.workflow.setHandoverFieldVerification('act-1', key, { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
-    }
-    const held = world({ status: 'ACTIVATION_ON_HOLD' });
-    await expect(held.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('a Counselor never sees the verification of a parent contact number', async () => {
-    const w = world();
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', 'student.notes', 'Needs help', 'mentor-1');
-    await w.workflow.setHandoverFieldVerification('act-1', 'student.notes', { verified: true }, 'mentor-1');
-    w.db.seed('mentoringTask', { id: 't1', activationId: 'act-1', stageId: null, title: 'x', assigneeUserId: 'counselor-1', status: 'OPEN' });
-    const view = await read(w, 'counselor-1');
-    expect(view.fieldVerifications.map((v: any) => v.fieldKey)).toEqual(['student.notes']);
-  });
 });
 
 describe('Meeting checklist persistence, progress and blocking (Stage 2)', () => {
@@ -722,7 +633,7 @@ describe('Read-only and counselor restrictions on the new routes', () => {
 
   it('editing information and items needs the Mentor stage permission; exceptions need the Head permission', () => {
     expect(required('updateHandoverField')).toEqual(['mentoring.stage.work']);
-    expect(required('setHandoverFieldVerification')).toEqual(['mentoring.stage.work']);
+    expect(required('setSectionVerification')).toEqual(['mentoring.stage.work']);
     expect(required('updateItem')).toEqual(['mentoring.stage.work']);
     expect(required('authorizeException')).toEqual(['mentoring.exception.authorize']);
     expect(required('verifyStage')).toEqual(['mentoring.stage.verify']);
@@ -843,80 +754,9 @@ describe('Concurrent edits and stale data', () => {
     await expect(w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Father', 'mentor-1')).resolves.toMatchObject({ changed: true });
   });
 
-  it('confirming a value that has changed since the Mentor saw it is refused, so a stale value is never confirmed', async () => {
-    const w = world();
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true, basedOn: '9000000000' }, 'mentor-1')).rejects.toThrow(/changed by someone else/);
-    expect(verifications(w)).toHaveLength(0);
-    await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true, basedOn: SALES_PHONE }, 'mentor-1')).resolves.toMatchObject({ verified: true });
-  });
-
   it('the page always sends basedOn: the controller passes it through', () => {
     const controller = readFileSync(join(__dirname, 'mentoring-workflow.controller.ts'), 'utf8');
     expect(controller).toContain('dto.basedOn');
-  });
-});
-
-describe('Verification audit trail', () => {
-  const types = (w: ReturnType<typeof world>) => w.db.rows('mentoringEvent').map((e) => e.type).filter((t) => t.startsWith('HANDOVER_FIELD_'));
-
-  it('collect, verify, correct, verify again: every step is a separate history entry with who, the value and the invalidation', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1', null);
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.relationship', { verified: true, basedOn: 'Mother' }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Guardian', 'mentor-1', 'Mother');
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.relationship', { verified: true, basedOn: 'Guardian' }, 'mentor-1');
-
-    expect(types(w)).toEqual(['HANDOVER_FIELD_UPDATED', 'HANDOVER_FIELD_VERIFIED', 'HANDOVER_FIELD_UPDATED', 'HANDOVER_FIELD_VERIFIED']);
-    const events = w.db.rows('mentoringEvent').filter((e) => e.type.startsWith('HANDOVER_FIELD_'));
-    expect(events.every((e) => e.actorUserId === 'mentor-1')).toBe(true);
-    expect(events[0].payload).toMatchObject({ previous: null, next: 'Mother', verificationInvalidated: false }); // collecting does not verify
-    expect(events[1].payload).toMatchObject({ value: 'Mother' });
-    expect(events[2].payload).toMatchObject({ previous: 'Mother', next: 'Guardian', verificationInvalidated: true }); // the edit ended the confirmation
-    expect(events[3].payload).toMatchObject({ value: 'Guardian' });
-  });
-
-  it('between the edit and the new confirmation the field is not verified, and the old confirmation is kept for the record', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1', null);
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.relationship', { verified: true }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Guardian', 'mentor-1', 'Mother');
-
-    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(1);
-    expect(w.db.rows('enrollmentHandoverFieldVerification')[0].verifiedValue).toBe('Mother'); // what was confirmed, unchanged
-    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-    expect(view.fieldVerifications).toEqual([expect.objectContaining({ fieldKey: 'parent.relationship', verified: false, changedSinceVerified: true })]);
-  });
-
-  it('editing a value that was never verified does not claim a verification was ended', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', 'parent.primaryPhone', '9876543210', 'mentor-1', SALES_PHONE);
-    expect(w.db.rows('mentoringEvent').find((e) => e.type === 'HANDOVER_FIELD_UPDATED')!.payload).toMatchObject({ verificationInvalidated: false });
-  });
-
-  it('withdrawing a verification is recorded with who confirmed it before, what they confirmed and when', async () => {
-    const w = world();
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: false }, 'mentor-1');
-    const event = w.db.rows('mentoringEvent').find((e) => e.type === 'HANDOVER_FIELD_UNVERIFIED')!;
-    expect(event).toMatchObject({ actorUserId: 'mentor-1', payload: { fieldKey: 'parent.primaryPhone', previousVerifiedValue: SALES_PHONE, previousVerifiedByUserId: 'mentor-1' } });
-    expect(event.payload.previousVerifiedAt).toBeInstanceOf(Date);
-  });
-
-  it('the verification time and the Mentor come from the server, not from the request', async () => {
-    const w = world();
-    const before = Date.now();
-    await w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, 'mentor-1');
-    const row = w.db.rows('enrollmentHandoverFieldVerification')[0];
-    expect(row.verifiedByUserId).toBe('mentor-1');
-    expect((row.verifiedAt as Date).getTime()).toBeGreaterThanOrEqual(before);
-    expect(row.handoverId).toBe('ho-1');
-    expect(row.fieldKey).toBe('parent.primaryPhone');
-  });
-
-  it('the request cannot name the verifier or the time: the verification body has no such fields', () => {
-    const dto = readFileSync(join(__dirname, 'mentoring.dto.ts'), 'utf8');
-    const block = dto.slice(dto.indexOf('class SetFieldVerificationDto'), dto.indexOf('class PauseDto'));
-    expect(block).not.toMatch(/verifiedBy|verifiedAt|userId/);
   });
 });
 
@@ -925,10 +765,10 @@ describe('Who may edit and verify a field, including the CO_FOUNDER', () => {
     const w = world();
     for (const user of ['head-1', 'ceo-1', 'cofounder-1', 'mentor-2', 'counselor-1']) {
       await expect(w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', user, null)).rejects.toBeInstanceOf(ForbiddenException);
-      await expect(w.workflow.setHandoverFieldVerification('act-1', 'parent.primaryPhone', { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(w.workflow.setSectionVerification('act-1', 'STUDENT_PARENT_INFO', { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
     }
     expect(w.db.rows('enrollmentHandoverField')).toHaveLength(0);
-    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
+    expect(w.db.rows('activationSectionVerification')).toHaveLength(0);
   });
 
   it('the Mentoring Head, CEO, CO_FOUNDER and Demo Counselor hold neither the stage work nor the stage verify permission', () => {
@@ -1086,88 +926,6 @@ describe('Subject-wise preferred schedule: what is refused', () => {
   });
 });
 
-describe('Subject-wise preferred schedule: verification and audit', () => {
-  const eventsOf = (w: ReturnType<typeof world>) => w.db.rows('mentoringEvent').filter((e) => e.type.startsWith('HANDOVER_FIELD_'));
-
-  it('saving the schedule does not verify it', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
-    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
-    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-    expect(view.fieldVerifications).toEqual([]);
-  });
-
-  it('verification is a separate, explicit action that records who and when', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', null);
-    const stored = fieldOf(w.db, KEY).value;
-    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: stored }, 'mentor-1');
-    expect(w.db.rows('enrollmentHandoverFieldVerification')[0]).toMatchObject({ fieldKey: KEY, verifiedByUserId: 'mentor-1', verifiedValue: stored });
-    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-    expect(view.fieldVerifications).toEqual([expect.objectContaining({ fieldKey: KEY, verified: true, changedSinceVerified: false })]);
-  });
-
-  it('changing any subject, day, length or total after verifying ends the verification and keeps the earlier one on record', async () => {
-    const changes: Array<[string, (p: any) => any]> = [
-      ['a day is added', (p) => { p.subjects[0] = { ...english(), totalMinutes: 300, sessions: [...english().sessions, weekly('Friday', 60)] }; return p; }],
-      ['a class length changes', (p) => { p.subjects[0] = { ...english(), distribution: 'CUSTOM', sessions: [weekly('Monday', 90), weekly('Tuesday', 30), weekly('Thursday', 60), weekly('Saturday', 60)] }; return p; }],
-      ['the frequency changes', (p) => { p.subjects[0] = { ...english(), frequency: 'BIWEEKLY', sessions: english().sessions.map((s) => ({ ...s, week: 1 })) }; return p; }],
-      ['a time is set', (p) => { p.subjects[0].sessions[0] = weekly('Monday', 60, { start: '16:00' }); return p; }],
-      ['a subject is removed', (p) => { p.subjects.pop(); return p; }],
-      ['the level changes', (p) => { p.subjects[0] = { ...english(), gradeId: 'g-9' }; return p; }],
-    ];
-    for (const [label, change] of changes) {
-      const w = world();
-      await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', null);
-      const first = fieldOf(w.db, KEY).value;
-      await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: first }, 'mentor-1');
-      await w.workflow.updateHandoverField('act-1', KEY, change(JSON.parse(JSON.stringify(first))), 'mentor-1', first);
-
-      const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-      expect({ label, row: view.fieldVerifications[0] }).toEqual({ label, row: expect.objectContaining({ verified: false, changedSinceVerified: true }) });
-      expect(w.db.rows('enrollmentHandoverFieldVerification')[0].verifiedValue).toEqual(first); // the earlier confirmation is still there
-    }
-  });
-
-  it('after the change it can be verified again, as a new recorded step', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
-    const first = fieldOf(w.db, KEY).value;
-    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: first }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', first);
-    const second = fieldOf(w.db, KEY).value;
-    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: second }, 'mentor-1');
-    expect(eventsOf(w).map((e) => e.type)).toEqual(['HANDOVER_FIELD_UPDATED', 'HANDOVER_FIELD_VERIFIED', 'HANDOVER_FIELD_UPDATED', 'HANDOVER_FIELD_VERIFIED']);
-    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-    expect(view.fieldVerifications).toEqual([expect.objectContaining({ verified: true, changedSinceVerified: false })]);
-  });
-
-  it('the history holds the whole previous and new schedule, who changed it, and whether a verification ended', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
-    const first = fieldOf(w.db, KEY).value;
-    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: first }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', first);
-    const [collected, verified, edited] = eventsOf(w);
-    expect(collected.payload).toMatchObject({ fieldKey: KEY, previous: null, verificationInvalidated: false, origin: 'MENTOR_COLLECTED' });
-    expect(collected.payload.next.subjects).toHaveLength(1);
-    expect(verified).toMatchObject({ type: 'HANDOVER_FIELD_VERIFIED', actorUserId: 'mentor-1' });
-    expect(edited).toMatchObject({ actorUserId: 'mentor-1', payload: { fieldKey: KEY, verificationInvalidated: true } });
-    expect(edited.payload.previous.subjects).toHaveLength(1);
-    expect(edited.payload.next.subjects).toHaveLength(2);
-  });
-
-  it('a stale save or verification of the schedule is refused', async () => {
-    const w = world();
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', null);
-    const seen = fieldOf(w.db, KEY).value;
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), 'mentor-1', seen); // another tab
-    await expect(w.workflow.updateHandoverField('act-1', KEY, plan(english(), science()), 'mentor-1', seen)).rejects.toBeInstanceOf(ConflictException);
-    await expect(w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: seen }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
-    expect(fieldOf(w.db, KEY).value.subjects).toHaveLength(2);
-  });
-});
-
 describe('Subject-wise preferred schedule: who may use it', () => {
   it('only the assigned Mentor can save or verify: the Head, CEO, CO_FOUNDER, another Mentor and a Counselor are refused', async () => {
     const w = world();
@@ -1175,10 +933,10 @@ describe('Subject-wise preferred schedule: who may use it', () => {
     const before = JSON.stringify(w.db.rows('enrollmentHandoverField'));
     for (const user of ['head-1', 'ceo-1', 'cofounder-1', 'mentor-2', 'counselor-1']) {
       await expect(w.workflow.updateHandoverField('act-1', KEY, plan(english(), maths()), user, null)).rejects.toBeInstanceOf(ForbiddenException);
-      await expect(w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(w.workflow.setSectionVerification('act-1', 'SUBJECTS_TUTORS_TIMETABLE', { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
     }
     expect(JSON.stringify(w.db.rows('enrollmentHandoverField'))).toBe(before);
-    expect(w.db.rows('enrollmentHandoverFieldVerification')).toHaveLength(0);
+    expect(w.db.rows('activationSectionVerification')).toHaveLength(0);
   });
 
   it('nothing can be saved before the Meeting with Parents is open, or while the workflow is on hold', async () => {
@@ -1249,24 +1007,6 @@ describe('Subject-wise preferred schedule: timetables saved before it existed', 
     expect(view.fieldValues[0]).toMatchObject({ fieldKey: KEY, value: LEGACY });
   });
 
-  it('an old timetable that was verified keeps its verification until it is replaced', async () => {
-    const w = withLegacy();
-    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: LEGACY }, 'mentor-1');
-    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-    expect(view.fieldVerifications).toEqual([expect.objectContaining({ verified: true, changedSinceVerified: false })]);
-  });
-
-  it('replacing it with a subject schedule is allowed, ends that verification, and keeps the old rows in the history', async () => {
-    const w = withLegacy();
-    await w.workflow.setHandoverFieldVerification('act-1', KEY, { verified: true, basedOn: LEGACY }, 'mentor-1');
-    await w.workflow.updateHandoverField('act-1', KEY, plan(english()), 'mentor-1', LEGACY);
-    expect(fieldOf(w.db, KEY).value.version).toBe(2);
-    const event = w.db.rows('mentoringEvent').find((e) => e.type === 'HANDOVER_FIELD_UPDATED')!;
-    expect(event.payload).toMatchObject({ previous: LEGACY, verificationInvalidated: true });
-    const view = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover as any;
-    expect(view.fieldVerifications).toEqual([expect.objectContaining({ verified: false, changedSinceVerified: true })]);
-  });
-
   it('a page that still sends the old rows is refused with a message to reload, and the old timetable is not touched', async () => {
     const w = withLegacy();
     await expect(w.workflow.updateHandoverField('act-1', KEY, LEGACY, 'mentor-1', LEGACY)).rejects.toThrow(/not in the expected format. Reload the page/);
@@ -1277,6 +1017,91 @@ describe('Subject-wise preferred schedule: timetables saved before it existed', 
     expect(getHandoverField(KEY)).toEqual({ key: KEY, type: 'SCHEDULE' });
     expect(HANDOVER_FIELD_LABELS[KEY]).toBe('Preferred Timetable / Schedule');
     expect(Object.keys(HANDOVER_FIELDS)).toContain(KEY);
-    expect(isVerifiableField(KEY)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section-based activation verification
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Section-based activation verification', () => {
+  const sections = async (w: ReturnType<typeof world>, user = 'mentor-1') => (await w.workflow.getWorkspace('act-1', await w.scope(user))).handover!.sectionVerifications as any[];
+  const statusOf = async (w: ReturnType<typeof world>, id: string) => (await sections(w)).find((s) => s.sectionId === id).status;
+  const events = (w: ReturnType<typeof world>) => w.db.rows('activationSectionVerificationEvent');
+
+  it('there are exactly four sections, in order, each Not Verified to begin with, and every handover field belongs to exactly one', async () => {
+    const w = world();
+    const list = await sections(w);
+    expect(list.map((s) => s.sectionId)).toEqual(['STUDENT_PARENT_INFO', 'SUBJECTS_TUTORS_TIMETABLE', 'MARKS_EXAMINATIONS', 'EXPECTATIONS_ENGAGEMENT']);
+    expect(list.map((s) => s.label)).toEqual(['Student & Parent Information', 'Subjects, Tutors & Timetable', 'Marks & Examinations', 'Expectations & Engagement']);
+    expect(list.every((s) => s.status === 'NOT_VERIFIED')).toBe(true);
+    expect(unassignedFields()).toEqual([]);
+  });
+
+  it('one action verifies a section and records the activation, section, status, user and time; the other sections are untouched', async () => {
+    const w = world();
+    await expect(w.workflow.setSectionVerification('act-1', 'STUDENT_PARENT_INFO', { verified: true }, 'mentor-1')).resolves.toMatchObject({ verified: true, changed: true });
+    expect(await statusOf(w, 'STUDENT_PARENT_INFO')).toBe('VERIFIED');
+    expect(await statusOf(w, 'MARKS_EXAMINATIONS')).toBe('NOT_VERIFIED');
+    expect(events(w)).toEqual([expect.objectContaining({ activationId: 'act-1', sectionId: 'STUDENT_PARENT_INFO', status: 'VERIFIED', actorUserId: 'mentor-1', createdAt: expect.any(Date) })]);
+    expect(w.db.rows('auditEvent').filter((e) => e.entityType === 'ActivationSectionVerification')).toHaveLength(1);
+    // verifying again changes nothing and adds no audit
+    await expect(w.workflow.setSectionVerification('act-1', 'STUDENT_PARENT_INFO', { verified: true }, 'mentor-1')).resolves.toMatchObject({ changed: false });
+    expect(events(w)).toHaveLength(1);
+  });
+
+  it('editing a field inside a verified section returns only that section to Not Verified, and audits the invalidation', async () => {
+    const w = world();
+    for (const id of ['STUDENT_PARENT_INFO', 'MARKS_EXAMINATIONS', 'EXPECTATIONS_ENGAGEMENT']) await w.workflow.setSectionVerification('act-1', id, { verified: true }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', 'parent.relationship', 'Mother', 'mentor-1');
+    expect(await statusOf(w, 'STUDENT_PARENT_INFO')).toBe('NOT_VERIFIED');
+    expect(await statusOf(w, 'MARKS_EXAMINATIONS')).toBe('VERIFIED');
+    expect(await statusOf(w, 'EXPECTATIONS_ENGAGEMENT')).toBe('VERIFIED');
+    expect(events(w).filter((e) => e.status === 'INVALIDATED')).toEqual([expect.objectContaining({ sectionId: 'STUDENT_PARENT_INFO', activationId: 'act-1' })]);
+    // re-verification is a new recorded step
+    await w.workflow.setSectionVerification('act-1', 'STUDENT_PARENT_INFO', { verified: true }, 'mentor-1');
+    expect(events(w).map((e) => e.status)).toEqual(['VERIFIED', 'VERIFIED', 'VERIFIED', 'INVALIDATED', 'VERIFIED']);
+  });
+
+  it('a change in another section, or saving the same value again, does not touch a verified section', async () => {
+    const w = world();
+    await w.workflow.setSectionVerification('act-1', 'EXPECTATIONS_ENGAGEMENT', { verified: true }, 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', 'academic.previousMarks', 'Maths 70%', 'mentor-1');
+    await w.workflow.updateHandoverField('act-1', 'academic.previousMarks', 'Maths 70%', 'mentor-1');
+    expect(await statusOf(w, 'EXPECTATIONS_ENGAGEMENT')).toBe('VERIFIED');
+    await w.workflow.updateHandoverField('act-1', 'parentExpectations', 'Better grades', 'mentor-1');
+    expect(await statusOf(w, 'EXPECTATIONS_ENGAGEMENT')).toBe('NOT_VERIFIED');
+  });
+
+  it('changing the subject hours of a student invalidates Subjects, Tutors & Timetable only', async () => {
+    const w = world();
+    await w.workflow.setSectionVerification('act-1', 'SUBJECTS_TUTORS_TIMETABLE', { verified: true }, 'mentor-1');
+    await w.workflow.setSectionVerification('act-1', 'MARKS_EXAMINATIONS', { verified: true }, 'mentor-1');
+    w.db.seed('requirement', { studentId: 'stu-1', subjectId: 'sub-en', monthlyHours: 8 });
+    expect(await statusOf(w, 'SUBJECTS_TUTORS_TIMETABLE')).toBe('NOT_VERIFIED');
+    expect(await statusOf(w, 'MARKS_EXAMINATIONS')).toBe('VERIFIED');
+  });
+
+  it('withdrawing a verification is recorded; only the assigned Mentor can verify; unknown sections and a held workflow are refused', async () => {
+    const w = world();
+    await w.workflow.setSectionVerification('act-1', 'MARKS_EXAMINATIONS', { verified: true }, 'mentor-1');
+    await expect(w.workflow.setSectionVerification('act-1', 'MARKS_EXAMINATIONS', { verified: false }, 'mentor-1')).resolves.toMatchObject({ verified: false, changed: true });
+    expect(events(w).map((e) => e.status)).toEqual(['VERIFIED', 'UNVERIFIED']);
+    for (const user of ['head-1', 'ceo-1', 'mentor-2', 'counselor-1']) {
+      await expect(w.workflow.setSectionVerification('act-1', 'MARKS_EXAMINATIONS', { verified: true }, user)).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    await expect(w.workflow.setSectionVerification('act-1', 'PER_FIELD', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
+    const held = world({ status: 'ACTIVATION_ON_HOLD' });
+    await expect(held.workflow.setSectionVerification('act-1', 'MARKS_EXAMINATIONS', { verified: true }, 'mentor-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('the per-field verification route and payload are gone, while the fields themselves stay editable', async () => {
+    const controller = readFileSync(join(__dirname, 'mentoring-workflow.controller.ts'), 'utf8');
+    expect(controller).not.toContain('fields/:fieldKey/verification');
+    expect(controller).toContain('verification/sections/:sectionId');
+    const w = world();
+    const view: any = (await w.workflow.getWorkspace('act-1', await w.scope('mentor-1'))).handover;
+    expect(view.fieldVerifications).toBeUndefined();
+    await expect(w.workflow.updateHandoverField('act-1', 'student.notes', 'Hello', 'mentor-1')).resolves.toMatchObject({ changed: true });
   });
 });

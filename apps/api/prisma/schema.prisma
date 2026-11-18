@@ -3903,7 +3903,10 @@ model MentoringStaffProfile {
   id                String             @id @default(uuid())
   userId            String             @unique @map("user_id")
   role              MentoringStaffRole
+  /// Legacy student-count limit. No longer used: the Mentor Head sets monthlyHourLimit instead.
   capacity          Int?
+  /// Monthly mentoring-hour limit, owned by the Mentor Head. NULL falls back to MentoringSetting.defaultMonthlyHourLimit.
+  monthlyHourLimit  Decimal?           @map("monthly_hour_limit") @db.Decimal(10, 2)
   isActive          Boolean            @default(true) @map("is_active")
   acceptsAllocation Boolean            @default(true) @map("accepts_allocation")
   team              String?
@@ -3920,6 +3923,10 @@ model MentoringSetting {
   id               String         @id @default("default")
   allocationMode   AllocationMode @default(AUTO) @map("allocation_mode")
   defaultCapacity  Int            @default(40) @map("default_capacity")
+  /// Limit used for a Mentor whose own monthly hour limit has not been set.
+  defaultMonthlyHourLimit Decimal @default(160) @map("default_monthly_hour_limit") @db.Decimal(10, 2)
+  /// Utilization percentage from which a Mentor is shown as "approaching" capacity.
+  capacityWarningPercent  Int     @default(80) @map("capacity_warning_percent")
   siblingAffinity  Boolean        @default(true) @map("sibling_affinity")
   updatedByUserId  String?        @map("updated_by_user_id")
   updatedAt        DateTime       @updatedAt @map("updated_at")
@@ -5063,4 +5070,75 @@ model MentoringEvent {
 
   @@index([activationId, createdAt])
   @@map("mentoring_events")
+}
+
+/// Every change of a Mentor's monthly hour limit, who made it and why. Append-only.
+model MentorCapacityChange {
+  id              String   @id @default(uuid())
+  mentorUserId    String   @map("mentor_user_id")
+  oldLimit        Decimal? @map("old_limit") @db.Decimal(10, 2)
+  newLimit        Decimal  @map("new_limit") @db.Decimal(10, 2)
+  changedByUserId String   @map("changed_by_user_id")
+  reason          String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([mentorUserId, createdAt])
+  @@map("mentor_capacity_changes")
+}
+
+/// An over-capacity assignment approved by the Mentor Head. One row per approval; it covers that student and that Mentor only.
+model MentoringCapacityException {
+  id               String   @id @default(uuid())
+  mentorUserId     String   @map("mentor_user_id")
+  activationId     String   @map("activation_id")
+  action           String
+  studentHours     Decimal  @map("student_hours") @db.Decimal(10, 2)
+  allocatedBefore  Decimal  @map("allocated_before") @db.Decimal(10, 2)
+  allocatedAfter   Decimal  @map("allocated_after") @db.Decimal(10, 2)
+  limitAtApproval  Decimal  @map("limit_at_approval") @db.Decimal(10, 2)
+  reason           String   @db.Text
+  approvedByUserId String   @map("approved_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([mentorUserId, createdAt])
+  @@index([activationId])
+  @@map("mentoring_capacity_exceptions")
+}
+
+enum ActivationVerificationSection {
+  STUDENT_PARENT_INFO
+  SUBJECTS_TUTORS_TIMETABLE
+  MARKS_EXAMINATIONS
+  EXPECTATIONS_ENGAGEMENT
+}
+
+/// Current verification state of one of the four activation sections. fingerprint is a hash of the section's information as it was
+/// when verified; if the information now hashes differently the section is Not Verified again.
+model ActivationSectionVerification {
+  id               String                        @id @default(uuid())
+  activationId     String                        @map("activation_id")
+  sectionId        ActivationVerificationSection @map("section_id")
+  verified         Boolean                       @default(false)
+  fingerprint      String?
+  verifiedByUserId String?                       @map("verified_by_user_id")
+  verifiedAt       DateTime?                     @map("verified_at")
+  updatedAt        DateTime                      @updatedAt @map("updated_at")
+
+  @@unique([activationId, sectionId])
+  @@map("activation_section_verifications")
+}
+
+/// Append-only audit of every verification, un-verification and invalidation of an activation section.
+model ActivationSectionVerificationEvent {
+  id           String                        @id @default(uuid())
+  activationId String                        @map("activation_id")
+  sectionId    ActivationVerificationSection @map("section_id")
+  /// VERIFIED, UNVERIFIED (by a user) or INVALIDATED (information changed).
+  status       String
+  actorUserId  String?                       @map("actor_user_id")
+  detail       Json?
+  createdAt    DateTime                      @default(now()) @map("created_at")
+
+  @@index([activationId, createdAt])
+  @@map("activation_section_verification_events")
 }
