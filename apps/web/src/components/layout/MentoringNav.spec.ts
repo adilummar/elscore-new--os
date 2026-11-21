@@ -16,11 +16,17 @@ const HEAD = new Set(['mentoring.student.read-all', 'mentoring.staff.read', 'men
 const render = (perms: Set<string>) => renderToStaticMarkup(React.createElement(MentoringNav, { hasPermission: (p: string) => perms.has(p) }));
 
 describe('the Mentoring group in the sidebar', () => {
+  it('marks no Mentoring link as current on the dashboard, which is not a Mentoring page', () => {
+    mockPath = '/dashboard'; mockQuery = '';
+    expect(render(MENTOR)).not.toContain('aria-current="page"');
+  });
+
   it('lists the five main areas and the supporting links a Mentor may open, with the current page marked', () => {
     mockPath = '/mentoring/students'; mockQuery = '';
     const html = render(MENTOR);
-    for (const label of ['My Students', 'Classes', 'Exams', 'Meetings', 'Complaints', 'Phase 1 onboarding', 'Pending actions', 'Overview']) expect(html).toContain(label);
-    expect(html).not.toContain('Allocation');
+    for (const label of ['My Students', 'Classes', 'Exams', 'Meetings', 'Complaints', 'Pending actions']) expect(html).toContain(label);
+    // A Mentor's menu stays short: no onboarding, overview or department pages.
+    for (const label of ['Phase 1 onboarding', 'Overview', 'Allocation', 'Final approvals']) expect(html).not.toContain(label);
     expect(html).not.toContain('Mentors and counselors');
     expect(html).toMatch(/href="\/mentoring\/students"[^>]*aria-current="page"/);
   });
@@ -28,13 +34,13 @@ describe('the Mentoring group in the sidebar', () => {
   it('shows the Head the department areas as well', () => {
     mockPath = '/mentoring/allocation';
     const html = render(HEAD);
-    for (const label of ['Students', 'Allocation', 'Final approvals', 'Mentors and counselors', 'Department overview']) expect(html).toContain(label);
+    for (const label of ['Students', 'Allocation', 'Final approvals', 'Staff and capacity', 'Department overview']) expect(html).toContain(label);
     expect(html).toMatch(/href="\/mentoring\/allocation"[^>]*aria-current="page"/);
   });
 
   it('tells My Students from Phase 1 onboarding by the status in the address', () => {
     mockPath = '/mentoring/students'; mockQuery = 'status=ACTIVATION_IN_PROGRESS';
-    const html = render(MENTOR);
+    const html = render(HEAD);
     expect(html).toMatch(/href="\/mentoring\/students\?status=ACTIVATION_IN_PROGRESS"[^>]*aria-current="page"/);
     expect(html).not.toMatch(/href="\/mentoring\/students"[^>]*aria-current="page"/);
     mockQuery = '';

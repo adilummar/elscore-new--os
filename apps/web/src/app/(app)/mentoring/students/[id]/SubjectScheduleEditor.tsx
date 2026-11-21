@@ -357,6 +357,20 @@ export function SubjectScheduleEditor({ id, label, meta, value, onChange, disabl
     const subject = byName(lists.subjects, s.subject);
     set([...subjects, withGrade({ ...newSubject('WEEKLY'), subjectId: subject?.id ?? '', subjectName: subject?.name ?? '' })]);
   };
+  // The Subjects panel asks for a subject's schedule card here, so the Mentor goes straight from a subject to how often, which days, which time and the tutor.
+  const latest = React.useRef({ subjects, lists, set, withGrade, disabled });
+  latest.current = { subjects, lists, set, withGrade, disabled };
+  React.useEffect(() => {
+    const onAdd = (e: Event) => {
+      const subjectId = (e as CustomEvent<{ subjectId?: string }>).detail?.subjectId;
+      const c = latest.current;
+      if (!subjectId || c.disabled || c.subjects.some((s) => s.subjectId === subjectId) || c.subjects.length >= 15) return;
+      const ref = c.lists.subjects.find((s) => s.id === subjectId);
+      c.set([...c.subjects, c.withGrade({ ...newSubject('WEEKLY'), subjectId, subjectName: ref?.name ?? '' })]);
+    };
+    window.addEventListener('mentoring:schedule-add-subject', onAdd);
+    return () => window.removeEventListener('mentoring:schedule-add-subject', onAdd);
+  }, []);
   // A subject that has no level yet (added before the student's grade was set, or saved by an older version) takes the student's grade.
   const needsGrade = !!grade && subjects.some((s) => !s.gradeId);
   React.useEffect(() => {

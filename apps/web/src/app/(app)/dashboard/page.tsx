@@ -3,6 +3,7 @@ import { getSession } from '@/lib/api/auth';
 import CeoDashboard from '@/components/dashboard/CeoDashboard';
 import OperationalDashboard from '@/components/dashboard/OperationalDashboard';
 import MentorDashboard from '@/components/dashboard/MentorDashboard';
+import HeadDashboard from '@/components/dashboard/HeadDashboard';
 
 export default async function DashboardPage({ searchParams }: { searchParams: { from?: string; to?: string; period?: string } }) {
   const user = await getSession();
@@ -24,10 +25,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
     return <MentorDashboard searchParams={searchParams} />;
   }
 
-  // The Mentoring Head works from Classes when not on Sales.
+  // The Mentoring Head lands on a dashboard of decisions: approvals, stuck workflows, complaints, capacity.
   if (isMentoringHead && !isSales) {
-    const { redirect } = await import('next/navigation');
-    redirect('/mentoring/classes');
+    return <HeadDashboard />;
   }
 
   if (isHr && !isSales) {

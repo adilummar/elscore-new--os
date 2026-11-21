@@ -14,6 +14,7 @@ jest.mock('@/lib/api/auth', () => ({ getSession: jest.fn() }));
 jest.mock('@/components/dashboard/CeoDashboard', () => ({ __esModule: true, default: function CeoDashboard() { return null; } }));
 jest.mock('@/components/dashboard/OperationalDashboard', () => ({ __esModule: true, default: function OperationalDashboard() { return null; } }));
 jest.mock('@/components/dashboard/MentorDashboard', () => ({ __esModule: true, default: function MentorDashboard() { return null; } }));
+jest.mock('@/components/dashboard/HeadDashboard', () => ({ __esModule: true, default: function HeadDashboard() { return null; } }));
 jest.mock('./MentoringOverview', () => ({ ...jest.requireActual('./MentoringOverview'), MentoringOverview: function MentoringOverview() { return null; } }));
 jest.mock('../mentoring/mentoring-client', () => ({ mentoringApi: jest.fn().mockResolvedValue({}) }));
 jest.mock('next/link', () => ({ __esModule: true, default: ({ href, children, ...rest }: any) => React.createElement('a', { href, ...rest }, children) }));
@@ -41,14 +42,14 @@ describe('which dashboard a person gets', () => {
     return (await DashboardPage({ searchParams: {} })) as any;
   };
 
-  it('lands a Mentor on the dedicated MentorDashboard and sends Mentoring Head to Classes', async () => {
+  it('lands a Mentor on the dedicated MentorDashboard and the Mentoring Head on the HeadDashboard', async () => {
     const { redirect } = jest.requireMock('next/navigation');
     redirect.mockClear();
 
-    // Mentoring Head is redirected to Classes
-    await as(['mentoring.student.read-all', 'mentoring.allocation.manage'], ['MENTORING_HEAD']);
-    expect(redirect).toHaveBeenCalledTimes(1);
-    expect(redirect).toHaveBeenCalledWith('/mentoring/classes');
+    // The Mentoring Head gets a dashboard of decisions, not a redirect
+    const headPage = await as(['mentoring.student.read-all', 'mentoring.allocation.manage'], ['MENTORING_HEAD']);
+    expect(redirect).not.toHaveBeenCalled();
+    expect(headPage.type.name).toBe('HeadDashboard');
 
     // Mentor lands on dedicated MentorDashboard
     const mentorPage = await as(['mentoring.student.read-assigned', 'mentoring.stage.work'], ['MENTOR']);

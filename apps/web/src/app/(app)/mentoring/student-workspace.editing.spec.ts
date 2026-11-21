@@ -80,6 +80,7 @@ const count = (html: string, needle: string) => html.split(needle).length - 1;
 const checklistOf = (html: string) => /<section aria-label="Checklist".*?<\/section>/s.exec(html)?.[0] ?? '';
 const enabledCheckboxes = (html: string) => (checklistOf(html).match(/<input[^>]*type="checkbox"[^>]*>/g) ?? []).filter((tag) => !/\sdisabled=""/.test(tag)).length;
 const row = (html: string, fieldKey: string) => new RegExp(`<li[^>]*data-field="${fieldKey.replace('.', '\\.')}".*?</li>`, 's').exec(html)?.[0] ?? '';
+const subjectsPanel = (html: string) => /<div[^>]*data-testid="subjects-panel".*?(?=<div class="mt-4" data-subsection="A. Academic)/s.exec(html)?.[0] ?? '';
 const verifyButton = /<button[^>]*\sdisabled=""[^>]*>(?:<[^>]*>)*Verify and complete stage 2/;
 
 describe('Stage 2 shows every field, existing and pending, as an editable card', () => {
@@ -87,10 +88,11 @@ describe('Stage 2 shows every field, existing and pending, as an editable card',
   const t = text(html);
 
   it('lists every field the Mentoring workflow needs, once, in sections', () => {
-    expect(count(html, 'data-field="')).toBe(32);
+    // The subject list is one panel of its own, so its read-only card is not counted as a field card.
+    expect(count(html, 'data-field="')).toBe(31);
     for (const section of ['1. Student &amp; Parent Information', '2. Subjects, Tutors &amp; Timetable', '3. Marks &amp; Examinations', '4. Expectations &amp; Engagement']) expect(html).toContain(section);
     for (const label of ['Student First Name', 'Student Last Name', 'Date of Birth', 'Gender', 'School Name', 'Grade / Class', 'Curriculum / Board', 'Parent / Guardian Name', 'Relationship to Student',
-      'Primary Contact Number', 'WhatsApp Number', 'Preferred Language', 'Subjects Required', 'Other Tutor Requirements', 'Previous Academic Performance',
+      'Primary Contact Number', 'WhatsApp Number', 'Preferred Language', 'Other Tutor Requirements', 'Previous Academic Performance',
       'Upcoming Examination Details', 'Preferred Timetable / Schedule', 'Parent Expectations', 'Student Engagement', 'Learning Difficulties or Concerns']) {
       expect(t).toContain(label);
     }
@@ -104,7 +106,7 @@ describe('Stage 2 shows every field, existing and pending, as an editable card',
     expect(text(row(html, 'parent.primaryPhone'))).toContain('Sales value: +971500000000');
     expect(row(html, 'student.gender')).toMatch(/<option value="Female" selected/);
     expect(text(row(html, 'student.gender'))).toContain('Source: Collected by Mina Mentor');
-    expect(text(row(html, 'academic.subjects'))).toContain('Mathematics (CBSE · Grade 8) · 8 hrs / month'); // the Sales subject list is read-only
+    expect(text(html)).toMatch(/Mathematics\s+From Sales\s+Grade 8, 8 h a month/); // the Sales subject list is read-only, in the Subjects panel
   });
 
   it('uses the control that suits each field instead of a text box everywhere', () => {
@@ -196,11 +198,11 @@ describe('verification is per section, not per field', () => {
   it('each step holds its own fields, and every field is in exactly one step', () => {
     expect(panelOf('STUDENT_PARENT_INFO')).toContain('data-field="student.firstName"');
     expect(panelOf('STUDENT_PARENT_INFO')).toContain('data-field="parent.primaryPhone"');
-    expect(panelOf('SUBJECTS_TUTORS_TIMETABLE')).toContain('data-field="academic.subjects"');
+    expect(panelOf('SUBJECTS_TUTORS_TIMETABLE')).toContain('data-testid="subjects-panel"');
     expect(panelOf('SUBJECTS_TUTORS_TIMETABLE')).toContain('data-field="timetable.schedule"');
     expect(panelOf('MARKS_EXAMINATIONS')).toContain('data-field="academic.previousPerformance"');
     expect(panelOf('EXPECTATIONS_ENGAGEMENT')).toContain('data-field="parentExpectations"');
-    expect(count(html, 'data-field="')).toBe(32);
+    expect(count(html, 'data-field="')).toBe(31);
   });
 
   it('each step ends with one verification button; a verified step says who verified it and when', () => {
@@ -246,9 +248,10 @@ describe('who can edit and verify', () => {
   it('the assigned Mentor gets an input on every card whose value Sales or the Mentor can change, and the four section actions', () => {
     const html = render(workspace(MENTOR));
     expect(count(html, 'Verify section:') + count(html, 'Withdraw verification:')).toBe(4);
-    expect(row(html, 'academic.subjects')).not.toMatch(/<(input[^>]*type="(text|tel|date)"|select|textarea)/); // the Sales subject list is not editable
-    expect(row(html, 'academic.subjects')).not.toMatch(/type="checkbox"/); // and carries no tick of its own
-    expect(text(row(html, 'academic.subjects'))).toContain('Set by Sales and locked after handover');
+    // The Sales subject list is not editable: the panel shows cards and an Add subject button, with no input until it is opened.
+    expect(subjectsPanel(html)).not.toMatch(/<(input|select|textarea)/);
+    expect(text(subjectsPanel(html))).toContain('Sales subjects are locked after handover');
+    expect(text(subjectsPanel(html))).toContain('Set schedule and tutor');
   });
 
   it.each([['the Mentoring Head', HEAD], ['the CEO / CO_FOUNDER', CEO], ['a Demo Counselor', COUNSELOR]])('%s sees the values and section statuses but no input, verify action or Save', (_label, viewer) => {

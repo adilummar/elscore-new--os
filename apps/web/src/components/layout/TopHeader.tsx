@@ -6,6 +6,9 @@ import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NavToggle } from './NavDrawer';
 
+/** MENTORING_HEAD becomes Mentoring Head. */
+export const roleLabel = (r: string) => r.toLowerCase().split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
 export function TopHeader({ user }: { user: any }) {
   const { isInGodView, godViewUser, openGodViewPicker } = useAuth();
 
@@ -44,7 +47,7 @@ export function TopHeader({ user }: { user: any }) {
             <p className="text-xs text-slate-500 mt-1">
               {isInGodView
                 ? <span className="text-amber-600 font-semibold">God View active</span>
-                : (user?.roles?.join(', ') || 'User')}
+                : (user?.roles?.map(roleLabel).join(', ') || 'User')}
             </p>
           </div>
         </div>

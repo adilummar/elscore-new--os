@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { roleLabel } from './TopHeader';
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -195,7 +196,7 @@ export function Sidebar({ user }: { user: any }) {
         <div className="mb-4 px-3 flex flex-col gap-1 overflow-hidden">
           <p className="text-sm font-medium text-white truncate">{user?.email}</p>
           <p className="text-xs text-primary-soft truncate">
-            {user?.roles?.join(', ')}
+            {user?.roles?.map(roleLabel).join(', ')}
           </p>
         </div>
         <button

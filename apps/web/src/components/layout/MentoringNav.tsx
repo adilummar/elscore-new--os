@@ -79,7 +79,8 @@ export function MentoringNav({ hasPermission }: { hasPermission: (permission: st
   const currentPanel = params?.get("panel") ?? (params?.get("tab") ? null : "checklist");
   const link = (n: { href: string; label: string; section: string }) => {
     const Icon = ICONS[n.section] ?? Users;
-    const active = isCurrent(n as never, pathname, query);
+    // Off the Mentoring pages nothing here is current: sectionOf treats any path without a section as Classes, which lit Classes on /dashboard.
+    const active = onMentoring && isCurrent(n as never, pathname, query);
     return (
       <Link
         key={n.href}

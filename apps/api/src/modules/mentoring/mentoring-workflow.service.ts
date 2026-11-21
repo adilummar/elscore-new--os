@@ -20,6 +20,8 @@ import { withLegacyRows, withLegacyValues } from './handover-legacy';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { MentoringTutorService } from './mentoring-tutor.service';
+import { MentoringCapacityService } from './mentoring-capacity.service';
+import { wouldExceed } from './mentor-capacity';
 import { LEGACY_STAGE1_ITEMS, TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
 import { isSectionId, reconcileSectionVerifications, sectionStates, setSectionVerification as setSectionVerificationInTx } from './section-verification';
 import { DEFAULT_SESSION_MINUTES, Reference, ScheduleReferences, isScheduleValue } from './subject-schedule';
@@ -334,6 +336,64 @@ export class MentoringWorkflowService {
       this.assertWorkable(activation);
       this.assertMeetingStarted(activation);
       return this.saveHandoverField(tx, activation, definition, fieldKey, rawValue, userId, basedOn);
+    });
+  }
+
+  /**
+   * The assigned Mentor adds a subject the parent asked for after the Sales handover (in the meeting with the parents, or because Sales
+   * collected none). It becomes a requirement of the student, so its hours count toward the Mentor's monthly capacity like every other
+   * subject. The Mentor cannot approve going over the limit: that stays with the Mentoring Head, who raises the limit or moves a student.
+   * Adding a subject returns a verified Subjects section to Not verified, and is recorded with who added it and when.
+   */
+  async addSubject(activationId: string, userId: string, dto: { subjectId?: unknown; monthlyHours?: unknown }) {
+    const subjectId = typeof dto.subjectId === 'string' ? dto.subjectId.trim() : '';
+    const hours = typeof dto.monthlyHours === 'number' ? dto.monthlyHours : Number(dto.monthlyHours);
+    if (!subjectId) throw new BadRequestException('Choose the subject to add.');
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 200) throw new BadRequestException('Enter the monthly hours for this subject, more than 0 and at most 200.');
+    const monthlyHours = Math.round(hours * 100) / 100;
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const activation = await this.loadLocked(tx, activationId);
+      this.assertMentor(activation, userId);
+      this.assertWorkable(activation);
+      this.assertMeetingStarted(activation);
+
+      const student = await tx.student.findUnique({ where: { id: activation.studentId }, select: { id: true, gradeId: true, curriculumId: true } });
+      if (!student) throw new NotFoundException('Student not found');
+      const subject = await tx.subject.findUnique({ where: { id: subjectId } });
+      if (!subject) throw new BadRequestException('That subject is not in the subject list.');
+      const existing = await tx.requirement.findMany({ where: { studentId: student.id }, select: { subjectId: true, gradeId: true, curriculumId: true } });
+      if (existing.some((r) => r.subjectId === subjectId)) throw new ConflictException(`${subject.name} is already one of this student's subjects.`);
+      const gradeId = student.gradeId ?? existing[0]?.gradeId;
+      const curriculumId = student.curriculumId ?? existing[0]?.curriculumId;
+      if (!gradeId || !curriculumId) throw new BadRequestException("Set the student's grade and curriculum before adding a subject.");
+
+      // The same gate as an assignment: the added hours must fit the Mentor's monthly limit.
+      if (activation.currentMentorUserId) {
+        const cap = await new MentoringCapacityService(this.prisma).capacityOf(tx, activation.currentMentorUserId);
+        if (wouldExceed(cap.limitHours, cap.allocatedHours, monthlyHours)) {
+          throw new ConflictException({
+            code: 'MENTOR_OVER_CAPACITY',
+            message: `Adding ${monthlyHours} hours would put you over your monthly limit (${cap.allocatedHours} of ${cap.limitHours} hours used). Ask the Mentoring Head to raise your limit or approve it.`,
+            allocatedHours: cap.allocatedHours,
+            limitHours: cap.limitHours,
+            monthlyHours,
+          });
+        }
+      }
+
+      const requirement = await tx.requirement.create({
+        data: {
+          businessId: `REQ-MA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+          studentId: student.id, subjectId, curriculumId, gradeId, monthlyHours,
+        },
+      });
+      await this.history.record(tx, {
+        activationId, type: 'MENTORING_SUBJECT_ADDED', actorUserId: userId,
+        payload: { requirementId: requirement.id, subjectId, subjectName: subject.name, monthlyHours },
+      } as never);
+      const reset = await reconcileSectionVerifications(tx, activationId, userId);
+      return { requirementId: requirement.id, subjectName: subject.name, monthlyHours, sectionsReset: reset };
     });
   }
 
@@ -1043,11 +1103,31 @@ export class MentoringWorkflowService {
     const strip = (fields: unknown) =>
       Array.isArray(fields) ? fields.filter((f) => !(f && typeof f === 'object' && PARENT_CONTACT_FIELDS.has((f as { field: string }).field))) : fields;
 
+    // The subject list is the student's requirements as they are now: what Sales entered, plus what the Mentor added since.
+    const currentRequirements = await this.prisma.requirement.findMany({ where: { studentId: activation.studentId }, include: { subject: true, curriculum: true, grade: true }, orderBy: { createdAt: 'asc' } });
+    const addedEvents = await this.prisma.mentoringEvent.findMany({ where: { activationId, type: 'MENTORING_SUBJECT_ADDED' } });
+    const addedBy = new Map<string, { at: Date; by: string | null }>();
+    for (const ev of addedEvents) {
+      const rid = (ev.payload as { requirementId?: string } | null)?.requirementId;
+      if (rid) addedBy.set(rid, { at: ev.createdAt, by: ev.actorUserId ?? null });
+    }
+    const addedNames = new Map((await this.prisma.employee.findMany({ where: { userId: { in: [...new Set([...addedBy.values()].map((v) => v.by).filter((u): u is string => !!u))] } }, select: { userId: true, firstName: true, lastName: true } })).map((e) => [e.userId, `${e.firstName} ${e.lastName}`.trim()]));
+    const subjectLines = currentRequirements.map((r) => {
+      const add = addedBy.get(r.id);
+      return {
+        requirementId: r.id, subjectId: r.subjectId, subject: r.subject?.name ?? '', curriculum: r.curriculum?.name ?? '', grade: r.grade?.name ?? '',
+        monthlyHours: r.monthlyHours?.toString() ?? null, syllabus: r.syllabus ?? null, notes: r.notes ?? null,
+        addedByMentor: !!add, addedAt: add ? add.at.toISOString() : null, addedByName: add?.by ? addedNames.get(add.by) ?? null : null,
+      };
+    });
+    const withSubjects = (fields: unknown) =>
+      Array.isArray(fields) && (subjectLines.length > 0 || fields.some((f) => f && typeof f === 'object' && (f as { field: string }).field === 'academic.subjects')) ? [...fields.filter((f) => !(f && typeof f === 'object' && (f as { field: string }).field === 'academic.subjects')), { field: 'academic.subjects', source: 'REQUIREMENT', value: subjectLines }] : fields;
+
     const handover = activation.handover && {
       status: activation.handover.status,
       completedAt: activation.handover.completedAt,
       missingFields: activation.handover.missingFields,
-      transferredFields: seeParent ? activation.handover.transferredFields : strip(activation.handover.transferredFields),
+      transferredFields: withSubjects(seeParent ? activation.handover.transferredFields : strip(activation.handover.transferredFields)),
       sourceSnapshot: seeParent ? activation.handover.sourceSnapshot : undefined,
       // Mentoring-side values, kept apart from the Sales data above.
       fieldValues: withLegacyRows(fieldRows)

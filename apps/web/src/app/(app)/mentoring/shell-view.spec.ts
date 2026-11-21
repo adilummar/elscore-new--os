@@ -14,12 +14,12 @@ describe('the Mentoring shell', () => {
 
   it('keeps allocation, staff and final approvals away from a plain Mentor', () => {
     const labels = secondaryNav(has('mentoring.student.read-assigned', 'mentoring.task.work')).map((n) => n.label);
-    expect(labels).toEqual(['Phase 1 onboarding', 'Pending actions', 'Overview']);
+    expect(labels).toEqual(['Pending actions']);
   });
 
   it('offers allocation and staff to those who hold the permission', () => {
     const labels = secondaryNav(has('mentoring.student.read-all', 'mentoring.allocation.read', 'mentoring.staff.read')).map((n) => n.label);
-    expect(labels).toEqual(expect.arrayContaining(['Allocation', 'Mentors and counselors', 'Final approvals']));
+    expect(labels).toEqual(expect.arrayContaining(['Allocation', 'Staff and capacity', 'Final approvals']));
   });
 
   it('never lists the same destination twice', () => {

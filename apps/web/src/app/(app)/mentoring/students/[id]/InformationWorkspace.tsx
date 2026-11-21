@@ -7,7 +7,8 @@ import { InventoryRow, buildInventory } from '../../handover-inventory';
 import { isStaleMessage, saveField } from '../../field-actions';
 import { EditorValue, initialEditorValue, isEditorDirty } from '../../handover-editing';
 import { isScheduleValue } from '../../subject-schedule';
-import { SectionView, sectionsOf, verifiedCount, verifiedLine } from '../../section-verification-view';
+import { SubjectsPanel } from './SubjectsPanel';
+import { SectionView, resetNotice, resetSections, sectionsOf, verifiedCount, verifiedLine } from '../../section-verification-view';
 import { FieldInput } from './FieldInput';
 import { TutorTools } from '../../tutor-types';
 import { ScheduleSuggestion, SubjectScheduleView } from './SubjectScheduleEditor';
@@ -206,6 +207,15 @@ interface Props {
   onCreateSubject?: (name: string) => Promise<void>;
   /** Tutor selection for the subject schedule. */
   tutorTools?: TutorTools;
+  /** Adds a subject the parent asked for. The API counts its hours toward the Mentor's capacity and refuses it when they would not fit. */
+  onAddSubject?: (subjectId: string, monthlyHours: number) => Promise<void>;
+}
+
+/** The `academic.subjects` list as the API sent it: Sales lines plus the ones the Mentor added. */
+function subjectEntry(handover: unknown): unknown {
+  const transferred = handover && typeof handover === 'object' ? (handover as { transferredFields?: unknown }).transferredFields : null;
+  const entry = Array.isArray(transferred) ? transferred.find((e) => e && typeof e === 'object' && (e as { field?: unknown }).field === 'academic.subjects') : null;
+  return entry ? (entry as { value?: unknown }).value : [];
 }
 
 /** The subject lines Sales entered, offered as quick starting points for the schedule cards. */
@@ -283,12 +293,23 @@ function rowsOfSection(sections: SectionView[], rows: InventoryRow[]): Map<strin
  * its own fields, which are edited in place with no save button of their own; one button at the bottom of the section saves every edited
  * field and then verifies the section. Editing a verified section returns that section, and only that one, to Not Verified (the API does this).
  */
-export function InformationWorkspace({ handover, canEdit = false, onSave, onVerifySection, onRefresh, onDirtyChange, onCreateSubject, tutorTools }: Props) {
+export function InformationWorkspace({ handover, canEdit = false, onSave, onVerifySection, onRefresh, onDirtyChange, onCreateSubject, tutorTools, onAddSubject }: Props) {
   const inventory = buildInventory(handover);
   // A response without the four sections (an older API) still shows every field, in one group with nothing to verify.
   const fromApi = sectionsOf(handover);
   const sections: SectionView[] = fromApi.length > 0 ? fromApi : [{ sectionId: ALL_FIELDS, label: 'Student information', covers: '', fieldKeys: [], status: 'NOT_VERIFIED', verifiedByName: null, verifiedAt: null } as unknown as SectionView];
   const verifiable = fromApi.length > 0;
+  // An edit that returns a verified section to Not verified says so, with the reason, instead of changing the badge silently.
+  const previous = React.useRef<SectionView[]>(fromApi);
+  const [resets, setResets] = React.useState<SectionView[]>([]);
+  React.useEffect(() => {
+    const reset = resetSections(previous.current, fromApi);
+    if (reset.length > 0) setResets((cur) => [...cur.filter((c) => !reset.some((x) => x.sectionId === c.sectionId)), ...reset]);
+    // A section verified again no longer needs the notice.
+    setResets((cur) => cur.filter((c) => fromApi.find((x) => x.sectionId === c.sectionId)?.status !== 'VERIFIED'));
+    previous.current = fromApi;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handover]);
   const suggestions = React.useMemo(() => salesSuggestions(handover), [handover]);
   const save = onSave ?? (async () => undefined);
   const verifySection = onVerifySection ?? (async () => undefined);
@@ -369,6 +390,11 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
       </div>
 
       {verifiable && <nav aria-label="Verification sections" className="mt-4" data-testid="section-steps">
+        {resets.length > 0 && (
+          <div role="status" data-testid="section-reset-notice" className="mb-3 space-y-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {resets.map((x) => <p key={x.sectionId}>{resetNotice(x)}</p>)}
+          </div>
+        )}
         <ol className="grid grid-cols-4 gap-1.5 sm:gap-2">
           {sections.map((s, i) => {
             // Progress counts the fields the Mentor has to fill. Optional fields never hold a step back.
@@ -402,7 +428,9 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
 
       {/* Every section stays mounted and the others are hidden, so an unsaved draft is never lost by moving between steps. */}
       {sections.map((s, i) => {
-        const rows = bySection.get(s.sectionId) ?? [];
+        const isSubjects = s.sectionId === 'SUBJECTS_TUTORS_TIMETABLE';
+        // The subject list has its own panel, so its read-only card is not repeated here.
+        const rows = (bySection.get(s.sectionId) ?? []).filter((r) => !(isSubjects && r.fieldKey === 'academic.subjects'));
         const requiredRows = rows.filter((r) => !r.optional);
         const pending = requiredRows.filter((r) => r.collection === 'PENDING').length;
         const unsaved = rows.filter((r) => dirtyKeys.has(r.fieldKey)).length;
@@ -416,6 +444,16 @@ export function InformationWorkspace({ handover, canEdit = false, onSave, onVeri
               {pending > 0 && <p className="mt-1 text-xs font-medium text-amber-800">{pending} of {requiredRows.length} fields still to collect</p>}
             </header>
 
+            {isSubjects && (
+              <SubjectsPanel
+                lines={subjectEntry(handover)}
+                assignments={tutorTools?.assignments ?? []}
+                schedule={allRows.find((r) => r.fieldKey === 'timetable.schedule')?.rawValue}
+                options={allRows.find((r) => r.fieldKey === 'timetable.schedule')?.editor?.schedule?.subjects ?? []}
+                canAdd={canEdit && !!onAddSubject}
+                onAdd={onAddSubject ? async (subjectId, hours) => { await onAddSubject(subjectId, hours); await refresh(); } : undefined}
+              />
+            )}
             {groupRows(s.sectionId, rows).map((part, partIndex) => (
               <div key={part.label ?? `rest-${partIndex}`} className="mt-4" data-subsection={part.label ?? undefined}>
                 {part.label && <h4 className="border-b border-slate-100 pb-1 text-sm font-semibold text-slate-800">{part.label}</h4>}

@@ -199,7 +199,7 @@ export class MentoringCapacityService {
     const [caps, names, settings] = await Promise.all([this.capacities(this.prisma, ids), this.names(this.prisma, ids), this.settings(this.prisma)]);
     const mentors = profiles.map((p) => {
       const { students, ...cap } = caps.get(p.userId) as MentorCapacity;
-      return { ...cap, name: names.get(p.userId) ?? p.userId, isActive: p.isActive, studentCount: students.length };
+      return { ...cap, name: names.get(p.userId) ?? p.userId, isActive: p.isActive, studentCount: students.length, /** Students whose monthly hours are missing or zero: they add nothing to the allocated hours until the hours are recorded. */ studentsWithoutHours: students.filter((s) => !(s.monthlyHours > 0)).length };
     });
     const total = mentors.reduce(
       (acc, m) => ({ limit: acc.limit + m.limitHours, allocated: acc.allocated + m.allocatedHours }),

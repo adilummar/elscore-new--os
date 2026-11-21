@@ -36,3 +36,10 @@ export function verifiedLine(s: SectionView): string | null {
   const base = s.verifiedByName ? `Verified by ${s.verifiedByName}` : 'Verified';
   return date ? `${base}, ${date}` : base;
 }
+
+/** Sections that were Verified before a save and are Not verified after it: the edit reset them. */
+export function resetSections(before: SectionView[], after: SectionView[]): SectionView[] {
+  return after.filter((a) => a.status !== 'VERIFIED' && before.some((b) => b.sectionId === a.sectionId && b.status === 'VERIFIED'));
+}
+
+export const resetNotice = (s: SectionView): string => `${s.label} was verified and is now Not verified, because its information changed. Verify it again once the change is checked.`;

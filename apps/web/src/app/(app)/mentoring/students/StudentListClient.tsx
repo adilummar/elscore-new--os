@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { statusVariant } from '../labels';
 import {
-  CONSUMPTION_CHOICES, HubList, HubRow, ListFilters, SORT_CHOICES, STATUS_CHOICES, dateText, emptyListFilters, initialsOf, listQuery, rowHref,
+  CONSUMPTION_CHOICES, HubList, HubRow, ListFilters, SORT_CHOICES, STATUS_CHOICES, dateText, emptyListFilters, initialsOf, listQuery, pendingLinks, rowHref,
 } from '../student-hub-view';
 
 const CELL = 'px-4 py-3 align-middle';
@@ -158,7 +158,7 @@ export function StudentListClient({ title = 'Students', initialFilters, fixedSta
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow-card ring-1 ring-slate-200/70">
+      <div className="relative overflow-x-auto rounded-xl bg-white shadow-card ring-1 ring-slate-200/70">
         <table className="min-w-full text-sm" aria-busy={loading}>
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
             <tr>
@@ -209,7 +209,7 @@ function Row({ r }: { r: HubRow }) {
       <td className={CELL}><Badge variant={statusVariant(r.status)}>{r.statusLabel}</Badge></td>
       <td className={CELL}>
         {r.pending.total > 0
-          ? <Badge variant="warning" title={`${r.pending.verification} to verify, ${r.pending.complaints} complaints, ${r.pending.tasks} tasks`}>{r.pending.total} pending</Badge>
+          ? <span className="flex flex-wrap gap-1">{pendingLinks(r).map((p) => <Link key={p.key} href={p.href} className={`inline-flex min-h-8 items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 ${FOCUS}`}>{p.label}</Link>)}</span>
           : <span className="text-slate-600">None</span>}
       </td>
       <td className={`${CELL} text-right`}>

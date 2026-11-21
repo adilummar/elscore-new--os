@@ -111,6 +111,13 @@ export class MentoringWorkflowController {
     return this.workflow.updateStudentProfile(id, dto, user.id);
   }
 
+  /** Add a subject the parent asked for (assigned Mentor). Its hours count toward the Mentor's monthly capacity; the Mentor cannot approve going over it. */
+  @Post(':activationId/subjects')
+  @RequirePermissions('mentoring.stage.work')
+  addSubject(@Param('activationId') id: string, @Body() dto: { subjectId?: unknown; monthlyHours?: unknown }, @CurrentUser() user: RequestUser) {
+    return this.workflow.addSubject(id, user.id, dto ?? {});
+  }
+
   /** Verify one of the four activation sections, or withdraw the verification (assigned Mentor). One action per section. */
   @Put(':activationId/verification/sections/:sectionId')
   @RequirePermissions('mentoring.stage.work')

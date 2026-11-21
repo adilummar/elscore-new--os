@@ -29,6 +29,8 @@ export interface TeamMentor {
   name: string;
   isActive: boolean;
   studentCount: number;
+  /** Absent from an older API; treated as none. */
+  studentsWithoutHours?: number;
   limitHours: number;
   allocatedHours: number;
   remainingHours: number;
@@ -94,4 +96,19 @@ export function parseLimit(text: string): number | null {
   const n = Number(text.trim());
   if (text.trim() === '' || !Number.isFinite(n) || n < 0 || n > 1000) return null;
   return Math.round(n * 100) / 100;
+}
+
+/** One hours figure for a student, everywhere: a missing or zero value is "not set", never a quiet 0 h. */
+export function studentHoursText(hours: number | null | undefined): string {
+  const n = Number(hours);
+  return Number.isFinite(n) && n > 0 ? `${hoursText(n)} h a month` : 'Hours not set';
+}
+
+/** What assigning a student would do to a Mentor, said before the Head confirms. The server still decides. */
+export function allocationPreview(mentor: { name: string; allocatedHours: number; monthlyHourLimit: number }, studentHours: number | null | undefined): { tone: 'ok' | 'warn' | 'over'; text: string } {
+  const left = mentor.monthlyHourLimit - mentor.allocatedHours;
+  const n = Number(studentHours);
+  if (!Number.isFinite(n) || n <= 0) return { tone: 'warn', text: `${mentor.name} has ${hoursText(Math.max(0, left))} h left. This student's hours are not set, so nothing is added yet.` };
+  if (n > left) return { tone: 'over', text: `${mentor.name} has ${hoursText(Math.max(0, left))} h left and this student needs ${hoursText(n)} h, so it would go ${hoursText(n - Math.max(0, left))} h over. You will be asked for a reason.` };
+  return { tone: 'ok', text: `${mentor.name} has ${hoursText(left)} h left, ${hoursText(left - n)} h after this student.` };
 }

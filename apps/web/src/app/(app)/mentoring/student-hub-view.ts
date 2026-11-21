@@ -223,3 +223,12 @@ export function untilText(today: string, date: string): string {
  * (in progress, on hold, blocked, waiting for final approval) gets the existing seven-stage activation workspace.
  */
 export const profileModeOf = (status: string): 'OPERATIONS' | 'ACTIVATION' => (status === 'ACTIVATED' ? 'OPERATIONS' : 'ACTIVATION');
+
+/** Each kind of pending item on a student opens the place where it is dealt with. */
+export function pendingLinks(r: { activationId: string; name: string; pending: { verification: number; complaints: number; tasks: number } }): Array<{ key: 'verification' | 'complaints' | 'tasks'; label: string; href: string }> {
+  const out: Array<{ key: 'verification' | 'complaints' | 'tasks'; label: string; href: string }> = [];
+  if (r.pending.verification > 0) out.push({ key: 'verification', label: `${r.pending.verification} to verify`, href: `/mentoring/classes?card=classes_awaiting_verification&studentQuery=${encodeURIComponent(r.name)}` });
+  if (r.pending.complaints > 0) out.push({ key: 'complaints', label: `${r.pending.complaints} ${r.pending.complaints === 1 ? 'complaint' : 'complaints'}`, href: `/mentoring/students/${r.activationId}?tab=complaints` });
+  if (r.pending.tasks > 0) out.push({ key: 'tasks', label: `${r.pending.tasks} ${r.pending.tasks === 1 ? 'task' : 'tasks'}`, href: `/mentoring/students/${r.activationId}?panel=checklist` });
+  return out;
+}

@@ -29,8 +29,41 @@ function warningFor(state: keyof typeof STATE_TONE, remaining: number): string |
 }
 
 /** A Mentor's own capacity. Read only: the limit is set by the Mentoring Head and nothing here changes it. */
-export function MentorCapacityCard({ capacity }: { capacity: OwnCapacity }) {
+export function MentorCapacityCard({ capacity, compact = false }: { capacity: OwnCapacity; compact?: boolean }) {
   const warning = warningFor(capacity.state, capacity.remainingHours);
+  const withoutHours = capacity.students.filter((s) => !(Number(s.monthlyHours) > 0)).length;
+  if (compact) {
+    return (
+      <section aria-label="My monthly capacity" className={`${PANEL} space-y-3 p-4`} data-testid="mentor-capacity" data-state={capacity.state.toLowerCase()}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">My monthly capacity</h2>
+          <StatusChip tone={STATE_TONE[capacity.state]}>{STATE_LABEL[capacity.state]}</StatusChip>
+        </div>
+        <p className="text-sm text-slate-700"><span className="text-2xl font-semibold text-slate-900">{hoursText(capacity.allocatedHours)}</span> of {hoursText(capacity.limitHours)} h used, {hoursText(Math.abs(capacity.remainingHours))} h {capacity.remainingHours < 0 ? 'over' : 'left'}</p>
+        <UsageBar percent={capacity.utilizationPercent} state={capacity.state} label="Monthly hours used" />
+        {warning && <Banner tone={capacity.state === 'OVER' ? 'error' : 'warning'}>{warning}</Banner>}
+        {withoutHours > 0 && (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="capacity-missing-hours">
+            {withoutHours} of {capacity.students.length} students have no monthly hours recorded, so they add nothing to this total yet.
+          </p>
+        )}
+        <details className="text-sm">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center rounded font-medium text-brand-700 hover:underline">View students ({capacity.students.length})</summary>
+          {capacity.students.length === 0 ? <p className={`mt-1 ${MUTED}`}>No students are assigned to you.</p> : (
+            <ul className="mt-1 divide-y divide-slate-100" aria-label="Contributing students">
+              {capacity.students.map((s) => (
+                <li key={s.activationId} className="flex min-h-11 items-center justify-between gap-3 py-1.5">
+                  <Link href={`/mentoring/students/${s.activationId}`} className="text-brand-700 hover:underline">{s.studentName || 'Student'}{s.studentBusinessId ? ` (${s.studentBusinessId})` : ''}</Link>
+                  <span className="whitespace-nowrap text-slate-700">{Number(s.monthlyHours) > 0 ? `${hoursText(s.monthlyHours)} h` : 'Not recorded'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className={`mt-2 text-xs ${MUTED}`}>Only the Mentoring Head can change your limit.</p>
+        </details>
+      </section>
+    );
+  }
   return (
     <section aria-label="My monthly capacity" className={`${PANEL} space-y-3 p-4`} data-testid="mentor-capacity" data-state={capacity.state.toLowerCase()}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -58,7 +91,7 @@ export function MentorCapacityCard({ capacity }: { capacity: OwnCapacity }) {
         {capacity.students.length === 0 ? <p className={`mt-1 text-sm ${MUTED}`}>No students are assigned to you.</p> : (
           <ul className="mt-1 divide-y divide-slate-100 text-sm" aria-label="Contributing students">
             {capacity.students.map((s) => (
-              <li key={s.activationId} className="flex items-center justify-between gap-3 py-1.5">
+              <li key={s.activationId} className="flex min-h-11 items-center justify-between gap-3 py-1.5">
                 <Link href={`/mentoring/students/${s.activationId}`} className="text-brand-700 hover:underline">{s.studentName || 'Student'}{s.studentBusinessId ? ` (${s.studentBusinessId})` : ''}</Link>
                 <span className="whitespace-nowrap text-slate-700">{hoursText(s.monthlyHours)} h</span>
               </li>
@@ -74,6 +107,7 @@ function LimitEditor({ mentor, onSaved, onError }: { mentor: TeamMentor; onSaved
   const [limit, setLimit] = React.useState(hoursText(mentor.limitHours));
   const [reason, setReason] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState<string | null>(null);
   React.useEffect(() => { setLimit(hoursText(mentor.limitHours)); }, [mentor.limitHours]);
   const parsed = parseLimit(limit);
   const changed = parsed !== null && parsed !== mentor.limitHours;
@@ -87,6 +121,7 @@ function LimitEditor({ mentor, onSaved, onError }: { mentor: TeamMentor; onSaved
         try {
           await mentoringApi(`/mentoring/capacity/mentors/${mentor.mentorUserId}/limit`, 'PUT', { monthlyHourLimit: parsed, reason: reason.trim() || undefined });
           setReason('');
+          setDone(`${mentor.name}'s limit changed from ${hoursText(mentor.limitHours)} h to ${hoursText(parsed)} h. The change is in the limit history with your name and the time.`);
           onSaved();
         } catch (err) {
           onError(err instanceof Error ? err.message : 'The limit could not be saved.');
@@ -102,6 +137,7 @@ function LimitEditor({ mentor, onSaved, onError }: { mentor: TeamMentor; onSaved
         <div className="w-44"><Input aria-label={`Reason for changing the limit of ${mentor.name}`} placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></div>
       </label>
       <Button type="submit" size="sm" variant="outline" disabled={!changed} isLoading={busy}>Save limit</Button>
+      {done && <p role="status" className="basis-full text-xs text-emerald-800">{done}</p>}
     </form>
   );
 }
@@ -171,7 +207,7 @@ export function TeamCapacityView({ team, canManage, onChanged }: { team: TeamCap
                   <td className={TD}>{hoursText(m.allocatedHours)} h</td>
                   <td className={TD}>{hoursText(m.remainingHours)} h</td>
                   <td className={`${TD} w-40`}><span className="block text-xs">{hoursText(m.utilizationPercent)}%</span><UsageBar percent={m.utilizationPercent} state={m.state} label={`${m.name} utilization`} /></td>
-                  <td className={TD}>{m.studentCount}</td>
+                  <td className={TD}>{m.studentCount}{(m.studentsWithoutHours ?? 0) > 0 && <span className="block text-xs text-amber-900">{m.studentsWithoutHours} without hours</span>}</td>
                   <td className={TD}><StatusChip tone={STATE_TONE[m.state]}>{STATE_LABEL[m.state]}</StatusChip></td>
                   <td className={TD}><button type="button" className="text-xs text-brand-700 underline" aria-expanded={open === m.mentorUserId} onClick={() => setOpen(open === m.mentorUserId ? null : m.mentorUserId)}>{open === m.mentorUserId ? 'Hide' : canManage ? 'Edit and history' : 'History'}</button></td>
                 </tr>
@@ -193,11 +229,43 @@ export function TeamCapacityView({ team, canManage, onChanged }: { team: TeamCap
   );
 }
 
+/** The team at a glance for the Mentoring Head's dashboard: who is closest to the limit first. Limits are changed on the Mentors and counselors page. */
+export function TeamCapacityCompact({ team, canManage }: { team: TeamCapacity; canManage: boolean }) {
+  const rank: Record<string, number> = { OVER: 0, FULL: 1, APPROACHING: 2, AVAILABLE: 3 };
+  const mentors = [...team.mentors].filter((m) => m.isActive).sort((a, b) => rank[a.state] - rank[b.state] || b.utilizationPercent - a.utilizationPercent);
+  const attention = needingAttention(team);
+  return (
+    <section aria-label="Mentor capacity" className={`${PANEL} space-y-3 p-4`} data-testid="team-capacity-compact">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold text-slate-900">Mentor capacity</h2>
+        <Link href="/mentoring/staff" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-700 hover:underline">{canManage ? 'Manage limits' : 'View details'}</Link>
+      </div>
+      <p className="text-sm text-slate-700">Team: {hoursText(team.totals.allocatedHours)} of {hoursText(team.totals.limitHours)} h used ({hoursText(team.totals.utilizationPercent)}%)</p>
+      {attention.length > 0 && <Banner tone={attention.some((m) => m.state === 'OVER') ? 'error' : 'warning'}>{attention.length} {attention.length === 1 ? 'mentor needs' : 'mentors need'} attention.</Banner>}
+      {mentors.length === 0 ? <p className={`text-sm ${MUTED}`}>No active Mentor profiles yet.</p> : (
+        <ul className="space-y-3" aria-label="Capacity by Mentor">
+          {mentors.map((m) => (
+            <li key={m.mentorUserId} data-testid="capacity-compact-row" data-state={m.state.toLowerCase()}>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="font-medium text-slate-900">{m.name}</span>
+                <StatusChip tone={STATE_TONE[m.state]}>{STATE_LABEL[m.state]}</StatusChip>
+              </div>
+              <p className={`mb-1 text-xs ${MUTED}`}>{hoursText(m.allocatedHours)} of {hoursText(m.limitHours)} h, {m.studentCount} {m.studentCount === 1 ? 'student' : 'students'}</p>
+              {(m.studentsWithoutHours ?? 0) > 0 && <p className="mb-1 text-xs font-medium text-amber-900" data-testid="capacity-missing-hours">Hours not set for {m.studentsWithoutHours} {m.studentsWithoutHours === 1 ? 'student' : 'students'}, so the total looks lower than it is.</p>}
+              <UsageBar percent={m.utilizationPercent} state={m.state} label={`${m.name} utilization`} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /**
  * The capacity part of the Mentor dashboard. A Mentor sees their own capacity; a person with staff access (the Mentoring Head, the CEO read
  * only) sees the team. Each call is authorised by the API again, so this choice never widens access.
  */
-export function DashboardCapacity() {
+export function DashboardCapacity({ compact = false }: { compact?: boolean } = {}) {
   const { hasPermission } = usePermissions();
   const wantsTeam = hasPermission('mentoring.staff.read');
   const canManage = hasPermission('mentoring.staff.manage');
@@ -214,7 +282,8 @@ export function DashboardCapacity() {
   }, [wantsTeam, reload]);
 
   if (error) return <Banner tone="error">{error}</Banner>;
+  if (wantsTeam && team && compact) return <TeamCapacityCompact team={team} canManage={canManage} />;
   if (wantsTeam && team) return <TeamCapacityView team={team} canManage={canManage} onChanged={() => setReload((n) => n + 1)} />;
-  if (own) return <MentorCapacityCard capacity={own} />;
+  if (own) return <MentorCapacityCard capacity={own} compact={compact} />;
   return null;
 }

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { fmt } from '../labels';
+import { allocationPreview, studentHoursText } from '../capacity-view';
 import {
   Banner,
   Empty,
@@ -75,11 +76,15 @@ export function AllocationClient() {
     refresh();
   }, [refresh]);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const [saved, setSaved] = React.useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>, done?: string) => {
     setBusy(true);
+    setSaved(null);
     try {
       await fn();
       await refresh();
+      setError(null);
+      if (done) setSaved(done);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -118,7 +123,7 @@ export function AllocationClient() {
 
     run(async () => {
       await mentoringApi(`/mentoring/allocation/${q.activationId}/assign`, 'POST', { mentorUserId: mentorId });
-    });
+    }, `${q.studentName} is now allocated to ${m.name}. ${m.name} has ${Math.max(0, m.monthlyHourLimit - m.allocatedHours - (q.monthlyHours ?? 0))} h left this month.`);
   };
 
   const handleConfirmOverCapacity = async (e?: React.FormEvent) => {
@@ -140,6 +145,7 @@ export function AllocationClient() {
         mentorUserId: target.mentor.userId,
         overCapacityReason: trimmed,
       });
+      setSaved(`${target.studentName} is now allocated to ${target.mentor.name} over capacity. Your reason was recorded with your name and the time.`);
       setTarget(null);
       setReason('');
       await refresh();
@@ -154,6 +160,7 @@ export function AllocationClient() {
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader title="Allocation and workload" subtitle="Give new students a Mentor and keep each Mentor within capacity." />
       {error && <Banner tone="error">{error}</Banner>}
+      {saved && <Banner tone="success">{saved}</Banner>}
       {!load && !error && <ListSkeleton rows={4} label="Loading allocation" />}
 
       {load && (
@@ -197,13 +204,14 @@ export function AllocationClient() {
         {queue.length > 0 && load && mentors.length === 0 && (
           <Notice tone="warning">No eligible Mentors yet. Create Mentors in Settings, Users under the Mentoring department. Mentors created earlier appear after you open Mentoring, Staff and choose &quot;Add missing Mentors&quot;.</Notice>
         )}
+        {queue.some((q) => !(Number(q.monthlyHours) > 0)) && <Notice tone="warning">Hours are not set for {queue.filter((q) => !(Number(q.monthlyHours) > 0)).length} of {queue.length} waiting students, so they would add nothing to a Mentor's capacity yet. Set their monthly hours on the student's requirement first.</Notice>}
         {load && queue.length === 0 && <Empty title="No students are waiting for a Mentor">New enrolled students appear here until they are allocated.</Empty>}
         {queue.length > 0 && (
           <ul className={`${PANEL} divide-y divide-slate-100 text-sm`} aria-label="Allocation queue">
             {queue.map((q) => (
               <li key={q.activationId} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <Link href={`/mentoring/students/${q.activationId}`} className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>{q.studentName} ({q.studentBusinessId})</Link>
-                <span className={`text-xs ${MUTED}`}>Queued {fmt(q.queuedAt)} · {q.monthlyHours ?? 0} h a month</span>
+                <span className={`text-xs ${MUTED}`}>Queued {fmt(q.queuedAt)} · {studentHoursText(q.monthlyHours)}</span>
                 <Select aria-label={`Mentor for ${q.studentName}`} className="w-64" value={pick[q.activationId] ?? ''} onChange={(e) => setPick({ ...pick, [q.activationId]: e.target.value })}>
                   <option value="">Choose a Mentor</option>
                   {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}, {m.allocatedHours} of {m.monthlyHourLimit} hours{q.monthlyHours ? ` (this student adds ${q.monthlyHours})` : ''}</option>)}
@@ -211,6 +219,12 @@ export function AllocationClient() {
                 <Button size="sm" disabled={!pick[q.activationId]} isLoading={busy} onClick={() => handleAllocateClick(q)}>
                   Allocate
                 </Button>
+                {(() => {
+                  const pm = mentors.find((x: any) => x.userId === pick[q.activationId]);
+                  if (!pm) return null;
+                  const p = allocationPreview(pm, q.monthlyHours);
+                  return <p className={`basis-full text-sm ${p.tone === 'ok' ? MUTED : p.tone === 'over' ? 'font-medium text-red-800' : 'text-amber-900'}`} role="status" data-testid="allocation-preview">{p.tone === 'over' ? 'Over capacity: ' : p.tone === 'warn' ? 'Hours not set: ' : ''}{p.text}</p>;
+                })()}
               </li>
             ))}
           </ul>

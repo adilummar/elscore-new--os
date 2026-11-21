@@ -323,6 +323,11 @@ export function StudentWorkspaceClient({ activationId, initialWorkspace, initial
                     }}
                     onRefresh={load}
                     tutorTools={tutorTools}
+                    // A subject the parent asked for. The API checks the Mentor's capacity and who may add it.
+                    onAddSubject={async (subjectId, monthlyHours) => {
+                      const r = (await mentoringApi(`${base}/subjects`, 'POST', { subjectId, monthlyHours })) as { subjectName?: string; monthlyHours?: number; sectionsReset?: string[] };
+                      setNotice(`${r.subjectName ?? 'The subject'} added, ${r.monthlyHours ?? monthlyHours} hours a month, added to your monthly capacity.${r.sectionsReset && r.sectionsReset.length > 0 ? ' The Subjects section needs to be verified again.' : ''}`);
+                    }}
                     // Adds a subject to the shared subject list. The API allows it only for people who manage reference data.
                     onCreateSubject={async (name) => {
                       await addSubjectToList(name);
