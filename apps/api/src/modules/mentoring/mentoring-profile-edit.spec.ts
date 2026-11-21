@@ -5,6 +5,7 @@ import { PERMISSIONS_KEY } from '../../common/rbac/require-permissions.decorator
 
 import { MentoringAccessService } from './mentoring-access.service';
 import { HANDOVER_FIELDS, PROFILE_FIELD_KEYS } from './mentoring-handover-fields';
+import { currentFingerprints } from './section-verification';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { MentoringStudentHubService } from './mentoring-student-hub.service';
 import { MentoringTutorService } from './mentoring-tutor.service';
@@ -63,8 +64,8 @@ describe('Editing the profile of an activated student', () => {
     const w = world();
     const changes: Record<string, unknown> = {
       'student.firstName': 'Ashwin', 'student.lastName': 'Kumar', 'student.dateOfBirth': '2015-06-01', 'student.gender': 'Female', 'student.schoolName': 'New School',
-      'student.currentGrade': '9', 'student.grade': 'Grade 9', 'student.curriculum': 'CBSE', 'student.cityLocation': 'Dubai', 'student.notes': 'Likes maths', 'student.learningConcerns': 'Reading speed',
-      'parent.name': 'New Parent', 'parent.primaryPhone': '+971 50 111 2222', 'parent.altPhone1': '+971 50 333 4444', 'parent.altPhone2': '+971 50 555 6666', 'parent.whatsappNumber': '+971 50 777 8888', 'parent.relationship': 'Mother',
+      'student.grade': 'Grade 9', 'student.curriculum': 'CBSE', 'student.cityLocation': 'Dubai', 'student.notes': 'Likes maths', 'student.learningConcerns': 'Reading speed',
+      'parent.name': 'New Parent', 'parent.primaryPhone': '+971 50 111 2222', 'parent.altPhone1': '+971 50 333 4444', 'parent.whatsappNumber': '+971 50 777 8888', 'parent.relationship': 'Mother',
       'academic.preferredLanguage': 'English', 'academic.previousMarks': '80%', 'academic.subjectNotes': 'Needs help',
     };
     // Every supported student and parent field is covered by this test: if a field is added to the handover, this fails until it is considered.
@@ -126,7 +127,7 @@ describe('Editing the profile of an activated student', () => {
   it('rejects unknown, unauthorised and operational fields, so nothing can be mass assigned', async () => {
     const w = world();
     const ops = operational(w.db);
-    for (const key of ['status', 'currentMentorUserId', 'student.id', 'tutor.assignments', 'timetable.schedule', 'examination.upcomingDates', 'parentExpectations', '__proto__', 'constructor']) {
+    for (const key of ['status', 'currentMentorUserId', 'student.id', 'tutor.assignments', 'timetable.schedule', 'examination.upcoming', 'parentExpectations', '__proto__', 'constructor']) {
       await expect(w.workflow.updateStudentProfile('act-1', { changes: { [key]: 'x' } }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
     }
     await expect(w.workflow.updateStudentProfile('act-1', { changes: { 'student.schoolName': 'ok' }, basedOn: { status: 'x' } }, 'mentor-1')).rejects.toBeInstanceOf(BadRequestException);
@@ -157,12 +158,18 @@ describe('Editing the profile of an activated student', () => {
     await expect(w.workflow.updateStudentProfile('act-1', { changes: { 'student.schoolName': 'Fresh write' }, basedOn: { 'student.schoolName': 'Mentor A school' } }, 'mentor-1')).resolves.toMatchObject({ changed: ['student.schoolName'] });
   });
 
-  it('ends a confirmation that covered the old value, in the history, without reopening a stage', async () => {
+  it('ends a section verification that covered the old value, in the history, without reopening a stage', async () => {
     const w = world();
-    w.db.seed('enrollmentHandoverFieldVerification', { handoverId: 'ho-1', fieldKey: 'parent.primaryPhone', verifiedValue: SALES_PHONE, verifiedByUserId: 'mentor-1', verifiedAt: new Date() });
+    const fp = await currentFingerprints(w.db as any, { id: 'act-1', handoverId: 'ho-1', studentId: 'stu-1' });
+    for (const sectionId of ['STUDENT_PARENT_INFO', 'MARKS_EXAMINATIONS']) {
+      w.db.seed('activationSectionVerification', { activationId: 'act-1', sectionId, verified: true, fingerprint: fp[sectionId as keyof typeof fp], verifiedByUserId: 'mentor-1', verifiedAt: new Date() });
+    }
     await w.workflow.updateStudentProfile('act-1', { changes: { 'parent.primaryPhone': '+971 50 111 2222' } }, 'mentor-1');
     const e = w.db.rows('mentoringEvent').find((x) => x.type === 'HANDOVER_FIELD_UPDATED')!;
-    expect(e.payload.verificationInvalidated).toBe(true);
+    expect(e.payload.sectionsInvalidated).toEqual(['STUDENT_PARENT_INFO']);
+    const state = (id: string) => w.db.rows('activationSectionVerification').find((r) => r.sectionId === id)!.verified;
+    expect(state('STUDENT_PARENT_INFO')).toBe(false);
+    expect(state('MARKS_EXAMINATIONS')).toBe(true);
     expect(w.db.rows('mentoringStage').every((s) => s.status === 'COMPLETED')).toBe(true);
   });
 });

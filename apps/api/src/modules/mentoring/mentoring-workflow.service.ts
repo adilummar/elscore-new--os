@@ -12,14 +12,18 @@ import {
   PROFILE_FIELD_KEYS,
   getHandoverField,
   isMeaningfulValue,
-  isVerifiableField,
   stableJson,
   validateHandoverFieldValue,
 } from './mentoring-handover-fields';
+import { ChecklistSummary, canBeUnavailable, isMeaningfulReason, summarizeChecklist } from './checklist-groups';
+import { withLegacyRows, withLegacyValues } from './handover-legacy';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { ensureChecklistRows, ensureStageRows, openStage, unresolvedMandatoryItems } from './mentoring-stage.helpers';
 import { MentoringTutorService } from './mentoring-tutor.service';
+import { MentoringCapacityService } from './mentoring-capacity.service';
+import { wouldExceed } from './mentor-capacity';
 import { LEGACY_STAGE1_ITEMS, TOTAL_STAGES, getChecklistDefinition, getStageDefinition, STAGES } from './mentoring.constants';
+import { isSectionId, reconcileSectionVerifications, sectionStates, setSectionVerification as setSectionVerificationInTx } from './section-verification';
 import { DEFAULT_SESSION_MINUTES, Reference, ScheduleReferences, isScheduleValue } from './subject-schedule';
 
 export interface HoldInput {
@@ -99,7 +103,81 @@ export class MentoringWorkflowService {
     for (const entry of transferred) if (entry && typeof entry.field === 'string') out.set(entry.field, entry.value);
     const rows = await tx.enrollmentHandoverField.findMany({ where: { handoverId } });
     for (const row of rows) out.set(row.fieldKey, row.value);
-    return out;
+    return withLegacyValues(out);
+  }
+
+  /** Group and overall completion of a stage's checklist, calculated from the stored rows and exceptions. */
+  private async summaryOf(tx: PrismaTxClient, stageId: string, stageNumber: number): Promise<ChecklistSummary> {
+    const [rows, exceptions] = await Promise.all([
+      tx.stageChecklistResponse.findMany({ where: { stageId } }),
+      tx.workflowException.findMany({ where: { stageId }, select: { itemKey: true } }),
+    ]);
+    return summarizeChecklist(getChecklistDefinition(stageNumber), rows, new Set(exceptions.map((e) => e.itemKey)));
+  }
+
+  /**
+   * Writes the history of one change to a requirement: the student, the meeting (this stage), the group, the requirement, the earlier and new
+   * status and value, the reason and who did it. Then, if the change made a group or the whole checklist complete (or reopened it), says so in
+   * a separate entry, so the history shows exactly why a group or the checklist became complete.
+   */
+  private async recordChecklistChange(
+    tx: PrismaTxClient,
+    p: {
+      activation: { id: string; studentId: string };
+      stageId: string;
+      stageNumber: number;
+      def: { key: string; label: string; group?: string; groupLabel?: string };
+      userId: string;
+      type: string;
+      fromStatus?: string | null;
+      toStatus?: string | null;
+      reason?: string | null;
+      before: ChecklistSummary;
+      detail?: Record<string, unknown>;
+    },
+  ) {
+    const after = await this.summaryOf(tx, p.stageId, p.stageNumber);
+    await this.history.record(tx, {
+      activationId: p.activation.id,
+      stageId: p.stageId,
+      type: p.type,
+      actorUserId: p.userId,
+      fromStatus: p.fromStatus ?? null,
+      toStatus: p.toStatus ?? null,
+      reason: p.reason ?? null,
+      payload: {
+        studentId: p.activation.studentId,
+        meetingStageId: p.stageId,
+        stageNumber: p.stageNumber,
+        itemKey: p.def.key,
+        itemLabel: p.def.label,
+        group: p.def.group ?? null,
+        groupLabel: p.def.groupLabel ?? null,
+        ...(p.detail ?? {}),
+      },
+    });
+    for (const g of after.groups) {
+      const was = p.before.groups.find((x) => x.key === g.key);
+      if (!was || was.complete === g.complete) continue;
+      await this.history.record(tx, {
+        activationId: p.activation.id,
+        stageId: p.stageId,
+        type: g.complete ? 'CHECKLIST_GROUP_COMPLETED' : 'CHECKLIST_GROUP_REOPENED',
+        actorUserId: p.userId,
+        reason: p.reason ?? null,
+        payload: { studentId: p.activation.studentId, meetingStageId: p.stageId, stageNumber: p.stageNumber, group: g.key, groupLabel: g.label, completed: g.completed, unavailable: g.unavailable, excepted: g.excepted, total: g.total, triggeredByItem: p.def.key },
+      });
+    }
+    if (p.before.complete !== after.complete) {
+      await this.history.record(tx, {
+        activationId: p.activation.id,
+        stageId: p.stageId,
+        type: after.complete ? 'CHECKLIST_COMPLETED' : 'CHECKLIST_REOPENED',
+        actorUserId: p.userId,
+        payload: { studentId: p.activation.studentId, meetingStageId: p.stageId, stageNumber: p.stageNumber, groupsComplete: after.groupsComplete, groupsTotal: after.groupsTotal, triggeredByItem: p.def.key },
+      });
+    }
+    return after;
   }
 
   /** Moves a stage between IN_PROGRESS and PENDING_REVIEW depending on whether mandatory items are resolved. */
@@ -157,8 +235,16 @@ export class MentoringWorkflowService {
   async updateChecklistItem(activationId: string, stageNumber: number, itemKey: string, input: ChecklistUpdateInput, userId: string) {
     const def = getChecklistDefinition(stageNumber).find((d) => d.key === itemKey);
     if (!def) throw new BadRequestException('Unknown checklist item for this stage');
-    if (input.state && (input.state === 'UNAVAILABLE' || input.state === 'NOT_APPLICABLE') && !input.reason?.trim()) {
-      throw new BadRequestException('A reason is required when an item is marked unavailable or not applicable');
+    if (input.state && (input.state === 'UNAVAILABLE' || input.state === 'NOT_APPLICABLE')) {
+      // The Meeting with Parents checklist (stage 2) asks for a reason that says something, and lets only requirements about information that can
+      // be missing be marked unavailable. Every other requirement there needs an authorised exception. Other stages keep their earlier rule.
+      const strict = stageNumber === 2;
+      if (strict ? !isMeaningfulReason(input.reason) : !input.reason?.trim()) {
+        throw new BadRequestException('A reason is required when an item is marked unavailable or not applicable. Say why in a few words.');
+      }
+      if (strict && !canBeUnavailable(def)) {
+        throw new ConflictException('This requirement cannot be marked unavailable. Complete it, or ask the Mentoring Head to authorise an exception.');
+      }
     }
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
@@ -174,13 +260,16 @@ export class MentoringWorkflowService {
       const row = await tx.stageChecklistResponse.findUniqueOrThrow({ where: { stageId_itemKey: { stageId: stage.id, itemKey } } });
 
       const nextState = input.state ?? row.state;
+      const checklistBefore = await this.summaryOf(tx, stage.id, stageNumber);
 
       // A requirement that depends on information cannot be completed while that information is missing. The Mentor
       // either collects it or marks the requirement unavailable with a reason. Having the value never completes it.
       if (input.state === 'VERIFIED' && row.state !== 'VERIFIED' && def.fields?.length) {
         const values = await this.effectiveHandoverValues(tx, activation.handoverId);
         const missing = def.fields.filter((key) => !isMeaningfulValue(values.get(key)));
-        if (missing.length > 0) {
+        // A reason recorded for unavailable information stands in for the missing fields.
+        const explained = !!def.reasonField && isMeaningfulValue(values.get(def.reasonField));
+        if (missing.length > 0 && !explained) {
           const names = missing.map((key) => HANDOVER_FIELD_LABELS[key] ?? key).join(', ');
           throw new ConflictException(`Collect this information first: ${names}. If the parent cannot provide it, mark this requirement unavailable and give the reason.`);
         }
@@ -198,14 +287,28 @@ export class MentoringWorkflowService {
         },
       });
 
-      await this.history.record(tx, {
-        activationId,
+      await this.recordChecklistChange(tx, {
+        activation,
         stageId: stage.id,
+        stageNumber,
+        def,
+        userId,
         type: 'CHECKLIST_UPDATED',
-        actorUserId: userId,
         fromStatus: row.state,
         toStatus: updated.state,
-        payload: { stageNumber, itemKey, mandatory: row.mandatory },
+        reason: updated.reason ?? null,
+        before: checklistBefore,
+        detail: {
+          mandatory: row.mandatory,
+          previousValue: row.value ?? null,
+          newValue: updated.value ?? null,
+          previousReason: row.reason ?? null,
+          newReason: updated.reason ?? null,
+          previousNote: row.note ?? null,
+          newNote: updated.note ?? null,
+          previousEvidenceRef: row.evidenceRef ?? null,
+          newEvidenceRef: updated.evidenceRef ?? null,
+        },
       });
 
       const stageStatus = await this.reevaluateStage(tx, stage.id);
@@ -233,6 +336,64 @@ export class MentoringWorkflowService {
       this.assertWorkable(activation);
       this.assertMeetingStarted(activation);
       return this.saveHandoverField(tx, activation, definition, fieldKey, rawValue, userId, basedOn);
+    });
+  }
+
+  /**
+   * The assigned Mentor adds a subject the parent asked for after the Sales handover (in the meeting with the parents, or because Sales
+   * collected none). It becomes a requirement of the student, so its hours count toward the Mentor's monthly capacity like every other
+   * subject. The Mentor cannot approve going over the limit: that stays with the Mentoring Head, who raises the limit or moves a student.
+   * Adding a subject returns a verified Subjects section to Not verified, and is recorded with who added it and when.
+   */
+  async addSubject(activationId: string, userId: string, dto: { subjectId?: unknown; monthlyHours?: unknown }) {
+    const subjectId = typeof dto.subjectId === 'string' ? dto.subjectId.trim() : '';
+    const hours = typeof dto.monthlyHours === 'number' ? dto.monthlyHours : Number(dto.monthlyHours);
+    if (!subjectId) throw new BadRequestException('Choose the subject to add.');
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 200) throw new BadRequestException('Enter the monthly hours for this subject, more than 0 and at most 200.');
+    const monthlyHours = Math.round(hours * 100) / 100;
+
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const activation = await this.loadLocked(tx, activationId);
+      this.assertMentor(activation, userId);
+      this.assertWorkable(activation);
+      this.assertMeetingStarted(activation);
+
+      const student = await tx.student.findUnique({ where: { id: activation.studentId }, select: { id: true, gradeId: true, curriculumId: true } });
+      if (!student) throw new NotFoundException('Student not found');
+      const subject = await tx.subject.findUnique({ where: { id: subjectId } });
+      if (!subject) throw new BadRequestException('That subject is not in the subject list.');
+      const existing = await tx.requirement.findMany({ where: { studentId: student.id }, select: { subjectId: true, gradeId: true, curriculumId: true } });
+      if (existing.some((r) => r.subjectId === subjectId)) throw new ConflictException(`${subject.name} is already one of this student's subjects.`);
+      const gradeId = student.gradeId ?? existing[0]?.gradeId;
+      const curriculumId = student.curriculumId ?? existing[0]?.curriculumId;
+      if (!gradeId || !curriculumId) throw new BadRequestException("Set the student's grade and curriculum before adding a subject.");
+
+      // The same gate as an assignment: the added hours must fit the Mentor's monthly limit.
+      if (activation.currentMentorUserId) {
+        const cap = await new MentoringCapacityService(this.prisma).capacityOf(tx, activation.currentMentorUserId);
+        if (wouldExceed(cap.limitHours, cap.allocatedHours, monthlyHours)) {
+          throw new ConflictException({
+            code: 'MENTOR_OVER_CAPACITY',
+            message: `Adding ${monthlyHours} hours would put you over your monthly limit (${cap.allocatedHours} of ${cap.limitHours} hours used). Ask the Mentoring Head to raise your limit or approve it.`,
+            allocatedHours: cap.allocatedHours,
+            limitHours: cap.limitHours,
+            monthlyHours,
+          });
+        }
+      }
+
+      const requirement = await tx.requirement.create({
+        data: {
+          businessId: `REQ-MA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+          studentId: student.id, subjectId, curriculumId, gradeId, monthlyHours,
+        },
+      });
+      await this.history.record(tx, {
+        activationId, type: 'MENTORING_SUBJECT_ADDED', actorUserId: userId,
+        payload: { requirementId: requirement.id, subjectId, subjectName: subject.name, monthlyHours },
+      } as never);
+      const reset = await reconcileSectionVerifications(tx, activationId, userId);
+      return { requirementId: requirement.id, subjectName: subject.name, monthlyHours, sectionsReset: reset };
     });
   }
 
@@ -295,17 +456,14 @@ export class MentoringWorkflowService {
           },
         });
 
-    // A confirmation covers the value it was given for. Say in the history when this edit ends one.
-    const confirmation = await tx.enrollmentHandoverFieldVerification.findUnique({
-      where: { handoverId_fieldKey: { handoverId: handover.id, fieldKey } },
-    });
-    const verificationInvalidated = !!confirmation && stableJson(confirmation.verifiedValue) === stableJson(previous);
+    // A section verification covers the information it was given for. Edits return the affected section, and only that one, to Not Verified.
+    const sectionsInvalidated = await reconcileSectionVerifications(tx, activationId, userId);
 
     await this.history.record(tx, {
       activationId,
       type: 'HANDOVER_FIELD_UPDATED',
       actorUserId: userId,
-      payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, verificationInvalidated, ...extra },
+      payload: { fieldKey, origin, previous, next: value, salesValue: existing ? existing.salesValue : salesEntry?.value ?? null, sectionsInvalidated, ...extra },
     });
     // A changed schedule may no longer suit the tutors already chosen for its subjects: check each one, and flag any
     // that no longer fit for review instead of leaving a stale assignment in place.
@@ -365,62 +523,18 @@ export class MentoringWorkflowService {
   }
 
   /**
-   * Records that the Mentor confirmed a field with the parent (or withdraws that confirmation). This is a separate fact
-   * from the value being present: a Sales value stays "not verified" until the Mentor confirms it, and the stored
-   * confirmation covers the value as it was. If the value changes later the field counts as not verified again.
-   * The Sales snapshot and the value itself are never touched.
+   * Verifies one of the four activation sections (or withdraws the verification). One action per section: the individual fields stay
+   * viewable and editable but carry no ticks of their own. The change is audited (activation, section, status, user, time), and editing
+   * information inside a verified section later returns that section, and only that section, to Not Verified.
    */
-  async setHandoverFieldVerification(activationId: string, fieldKey: string, input: { verified: boolean; note?: string | null; basedOn?: unknown }, userId: string) {
-    if (!isVerifiableField(fieldKey)) throw new BadRequestException('This information cannot be verified here');
-    const note = input.note?.trim() || null;
-    if (note && note.length > 1000) throw new BadRequestException('The note must be 1000 characters or fewer');
-
+  async setSectionVerification(activationId: string, sectionId: string, input: { verified: boolean }, userId: string) {
+    if (!isSectionId(sectionId)) throw new BadRequestException('Unknown verification section');
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const activation = await this.loadLocked(tx, activationId);
       this.assertMentor(activation, userId);
       this.assertWorkable(activation);
       this.assertMeetingStarted(activation);
-
-      const existing = await tx.enrollmentHandoverFieldVerification.findUnique({
-        where: { handoverId_fieldKey: { handoverId: activation.handoverId, fieldKey } },
-      });
-
-      if (!input.verified) {
-        if (!existing) return { fieldKey, verified: false as const, changed: false as const };
-        await tx.enrollmentHandoverFieldVerification.delete({ where: { id: existing.id } });
-        await this.history.record(tx, {
-          activationId,
-          type: 'HANDOVER_FIELD_UNVERIFIED',
-          actorUserId: userId,
-          payload: { fieldKey, previousVerifiedValue: existing.verifiedValue, previousVerifiedByUserId: existing.verifiedByUserId, previousVerifiedAt: existing.verifiedAt },
-        });
-        return { fieldKey, verified: false as const, changed: true as const };
-      }
-
-      const current = (await this.effectiveHandoverValues(tx, activation.handoverId)).get(fieldKey);
-      if (!isMeaningfulValue(current)) {
-        throw new ConflictException('There is nothing to verify yet. Collect this information first.');
-      }
-      if (input.basedOn !== undefined) this.assertNotStale(input.basedOn, current);
-      if (existing && stableJson(existing.verifiedValue) === stableJson(current)) {
-        return { fieldKey, verified: true as const, changed: false as const };
-      }
-
-      const saved = existing
-        ? await tx.enrollmentHandoverFieldVerification.update({
-            where: { id: existing.id },
-            data: { verifiedValue: current as Prisma.InputJsonValue, note, verifiedByUserId: userId, verifiedAt: new Date() },
-          })
-        : await tx.enrollmentHandoverFieldVerification.create({
-            data: { handoverId: activation.handoverId, fieldKey, verifiedValue: current as Prisma.InputJsonValue, note, verifiedByUserId: userId, verifiedAt: new Date() },
-          });
-      await this.history.record(tx, {
-        activationId,
-        type: 'HANDOVER_FIELD_VERIFIED',
-        actorUserId: userId,
-        payload: { fieldKey, value: current, note },
-      });
-      return { fieldKey, verified: true as const, changed: true as const, verifiedAt: saved.verifiedAt };
+      return setSectionVerificationInTx(tx, activation, sectionId, input.verified, userId);
     });
   }
 
@@ -663,7 +777,7 @@ export class MentoringWorkflowService {
   // ─── Head: exceptions, final approval, cancellation ───────────────────────
 
   async authorizeException(activationId: string, stageNumber: number, itemKey: string, reason: string, userId: string) {
-    if (!reason?.trim()) throw new BadRequestException('A reason is required for an exception');
+    if (stageNumber === 2 ? !isMeaningfulReason(reason) : !reason?.trim()) throw new BadRequestException('A reason is required for an exception. Say why in a few words.');
     const def = getChecklistDefinition(stageNumber).find((d) => d.key === itemKey);
     if (!def) throw new BadRequestException('Unknown checklist item for this stage');
     if (!def.mandatory) throw new BadRequestException('Only mandatory items need an exception');
@@ -674,18 +788,22 @@ export class MentoringWorkflowService {
         throw new ConflictException('This activation is closed');
       }
       const stage = this.stageOf(activation, stageNumber);
+      const checklistBefore = await this.summaryOf(tx, stage.id, stageNumber);
       const exception = await tx.workflowException.upsert({
         where: { stageId_itemKey: { stageId: stage.id, itemKey } },
         create: { stageId: stage.id, itemKey, reason: reason.trim(), authorizedByUserId: userId },
         update: { reason: reason.trim(), authorizedByUserId: userId },
       });
-      await this.history.record(tx, {
-        activationId,
+      await this.recordChecklistChange(tx, {
+        activation,
         stageId: stage.id,
+        stageNumber,
+        def,
+        userId,
         type: 'EXCEPTION_AUTHORIZED',
-        actorUserId: userId,
         reason,
-        payload: { stageNumber, itemKey },
+        before: checklistBefore,
+        detail: { exceptionId: exception.id },
       });
       await this.history.notify(tx, {
         recipientUserIds: [activation.currentMentorUserId],
@@ -886,12 +1004,9 @@ export class MentoringWorkflowService {
     const seeParent = this.access.canSeeParentContact(scope, activation);
     const isMentorOrHead = scope.all || activation.currentMentorUserId === scope.userId;
 
-    const [fieldRows, verificationRows, referenceOptions, storedSchedule] = await Promise.all([
+    const [fieldRows, referenceOptions, storedSchedule] = await Promise.all([
       activation.handoverId
         ? this.prisma.enrollmentHandoverField.findMany({ where: { handoverId: activation.handoverId } })
-        : Promise.resolve([]),
-      activation.handoverId
-        ? this.prisma.enrollmentHandoverFieldVerification.findMany({ where: { handoverId: activation.handoverId } })
         : Promise.resolve([]),
       this.referenceOptions(this.prisma as unknown as PrismaTxClient),
       activation.handoverId
@@ -920,7 +1035,9 @@ export class MentoringWorkflowService {
       actorIds.add(f.updatedByUserId);
       if (f.createdByUserId) actorIds.add(f.createdByUserId);
     }
-    for (const v of verificationRows) actorIds.add(v.verifiedByUserId);
+    for (const e of events) if (e.actorUserId) actorIds.add(e.actorUserId);
+    const sections = await sectionStates(this.prisma, activationId);
+    for (const sec of sections) if (sec.verifiedByUserId) actorIds.add(sec.verifiedByUserId);
     for (const st of activation.stages) {
       for (const c of st.checklist) if (c.updatedByUserId) actorIds.add(c.updatedByUserId);
       for (const e of st.exceptions) actorIds.add(e.authorizedByUserId);
@@ -939,6 +1056,7 @@ export class MentoringWorkflowService {
       : [];
     for (const entry of salesList) if (entry && typeof entry.field === 'string') effectiveValues.set(entry.field, entry.value);
     for (const row of fieldRows) effectiveValues.set(row.fieldKey, row.value);
+    withLegacyValues(effectiveValues);
 
     // Stage 1 results saved under an earlier checklist: still there, no longer counted, shown read-only on Stage 2.
     const stageOneRow = activation.stages.find((s) => s.stageNumber === 1);
@@ -985,14 +1103,34 @@ export class MentoringWorkflowService {
     const strip = (fields: unknown) =>
       Array.isArray(fields) ? fields.filter((f) => !(f && typeof f === 'object' && PARENT_CONTACT_FIELDS.has((f as { field: string }).field))) : fields;
 
+    // The subject list is the student's requirements as they are now: what Sales entered, plus what the Mentor added since.
+    const currentRequirements = await this.prisma.requirement.findMany({ where: { studentId: activation.studentId }, include: { subject: true, curriculum: true, grade: true }, orderBy: { createdAt: 'asc' } });
+    const addedEvents = await this.prisma.mentoringEvent.findMany({ where: { activationId, type: 'MENTORING_SUBJECT_ADDED' } });
+    const addedBy = new Map<string, { at: Date; by: string | null }>();
+    for (const ev of addedEvents) {
+      const rid = (ev.payload as { requirementId?: string } | null)?.requirementId;
+      if (rid) addedBy.set(rid, { at: ev.createdAt, by: ev.actorUserId ?? null });
+    }
+    const addedNames = new Map((await this.prisma.employee.findMany({ where: { userId: { in: [...new Set([...addedBy.values()].map((v) => v.by).filter((u): u is string => !!u))] } }, select: { userId: true, firstName: true, lastName: true } })).map((e) => [e.userId, `${e.firstName} ${e.lastName}`.trim()]));
+    const subjectLines = currentRequirements.map((r) => {
+      const add = addedBy.get(r.id);
+      return {
+        requirementId: r.id, subjectId: r.subjectId, subject: r.subject?.name ?? '', curriculum: r.curriculum?.name ?? '', grade: r.grade?.name ?? '',
+        monthlyHours: r.monthlyHours?.toString() ?? null, syllabus: r.syllabus ?? null, notes: r.notes ?? null,
+        addedByMentor: !!add, addedAt: add ? add.at.toISOString() : null, addedByName: add?.by ? addedNames.get(add.by) ?? null : null,
+      };
+    });
+    const withSubjects = (fields: unknown) =>
+      Array.isArray(fields) && (subjectLines.length > 0 || fields.some((f) => f && typeof f === 'object' && (f as { field: string }).field === 'academic.subjects')) ? [...fields.filter((f) => !(f && typeof f === 'object' && (f as { field: string }).field === 'academic.subjects')), { field: 'academic.subjects', source: 'REQUIREMENT', value: subjectLines }] : fields;
+
     const handover = activation.handover && {
       status: activation.handover.status,
       completedAt: activation.handover.completedAt,
       missingFields: activation.handover.missingFields,
-      transferredFields: seeParent ? activation.handover.transferredFields : strip(activation.handover.transferredFields),
+      transferredFields: withSubjects(seeParent ? activation.handover.transferredFields : strip(activation.handover.transferredFields)),
       sourceSnapshot: seeParent ? activation.handover.sourceSnapshot : undefined,
       // Mentoring-side values, kept apart from the Sales data above.
-      fieldValues: fieldRows
+      fieldValues: withLegacyRows(fieldRows)
         .filter((f) => seeParent || !PARENT_CONTACT_FIELDS.has(f.fieldKey))
         .map((f) => ({
           fieldKey: f.fieldKey,
@@ -1006,29 +1144,26 @@ export class MentoringWorkflowService {
           collectedByName: nameFor(f.createdByUserId ?? f.updatedByUserId),
           collectedAt: f.createdAt,
         })),
-      // Meeting verification, separate from whether a value exists. `verified` is true only while the current value is
-      // still the one the Mentor confirmed; `changedSinceVerified` flags a confirmation the value has since outgrown.
-      fieldVerifications: verificationRows
-        .filter((v) => seeParent || !PARENT_CONTACT_FIELDS.has(v.fieldKey))
-        .map((v) => {
-          const current = effectiveValues.get(v.fieldKey);
-          const matches = stableJson(v.verifiedValue) === stableJson(current ?? null);
-          return {
-            fieldKey: v.fieldKey,
-            verified: matches,
-            changedSinceVerified: !matches,
-            note: v.note,
-            verifiedByUserId: v.verifiedByUserId,
-            verifiedByName: nameFor(v.verifiedByUserId),
-            verifiedAt: v.verifiedAt,
-          };
-        }),
+      // Section verification: exactly four sections, one status each. A section is Verified only while the information it covers is
+      // unchanged since it was verified (the state is brought up to date before it is read).
+      sectionVerifications: sections.map((sec) => ({
+        sectionId: sec.id,
+        label: sec.label,
+        covers: sec.covers,
+        // Only the names of the fields, never their values, so every viewer gets the same grouping.
+        fieldKeys: sec.fieldKeys,
+        status: sec.status,
+        verifiedByName: nameFor(sec.verifiedByUserId),
+        verifiedAt: sec.verifiedAt,
+      })),
       editableFields: Object.values(HANDOVER_FIELDS).map((d) => ({
         key: d.key,
         type: d.type,
         options: d.options ?? (d.optionsFrom ? referenceOptions[d.optionsFrom] : undefined) ?? null,
         columns: d.columns ?? null,
         maxLength: d.maxLength ?? null,
+        optional: d.optional === true,
+        allowCustom: d.allowCustom === true,
         minDate: d.minDate ?? null,
         maxDate: d.maxDate === 'TODAY' ? new Date().toISOString().slice(0, 10) : null,
         // Subject schedule only: the lists the editor chooses from, the department's usual class length, and whether this
@@ -1068,12 +1203,15 @@ export class MentoringWorkflowService {
           status: row?.status ?? 'NOT_STARTED',
           startedAt: row?.startedAt ?? null,
           completedAt: row?.completedAt ?? null,
+          // Group and overall completion, calculated here from the stored rows and exceptions. The page shows these and does not work them out.
+          summary: summarizeChecklist(definitions, row?.checklist ?? [], new Set(exceptions.keys())),
           checklist: definitions.map((d) => {
             const r = rows.get(d.key);
             return {
               key: d.key,
               label: d.label,
               mandatory: d.mandatory,
+              allowsUnavailable: canBeUnavailable(d),
               state: r?.state ?? 'PENDING_COLLECTION',
               value: r?.value ?? null,
               note: r?.note ?? null,
@@ -1082,7 +1220,7 @@ export class MentoringWorkflowService {
               group: d.group ?? null,
               groupLabel: d.groupLabel ?? null,
               // The information this requirement depends on, and whether each piece has a value yet.
-              requires: (d.fields ?? []).map((key) => ({ key, label: HANDOVER_FIELD_LABELS[key] ?? key, collected: isMeaningfulValue(effectiveValues.get(key)) })),
+              requires: (d.fields ?? []).map((key) => ({ key, label: HANDOVER_FIELD_LABELS[key] ?? key, collected: isMeaningfulValue(effectiveValues.get(key)) || (!!d.reasonField && isMeaningfulValue(effectiveValues.get(d.reasonField))) })),
               exception: exceptions.has(d.key),
               exceptionDetail: exceptions.has(d.key)
                 ? {
@@ -1103,7 +1241,7 @@ export class MentoringWorkflowService {
       holds: activation.holds,
       approvals: activation.approvals,
       tasks,
-      events,
+      events: events.map((e) => ({ ...e, actorName: nameFor(e.actorUserId) })),
       // The tutor chosen for each subject of the schedule, with whether it still fits.
       tutorAssignments: await this.tutors.assignmentsFor(activationId),
       viewer: {

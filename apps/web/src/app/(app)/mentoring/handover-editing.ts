@@ -127,8 +127,15 @@ export function validateEditorValue(meta: EditableFieldMeta, value: EditorValue,
       return { ok: true, value: text };
     }
     case 'SELECT': {
-      if (!text) return fail('Choose an option');
+      if (!text.trim()) return fail(meta.allowCustom ? 'Choose a language or add one' : 'Choose an option');
       const options = meta.options ?? [];
+      if (meta.allowCustom) {
+        const custom = text.trim().replace(/\s+/g, ' ');
+        const listed = options.find((o) => o.toLowerCase() === custom.toLowerCase());
+        if (listed) return { ok: true, value: listed };
+        if (!/^[\p{L}][\p{L} .'()-]{0,59}$/u.test(custom)) return fail('Enter the language name using letters only, up to 60 characters');
+        return { ok: true, value: custom };
+      }
       if (!options.includes(text)) return fail('Choose one of the listed options');
       return { ok: true, value: text };
     }

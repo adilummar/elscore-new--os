@@ -58,30 +58,30 @@ describe('student details page renders with a complete handover', () => {
   it('shows business labels with the real values for collected information', () => {
     const t = text(html);
     for (const [label, value] of [['Student First Name', 'Asha'], ['Student Last Name', 'Menon'], ['Grade / Class', 'Grade 8'], ['Curriculum / Board', 'CBSE'],
-      ['Parent / Guardian Name', 'Priya Menon'], ['Parent Contact Number', '9876543210'], ['Subjects', 'Mathematics (CBSE · Grade 8) · 8 hrs / month']]) {
+      ['Parent / Guardian Name', 'Priya Menon'], ['Primary Contact Number', '9876543210'], ['Subjects Required', 'Mathematics (CBSE · Grade 8) · 8 hrs / month']]) {
       expect(t).toContain(`${label} ${value}`);
     }
   });
 
   it('lists what is still required with business labels, a short reason and a red missing indicator', () => {
     const t = text(html);
-    for (const label of ['Relationship to Student', 'Preferred Language', 'Previous Academic Marks', 'Preferred Timetable / Schedule', 'Upcoming Examination Dates',
-      'Examination Syllabus / Portions', 'Parent Expectations', 'Student Engagement', 'Tutor Assignment', 'Tutor Requirements', 'Student Notes', 'Learning Difficulties or Concerns']) {
+    for (const label of ['Relationship to Student', 'Preferred Language', 'Previous Academic Performance', 'Preferred Timetable / Schedule', 'Upcoming Examination Details',
+      'Parent Expectations', 'Student Engagement', 'Tutor Assignment', 'Other Tutor Requirements', 'Student Notes', 'Learning Difficulties or Concerns']) {
       expect(t).toContain(label);
     }
     expect(t).toContain('Not asked during the Sales admission. The Mentor collects this.');
     expect(count(t, 'Not asked during the Sales admission')).toBe(1);
     expect(html).toContain('aria-label="Missing"');
-    expect(html).toContain('bg-red-500');
+    expect(html).toContain('bg-amber-500');
   });
 
   it('green received and red missing indicators equal the real counts', () => {
-    // Received from Sales: 6 fields plus the subject list = 7. The remaining 21 of the 28 fields are still required.
+    // Received from Sales: 6 fields plus the subject list = 7. The remaining 25 of the 32 fields are still required.
     expect(count(html, 'aria-label="Received"')).toBe(7);
-    expect(count(html, 'aria-label="Missing"')).toBe(21);
-    expect(text(html)).toContain('7 received, 21 still required');
+    expect(count(html, 'aria-label="Missing"')).toBe(25);
+    expect(text(html)).toContain('7 received, 25 still required');
     expect(text(html)).toContain('Received from Sales 7');
-    expect(text(html)).toContain('Still required 21');
+    expect(text(html)).toContain('Still required 25');
     expect(html).toContain('bg-emerald-500');
   });
 
@@ -128,23 +128,23 @@ describe('student details page with partial or absent data', () => {
 
   it('says the Mentor is unallocated and shows parent details as not provided when they are missing', () => {
     const t = text(render(workspace({ activation: { id: 'a1', status: 'AWAITING_ALLOCATION', currentStage: 1, currentMentorUserId: null, currentMentorName: null }, parent: null })));
-    expect(t).toContain('Mentor: unallocated');
+    expect(t).toContain('Mentor unallocated');
     expect(t).toContain('details not provided');
     expect(t).toContain('Awaiting allocation');
   });
 
   it('shows the assigned Mentor', () => {
-    expect(text(render(workspace()))).toContain('Mentor: Ravi Kumar');
+    expect(text(render(workspace()))).toContain('Mentor Ravi Kumar');
   });
 
   it('shows what is known when parent information is incomplete', () => {
-    expect(text(render(workspace({ parent: { name: 'Priya Menon', primaryPhone: null } })))).toContain('Parent / Guardian: Priya Menon');
+    expect(text(render(workspace({ parent: { name: 'Priya Menon', primaryPhone: null } })))).toContain('Parent / Guardian Priya Menon');
   });
 
   it('with nothing received, shows the full required list and an empty-state message', () => {
     const t = text(render(workspace({ handover: { transferredFields: [], missingFields: NOT_BY_SALES } })));
     expect(t).toContain('Sales has not passed on any information yet.');
-    expect(t).toContain('0 received, 28 still required');
+    expect(t).toContain('0 received, 32 still required');
   });
 
   it('with every field received, says nothing is missing', () => {
@@ -153,7 +153,7 @@ describe('student details page with partial or absent data', () => {
       : SALES(key, key === 'student.dateOfBirth' ? '2015-05-12' : 'Provided')));
     const t = text(render(workspace({ handover: { transferredFields: all, missingFields: [] } })));
     expect(t).toContain('Nothing is missing.');
-    expect(t).toContain('28 received, 0 still required');
+    expect(t).toContain('33 received, 0 still required');
   });
 
   it('shows a very long value inside its row', () => {

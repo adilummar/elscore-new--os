@@ -32,13 +32,12 @@ function handover(stored: unknown, over: { meta?: EditableFieldMeta; verified?: 
     ],
     missingFields: [],
     fieldValues: stored === undefined ? [] : [{ fieldKey: KEY, value: stored, origin: 'MENTOR_COLLECTED', salesValue: null, updatedByName: 'Mina Mentor', updatedAt: '2026-11-03T09:40:00Z', collectedByName: 'Mina Mentor', collectedAt: '2026-11-03T09:40:00Z' }],
-    fieldVerifications: over.verified || over.changed ? [{ fieldKey: KEY, verified: !over.changed, changedSinceVerified: !!over.changed, verifiedByName: 'Mina Mentor', verifiedAt: '2026-11-03T09:50:00Z' }] : [],
     editableFields: [over.meta ?? scheduleMeta()],
   };
 }
 
 const render = (h: unknown, props: Record<string, unknown> = {}) =>
-  renderToStaticMarkup(React.createElement(InformationWorkspace, { handover: h, canEdit: true, onSave: async () => undefined, onVerify: async () => undefined, ...props } as never));
+  renderToStaticMarkup(React.createElement(InformationWorkspace, { handover: h, canEdit: true, onSave: async () => undefined, onVerifySection: async () => undefined, ...props } as never));
 const text = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 const pressedDays = (markup: string) => Array.from(markup.matchAll(/<button[^>]*aria-label="(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"[^>]*aria-pressed="true"/g)).map((m) => m[1]);
 const count = (markup: string, needle: string) => markup.split(needle).length - 1;
@@ -138,8 +137,8 @@ describe('the subject schedule editor', () => {
   it('offers Add subject, and Sales subjects that are not in the plan yet as quick additions', () => {
     const t = text(render(handover(plan(english()))));
     expect(t).toContain('Add subject');
-    expect(t).toContain('Add Mathematics (Grade 8) from Sales');
-    expect(text(render(handover(plan(maths()))))).not.toContain('Add Mathematics (Grade 8) from Sales');
+    expect(t).toContain('Add Mathematics from Sales');
+    expect(text(render(handover(plan(maths()))))).not.toContain('Add Mathematics from Sales');
   });
 
   it('tells the Mentor what Sales recorded for a subject already in the plan', () => {
@@ -177,18 +176,12 @@ describe('the subject schedule editor', () => {
   });
 });
 
-describe('the schedule card keeps the collection and verification workflow', () => {
-  it('shows the source, the status and the verification checkbox', () => {
+describe('the schedule card keeps the collection workflow', () => {
+  it('shows the source and the collection status, and no tick of its own', () => {
     const t = text(render(handover(plan(english()))));
     expect(t).toContain('Preferred Timetable / Schedule');
     expect(t).toContain('Source: Collected by Mina Mentor');
-    expect(t).toContain('Not verified');
-    expect(t).toContain('I have verified this information');
-  });
-
-  it('shows verified, and shows changed since verified after an edit', () => {
-    expect(text(render(handover(plan(english()), { verified: true })))).toContain('Verified by Mina Mentor');
-    expect(text(render(handover(plan(english()), { changed: true })))).toContain('Changed since verified');
+    expect(t).not.toContain('I have verified this information');
   });
 
   it('the schedule counts as one collected field, and as pending when nothing is saved', () => {
@@ -276,7 +269,25 @@ describe('the schedule screen follows the Unslop rules', () => {
   });
 
   it('writes buttons and labels in sentence case', () => {
-    for (const label of ['Add subject', 'Remove subject', 'Edit session durations', 'Add to subject list', 'Required level', 'Preferred days']) expect(t).toContain(label);
+    for (const label of ['Add subject', 'Remove subject', 'Edit session durations', 'Add to subject list', 'Preferred days']) expect(t).toContain(label);
     expect(t).not.toMatch(/Add Subject|Remove Subject|Edit Session Durations|Restore Equal Distribution/);
+  });
+});
+
+describe('one grade only: subjects take the student\'s Grade / Class', () => {
+  const html = render(handover(plan(english())));
+
+  it('asks for no level on a subject card, and shows the level the subject uses', () => {
+    expect(html).not.toContain('Required level');
+    expect(html).not.toContain('Select a level');
+    expect(text(html)).toContain('Grade 8');
+  });
+
+  it('a new subject, and a Sales subject added from the list, are given the student\'s grade by the editor', () => {
+    const source = require('fs').readFileSync(require('path').join(__dirname, 'students/[id]/SubjectScheduleEditor.tsx'), 'utf8');
+    expect(source).toContain('const withGrade');
+    expect(source).toContain("set([...subjects, withGrade(newSubject('WEEKLY'))])");
+    expect(source).toContain('studentGrade');
+    expect(source).not.toContain('aria-label={`Required level');
   });
 });

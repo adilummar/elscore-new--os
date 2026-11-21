@@ -37,7 +37,7 @@ describe('progress', () => {
 
   it('counts completed, resolved-otherwise, exceptions and outstanding mandatory items', () => {
     expect(computeProgress(items)).toEqual({
-      total: 6, completed: 2, resolvedOther: 2, exceptions: 1, outstandingMandatory: ['d'], groupsTotal: 3, groupsResolved: 1, percent: 67,
+      total: 6, completed: 2, resolvedOther: 2, exceptions: 1, outstandingMandatory: ['d'], groupsTotal: 3, groupsResolved: 2, percent: 67, // a group holding only an advisory check that is not done counts as resolved
     });
   });
 

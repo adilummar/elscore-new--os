@@ -28,14 +28,20 @@ export function primaryNav(can: Can): NavItem[] {
 /** Supporting areas, each reachable in one place only. */
 export function secondaryNav(can: Can): NavItem[] {
   const out: NavItem[] = [];
-  if (sees(can)) {
+  // A Mentor's menu stays short (Students, Classes, Exams, Meetings, Complaints); onboarding is a Students filter and the dashboard lists it.
+  if (wide(can)) {
     out.push({ href: ONBOARDING_HREF, label: 'Phase 1 onboarding', section: 'onboarding' });
   }
   if (can('mentoring.task.work') || can('mentoring.task.create')) out.push({ href: '/mentoring/tasks', label: 'Pending actions', section: 'tasks' });
   if (can('mentoring.allocation.read') || can('mentoring.staff.read')) out.push({ href: '/mentoring/allocation', label: 'Allocation', section: 'allocation' });
   if (can('mentoring.approval.final') || wide(can)) out.push({ href: '/mentoring/approvals', label: 'Final approvals', section: 'approvals' });
-  if (can('mentoring.staff.read')) out.push({ href: '/mentoring/staff', label: 'Mentors and counselors', section: 'staff' });
-  if (sees(can)) out.push({ href: '/mentoring/overview', label: wide(can) ? 'Department overview' : 'Overview', section: 'overview' });
+  if (can('mentoring.staff.read')) out.push({ href: '/mentoring/staff', label: wide(can) ? 'Staff and capacity' : 'Mentors and counselors', section: 'staff' });
+  if (wide(can)) out.push({ href: '/mentoring/overview', label: wide(can) ? 'Department overview' : 'Overview', section: 'overview' });
+  // The Head's duties come first: decisions, then allocation, then the team.
+  if (wide(can)) {
+    const order = ['approvals', 'allocation', 'tasks', 'staff', 'onboarding', 'overview'];
+    out.sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section));
+  }
   return out;
 }
 

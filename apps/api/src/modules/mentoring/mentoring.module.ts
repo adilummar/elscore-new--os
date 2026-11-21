@@ -11,6 +11,8 @@ import { MentoringAllocationController } from './mentoring-allocation.controller
 import { MentoringAllocationService } from './mentoring-allocation.service';
 import { MentoringActivityOptionController } from './mentoring-activity-option.controller';
 import { MentoringActivityOptionService } from './mentoring-activity-option.service';
+import { MentoringCapacityController } from './mentoring-capacity.controller';
+import { MentoringCapacityService } from './mentoring-capacity.service';
 import { MentoringClassStageService } from './mentoring-class-stage.service';
 import { MentoringClassWorkspaceController, TutorClassWorkspaceController } from './mentoring-class-workspace.controller';
 import { MentoringClassWorkspaceService } from './mentoring-class-workspace.service';
@@ -48,12 +50,13 @@ import { TutorClassesController } from './tutor-classes.controller';
 
 @Module({
   imports: [PrismaModule, AuditModule, RbacModule, BullModule.registerQueue({ name: QUEUES.MENTORING })],
-  controllers: [MentoringActivityOptionController, MentoringWorkflowController, MentoringAllocationController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringStudentHubController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
+  controllers: [MentoringActivityOptionController, MentoringWorkflowController, MentoringAllocationController, MentoringCapacityController, MentoringTaskController, MentoringOperationsController, MentoringClassController, TutorClassesController, MentoringExamController, TutorExamsController, MentoringReviewController, MentoringComplaintController, MentoringDashboardController, MentoringOverviewController, MentoringStudentHubController, MentoringClassWorkspaceController, TutorClassWorkspaceController],
   providers: [
     MentoringHandoverService,
     MentoringAccessService,
     MentoringHistoryService,
     MentoringAllocationService,
+    MentoringCapacityService,
     MentoringStaffService,
     MentoringTaskService,
     MentoringTutorService,

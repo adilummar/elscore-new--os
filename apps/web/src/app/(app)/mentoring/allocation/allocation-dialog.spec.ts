@@ -13,16 +13,16 @@ describe('Allocation over-capacity confirmation dialog', () => {
     expect(source).toContain('<Overlay');
     expect(source).toContain('variant="dialog"');
     expect(source).toContain('testId="over-capacity-dialog"');
-    expect(source).toContain('title="Mentor at capacity"');
+    expect(source).toContain('title="Mentor over monthly hour limit"');
   });
 
   it('displays current workload, proposed workload, and capacity limit', () => {
     expect(source).toContain('Current Workload');
     expect(source).toContain('Proposed Workload');
     expect(source).toContain('Capacity Limit');
-    expect(source).toContain('{target.mentor.openStudents} students');
-    expect(source).toContain('{target.mentor.openStudents + 1} students');
-    expect(source).toContain('{target.mentor.capacity} students');
+    expect(source).toContain('{target.mentor.allocatedHours} hours');
+    expect(source).toContain('{target.mentor.allocatedHours + target.studentHours} hours');
+    expect(source).toContain('{target.mentor.monthlyHourLimit} hours');
   });
 
   it('requires a reason and rejects blank or whitespace-only inputs', () => {
@@ -58,7 +58,7 @@ describe('Allocation over-capacity confirmation dialog', () => {
   });
 
   it('enforces capacity validation so only mentors at or above capacity trigger the dialog', () => {
-    expect(source).toContain('m.openStudents >= m.capacity');
+    expect(source).toContain('m.allocatedHours + (q.monthlyHours ?? 0) > m.monthlyHourLimit');
     expect(source).toContain('setTarget({');
   });
 

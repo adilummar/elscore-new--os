@@ -175,6 +175,13 @@ export const tabOf = (value: unknown): TabKey => (TABS.find(([k]) => k === value
 
 /** The older student page panels that now live in a tab. The activation checklist and tasks stay on the older page. */
 export const TAB_FOR_PANEL: Record<string, TabKey> = { classes: 'classes', exams: 'exams', review: 'plan', complaints: 'complaints', history: 'activation' };
+/** The sections of a student that the sidebar links to (?panel=), in order. */
+export const WORKSPACE_PANELS = ['checklist', 'classes', 'exams', 'review', 'complaints', 'tasks', 'history'] as const;
+export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number];
+/** The panel an address asks for. Anything else is not a panel. */
+export const workspacePanelOf = (value: unknown): WorkspacePanel | undefined =>
+  typeof value === 'string' && (WORKSPACE_PANELS as readonly string[]).includes(value) ? (value as WorkspacePanel) : undefined;
+
 /** Whether the address asks for the activation workflow page. Anything else opens the workspace. */
 export const wantsActivationWorkflow = (panel: unknown): boolean => panel === 'checklist' || panel === 'tasks';
 
@@ -216,3 +223,12 @@ export function untilText(today: string, date: string): string {
  * (in progress, on hold, blocked, waiting for final approval) gets the existing seven-stage activation workspace.
  */
 export const profileModeOf = (status: string): 'OPERATIONS' | 'ACTIVATION' => (status === 'ACTIVATED' ? 'OPERATIONS' : 'ACTIVATION');
+
+/** Each kind of pending item on a student opens the place where it is dealt with. */
+export function pendingLinks(r: { activationId: string; name: string; pending: { verification: number; complaints: number; tasks: number } }): Array<{ key: 'verification' | 'complaints' | 'tasks'; label: string; href: string }> {
+  const out: Array<{ key: 'verification' | 'complaints' | 'tasks'; label: string; href: string }> = [];
+  if (r.pending.verification > 0) out.push({ key: 'verification', label: `${r.pending.verification} to verify`, href: `/mentoring/classes?card=classes_awaiting_verification&studentQuery=${encodeURIComponent(r.name)}` });
+  if (r.pending.complaints > 0) out.push({ key: 'complaints', label: `${r.pending.complaints} ${r.pending.complaints === 1 ? 'complaint' : 'complaints'}`, href: `/mentoring/students/${r.activationId}?tab=complaints` });
+  if (r.pending.tasks > 0) out.push({ key: 'tasks', label: `${r.pending.tasks} ${r.pending.tasks === 1 ? 'task' : 'tasks'}`, href: `/mentoring/students/${r.activationId}?panel=checklist` });
+  return out;
+}

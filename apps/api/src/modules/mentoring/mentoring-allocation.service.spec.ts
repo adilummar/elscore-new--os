@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 
 
 import { chooseMentor, MentoringAllocationService, MentorCandidate } from './mentoring-allocation.service';
+import { MentoringCapacityService } from './mentoring-capacity.service';
 import { MentoringHistoryService } from './mentoring-history.service';
 import { FakeDb } from './testing/mentoring-fake-db';
 
@@ -12,9 +13,13 @@ describe('chooseMentor (selection rule)', () => {
     expect(chooseMentor([cand('a', 5), cand('b', 2), cand('c', 9)])).toEqual({ mentorUserId: 'b', reason: 'LEAST_LOADED' });
   });
 
-  it('never picks a mentor at capacity', () => {
-    expect(chooseMentor([cand('a', 10, 10), cand('b', 30)])?.mentorUserId).toBe('b');
-    expect(chooseMentor([cand('a', 10, 10), cand('b', 5, 5)])).toBeNull();
+  it('never picks a mentor whose limit the student\'s full monthly hours would pass', () => {
+    const o = { studentHours: 1 };
+    expect(chooseMentor([cand('a', 10, 10), cand('b', 30)], o)?.mentorUserId).toBe('b');
+    expect(chooseMentor([cand('a', 10, 10), cand('b', 5, 5)], o)).toBeNull();
+    expect(chooseMentor([cand('a', 55, 60), cand('b', 30, 40)], { studentHours: 10 })?.mentorUserId).toBe('b');
+    expect(chooseMentor([cand('a', 50, 60)], { studentHours: 10 })?.mentorUserId).toBe('a');
+    expect(chooseMentor([cand('a', 51, 60)], { studentHours: 10 })).toBeNull();
     expect(chooseMentor([])).toBeNull();
   });
 
@@ -33,7 +38,7 @@ describe('chooseMentor (selection rule)', () => {
   });
 
   it('ignores sibling affinity when the sibling mentor is full or the rule is off', () => {
-    expect(chooseMentor([cand('a', 1), cand('b', 40, 40)], { siblingAffinity: true, siblingMentorIds: ['b'] })?.mentorUserId).toBe('a');
+    expect(chooseMentor([cand('a', 1), cand('b', 40, 40)], { siblingAffinity: true, siblingMentorIds: ['b'], studentHours: 1 })?.mentorUserId).toBe('a');
     expect(chooseMentor([cand('a', 1), cand('b', 20)], { siblingAffinity: false, siblingMentorIds: ['b'] })?.mentorUserId).toBe('a');
   });
 });
@@ -41,19 +46,22 @@ describe('chooseMentor (selection rule)', () => {
 function setup() {
   const db = new FakeDb();
   const history = new MentoringHistoryService({ recordInTx: jest.fn().mockResolvedValue(undefined) } as any);
-  const service = new MentoringAllocationService(db as any, history);
+  const service = new MentoringAllocationService(db as any, history, new MentoringCapacityService(db as any));
 
   const mentor = (id: string, opts: { load?: number; capacity?: number | null; active?: boolean; accepting?: boolean; employment?: string; userStatus?: string; role?: boolean } = {}) => {
     db.seed('user', { id, status: opts.userStatus ?? 'ACTIVE' });
     db.seed('employee', { userId: id, firstName: id, lastName: 'M', employmentStatus: opts.employment ?? 'ACTIVE' });
-    db.seed('mentoringStaffProfile', { userId: id, role: 'MENTOR', capacity: opts.capacity ?? null, isActive: opts.active ?? true, acceptsAllocation: opts.accepting ?? true });
+    db.seed('mentoringStaffProfile', { userId: id, role: 'MENTOR', monthlyHourLimit: opts.capacity ?? 40, isActive: opts.active ?? true, acceptsAllocation: opts.accepting ?? true });
     if (opts.role !== false) db.seed('userRole', { userId: id, role: { code: 'MENTOR' }, user: { status: 'ACTIVE' } });
     for (let i = 0; i < (opts.load ?? 0); i++) {
       db.seed('mentoringActivation', { id: `${id}-open-${i}`, leadId: `L-${id}-${i}`, studentId: `S-${id}-${i}`, status: 'ACTIVATION_IN_PROGRESS', currentStage: 1, currentMentorUserId: id });
+      db.seed('requirement', { studentId: `S-${id}-${i}`, monthlyHours: 1 });
     }
   };
-  const awaiting = (id = 'act-new', leadId = 'lead-new') =>
-    db.seed('mentoringActivation', { id, leadId, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'AWAITING_ALLOCATION', currentStage: 1, currentMentorUserId: null });
+  const awaiting = (id = 'act-new', leadId = 'lead-new', hours = 1) => {
+    db.seed('requirement', { studentId: `stu-${id}`, monthlyHours: hours });
+    return db.seed('mentoringActivation', { id, leadId, studentId: `stu-${id}`, handoverId: `ho-${id}`, status: 'AWAITING_ALLOCATION', currentStage: 1, currentMentorUserId: null });
+  };
   const head = () => db.seed('userRole', { userId: 'head-1', role: { code: 'MENTORING_HEAD' }, user: { status: 'ACTIVE' } });
   const activation = (id: string) => db.rows('mentoringActivation').find((a) => a.id === id)!;
   return { db, service, mentor, awaiting, head, activation, tx: db as any };
@@ -146,6 +154,7 @@ describe('MentoringAllocationService automatic allocation', () => {
     const { service, mentor, awaiting, db, activation, tx } = setup();
     mentor('m1', { load: 8 }); mentor('m2', { load: 0 });
     db.seed('mentoringActivation', { id: 'sibling-1', leadId: 'lead-shared', studentId: 'stu-s1', status: 'ACTIVATION_IN_PROGRESS', currentStage: 1, currentMentorUserId: 'm1' });
+    db.seed('requirement', { studentId: 'stu-s1', monthlyHours: 1 });
     awaiting('act-sib', 'lead-shared');
 
     await service.autoAllocateInTx(tx, 'act-sib', 'system');

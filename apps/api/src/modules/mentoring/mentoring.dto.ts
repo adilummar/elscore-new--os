@@ -8,8 +8,10 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
+  MaxLength,
 
   Max,
   Min,
@@ -42,12 +44,9 @@ export class UpdateHandoverFieldDto {
   @IsOptional() basedOn?: unknown;
 }
 
-/** Confirm (verified: true) or withdraw the confirmation of one field during the parent meeting. */
-export class SetFieldVerificationDto {
+/** Verify (verified: true) or withdraw the verification of one of the four activation sections. */
+export class SetSectionVerificationDto {
   @IsBoolean() verified!: boolean;
-  @IsOptional() @IsString() note?: string;
-  /** The value the Mentor confirmed on screen. Confirming is refused if the stored value has changed since. */
-  @IsOptional() basedOn?: unknown;
 }
 
 /** A student's timetable for a range of dates. The rules for the range are checked by the timetable service. */
@@ -261,6 +260,11 @@ export class TransferMentorDto {
   @IsString() @IsNotEmpty() mentorUserId!: string;
   @IsString() @IsNotEmpty() reason!: string;
   @Type(() => Date) @IsDate() expectedReturnAt!: Date;
+  @IsOptional() @IsString() overCapacityReason?: string;
+}
+
+export class EndTransferDto {
+  @IsOptional() @IsString() overCapacityReason?: string;
 }
 
 export class ReturnToQueueDto {
@@ -269,13 +273,18 @@ export class ReturnToQueueDto {
 
 export class UpdateSettingsDto {
   @IsOptional() @IsIn(['AUTO', 'MANUAL']) allocationMode?: 'AUTO' | 'MANUAL';
-  @IsOptional() @IsInt() @Min(1) @Max(500) defaultCapacity?: number;
+  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(1000) defaultMonthlyHourLimit?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(100) capacityWarningPercent?: number;
   @IsOptional() @IsBoolean() siblingAffinity?: boolean;
+}
+
+export class SetMentorLimitDto {
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(1000) monthlyHourLimit!: number;
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
 }
 
 export class UpsertStaffDto {
   @IsEnum(MentoringStaffRole) role!: MentoringStaffRole;
-  @IsOptional() @IsInt() @Min(1) @Max(500) capacity?: number | null;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsBoolean() acceptsAllocation?: boolean;
   @IsOptional() @IsString() team?: string | null;

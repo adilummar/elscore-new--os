@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { mentoringApi } from '../mentoring-client';
 import { fmt } from '../labels';
+import { allocationPreview, studentHoursText } from '../capacity-view';
 import {
   Banner,
   Empty,
@@ -32,11 +33,13 @@ interface OverCapacityTarget {
   activationId: string;
   studentName: string;
   studentBusinessId: string;
+  /** The student's full monthly hours. */
+  studentHours: number;
   mentor: {
     userId: string;
     name: string;
-    openStudents: number;
-    capacity: number;
+    allocatedHours: number;
+    monthlyHourLimit: number;
   };
 }
 
@@ -47,6 +50,7 @@ export function AllocationClient() {
   const [busy, setBusy] = React.useState(false);
   const [pick, setPick] = React.useState<Record<string, string>>({});
   const [cap, setCap] = React.useState('');
+  const [warnPct, setWarnPct] = React.useState('');
 
   // Over-capacity confirmation dialog state
   const [target, setTarget] = React.useState<OverCapacityTarget | null>(null);
@@ -60,7 +64,8 @@ export function AllocationClient() {
       const [q, w] = await Promise.all([mentoringApi('/mentoring/allocation/queue'), mentoringApi('/mentoring/allocation/workload')]);
       setQueue(q);
       setLoad(w);
-      setCap(String(w.settings.defaultCapacity));
+      setCap(String(Number(w.settings.defaultMonthlyHourLimit)));
+      setWarnPct(String(w.settings.capacityWarningPercent));
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -71,11 +76,15 @@ export function AllocationClient() {
     refresh();
   }, [refresh]);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const [saved, setSaved] = React.useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>, done?: string) => {
     setBusy(true);
+    setSaved(null);
     try {
       await fn();
       await refresh();
+      setError(null);
+      if (done) setSaved(done);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -92,16 +101,18 @@ export function AllocationClient() {
     const m = mentors.find((x: any) => x.userId === mentorId);
     if (!m) return;
 
-    if (m.openStudents >= m.capacity) {
+    // The server decides; this only shows the Head what they are about to approve. A student's full monthly hours are charged.
+    if (m.allocatedHours + (q.monthlyHours ?? 0) > m.monthlyHourLimit) {
       setTarget({
         activationId: q.activationId,
         studentName: q.studentName,
         studentBusinessId: q.studentBusinessId,
+        studentHours: q.monthlyHours ?? 0,
         mentor: {
           userId: m.userId,
           name: m.name,
-          openStudents: m.openStudents,
-          capacity: m.capacity,
+          allocatedHours: m.allocatedHours,
+          monthlyHourLimit: m.monthlyHourLimit,
         },
       });
       setReason('');
@@ -112,7 +123,7 @@ export function AllocationClient() {
 
     run(async () => {
       await mentoringApi(`/mentoring/allocation/${q.activationId}/assign`, 'POST', { mentorUserId: mentorId });
-    });
+    }, `${q.studentName} is now allocated to ${m.name}. ${m.name} has ${Math.max(0, m.monthlyHourLimit - m.allocatedHours - (q.monthlyHours ?? 0))} h left this month.`);
   };
 
   const handleConfirmOverCapacity = async (e?: React.FormEvent) => {
@@ -134,6 +145,7 @@ export function AllocationClient() {
         mentorUserId: target.mentor.userId,
         overCapacityReason: trimmed,
       });
+      setSaved(`${target.studentName} is now allocated to ${target.mentor.name} over capacity. Your reason was recorded with your name and the time.`);
       setTarget(null);
       setReason('');
       await refresh();
@@ -148,6 +160,7 @@ export function AllocationClient() {
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader title="Allocation and workload" subtitle="Give new students a Mentor and keep each Mentor within capacity." />
       {error && <Banner tone="error">{error}</Banner>}
+      {saved && <Banner tone="success">{saved}</Banner>}
       {!load && !error && <ListSkeleton rows={4} label="Loading allocation" />}
 
       {load && (
@@ -161,12 +174,21 @@ export function AllocationClient() {
               </Select>
             </label>
             <div>
-              <span className={FIELD_LABEL}>Default capacity per Mentor</span>
+              <span className={FIELD_LABEL}>Default monthly hours per Mentor</span>
               <div className="flex gap-2">
                 <div className="w-24">
-                  <Input aria-label="Default capacity per Mentor" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} />
+                  <Input aria-label="Default monthly hour limit per Mentor" type="number" min={0} step="0.5" value={cap} onChange={(e) => setCap(e.target.value)} />
                 </div>
-                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { defaultCapacity: Number(cap) }))}>Save</Button>
+                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { defaultMonthlyHourLimit: Number(cap) }))}>Save</Button>
+              </div>
+            </div>
+            <div>
+              <span className={FIELD_LABEL}>Warn from (% used)</span>
+              <div className="flex gap-2">
+                <div className="w-20">
+                  <Input aria-label="Capacity warning percentage" type="number" min={1} max={100} value={warnPct} onChange={(e) => setWarnPct(e.target.value)} />
+                </div>
+                <Button size="sm" variant="outline" onClick={() => run(() => mentoringApi('/mentoring/allocation/settings', 'PUT', { capacityWarningPercent: Number(warnPct) }))}>Save</Button>
               </div>
             </div>
             <label className="flex min-h-9 items-center gap-2">
@@ -182,20 +204,27 @@ export function AllocationClient() {
         {queue.length > 0 && load && mentors.length === 0 && (
           <Notice tone="warning">No eligible Mentors yet. Create Mentors in Settings, Users under the Mentoring department. Mentors created earlier appear after you open Mentoring, Staff and choose &quot;Add missing Mentors&quot;.</Notice>
         )}
+        {queue.some((q) => !(Number(q.monthlyHours) > 0)) && <Notice tone="warning">Hours are not set for {queue.filter((q) => !(Number(q.monthlyHours) > 0)).length} of {queue.length} waiting students, so they would add nothing to a Mentor's capacity yet. Set their monthly hours on the student's requirement first.</Notice>}
         {load && queue.length === 0 && <Empty title="No students are waiting for a Mentor">New enrolled students appear here until they are allocated.</Empty>}
         {queue.length > 0 && (
           <ul className={`${PANEL} divide-y divide-slate-100 text-sm`} aria-label="Allocation queue">
             {queue.map((q) => (
               <li key={q.activationId} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <Link href={`/mentoring/students/${q.activationId}`} className={`rounded font-medium text-brand-700 hover:underline ${FOCUS}`}>{q.studentName} ({q.studentBusinessId})</Link>
-                <span className={`text-xs ${MUTED}`}>Queued {fmt(q.queuedAt)}</span>
+                <span className={`text-xs ${MUTED}`}>Queued {fmt(q.queuedAt)} · {studentHoursText(q.monthlyHours)}</span>
                 <Select aria-label={`Mentor for ${q.studentName}`} className="w-64" value={pick[q.activationId] ?? ''} onChange={(e) => setPick({ ...pick, [q.activationId]: e.target.value })}>
                   <option value="">Choose a Mentor</option>
-                  {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}, {m.openStudents} of {m.capacity} students</option>)}
+                  {mentors.map((m: any) => <option key={m.userId} value={m.userId}>{m.name}, {m.allocatedHours} of {m.monthlyHourLimit} hours{q.monthlyHours ? ` (this student adds ${q.monthlyHours})` : ''}</option>)}
                 </Select>
                 <Button size="sm" disabled={!pick[q.activationId]} isLoading={busy} onClick={() => handleAllocateClick(q)}>
                   Allocate
                 </Button>
+                {(() => {
+                  const pm = mentors.find((x: any) => x.userId === pick[q.activationId]);
+                  if (!pm) return null;
+                  const p = allocationPreview(pm, q.monthlyHours);
+                  return <p className={`basis-full text-sm ${p.tone === 'ok' ? MUTED : p.tone === 'over' ? 'font-medium text-red-800' : 'text-amber-900'}`} role="status" data-testid="allocation-preview">{p.tone === 'over' ? 'Over capacity: ' : p.tone === 'warn' ? 'Hours not set: ' : ''}{p.text}</p>;
+                })()}
               </li>
             ))}
           </ul>
@@ -207,14 +236,15 @@ export function AllocationClient() {
           <table className={TABLE}>
             <caption className="sr-only">Workload of each Mentor and Demo Counselor</caption>
             <thead className={THEAD}>
-              <tr>{['Name', 'Role', 'Open students', 'Open tasks', 'Status'].map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}</tr>
+              <tr>{['Name', 'Role', 'Monthly hours used', 'Students', 'Open tasks', 'Status'].map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {(load?.staff ?? []).map((s: any) => (
                 <tr key={s.userId} className={TR}>
                   <td className={`${TD} font-medium text-slate-900`}>{s.name}</td>
                   <td className={TD}>{s.role === 'MENTOR' ? 'Mentor' : 'Demo Counselor'}</td>
-                  <td className={TD}>{s.role === 'MENTOR' ? `${s.openStudents} of ${s.capacity}` : 'Not used'}</td>
+                  <td className={TD}>{s.role === 'MENTOR' ? `${s.allocatedHours} of ${s.monthlyHourLimit} h (${s.utilizationPercent}%)` : 'Not used'}</td>
+                  <td className={TD}>{s.role === 'MENTOR' ? s.openStudents : 'Not used'}</td>
                   <td className={TD}>{s.openTasks}</td>
                   <td className={TD}>
                     {!s.eligibleForManual ? (
@@ -240,7 +270,7 @@ export function AllocationClient() {
         <Overlay
           variant="dialog"
           size="md"
-          title="Mentor at capacity"
+          title="Mentor over monthly hour limit"
           subtitle={`Over-capacity allocation for ${target.studentName} (${target.studentBusinessId})`}
           onClose={() => {
             if (!dialogBusy) {
@@ -255,22 +285,22 @@ export function AllocationClient() {
         >
           <form onSubmit={handleConfirmOverCapacity} className="space-y-4">
             <Notice tone="warning">
-              <strong>{target.mentor.name}</strong> is currently at capacity ({target.mentor.openStudents} of {target.mentor.capacity} students).
-              Allocating an additional student will exceed their limit and requires an explicit reason.
+              <strong>{target.mentor.name}</strong> has {target.mentor.allocatedHours} of {target.mentor.monthlyHourLimit} monthly hours allocated. This student needs {target.studentHours} more.
+              Approving it puts the Mentor over their limit. Only the Mentoring Head can approve this, a reason is required, and the approval is recorded.
             </Notice>
 
             <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-center">
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Current Workload</span>
-                <span className="mt-1 block text-lg font-bold text-slate-900">{target.mentor.openStudents} students</span>
+                <span className="mt-1 block text-lg font-bold text-slate-900">{target.mentor.allocatedHours} hours</span>
               </div>
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Proposed Workload</span>
-                <span className="mt-1 block text-lg font-bold text-amber-800">{target.mentor.openStudents + 1} students</span>
+                <span className="mt-1 block text-lg font-bold text-amber-800">{target.mentor.allocatedHours + target.studentHours} hours</span>
               </div>
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Capacity Limit</span>
-                <span className="mt-1 block text-lg font-bold text-slate-800">{target.mentor.capacity} students</span>
+                <span className="mt-1 block text-lg font-bold text-slate-800">{target.mentor.monthlyHourLimit} hours</span>
               </div>
             </div>
 
@@ -278,7 +308,7 @@ export function AllocationClient() {
 
             <div>
               <label htmlFor="over-capacity-reason" className={FIELD_LABEL}>
-                Reason for exceeding capacity <span className="text-red-600">*</span>
+                Reason for approving over the monthly limit <span className="text-red-600">*</span>
               </label>
               <textarea
                 id="over-capacity-reason"
@@ -286,7 +316,7 @@ export function AllocationClient() {
                   reasonError ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'
                 }`}
                 rows={3}
-                placeholder="Explain why this student is being assigned to a Mentor who is at capacity..."
+                placeholder="Explain why this student is being assigned to a Mentor who would be over their monthly hour limit..."
                 value={reason}
                 onChange={(e) => {
                   setReason(e.target.value);

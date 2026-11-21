@@ -7,6 +7,8 @@ import MentorDashboard, { buildQueue } from '@/components/dashboard/MentorDashbo
 
 jest.mock('../mentoring/mentoring-client', () => ({ mentoringApi: jest.fn(() => new Promise(() => undefined)) }));
 jest.mock('next/link', () => ({ __esModule: true, default: ({ href, children, ...rest }: any) => React.createElement('a', { href, ...rest }, children) }));
+// The capacity card reads the signed-in user's permissions; it has its own tests (mentoring/capacity.spec.ts).
+jest.mock('../mentoring/CapacityPanels', () => ({ DashboardCapacity: () => React.createElement('div', { 'data-testid': 'capacity-slot' }) }));
 jest.mock('../mentoring/ClassWorkspaceDrawer', () => ({ ClassWorkspaceDrawer: () => React.createElement('div', null, 'Drawer') }));
 
 const text = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
@@ -21,23 +23,23 @@ describe('Mentor dashboard shell', () => {
   it('never links to routes that do not exist', () => {
     expect(source).not.toContain('/mentoring/reviews"');
     expect(source).not.toContain('classState=');
-    expect(source).toContain('/mentoring/classes?state=SCHEDULED');
   });
   it('shows a loading skeleton, not zeros, before the first load', () => {
     expect(html).toContain('aria-label="Loading the dashboard"');
     expect(html).not.toContain('data-testid="today-classes-group"');
   });
-  it('offers one search and keeps the rest behind More filters, with no dead complaint filters', () => {
+  it('keeps the dashboard to what needs the Mentor, with no search, filters, period switch or hours tables', () => {
     const t = text(html);
-    expect(t).toContain('Student name or ID');
-    expect(t).toContain('More filters');
-    expect(html).toContain('aria-expanded="false"');
-    expect(t).not.toContain('Complaint category');
-    expect(t).not.toContain('Response time status');
+    for (const w of ['Student name or ID', 'More filters', 'Custom dates', 'Teaching hours', 'Verified against scheduled']) expect(t).not.toContain(w);
+    expect(source).not.toContain('studentQuery');
+    expect(source).not.toContain('StatTile');
   });
-  it('offers the period choices as one grouped control', () => {
-    const t = text(html);
-    for (const w of ['Today', 'This week', 'This month', 'Custom dates']) expect(t).toContain(w);
+  it('sends hours and workload to Overview and students to the Students page', () => {
+    expect(html).toContain('href="/mentoring/overview"');
+    expect(source).toContain('/mentoring/students');
+  });
+  it('asks the capacity card for its compact form', () => {
+    expect(source).toContain('<DashboardCapacity compact />');
   });
 });
 
@@ -58,11 +60,13 @@ describe('Needs you now queue', () => {
   it('lists only work that waits on the Mentor', () => {
     expect(queue.map((i) => i.category).sort()).toEqual(['Class', 'Class', 'Complaint', 'Exam', 'Handover', 'Meeting']);
   });
-  it('puts missed deadlines first and reserves red for them', () => {
-    const order = queue.map((i) => i.severity);
-    expect(order).toEqual([...order].sort((a, b) => ['danger', 'warning', 'info'].indexOf(a) - ['danger', 'warning', 'info'].indexOf(b)));
+  it('orders one worklist: overdue, then the tutor update, exams, meetings, and verification last', () => {
+    expect(queue.map((i) => i.id)).toEqual(['complaint-k1', 'meeting-a3', 'act-blocked-a4', 'class-update-c2', 'exam-due-a1-s1', 'class-verify-c1']);
+  });
+  it('reserves red for missed deadlines', () => {
     expect(queue.find((i) => i.id === 'class-verify-c1')?.severity).toBe('warning');
     expect(queue.find((i) => i.id === 'complaint-k1')?.severity).toBe('danger');
+    expect(queue.every((i) => i.title && i.reason && i.actionText)).toBe(true);
   });
   it('opens verification in place for a class', () => {
     queue.find((i) => i.id === 'class-verify-c1')?.onActionClick?.();

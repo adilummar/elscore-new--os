@@ -15,7 +15,7 @@ export const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visi
 
 /** A surface: white, one soft ring, a whisper of shadow. Used for tables and the few blocks that need to stand apart. */
 export const PANEL = 'rounded-lg bg-white shadow-card ring-1 ring-slate-200/70';
-export const TABLE_WRAP = `${PANEL} overflow-x-auto`;
+export const TABLE_WRAP = `${PANEL} relative overflow-x-auto`;
 export const TABLE = 'min-w-full text-left text-sm';
 export const THEAD = 'bg-slate-50/80 text-slate-600';
 export const TH = 'px-3 py-2.5 text-xs font-semibold uppercase tracking-wide';

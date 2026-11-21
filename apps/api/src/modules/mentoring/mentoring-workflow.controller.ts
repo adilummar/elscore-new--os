@@ -20,7 +20,7 @@ import {
   RemoveTutorDto,
   ResumeDto,
   SaveSubjectPlanDto,
-  SetFieldVerificationDto,
+  SetSectionVerificationDto,
   StudentListQueryDto,
   TimetableQueryDto,
   UpdateChecklistItemDto,
@@ -111,16 +111,23 @@ export class MentoringWorkflowController {
     return this.workflow.updateStudentProfile(id, dto, user.id);
   }
 
-  /** Confirm a field with the parent, or withdraw the confirmation (assigned Mentor). Separate from collecting the value. */
-  @Put(':activationId/handover/fields/:fieldKey/verification')
+  /** Add a subject the parent asked for (assigned Mentor). Its hours count toward the Mentor's monthly capacity; the Mentor cannot approve going over it. */
+  @Post(':activationId/subjects')
   @RequirePermissions('mentoring.stage.work')
-  setHandoverFieldVerification(
+  addSubject(@Param('activationId') id: string, @Body() dto: { subjectId?: unknown; monthlyHours?: unknown }, @CurrentUser() user: RequestUser) {
+    return this.workflow.addSubject(id, user.id, dto ?? {});
+  }
+
+  /** Verify one of the four activation sections, or withdraw the verification (assigned Mentor). One action per section. */
+  @Put(':activationId/verification/sections/:sectionId')
+  @RequirePermissions('mentoring.stage.work')
+  setSectionVerification(
     @Param('activationId') id: string,
-    @Param('fieldKey') fieldKey: string,
-    @Body() dto: SetFieldVerificationDto,
+    @Param('sectionId') sectionId: string,
+    @Body() dto: SetSectionVerificationDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.workflow.setHandoverFieldVerification(id, fieldKey, dto, user.id);
+    return this.workflow.setSectionVerification(id, sectionId, dto, user.id);
   }
 
   /**

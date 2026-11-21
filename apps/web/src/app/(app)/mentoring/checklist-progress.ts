@@ -8,6 +8,8 @@ export interface ChecklistItemView {
   key: string;
   label: string;
   mandatory: boolean;
+  /** False for a requirement that is an action: it cannot be marked unavailable, only completed or excepted by the Mentoring Head. */
+  allowsUnavailable?: boolean;
   state: string;
   reason?: string | null;
   note?: string | null;
@@ -20,6 +22,26 @@ export interface ChecklistItemView {
   exceptionDetail?: { reason: string; authorizedByName: string | null; at: string } | null;
   updatedByName?: string | null;
   updatedAt?: string | null;
+}
+
+/** Group completion as the API calculated it from the stored rows and exceptions. */
+export interface GroupSummaryView {
+  key: string;
+  label: string;
+  total: number;
+  completed: number;
+  unavailable: number;
+  excepted: number;
+  pending: number;
+  complete: boolean;
+  status: 'COMPLETE' | 'IN_PROGRESS' | 'NOT_STARTED';
+  itemKeys: string[];
+}
+export interface ChecklistSummaryView {
+  groups: GroupSummaryView[];
+  groupsTotal: number;
+  groupsComplete: number;
+  complete: boolean;
 }
 
 export type ItemStatus = 'COMPLETED' | 'AWAITING_VERIFICATION' | 'UNAVAILABLE' | 'NOT_APPLICABLE' | 'EXCEPTION' | 'PENDING';
@@ -109,7 +131,7 @@ export function computeProgress(items: readonly ChecklistItemView[]): ChecklistP
     exceptions: items.filter((i) => i.exception).length,
     outstandingMandatory: items.filter((i) => i.mandatory && !isItemResolved(i)).map((i) => i.key),
     groupsTotal: groups.length,
-    groupsResolved: groups.filter((g) => g.items.every(isItemResolved)).length,
+    groupsResolved: groups.filter((g) => g.items.every((i) => !i.mandatory || isItemResolved(i))).length,
     percent: total === 0 ? 0 : Math.round((resolved.length / total) * 100),
   };
 }
