@@ -10,8 +10,8 @@ import { Select } from '@/components/ui/Select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { usePermissions } from '@/components/providers/AuthProvider';
 import { getSources, listCandidates } from '../actions';
-import { DECISIONS, STAGES, fmtDate } from '../constants';
-import { DecisionBadge, Empty, ErrorNote, PageHeader, SkeletonRows, StageBadge } from '../_components/kit';
+import { DECISIONS, LEAD_STATUSES, STAGES, fmtDate } from '../constants';
+import { DecisionBadge, Empty, ErrorNote, LeadStatusBadge, PageHeader, SkeletonRows, StageBadge } from '../_components/kit';
 
 const PAGE_SIZE = 25;
 
@@ -27,6 +27,7 @@ export default function CandidatesPage() {
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [decision, setDecision] = useState('');
+  const [leadStatus, setLeadStatus] = useState('');
   const [sourceId, setSourceId] = useState('');
   const [mine, setMine] = useState(false);
   const [sort, setSort] = useState('createdAt:desc');
@@ -46,16 +47,17 @@ export default function CandidatesPage() {
     if (q) p.set('search', q);
     if (stage) p.set('stage', stage);
     if (decision) p.set('decision', decision);
+    if (leadStatus) p.set('leadStatus', leadStatus);
     if (sourceId) p.set('sourceId', sourceId);
     if (mine) p.set('mine', 'true');
     const r = await listCandidates(p.toString());
     if (r.ok) { setRows(r.data.data); setMeta(r.data.meta); setError(null); } else setError(r.message);
     setLoading(false);
-  }, [page, q, stage, decision, sourceId, mine, sort]);
+  }, [page, q, stage, decision, leadStatus, sourceId, mine, sort]);
   useEffect(() => { load(); }, [load]);
 
   const reset = (fn: () => void) => { fn(); setPage(1); };
-  const filtered = !!(q || stage || decision || sourceId || mine);
+  const filtered = !!(q || stage || decision || leadStatus || sourceId || mine);
 
   return (
     <div className="space-y-5">
@@ -68,7 +70,7 @@ export default function CandidatesPage() {
       />
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
           <div className="relative lg:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden />
             <Input aria-label="Search candidates" placeholder="Name, phone or candidate ID" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -76,6 +78,10 @@ export default function CandidatesPage() {
           <Select aria-label="Stage" value={stage} onChange={(e) => reset(() => setStage(e.target.value))}>
             <option value="">All stages</option>
             {STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </Select>
+          <Select aria-label="Lead status" value={leadStatus} onChange={(e) => reset(() => setLeadStatus(e.target.value))}>
+            <option value="">All lead statuses</option>
+            {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </Select>
           <Select aria-label="Decision" value={decision} onChange={(e) => reset(() => setDecision(e.target.value))}>
             <option value="">All decisions</option>
@@ -116,6 +122,7 @@ export default function CandidatesPage() {
                     <TableHead>Candidate</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Stage</TableHead>
+                    <TableHead>Lead status</TableHead>
                     <TableHead>Decision</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Owner</TableHead>
@@ -133,6 +140,7 @@ export default function CandidatesPage() {
                       </TableCell>
                       <TableCell className="tabular-nums">{c.phone}</TableCell>
                       <TableCell><StageBadge stage={c.stage} /></TableCell>
+                      <TableCell><LeadStatusBadge status={c.leadStatus} /></TableCell>
                       <TableCell><DecisionBadge decision={c.decision} /></TableCell>
                       <TableCell>
                         {c.firstSource ?? '—'}
@@ -158,6 +166,7 @@ export default function CandidatesPage() {
                       <StageBadge stage={c.stage} />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <LeadStatusBadge status={c.leadStatus} />
                       <DecisionBadge decision={c.decision} />
                       <span>{c.firstSource ?? 'No source'}</span>
                       <span>{fmtDate(c.createdAt)}</span>

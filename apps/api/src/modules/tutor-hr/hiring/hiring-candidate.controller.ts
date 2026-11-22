@@ -18,6 +18,7 @@ import {
   LogCallDto,
   RegisterCandidateDto,
   SetCvReceivedDto,
+  SetLeadStatusDto,
   UpdateCandidateDetailsDto,
   UpdateSourceDto,
 } from './hiring.dto';
@@ -132,9 +133,16 @@ export class HiringCandidateController {
     return this.service.advanceStage(id, dto, user.id);
   }
 
+  @Post('candidates/:id/lead-status')
+  @RequirePermissions('tutor_lead.stage.update')
+  @ApiOperation({ summary: 'Set the Lead Status (Processing / Rejected / Not Interested); remarks required for the last two' })
+  leadStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetLeadStatusDto, @CurrentUser() user: RequestUser) {
+    return this.service.setLeadStatus(id, dto, user.id);
+  }
+
   @Post('candidates/:id/decision')
   @RequirePermissions('tutor_lead.stage.update')
-  @ApiOperation({ summary: 'Manually set the recruitment decision' })
+  @ApiOperation({ summary: 'Record the post-demo decision (demo conductor, or the Head on override). Hired moves the candidate to Training.' })
   decide(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeDecisionDto, @CurrentUser() user: RequestUser) {
     return this.service.changeDecision(id, dto, user.id);
   }

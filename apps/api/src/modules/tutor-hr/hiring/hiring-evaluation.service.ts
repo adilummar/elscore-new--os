@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { AuditService } from '../../../common/audit/audit.service';
 import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
 
+import { HiringCandidateService } from './hiring-candidate.service';
 import { SubmitEvaluationDto } from './hiring-demo.dto';
 
 @Injectable()
@@ -11,20 +12,23 @@ export class HiringEvaluationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly candidates: HiringCandidateService,
   ) {}
 
   /**
-   * Evaluation is linked to the actual attended booking and attributed to the staff member
-   * who conducted the demo. Nobody else (including the Tutor Head) can file it on their behalf.
+   * Evaluation is linked to the attended booking and filed by its Assigned To (the conductor).
+   * The Head of Tutor Management may file it on override; it is then attributed to the Head
+   * and the audit row is marked as an override.
    */
   async submit(bookingId: string, dto: SubmitEvaluationDto, actorUserId: string) {
     const b = await this.prisma.tutorDemoBooking.findUnique({ where: { id: bookingId }, include: { evaluation: true } });
     if (!b) throw new NotFoundException('Booking not found');
-    if (b.status !== 'ATTENDED' || !b.completedAt || !b.attendedByUserId) {
+    if (b.status !== 'ATTENDED' || !b.completedAt) {
       throw new BadRequestException('Only an attended demo can be evaluated');
     }
-    if (b.attendedByUserId !== actorUserId) {
-      throw new ForbiddenException('Only the staff member who conducted the demo can submit the evaluation');
+    const override = b.assignedToUserId !== actorUserId;
+    if (override && !(await this.candidates.canOverrideConductor(actorUserId))) {
+      throw new ForbiddenException('Only the staff member assigned to conduct the demo can submit the evaluation');
     }
     if (b.evaluation) throw new ConflictException('This demo has already been evaluated');
     if (dto.salarySlabId) {
@@ -50,7 +54,7 @@ export class HiringEvaluationService {
         await this.audit.recordInTx(tx, {
           entityType: 'TutorLead', entityId: b.tutorLeadId, action: 'TUTOR_DEMO_EVALUATED', actorUserId,
           newValue: { bookingId, evaluationId: ev.id, englishRating: dto.englishRating, salarySlabId: dto.salarySlabId ?? null },
-          metadata: { late: b.evaluationDueAt ? ev.evaluatedAt > b.evaluationDueAt : null },
+          metadata: { late: b.evaluationDueAt ? ev.evaluatedAt > b.evaluationDueAt : null, override },
         });
         return { ...ev, evaluatedLate: b.evaluationDueAt ? ev.evaluatedAt > b.evaluationDueAt : null };
       });
