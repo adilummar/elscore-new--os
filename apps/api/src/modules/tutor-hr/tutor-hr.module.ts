@@ -2,6 +2,14 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../../common/auth/auth.module';
 import { IdGeneratorModule } from '../../common/id-generator/id-generator.module';
 
+import { HiringCandidateController } from './hiring/hiring-candidate.controller';
+import { HiringDemoController } from './hiring/hiring-demo.controller';
+import { HiringCandidateService } from './hiring/hiring-candidate.service';
+import { HiringDemoService } from './hiring/hiring-demo.service';
+import { HiringEscalationService } from './hiring/hiring-escalation.service';
+import { HiringEvaluationService } from './hiring/hiring-evaluation.service';
+import { HiringReportService } from './hiring/hiring-report.service';
+import { HiringScheduleService } from './hiring/hiring-schedule.service';
 import { TutorHrReviewController } from './tutor-hr-review.controller';
 import { TutorHrReviewService } from './tutor-hr-review.service';
 import { TutorHrSettingsController } from './tutor-hr-settings.controller';
@@ -14,18 +22,27 @@ import { TutorTrainingService } from './tutor-training.service';
 @Module({
   imports: [AuthModule, IdGeneratorModule],
   controllers: [
+    HiringCandidateController,
+    HiringDemoController,
     TutorLeadController,
     TutorTrainingController,
     TutorHrReviewController,
     TutorHrSettingsController,
   ],
   providers: [
+    HiringCandidateService,
+    HiringDemoService,
+    HiringEvaluationService,
+    HiringEscalationService,
+    HiringReportService,
+    HiringScheduleService,
     TutorLeadService,
     TutorTrainingService,
     TutorHrReviewService,
     TutorHrSettingsService,
   ],
   exports: [
+    HiringEscalationService,
     TutorLeadService,
     TutorTrainingService,
     TutorHrReviewService,

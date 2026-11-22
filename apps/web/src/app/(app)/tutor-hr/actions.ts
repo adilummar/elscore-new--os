@@ -148,9 +148,9 @@ export async function getSalarySlabsAction() {
 }
 
 export async function getSubjectsAction() {
-  return fetchApi<any>('/reference-data/subjects');
+  return fetchApi<any>('/reference/subjects?limit=100');
 }
 
 export async function getGradesAction() {
-  return fetchApi<any>('/reference-data/grades');
+  return fetchApi<any>('/reference/grades?limit=100');
 }
