@@ -252,6 +252,16 @@ const ROLES: Array<{
     isProtected: false,
     isCustom: false,
   },
+  {
+    code: 'TUTOR_HEAD',
+    name: 'Tutor Head',
+    description:
+      'Tutor Management department head — oversees all candidates, manager workloads, ' +
+      'demo evaluations and recruitment reports. HR Manager / HR Executive act as Tutor Managers.',
+    isSystem: true,
+    isProtected: false,
+    isCustom: false,
+  },
 ];
 
 // =============================================================================
@@ -999,6 +1009,36 @@ const PERMISSIONS: Array<{
       isDelegatable: false,
     },
 
+    // Tutor Management — Hiring (department-level oversight; record-level scoping enforced in services)
+    {
+      code: 'tutor_hiring.read-all',
+      resource: 'tutor_hiring',
+      action: 'read-all',
+      description: 'View all candidates, demos and manager workloads across the Tutor Hiring department',
+      isDelegatable: false,
+    },
+    {
+      code: 'tutor_hiring.reassign',
+      resource: 'tutor_hiring',
+      action: 'reassign',
+      description: 'Reassign a demo or candidate to another staff member (reason required)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_hiring.report',
+      resource: 'tutor_hiring',
+      action: 'report',
+      description: 'View recruitment reports (enquiries, sources, outcomes, ad spend)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_hiring.settings',
+      resource: 'tutor_hiring',
+      action: 'settings',
+      description: 'Manage lead sources, advertising spend entries and the hiring working-hours schedule',
+      isDelegatable: false,
+    },
+
     // ── Tutor profile ─────────────────────────────────────────────────────────
   {
     code: 'tutor.profile.read',
@@ -1589,6 +1629,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_lead.training.read',
     'tutor_lead.training.manage',
     'tutor_hr.settings.manage',
+    'tutor_hiring.read-all',
+    'tutor_hiring.reassign',
+    'tutor_hiring.report',
+    'tutor_hiring.settings',
     'tutor.profile.read',
     'tutor.profile.manage',
     'tutor.rate.read',
@@ -1708,6 +1752,25 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'department.read',
     'mentoring.student.read-assigned',
     'mentoring.task.work',
+  ],
+
+  // Department head for Tutor Management. No tutor_lead.approve (Tutors phase is deferred)
+  // and no tutor_hr.settings.manage (slab administration stays with HR).
+  TUTOR_HEAD: [
+    'tutor_lead.read',
+    'tutor_lead.manage',
+    'tutor_lead.create',
+    'tutor_lead.update',
+    'tutor_lead.stage.update',
+    'tutor_lead.training.read',
+    'tutor_hiring.read-all',
+    'tutor_hiring.reassign',
+    'tutor_hiring.report',
+    'tutor_hiring.settings',
+    'employee.read',
+    'department.read',
+    'attendance.action.own',
+    'attendance.read.own',
   ],
 
   MENTOR: [

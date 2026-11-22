@@ -385,6 +385,18 @@ model User {
   tutorLeadDemos         TutorLeadDemo[]            @relation("TutorLeadDemoRecordedBy")
   tutorTrainingsCreated  TutorLeadTrainingSession[] @relation("TutorTrainingCreatedBy")
   tutorTrainingsUpdated  TutorLeadTrainingSession[] @relation("TutorTrainingUpdatedBy")
+  // Tutor Management — Hiring
+  tutorEnquiriesCreated     TutorLeadEnquiry[]            @relation("TutorEnquiryCreatedBy")
+  tutorDecisionsChanged     TutorLeadDecisionHistory[]    @relation("TutorDecisionChangedBy")
+  tutorDemosBooked          TutorDemoBooking[]            @relation("TutorDemoBookedBy")
+  tutorDemosAssigned        TutorDemoBooking[]            @relation("TutorDemoAssignedTo")
+  tutorDemosAttended        TutorDemoBooking[]            @relation("TutorDemoAttendedBy")
+  tutorDemoReassignedFrom   TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignFrom")
+  tutorDemoReassignedTo     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignTo")
+  tutorDemoReassignedBy     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignChangedBy")
+  tutorEvaluationsMade      TutorDemoEvaluation[]         @relation("TutorEvaluationBy")
+  tutorEscalationsReceived  TutorEvaluationEscalation[]   @relation("TutorEscalationRecipient")
+  tutorAdSpendEntered       TutorAdSpend[]                @relation("TutorAdSpendEnteredBy")
   Quotation              Quotation[]
 
   @@map("users")
@@ -872,6 +884,7 @@ model Curriculum {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   tutorCurricula TutorCurriculum[]
+  tutorLeadCurricula TutorLeadCurriculum[]
   requirements   Requirement[]
   demos          Demo[]
   demoSessions   DemoSession[]
@@ -2561,6 +2574,7 @@ model TutorSalarySlab {
   subjects   TutorSalarySlabSubject[]
   grades     TutorSalarySlabGrade[]
   tutorLeads TutorLead[]
+  demoEvaluations TutorDemoEvaluation[]
 
   @@map("tutor_salary_slabs")
 }
@@ -2624,6 +2638,29 @@ model TutorLead {
 
   tutorProfile TutorProfile? @relation("LeadTutorProfile")
 
+  // ── Tutor Management — Hiring (all additive; legacy `currentStage` is kept untouched) ──
+  /// New 4-stage pipeline. NULL until backfilled/created through the Hiring workflow.
+  hiringStage        TutorHiringStage?   @map("hiring_stage")
+  /// Manual recruitment decision, independent of stage.
+  decision           TutorHiringDecision?
+  decisionAt         DateTime?           @map("decision_at")
+  phoneCountryCode   String?             @map("phone_country_code") // e.g. "+91"
+  /// Country-code-prefixed digits, e.g. "919876543210". Unique index is added only
+  /// after the backfill dry run proves there are no conflicts.
+  phoneNormalized    String?             @map("phone_normalized")
+  additionalPhone    String?             @map("additional_phone")
+  onlineTeachingExperience Int?          @map("online_teaching_experience")
+  detailsDescription String?             @map("details_description")
+  /// Manually entered by staff (candidate response date/time); OS entry time is createdAt.
+  detailsRespondedAt DateTime?           @map("details_responded_at")
+  cvReceivedAt       DateTime?           @map("cv_received_at") // manual date + time
+
+  enquiries        TutorLeadEnquiry[]
+  curricula        TutorLeadCurriculum[]
+  decisionHistory  TutorLeadDecisionHistory[]
+  demoBookings     TutorDemoBooking[]
+  demoEvaluations  TutorDemoEvaluation[]
+
   subjects         TutorLeadSubject[]
   grades           TutorLeadGrade[]
   languages        TutorLeadLanguage[]
@@ -2637,6 +2674,8 @@ model TutorLead {
   @@index([createdByUserId])
   @@index([assignedToUserId])
   @@index([deletedAt])
+  @@index([hiringStage, decision])
+  @@index([phoneNormalized])
   @@map("tutor_leads")
 }
 
@@ -2708,6 +2747,9 @@ model TutorLeadCall {
   callerUserId String   @map("caller_user_id")
   remark       String
   calledAt     DateTime @default(now()) @map("called_at")
+  /// NULL for legacy calls recorded before call statuses existed.
+  status       TutorCallStatus?
+  followUpAt   DateTime? @map("follow_up_at")
 
   tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
   caller    User      @relation("TutorLeadCalledBy", fields: [callerUserId], references: [id], onDelete: Restrict)
@@ -2757,6 +2799,234 @@ model TutorLeadTrainingSession {
 
   @@index([tutorLeadId])
   @@map("tutor_lead_training_sessions")
+}
+
+// ============================================================================
+// TUTOR MANAGEMENT — HIRING (extends the HR Tutor module; additive only)
+// ============================================================================
+
+enum TutorHiringStage {
+  LEAD
+  DETAILS_SHARED
+  CV
+  LIVE_DEMO_INTERVIEW
+}
+
+enum TutorHiringDecision {
+  ACCEPTED
+  HIRED
+  REJECTED
+  NOT_INTERESTED
+  NO_RESPONSE
+}
+
+enum TutorCallStatus {
+  ATTENDED
+  BUSY_CALL_LATER
+  NOT_ATTENDED
+}
+
+enum TutorDemoStatus {
+  BOOKED
+  ATTENDED
+  RESCHEDULE
+  NOT_ATTENDED
+}
+
+/// Lead source master list (managed in settings; no values are seeded).
+model TutorLeadSource {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  enquiries TutorLeadEnquiry[]
+  adSpend   TutorAdSpend[]
+
+  @@map("tutor_lead_sources")
+}
+
+/// One row per enquiry. A candidate (TutorLead) may enquire many times; the first
+/// enquiry's source is never overwritten. Reporting counts enquiries here and
+/// unique candidates on TutorLead.
+model TutorLeadEnquiry {
+  id              String   @id @default(uuid())
+  tutorLeadId     String   @map("tutor_lead_id")
+  sourceId        String   @map("source_id")
+  enquiryDate     DateTime @map("enquiry_date") @db.Date
+  notes           String?
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tutorLead TutorLead       @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  source    TutorLeadSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  createdBy User            @relation("TutorEnquiryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@index([sourceId, enquiryDate])
+  @@map("tutor_lead_enquiries")
+}
+
+model TutorLeadCurriculum {
+  tutorLeadId  String @map("tutor_lead_id")
+  curriculumId String @map("curriculum_id")
+
+  tutorLead  TutorLead  @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Restrict)
+
+  @@id([tutorLeadId, curriculumId])
+  @@map("tutor_lead_curricula")
+}
+
+/// Immutable log of manual decision changes.
+model TutorLeadDecisionHistory {
+  id               String               @id @default(uuid())
+  tutorLeadId      String               @map("tutor_lead_id")
+  previousDecision TutorHiringDecision? @map("previous_decision")
+  newDecision      TutorHiringDecision  @map("new_decision")
+  reason           String?
+  changedByUserId  String               @map("changed_by_user_id")
+  changedAt        DateTime             @default(now()) @map("changed_at")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  changedBy User      @relation("TutorDecisionChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_lead_decision_history")
+}
+
+/// A demo/interview booking. Rescheduling never edits the old row: the old booking
+/// becomes RESCHEDULE and a new booking points back via rescheduledFromId.
+model TutorDemoBooking {
+  id            String          @id @default(uuid())
+  tutorLeadId   String          @map("tutor_lead_id")
+  scheduledAt   DateTime        @map("scheduled_at")
+  status        TutorDemoStatus @default(BOOKED)
+
+  bookedByUserId   String   @map("booked_by_user_id")
+  bookedAt         DateTime @default(now()) @map("booked_at")
+  assignedToUserId String   @map("assigned_to_user_id")
+  assignedAt       DateTime @default(now()) @map("assigned_at")
+
+  attendedByUserId String?   @map("attended_by_user_id")
+  /// Actual completion timestamp; starts the 2-working-hour evaluation SLA.
+  completedAt      DateTime? @map("completed_at")
+  /// Deadline computed at completion from the hiring schedule in force then.
+  evaluationDueAt  DateTime? @map("evaluation_due_at")
+
+  rescheduleReason String?  @map("reschedule_reason")
+  rescheduledFromId String? @unique @map("rescheduled_from_id")
+
+  tutorLead   TutorLead        @relation(fields: [tutorLeadId], references: [id], onDelete: Restrict)
+  bookedBy    User             @relation("TutorDemoBookedBy", fields: [bookedByUserId], references: [id], onDelete: Restrict)
+  assignedTo  User             @relation("TutorDemoAssignedTo", fields: [assignedToUserId], references: [id], onDelete: Restrict)
+  attendedBy  User?            @relation("TutorDemoAttendedBy", fields: [attendedByUserId], references: [id], onDelete: Restrict)
+  rescheduledFrom TutorDemoBooking? @relation("TutorDemoReschedule", fields: [rescheduledFromId], references: [id], onDelete: Restrict)
+  rescheduledTo   TutorDemoBooking? @relation("TutorDemoReschedule")
+
+  assignmentHistory TutorDemoAssignmentHistory[]
+  evaluation        TutorDemoEvaluation?
+  escalations       TutorEvaluationEscalation[]
+
+  @@index([assignedToUserId, scheduledAt])
+  @@index([tutorLeadId])
+  @@index([status, evaluationDueAt])
+  @@map("tutor_demo_bookings")
+}
+
+/// Every assignment, including the first (fromUserId NULL) and each reassignment.
+model TutorDemoAssignmentHistory {
+  id              String   @id @default(uuid())
+  bookingId       String   @map("booking_id")
+  fromUserId      String?  @map("from_user_id")
+  toUserId        String   @map("to_user_id")
+  reason          String? // required by the service for reassignments
+  changedByUserId String   @map("changed_by_user_id")
+  changedAt       DateTime @default(now()) @map("changed_at")
+
+  booking   TutorDemoBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  from      User?            @relation("TutorDemoAssignFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  to        User             @relation("TutorDemoAssignTo", fields: [toUserId], references: [id], onDelete: Restrict)
+  changedBy User             @relation("TutorDemoAssignChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId])
+  @@map("tutor_demo_assignment_history")
+}
+
+model TutorDemoEvaluation {
+  id               String   @id @default(uuid())
+  bookingId        String   @unique @map("booking_id")
+  tutorLeadId      String   @map("tutor_lead_id")
+  /// Actual conductor of the demo (copied from the booking's attendedBy).
+  evaluatedByUserId String  @map("evaluated_by_user_id")
+  teachingMethods  String   @map("teaching_methods")
+  technicalSkills  String   @map("technical_skills")
+  /// Rating scale (e.g. 1-5) is validated in the service once the business confirms it.
+  englishRating    Int      @map("english_rating")
+  salarySlabId     String?  @map("salary_slab_id")
+  remarks          String?
+  evaluatedAt      DateTime @default(now()) @map("evaluated_at")
+
+  booking     TutorDemoBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  tutorLead   TutorLead        @relation(fields: [tutorLeadId], references: [id], onDelete: Restrict)
+  evaluatedBy User             @relation("TutorEvaluationBy", fields: [evaluatedByUserId], references: [id], onDelete: Restrict)
+  salarySlab  TutorSalarySlab? @relation(fields: [salarySlabId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_demo_evaluations")
+}
+
+/// One row per (booking, recipient) overdue alert. `notificationId` is the evidence
+/// that an in-app Notification row was actually written; deliveredAt stays NULL otherwise.
+model TutorEvaluationEscalation {
+  id              String    @id @default(uuid())
+  bookingId       String    @map("booking_id")
+  recipientUserId String    @map("recipient_user_id")
+  recipientKind   String    @map("recipient_kind") // TUTOR_HEAD | ASSIGNED_MANAGER
+  escalatedAt     DateTime  @default(now()) @map("escalated_at")
+  notificationId  String?   @map("notification_id")
+  deliveredAt     DateTime? @map("delivered_at")
+
+  booking   TutorDemoBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  recipient User             @relation("TutorEscalationRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, recipientUserId]) // idempotent escalation
+  @@map("tutor_evaluation_escalations")
+}
+
+/// Hiring working-hours schedule (versioned by effectiveFrom). No default row is seeded.
+model TutorHiringSchedule {
+  id            String   @id @default(uuid())
+  startTime     String // "HH:mm"
+  endTime       String // "HH:mm"
+  workingDays   Int[]    @map("working_days") // 0=Sun..6=Sat
+  timezone      String
+  effectiveFrom DateTime @default(now()) @map("effective_from")
+  updatedBy     String?  @map("updated_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([effectiveFrom(sort: Desc)])
+  @@map("tutor_hiring_schedules")
+}
+
+/// Manually entered advertising spend. Nothing is estimated or seeded.
+model TutorAdSpend {
+  id              String   @id @default(uuid())
+  sourceId        String   @map("source_id")
+  periodStart     DateTime @map("period_start") @db.Date
+  periodEnd       DateTime @map("period_end") @db.Date
+  amount          Decimal  @db.Decimal(12, 2)
+  currency        String
+  notes           String?
+  enteredByUserId String   @map("entered_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  source    TutorLeadSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  enteredBy User            @relation("TutorAdSpendEnteredBy", fields: [enteredByUserId], references: [id], onDelete: Restrict)
+
+  @@index([sourceId, periodStart])
+  @@map("tutor_ad_spend")
 }
 
 // =============================================================================

@@ -33,7 +33,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   if (isHr && !isSales) {
     // If the user is an HR manager and not a sales person, their dashboard IS the Tutor HR page.
     const { redirect } = await import('next/navigation');
-    redirect('/tutor-hr/leads');
+    redirect('/tutor-hr/hiring');
   }
 
   return <OperationalDashboard />;
