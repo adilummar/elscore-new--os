@@ -390,7 +390,7 @@ model User {
   tutorDecisionsChanged     TutorLeadDecisionHistory[]    @relation("TutorDecisionChangedBy")
   tutorDemosBooked          TutorDemoBooking[]            @relation("TutorDemoBookedBy")
   tutorDemosAssigned        TutorDemoBooking[]            @relation("TutorDemoAssignedTo")
-  tutorDemosAttended        TutorDemoBooking[]            @relation("TutorDemoAttendedBy")
+  tutorLeadStatusChanges    TutorLeadStatusHistory[]      @relation("TutorLeadStatusChangedBy")
   tutorDemoReassignedFrom   TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignFrom")
   tutorDemoReassignedTo     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignTo")
   tutorDemoReassignedBy     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignChangedBy")
@@ -2654,8 +2654,14 @@ model TutorLead {
   /// Manually entered by staff (candidate response date/time); OS entry time is createdAt.
   detailsRespondedAt DateTime?           @map("details_responded_at")
   cvReceivedAt       DateTime?           @map("cv_received_at") // manual date + time
+  /// Overall pipeline state, separate from the post-demo decision. Every lead starts as PROCESSING.
+  leadStatus             TutorLeadStatus @default(PROCESSING) @map("lead_status")
+  leadStatusRemarks      String?         @map("lead_status_remarks")
+  leadStatusChangedAt    DateTime?       @map("lead_status_changed_at")
+  leadStatusChangedById  String?         @map("lead_status_changed_by_id")
 
   enquiries        TutorLeadEnquiry[]
+  statusHistory    TutorLeadStatusHistory[]
   curricula        TutorLeadCurriculum[]
   decisionHistory  TutorLeadDecisionHistory[]
   demoBookings     TutorDemoBooking[]
@@ -2675,6 +2681,7 @@ model TutorLead {
   @@index([assignedToUserId])
   @@index([deletedAt])
   @@index([hiringStage, decision])
+  @@index([leadStatus])
   @@index([phoneNormalized])
   @@map("tutor_leads")
 }
@@ -2810,6 +2817,15 @@ enum TutorHiringStage {
   DETAILS_SHARED
   CV
   LIVE_DEMO_INTERVIEW
+  /// Entered automatically when the candidate is marked Hired; never selected manually.
+  TRAINING
+}
+
+/// Overall lead pipeline state (separate from the post-demo decision).
+enum TutorLeadStatus {
+  PROCESSING
+  REJECTED
+  NOT_INTERESTED
 }
 
 enum TutorHiringDecision {
@@ -2879,13 +2895,13 @@ model TutorLeadCurriculum {
   @@map("tutor_lead_curricula")
 }
 
-/// Immutable log of manual decision changes.
+/// Immutable log of manual decision changes. Remarks are mandatory for Rejected / Not Interested.
 model TutorLeadDecisionHistory {
   id               String               @id @default(uuid())
   tutorLeadId      String               @map("tutor_lead_id")
   previousDecision TutorHiringDecision? @map("previous_decision")
   newDecision      TutorHiringDecision  @map("new_decision")
-  reason           String?
+  remarks          String?
   changedByUserId  String               @map("changed_by_user_id")
   changedAt        DateTime             @default(now()) @map("changed_at")
 
@@ -2894,6 +2910,24 @@ model TutorLeadDecisionHistory {
 
   @@index([tutorLeadId])
   @@map("tutor_lead_decision_history")
+}
+
+/// Immutable log of Lead Status changes. source: MANUAL | DECISION | LEGACY_STAGE | BACKFILL.
+model TutorLeadStatusHistory {
+  id              String           @id @default(uuid())
+  tutorLeadId     String           @map("tutor_lead_id")
+  previousStatus  TutorLeadStatus? @map("previous_status")
+  newStatus       TutorLeadStatus  @map("new_status")
+  remarks         String?
+  source          String
+  changedByUserId String           @map("changed_by_user_id")
+  changedAt       DateTime         @default(now()) @map("changed_at")
+
+  tutorLead TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Cascade)
+  changedBy User      @relation("TutorLeadStatusChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorLeadId])
+  @@map("tutor_lead_status_history")
 }
 
 /// A demo/interview booking. Rescheduling never edits the old row: the old booking
@@ -2909,7 +2943,7 @@ model TutorDemoBooking {
   assignedToUserId String   @map("assigned_to_user_id")
   assignedAt       DateTime @default(now()) @map("assigned_at")
 
-  attendedByUserId String?   @map("attended_by_user_id")
+  /// The Assigned To staff member conducts the demo (no separate Attended By).
   /// Actual completion timestamp; starts the 2-working-hour evaluation SLA.
   completedAt      DateTime? @map("completed_at")
   /// Deadline computed at completion from the hiring schedule in force then.
@@ -2921,7 +2955,6 @@ model TutorDemoBooking {
   tutorLead   TutorLead        @relation(fields: [tutorLeadId], references: [id], onDelete: Restrict)
   bookedBy    User             @relation("TutorDemoBookedBy", fields: [bookedByUserId], references: [id], onDelete: Restrict)
   assignedTo  User             @relation("TutorDemoAssignedTo", fields: [assignedToUserId], references: [id], onDelete: Restrict)
-  attendedBy  User?            @relation("TutorDemoAttendedBy", fields: [attendedByUserId], references: [id], onDelete: Restrict)
   rescheduledFrom TutorDemoBooking? @relation("TutorDemoReschedule", fields: [rescheduledFromId], references: [id], onDelete: Restrict)
   rescheduledTo   TutorDemoBooking? @relation("TutorDemoReschedule")
 
@@ -2958,7 +2991,7 @@ model TutorDemoEvaluation {
   id               String   @id @default(uuid())
   bookingId        String   @unique @map("booking_id")
   tutorLeadId      String   @map("tutor_lead_id")
-  /// Actual conductor of the demo (copied from the booking's attendedBy).
+  /// Staff member who filed it: the demo's Assigned To, or the Tutor Head on override.
   evaluatedByUserId String  @map("evaluated_by_user_id")
   teachingMethods  String   @map("teaching_methods")
   technicalSkills  String   @map("technical_skills")

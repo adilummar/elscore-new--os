@@ -1,7 +1,7 @@
 import { HiringEscalationService } from './hiring-escalation.service';
 
 const SCHEDULE = { startTime: '09:00', endTime: '18:00', workingDays: [1, 2, 3, 4, 5, 6], timezone: 'Asia/Kolkata' };
-const overdueBooking = { id: 'b1', tutorLeadId: 'lead-1', assignedToUserId: 'mgr', attendedByUserId: 'mgr', evaluationDueAt: new Date(0), tutorLead: { businessId: 'TL-1' } };
+const overdueBooking = { id: 'b1', tutorLeadId: 'lead-1', assignedToUserId: 'mgr', evaluationDueAt: new Date(0), tutorLead: { businessId: 'TL-1' } };
 
 function build(o: { overdue?: any[]; undated?: any[]; schedule?: any; heads?: any[]; existing?: Set<string>; failFirst?: boolean } = {}) {
   const created: any[] = [];
@@ -27,26 +27,31 @@ function build(o: { overdue?: any[]; undated?: any[]; schedule?: any; heads?: an
 }
 
 describe('HiringEscalationService.runScan', () => {
-  it('notifies Tutor Head and the responsible manager, storing notification evidence', async () => {
+  it('notifies the Head of Tutor Management only (not the assigned staff), storing notification evidence', async () => {
     const { svc, created, escalations } = build({ overdue: [overdueBooking] });
     const r = await svc.runScan(new Date());
-    expect(created.map((n) => n.recipientUserId).sort()).toEqual(['head', 'mgr']);
+    expect(created.map((n) => n.recipientUserId)).toEqual(['head']);
     expect(created[0]).toMatchObject({ type: 'TUTOR_EVALUATION_OVERDUE', entityId: 'lead-1' });
-    expect(escalations.map((e) => [e.recipientUserId, e.recipientKind, !!e.notificationId, !!e.deliveredAt]).sort()).toEqual([
+    expect(escalations.map((e) => [e.recipientUserId, e.recipientKind, !!e.notificationId, !!e.deliveredAt])).toEqual([
       ['head', 'TUTOR_HEAD', true, true],
-      ['mgr', 'ASSIGNED_MANAGER', true, true],
     ]);
-    expect(r).toMatchObject({ checked: 1, escalated: 1, notificationsWritten: 2 });
+    expect(r).toMatchObject({ checked: 1, escalated: 1, notificationsWritten: 1 });
   });
-  it('is idempotent per recipient', async () => {
-    const { svc, created } = build({ overdue: [overdueBooking], existing: new Set(['head', 'mgr']) });
-    await svc.runScan(new Date());
+  it('notifies every active Tutor Head, idempotently per recipient', async () => {
+    const two = build({ overdue: [overdueBooking], heads: [{ id: 'head' }, { id: 'head2' }] });
+    await two.svc.runScan(new Date());
+    expect(two.created.map((n) => n.recipientUserId)).toEqual(['head', 'head2']);
+    const again = build({ overdue: [overdueBooking], existing: new Set(['head']) });
+    await again.svc.runScan(new Date());
+    expect(again.created).toHaveLength(0);
+  });
+  it('records nothing when there is no active Tutor Head, so the next scan retries', async () => {
+    const { svc, created, escalations, prisma } = build({ overdue: [overdueBooking], heads: [] });
+    const r = await svc.runScan(new Date());
     expect(created).toHaveLength(0);
-  });
-  it('does not double-notify when the manager is also the Tutor Head', async () => {
-    const { svc, created } = build({ overdue: [overdueBooking], heads: [{ id: 'mgr' }] });
-    await svc.runScan(new Date());
-    expect(created).toHaveLength(1);
+    expect(escalations).toHaveLength(0);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(r.escalated).toBe(0);
   });
   it('only queries demos that are unevaluated, overdue and not yet escalated', async () => {
     const { svc, prisma } = build();
@@ -78,7 +83,7 @@ describe('HiringEscalationService.listForUser', () => {
     booking: {
       id: 'b1', scheduledAt: new Date('2026-11-16T05:00:00Z'), completedAt: new Date('2026-11-16T06:00:00Z'),
       evaluationDueAt: new Date('2026-11-16T10:00:00Z'), evaluation: null,
-      assignedTo: { id: 'a', email: 'assigned@x.test' }, attendedBy: { id: 'c', email: 'conductor@x.test' },
+      assignedTo: { id: 'a', email: 'assigned@x.test' },
       tutorLead: { id: 'lead-1', businessId: 'TL-1', firstName: 'Asha', lastName: 'Rao' },
       ...over,
     },
@@ -97,14 +102,14 @@ describe('HiringEscalationService.listForUser', () => {
     expect(prisma.tutorEvaluationEscalation.findMany.mock.calls[0][0].where).toEqual({ recipientUserId: 'u1' });
     expect(prisma.notification.findMany.mock.calls[0][0].where).toMatchObject({ recipientUserId: 'u1' });
     expect(r).toMatchObject({
-      candidate: { candidateId: 'TL-1', name: 'Asha Rao' }, assignedManager: 'conductor@x.test',
+      candidate: { candidateId: 'TL-1', name: 'Asha Rao' }, assignedManager: 'assigned@x.test',
       evaluationStatus: 'OVERDUE', overdueMinutes: 120,
     });
     expect(r.notifiedAt).toEqual(new Date('2026-11-16T10:30:00Z'));
   });
-  it('uses the evaluation time once evaluated and falls back to the assignee', async () => {
+  it('uses the evaluation time once evaluated and names the Assigned To', async () => {
     const evaluatedAt = new Date('2026-11-16T10:45:00Z');
-    const { svc } = build([row({ evaluation: { evaluatedAt }, attendedBy: null })]);
+    const { svc } = build([row({ evaluation: { evaluatedAt } })]);
     const [r] = await svc.listForUser('u1', now);
     expect(r).toMatchObject({ evaluationStatus: 'EVALUATED', overdueMinutes: 45, assignedManager: 'assigned@x.test' });
   });

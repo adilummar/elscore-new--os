@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { useAuth, usePermissions } from '@/components/providers/AuthProvider';
 import { getCandidate, getCandidateDemos } from '../../actions';
-import { CALL_STATUSES, DEMO_STATUS_LABEL, STAGES, fmtDate, fmtDateTime, labelOf } from '../../constants';
+import {
+  CALL_STATUSES, DECISIONS, DEMO_STATUS_LABEL, LEAD_STATUSES, MANUAL_STAGES, STAGES, WEEKDAYS, fmtDate, fmtDateTime, labelOf,
+} from '../../constants';
 import {
   AttendanceDialog, BookDemoDialog, CallDialog, CvDialog, DecisionDialog, DetailsDialog,
-  EnquiryDialog, EvaluationDialog, ReassignDialog, RescheduleDialog, StageDialog,
+  EnquiryDialog, EvaluationDialog, LeadStatusDialog, ReassignDialog, RescheduleDialog, StageDialog,
 } from '../../_components/CandidateDialogs';
-import { DecisionBadge, Empty, ErrorNote, SkeletonRows, SlaBadge, StageBadge } from '../../_components/kit';
+import { DecisionBadge, Empty, ErrorNote, LeadStatusBadge, SkeletonRows, SlaBadge, StageBadge } from '../../_components/kit';
 import { cn } from '@/lib/utils';
 
 type Dlg = null | { kind: string; booking?: any };
@@ -58,11 +60,16 @@ export default function CandidateProfilePage() {
 
   const canUpdate = hasPermission('tutor_lead.update');
   const canStage = hasPermission('tutor_lead.stage.update');
-  const closed = ['REJECTED', 'NOT_INTERESTED', 'HIRED'].includes(lead.decision);
+  const processing = (lead.leadStatus ?? 'PROCESSING') === 'PROCESSING';
+  const closed = !processing || ['REJECTED', 'NOT_INTERESTED', 'HIRED'].includes(lead.decision);
   const stageIdx = STAGES.findIndex((s) => s.value === lead.hiringStage);
-  const nextStage = STAGES[stageIdx + 1];
+  const manualIdx = MANUAL_STAGES.findIndex((s) => s.value === lead.hiringStage);
+  const nextStage = manualIdx >= 0 ? MANUAL_STAGES[manualIdx + 1] : undefined;
   const active = demos.find((d) => d.status === 'BOOKED');
   const uid = effectiveUser?.id;
+  const canOverride = hasPermission('tutor_hiring.override');
+  const canDecide = canStage && processing && lead.hiringStage === 'LIVE_DEMO_INTERVIEW' && lead.decision !== 'HIRED';
+  const hhmm = (t: string) => String(t).slice(11, 16);
 
   return (
     <div className="space-y-5">
@@ -72,6 +79,7 @@ export default function CandidateProfilePage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{lead.name ?? 'Unnamed lead'}</h1>
             <StageBadge stage={lead.hiringStage} />
+            <LeadStatusBadge status={lead.leadStatus} />
             <DecisionBadge decision={lead.decision} />
           </div>
           <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" aria-hidden />{lead.phone} · {lead.businessId}</p>
@@ -79,7 +87,7 @@ export default function CandidateProfilePage() {
       </div>
 
       {/* Stage progress */}
-      <ol className="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Hiring stages">
+      <ol className="grid grid-cols-2 sm:grid-cols-5 gap-2" aria-label="Hiring stages">
         {STAGES.map((s, i) => (
           <li key={s.value} aria-current={i === stageIdx ? 'step' : undefined}
             className={cn('flex items-center gap-2 rounded-md border px-3 py-2 text-sm',
@@ -96,8 +104,19 @@ export default function CandidateProfilePage() {
         {canUpdate && <Button variant="outline" onClick={() => setDlg({ kind: 'details' })}>Edit details</Button>}
         {canUpdate && stageIdx >= 2 && <Button variant="outline" onClick={() => setDlg({ kind: 'cv' })}>{lead.cvReceivedAt ? 'Edit CV received time' : 'Record CV received'}</Button>}
         {canStage && nextStage && !closed && <Button onClick={() => setDlg({ kind: 'stage' })}>Complete {labelOf(STAGES, lead.hiringStage)}</Button>}
-        {canStage && lead.decision !== 'HIRED' && <Button variant="secondary" onClick={() => setDlg({ kind: 'decision' })}>Set decision</Button>}
+        {canDecide && <Button variant="secondary" onClick={() => setDlg({ kind: 'decision' })}>Set decision</Button>}
+        {canStage && <Button variant="outline" onClick={() => setDlg({ kind: 'leadStatus' })}>Change lead status</Button>}
       </div>
+      {!processing && (
+        <div role="status" className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          Lead status is {labelOf(LEAD_STATUSES, lead.leadStatus)}{lead.leadStatusRemarks ? `: ${lead.leadStatusRemarks}` : ''}. Set it back to Processing to continue this candidate.
+        </div>
+      )}
+      {lead.hiringStage === 'TRAINING' && (
+        <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">
+          Hired{lead.trainingStartedAt ? ` on ${fmtDate(lead.trainingStartedAt)}` : ''}. The candidate has moved to Training.
+        </div>
+      )}
 
       {notice && <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">{notice}</div>}
       <ErrorNote message={error} />
@@ -125,6 +144,7 @@ export default function CandidateProfilePage() {
                 <Row k="Online experience" v={lead.onlineTeachingExperience != null ? `${lead.onlineTeachingExperience} yrs` : ''} />
                 <Row k="Offline experience" v={lead.offlineTeachingExperience != null ? `${lead.offlineTeachingExperience} yrs` : ''} />
                 <Row k="Expected hourly rate" v={lead.expectedHourlyRate != null ? String(lead.expectedHourlyRate) : ''} />
+                <Row k="Available teaching time" v={(lead.availability ?? []).map((a: any) => `${WEEKDAYS[a.dayOfWeek]} ${hhmm(a.startTime)}-${hhmm(a.endTime)}`).join(', ')} />
                 <Row k="Additional phone" v={lead.additionalPhone} />
                 <Row k="Response received" v={lead.detailsRespondedAt ? fmtDateTime(lead.detailsRespondedAt) : ''} />
                 <Row k="Description" v={lead.detailsDescription} />
@@ -161,7 +181,8 @@ export default function CandidateProfilePage() {
           )}
           {lead.hiringStage !== 'LIVE_DEMO_INTERVIEW' && <p className="text-sm text-slate-500">Demos can be booked once the candidate reaches the Live Demo & Interview stage.</p>}
           {demos.length === 0 ? <Card><Empty title="No demos yet" /></Card> : demos.map((d) => {
-            const isConductor = d.attendedByUserId === uid;
+            const isConductor = d.assignedToUserId === uid;
+            const mayAct = isConductor || canOverride;
             return (
               <Card key={d.id}>
                 <CardContent className="pt-5 space-y-3">
@@ -177,7 +198,7 @@ export default function CandidateProfilePage() {
                   </div>
                   {d.rescheduleReason && <p className="text-sm text-slate-600">Reschedule reason: {d.rescheduleReason}</p>}
                   {d.status === 'ATTENDED' && (
-                    <p className="text-sm text-slate-600">Conducted by {d.attendedBy?.email} · completed {fmtDateTime(d.completedAt)}{d.evaluationSla?.dueAt && !d.evaluation ? ` · evaluation due ${fmtDateTime(d.evaluationSla.dueAt)}` : ''}</p>
+                    <p className="text-sm text-slate-600">Conducted by {d.assignedTo.email} · completed {fmtDateTime(d.completedAt)}{d.evaluationSla?.dueAt && !d.evaluation ? ` · evaluation due ${fmtDateTime(d.evaluationSla.dueAt)}` : ''}</p>
                   )}
                   {d.evaluation && (
                     <div className="rounded-md bg-slate-50 p-3 text-sm space-y-1">
@@ -200,7 +221,7 @@ export default function CandidateProfilePage() {
                   <div className="flex flex-wrap gap-2">
                     {d.status === 'BOOKED' && canUpdate && (
                       <>
-                        <Button size="sm" onClick={() => setDlg({ kind: 'attendance', booking: d })}>Record outcome</Button>
+                        {mayAct && <Button size="sm" onClick={() => setDlg({ kind: 'attendance', booking: d })}>Record outcome</Button>}
                         <Button size="sm" variant="outline" onClick={() => setDlg({ kind: 'reschedule', booking: d })}>Reschedule</Button>
                       </>
                     )}
@@ -208,9 +229,9 @@ export default function CandidateProfilePage() {
                       <Button size="sm" variant="outline" onClick={() => setDlg({ kind: 'reassign', booking: d })}>Reassign</Button>
                     )}
                     {d.status === 'ATTENDED' && !d.evaluation && (
-                      isConductor
-                        ? <Button size="sm" onClick={() => setDlg({ kind: 'evaluate', booking: d })}>Submit evaluation</Button>
-                        : <span className="text-xs text-slate-500 self-center">Only {d.attendedBy?.email} can submit this evaluation.</span>
+                      mayAct
+                        ? <Button size="sm" onClick={() => setDlg({ kind: 'evaluate', booking: d })}>{isConductor ? 'Submit evaluation' : 'Submit evaluation (override)'}</Button>
+                        : <span className="text-xs text-slate-500 self-center">Only {d.assignedTo.email} can submit this evaluation.</span>
                     )}
                   </div>
                 </CardContent>
@@ -240,6 +261,42 @@ export default function CandidateProfilePage() {
       )}
 
       {tab === 'History' && (
+        <div className="space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader><CardTitle>Lead status history</CardTitle></CardHeader>
+            {(lead.statusHistory ?? []).length === 0 ? <Empty title="Processing since registration" /> : (
+              <ul className="divide-y divide-slate-100">
+                {lead.statusHistory.map((h: any) => (
+                  <li key={h.id} className="p-4 text-sm">
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <span className="font-medium text-slate-900">{labelOf(LEAD_STATUSES, h.previousStatus)} → {labelOf(LEAD_STATUSES, h.newStatus)}</span>
+                      <span className="text-slate-500">{fmtDateTime(h.changedAt)} · {h.changedBy?.email}</span>
+                    </div>
+                    {h.remarks && <p className="text-slate-600 mt-0.5">{h.remarks}</p>}
+                    {h.source === 'DECISION' && <p className="text-xs text-slate-500 mt-0.5">Set by the candidate decision</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Decision history</CardTitle></CardHeader>
+            {(lead.decisionHistory ?? []).length === 0 ? <Empty title="No decisions yet" /> : (
+              <ul className="divide-y divide-slate-100">
+                {lead.decisionHistory.map((h: any) => (
+                  <li key={h.id} className="p-4 text-sm">
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <span className="font-medium text-slate-900">{h.previousDecision ? `${labelOf(DECISIONS, h.previousDecision)} → ` : ''}{labelOf(DECISIONS, h.newDecision)}</span>
+                      <span className="text-slate-500">{fmtDateTime(h.changedAt)} · {h.changedBy?.email}</span>
+                    </div>
+                    {h.remarks && <p className="text-slate-600 mt-0.5">{h.remarks}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
         <Card>
           {lead.auditTimeline.length === 0 ? <Empty title="No history yet" /> : (
             <ol className="divide-y divide-slate-100">
@@ -255,8 +312,10 @@ export default function CandidateProfilePage() {
             </ol>
           )}
         </Card>
+        </div>
       )}
 
+      <LeadStatusDialog id={id} current={lead.leadStatus ?? 'PROCESSING'} isOpen={dlg?.kind === 'leadStatus'} {...dialog} />
       <CallDialog id={id} isOpen={dlg?.kind === 'call'} {...dialog} />
       <EnquiryDialog id={id} isOpen={dlg?.kind === 'enquiry'} {...dialog} />
       <DetailsDialog lead={lead} isOpen={dlg?.kind === 'details'} {...dialog} />

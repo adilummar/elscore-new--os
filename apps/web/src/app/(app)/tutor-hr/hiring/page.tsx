@@ -51,7 +51,7 @@ export default function HiringDashboardPage() {
         <Card><SkeletonRows rows={5} /></Card>
       ) : data ? (
         <>
-          <section aria-label="Pipeline" className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <section aria-label="Pipeline" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard label="In pipeline" value={total} />
             {STAGES.map((s) => (
               <StatCard key={s.value} label={s.label} value={count(data.pipeline, 'stage', s.value)} />
@@ -103,7 +103,7 @@ export default function HiringDashboardPage() {
                           <Link className="font-medium text-slate-900 hover:text-brand-700" href={`/tutor-hr/hiring/candidates/${d.tutorLead.id}`}>
                             {`${d.tutorLead.firstName} ${d.tutorLead.lastName}`.trim() || d.tutorLead.businessId}
                           </Link>
-                          <p className="text-xs text-slate-500">Due {fmtDateTime(d.evaluationSla.dueAt)} · {d.attendedBy?.email ?? d.assignedTo.email}</p>
+                          <p className="text-xs text-slate-500">Due {fmtDateTime(d.evaluationSla.dueAt)} · {d.assignedTo.email}</p>
                         </div>
                         <SlaBadge state={d.evaluationSla.state} />
                       </li>

@@ -69,8 +69,10 @@ export const setCvReceived = (id: string, cvReceivedAt: string) =>
   run(() => fetchApi<any>(`${H}/candidates/${id}/cv`, patch({ cvReceivedAt })));
 export const advanceStage = (id: string, to: string, remarks?: string) =>
   run(() => fetchApi<any>(`${H}/candidates/${id}/stage`, post({ to, remarks })));
-export const changeDecision = (id: string, decision: string, reason?: string) =>
-  run(() => fetchApi<any>(`${H}/candidates/${id}/decision`, post({ decision, reason })));
+export const changeDecision = (id: string, decision: string, remarks?: string) =>
+  run(() => fetchApi<any>(`${H}/candidates/${id}/decision`, post({ decision, remarks })));
+export const setLeadStatus = (id: string, status: string, remarks?: string) =>
+  run(() => fetchApi<any>(`${H}/candidates/${id}/lead-status`, post({ status, remarks })));
 export const logCall = (id: string, data: any) =>
   run(() => fetchApi<any>(`${H}/candidates/${id}/calls`, post(data)));
 

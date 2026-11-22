@@ -35,10 +35,9 @@ export class ReassignDemoDto {
   @ApiProperty() @IsString() @MinLength(3) @MaxLength(1000) reason!: string;
 }
 
+/** Recorded by the demo's Assigned To (the conductor), or the Tutor Head on override. */
 export class DemoAttendanceDto {
   @ApiProperty({ enum: ['ATTENDED', 'NOT_ATTENDED'] }) @IsIn(['ATTENDED', 'NOT_ATTENDED']) status!: 'ATTENDED' | 'NOT_ATTENDED';
-  /** Staff member who actually conducted the demo. Defaults to the caller. */
-  @ApiPropertyOptional() @IsOptional() @IsUUID() attendedByUserId?: string;
   /** Actual completion time; defaults to now. Starts the evaluation SLA. */
   @ApiPropertyOptional() @IsOptional() @IsDateString() completedAt?: string;
 }

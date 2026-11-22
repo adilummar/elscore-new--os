@@ -14,19 +14,25 @@ import { RbacService } from '../../../common/rbac/rbac.service';
 
 import {
   assertDecisionChange,
+  assertLeadStatusChange,
   assertStageAdvance,
   HiringDecision,
   HiringRuleError,
   HiringStage,
+  LeadStatus,
+  leadStatusForDecision,
+  stageIndex,
 } from './hiring-rules';
 import {
   AddEnquiryDto,
   AdvanceStageDto,
+  AvailabilitySlotDto,
   ChangeDecisionDto,
   ListCandidatesQueryDto,
   LogCallDto,
   RegisterCandidateDto,
   SetCvReceivedDto,
+  SetLeadStatusDto,
   UpdateCandidateDetailsDto,
 } from './hiring.dto';
 import { InvalidPhoneError, normalizePhone } from './phone.util';
@@ -37,7 +43,14 @@ const LEGACY_STAGE: Record<HiringStage, TutorLeadStageCode> = {
   DETAILS_SHARED: TutorLeadStageCode.DETAILS_SHARED,
   CV: TutorLeadStageCode.CV_SHARED,
   LIVE_DEMO_INTERVIEW: TutorLeadStageCode.DEMO,
+  TRAINING: TutorLeadStageCode.TRAINING,
 };
+
+/** Mother tongue preselected for new candidates (business default; staff can change it). */
+export const DEFAULT_MOTHER_TONGUE = 'Malayalam';
+
+/** Permission that lets the Head of Tutor Management act in place of a demo's conductor. */
+export const CONDUCTOR_OVERRIDE_PERMISSION = 'tutor_hiring.override';
 
 const DETAIL_SCALARS = [
   'firstName', 'lastName', 'motherTongueId', 'onlineTeachingExperience', 'offlineTeachingExperience',
@@ -81,6 +94,11 @@ export class HiringCandidateService {
     return this.rbac.hasPermissions(userId, ['tutor_hiring.read-all']);
   }
 
+  /** Head-only override of the demo conductor rule (attendance, evaluation, decision). */
+  async canOverrideConductor(userId: string): Promise<boolean> {
+    return this.rbac.hasPermissions(userId, [CONDUCTOR_OVERRIDE_PERMISSION]);
+  }
+
   private async loadLead(id: string) {
     const lead = await this.prisma.tutorLead.findFirst({ where: { id, deletedAt: null } });
     if (!lead) throw new NotFoundException('Candidate not found');
@@ -98,7 +116,7 @@ export class HiringCandidateService {
     const participant = await this.prisma.tutorDemoBooking.count({
       where: {
         tutorLeadId: lead.id,
-        OR: [{ assignedToUserId: userId }, { bookedByUserId: userId }, { attendedByUserId: userId }],
+        OR: [{ assignedToUserId: userId }, { bookedByUserId: userId }],
       },
     });
     if (!participant) throw new ForbiddenException('You do not have access to modify this candidate');
@@ -140,6 +158,10 @@ export class HiringCandidateService {
     const source = await this.prisma.tutorLeadSource.findFirst({ where: { id: dto.sourceId, isActive: true } });
     if (!source) throw new BadRequestException('Lead source not found or inactive');
     const { firstName, lastName } = this.splitName(dto.name);
+    const defaultTongue = await this.prisma.motherTongue.findFirst({
+      where: { name: { equals: DEFAULT_MOTHER_TONGUE, mode: 'insensitive' }, isActive: true },
+      select: { id: true },
+    });
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Serialise concurrent registrations of the same number until a DB unique index exists.
@@ -165,6 +187,8 @@ export class HiringCandidateService {
           phoneNormalized: n.normalized,
           currentStage: TutorLeadStageCode.LEAD,
           hiringStage: 'LEAD',
+          leadStatus: 'PROCESSING',
+          motherTongueId: defaultTongue?.id ?? null,
           createdByUserId: actorUserId,
           assignedToUserId: actorUserId,
         },
@@ -234,6 +258,7 @@ export class HiringCandidateService {
     }
     if (q.stage) and.push({ hiringStage: q.stage as HiringStage });
     if (q.decision) and.push({ decision: q.decision as HiringDecision });
+    if (q.leadStatus) and.push({ leadStatus: q.leadStatus as LeadStatus });
     if (q.managerId) and.push({ assignedToUserId: q.managerId });
     if (q.sourceId || q.from || q.to) {
       and.push({
@@ -252,7 +277,7 @@ export class HiringCandidateService {
         OR: [
           { createdByUserId: userId },
           { assignedToUserId: userId },
-          { demoBookings: { some: { OR: [{ assignedToUserId: userId }, { bookedByUserId: userId }, { attendedByUserId: userId }] } } },
+          { demoBookings: { some: { OR: [{ assignedToUserId: userId }, { bookedByUserId: userId }] } } },
         ],
       });
     }
@@ -278,6 +303,7 @@ export class HiringCandidateService {
         name: this.displayName(l),
         phone: l.phone,
         stage: l.hiringStage,
+        leadStatus: l.leadStatus,
         decision: l.decision,
         manager: l.assignedTo,
         firstSource: l.enquiries[0]?.source.name ?? null,
@@ -300,7 +326,8 @@ export class HiringCandidateService {
         grades: { include: { grade: true } },
         languages: { include: { language: true } },
         curricula: { include: { curriculum: true } },
-        availability: true,
+        availability: { where: { isActive: true }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] },
+        statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { id: true, email: true } } } },
         enquiries: { orderBy: { enquiryDate: 'desc' }, include: { source: true, createdBy: { select: { id: true, email: true } } } },
         calls: { orderBy: { calledAt: 'desc' }, include: { caller: { select: { id: true, email: true } } } },
         decisionHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { id: true, email: true } } } },
@@ -346,7 +373,12 @@ export class HiringCandidateService {
     if (dto.additionalPhone !== undefined) data.additionalPhone = dto.additionalPhone;
     if (dto.remarks !== undefined) data.remarks = dto.remarks;
     if (dto.detailsDescription !== undefined) data.detailsDescription = dto.detailsDescription;
-    if (dto.detailsRespondedAt !== undefined) data.detailsRespondedAt = new Date(dto.detailsRespondedAt);
+    if (dto.detailsRespondedAt !== undefined) {
+      const respondedAt = new Date(dto.detailsRespondedAt);
+      if (respondedAt.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('Responded time cannot be in the future');
+      data.detailsRespondedAt = respondedAt;
+    }
+    if (dto.availability) this.assertValidAvailability(dto.availability);
 
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const updated = await tx.tutorLead.update({ where: { id }, data });
@@ -378,6 +410,21 @@ export class HiringCandidateService {
       };
       for (const k of ['subjectIds', 'gradeIds', 'languageIds', 'curriculumIds'] as const) await replace(k);
 
+      if (dto.availability) {
+        // History is kept: earlier slots are deactivated, never deleted. The audit row holds old/new.
+        const previous = await tx.tutorLeadAvailability.findMany({ where: { tutorLeadId: id, isActive: true } });
+        await tx.tutorLeadAvailability.updateMany({ where: { tutorLeadId: id, isActive: true }, data: { isActive: false } });
+        if (dto.availability.length) {
+          await tx.tutorLeadAvailability.createMany({
+            data: dto.availability.map((s) => ({
+              tutorLeadId: id, dayOfWeek: s.dayOfWeek, startTime: this.timeOfDay(s.startTime), endTime: this.timeOfDay(s.endTime), isActive: true,
+            })),
+          });
+        }
+        before.availability = previous.map((p) => ({ dayOfWeek: p.dayOfWeek, startTime: p.startTime.toISOString().slice(11, 16), endTime: p.endTime.toISOString().slice(11, 16) }));
+        after.availability = dto.availability;
+      }
+
       await this.audit.recordInTx(tx, {
         entityType: 'TutorLead', entityId: id, action: 'TUTOR_CANDIDATE_DETAILS_UPDATED', actorUserId,
         oldValue: before, newValue: after,
@@ -386,13 +433,33 @@ export class HiringCandidateService {
     });
   }
 
+  private timeOfDay(hm: string): Date {
+    return new Date(`1970-01-01T${hm}:00Z`);
+  }
+
+  /** Each window must end after it starts, and windows on the same day may not overlap. */
+  private assertValidAvailability(slots: AvailabilitySlotDto[]) {
+    const byDay = new Map<number, Array<[string, string]>>();
+    for (const s of slots) {
+      if (s.endTime <= s.startTime) throw new BadRequestException(`Availability ${s.startTime}-${s.endTime} must end after it starts`);
+      byDay.set(s.dayOfWeek, [...(byDay.get(s.dayOfWeek) ?? []), [s.startTime, s.endTime]]);
+    }
+    for (const windows of byDay.values()) {
+      windows.sort((a, b) => a[0].localeCompare(b[0]));
+      for (let i = 1; i < windows.length; i++) {
+        if (windows[i][0] < windows[i - 1][1]) throw new BadRequestException('Availability windows on the same day cannot overlap');
+      }
+    }
+  }
+
   // ── CV ────────────────────────────────────────────────────────────────────
 
   async setCvReceived(id: string, dto: SetCvReceivedDto, actorUserId: string) {
     const lead = await this.loadLead(id);
     await this.assertCanModifyLead(lead, actorUserId);
-    const stageIdx = ['LEAD', 'DETAILS_SHARED', 'CV', 'LIVE_DEMO_INTERVIEW'].indexOf(lead.hiringStage ?? 'LEAD');
-    if (stageIdx < 2) throw new BadRequestException('CV details can only be recorded once the candidate is at the CV stage');
+    if (stageIndex(lead.hiringStage) < stageIndex('CV')) {
+      throw new BadRequestException('CV details can only be recorded once the candidate is at the CV stage');
+    }
     const when = new Date(dto.cvReceivedAt);
     if (when.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('CV received time cannot be in the future');
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
@@ -405,15 +472,21 @@ export class HiringCandidateService {
     });
   }
 
-  // ── Stage & decision ──────────────────────────────────────────────────────
+  // ── Stage, lead status & decision ─────────────────────────────────────────
 
   async advanceStage(id: string, dto: AdvanceStageDto, actorUserId: string) {
     const lead = await this.loadLead(id);
     await this.assertCanModifyLead(lead, actorUserId);
     const current = (lead.hiringStage ?? 'LEAD');
     this.mapRuleError(() => assertStageAdvance(current, dto.to));
+    if (lead.leadStatus !== 'PROCESSING') {
+      throw new BadRequestException('Set the lead status back to Processing before advancing this candidate');
+    }
     if (lead.decision === 'REJECTED' || lead.decision === 'NOT_INTERESTED' || lead.decision === 'HIRED') {
       throw new BadRequestException(`Cannot advance a candidate whose decision is ${lead.decision}`);
+    }
+    if (current === 'DETAILS_SHARED' && !lead.detailsRespondedAt) {
+      throw new BadRequestException('Record the candidate responded date and time before completing Details Shared');
     }
     if (current === 'CV' && !lead.cvReceivedAt) {
       throw new BadRequestException('Record the CV received date and time before completing the CV stage');
@@ -421,7 +494,7 @@ export class HiringCandidateService {
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       // Compare-and-set guards against two staff advancing at once.
       const res = await tx.tutorLead.updateMany({
-        where: { id, hiringStage: current },
+        where: { id, hiringStage: current, leadStatus: 'PROCESSING' },
         data: { hiringStage: dto.to, currentStage: LEGACY_STAGE[dto.to] },
       });
       if (res.count !== 1) throw new ConflictException('Candidate stage changed; reload and retry');
@@ -442,51 +515,120 @@ export class HiringCandidateService {
     });
   }
 
+  /** Manual Lead Status change (Processing / Rejected / Not Interested) with remarks and history. */
+  async setLeadStatus(id: string, dto: SetLeadStatusDto, actorUserId: string) {
+    const lead = await this.loadLead(id);
+    await this.assertCanModifyLead(lead, actorUserId);
+    const current = lead.leadStatus as LeadStatus;
+    this.mapRuleError(() => assertLeadStatusChange(current, dto.status, dto.remarks));
+    const remarks = dto.remarks?.trim() || null;
+    const now = new Date();
+    // Legacy screens show Rejected / Not Interested as a stage; returning to Processing restores the real stage.
+    const legacyStage = dto.status === 'PROCESSING' ? LEGACY_STAGE[lead.hiringStage ?? 'LEAD'] : TutorLeadStageCode[dto.status];
+    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+      const res = await tx.tutorLead.updateMany({
+        where: { id, leadStatus: current },
+        data: {
+          leadStatus: dto.status, leadStatusRemarks: remarks, leadStatusChangedAt: now, leadStatusChangedById: actorUserId,
+          currentStage: legacyStage,
+        },
+      });
+      if (res.count !== 1) throw new ConflictException('Candidate lead status changed; reload and retry');
+      await tx.tutorLeadStatusHistory.create({
+        data: { tutorLeadId: id, previousStatus: current, newStatus: dto.status, remarks, source: 'MANUAL', changedByUserId: actorUserId, changedAt: now },
+      });
+      await this.audit.recordInTx(tx, {
+        entityType: 'TutorLead', entityId: id, action: 'TUTOR_CANDIDATE_LEAD_STATUS_CHANGED', actorUserId,
+        oldValue: { leadStatus: current }, newValue: { leadStatus: dto.status }, reason: remarks ?? undefined,
+      });
+      return { id, leadStatus: dto.status };
+    });
+  }
+
+  /**
+   * Post-demo decision. Rejected / Not Interested also set the Lead Status; Hired moves the
+   * candidate to the Training stage automatically. Recorded by the demo's Assigned To
+   * (the conductor) or, on override, the Head of Tutor Management.
+   */
   async changeDecision(id: string, dto: ChangeDecisionDto, actorUserId: string) {
     const lead = await this.loadLead(id);
     await this.assertCanModifyLead(lead, actorUserId);
     const stage = (lead.hiringStage ?? 'LEAD');
     const current = (lead.decision ?? null);
-    this.mapRuleError(() => assertDecisionChange(stage, current, dto.decision));
-    if (dto.decision === 'ACCEPTED') await this.assertDemoConductorAuthority(id, actorUserId);
+    const remarks = dto.remarks?.trim() || null;
+    this.mapRuleError(() => assertDecisionChange(stage, current, dto.decision, lead.leadStatus as LeadStatus, remarks));
+    const { override } = await this.assertDecisionAuthority(id, dto.decision, actorUserId);
+
+    const now = new Date();
+    const newLeadStatus = leadStatusForDecision(dto.decision);
+    const hired = dto.decision === 'HIRED';
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const res = await tx.tutorLead.updateMany({
-        where: { id, decision: current },
+        where: { id, decision: current, leadStatus: 'PROCESSING', hiringStage: stage },
         data: {
           decision: dto.decision,
-          decisionAt: new Date(),
-          // Keep legacy screens coherent for outcomes that map 1:1; Hired deliberately does not touch Training.
-          ...(dto.decision === 'REJECTED' ? { currentStage: TutorLeadStageCode.REJECTED } : {}),
-          ...(dto.decision === 'NOT_INTERESTED' ? { currentStage: TutorLeadStageCode.NOT_INTERESTED } : {}),
+          decisionAt: now,
+          ...(newLeadStatus
+            ? {
+                leadStatus: newLeadStatus, leadStatusRemarks: remarks, leadStatusChangedAt: now, leadStatusChangedById: actorUserId,
+                currentStage: TutorLeadStageCode[newLeadStatus],
+              }
+            : {}),
+          ...(hired
+            ? { hiringStage: 'TRAINING' as const, currentStage: TutorLeadStageCode.TRAINING, trainingStartedAt: lead.trainingStartedAt ?? now }
+            : {}),
         },
       });
       if (res.count !== 1) throw new ConflictException('Candidate decision changed; reload and retry');
       await tx.tutorLeadDecisionHistory.create({
-        data: { tutorLeadId: id, previousDecision: current, newDecision: dto.decision, reason: dto.reason, changedByUserId: actorUserId },
+        data: { tutorLeadId: id, previousDecision: current, newDecision: dto.decision, remarks, changedByUserId: actorUserId, changedAt: now },
       });
+      if (newLeadStatus) {
+        await tx.tutorLeadStatusHistory.create({
+          data: { tutorLeadId: id, previousStatus: 'PROCESSING', newStatus: newLeadStatus, remarks, source: 'DECISION', changedByUserId: actorUserId, changedAt: now },
+        });
+      }
+      if (hired) {
+        await tx.tutorLeadStageHistory.create({
+          data: {
+            tutorLeadId: id, previousStage: LEGACY_STAGE[stage], newStage: TutorLeadStageCode.TRAINING,
+            changedByUserId: actorUserId, remarks: 'Marked Hired; moved to Training automatically', changedAt: now,
+          },
+        });
+      }
       await this.audit.recordInTx(tx, {
         entityType: 'TutorLead', entityId: id, action: 'TUTOR_CANDIDATE_DECISION_CHANGED', actorUserId,
-        oldValue: { decision: current }, newValue: { decision: dto.decision }, reason: dto.reason,
+        oldValue: { decision: current }, newValue: { decision: dto.decision, ...(newLeadStatus ? { leadStatus: newLeadStatus } : {}), ...(hired ? { stage: 'TRAINING' } : {}) },
+        reason: remarks ?? undefined,
+        metadata: { override },
       });
-      return { id, decision: dto.decision };
+      return { id, decision: dto.decision, leadStatus: newLeadStatus ?? 'PROCESSING', stage: hired ? 'TRAINING' : stage };
     });
   }
 
   /**
-   * Acceptance is decided by the staff member who actually conducted the demo
-   * (or a department-wide authority holder), and only after an evaluation exists.
+   * Only the demo's Assigned To (the conductor) may record a decision; the Head of Tutor
+   * Management may override. Accepted needs a submitted evaluation; Accepted, Hired and
+   * No Response need an attended demo.
    */
-  private async assertDemoConductorAuthority(leadId: string, userId: string) {
-    const attended = await this.prisma.tutorDemoBooking.findFirst({
-      where: { tutorLeadId: leadId, status: 'ATTENDED' },
-      orderBy: { completedAt: 'desc' },
+  private async assertDecisionAuthority(leadId: string, decision: HiringDecision, userId: string): Promise<{ override: boolean }> {
+    const needsAttended = decision === 'ACCEPTED' || decision === 'HIRED' || decision === 'NO_RESPONSE';
+    const booking = await this.prisma.tutorDemoBooking.findFirst({
+      where: { tutorLeadId: leadId, status: needsAttended ? 'ATTENDED' : { not: 'RESCHEDULE' } },
+      orderBy: needsAttended ? { completedAt: 'desc' } : { scheduledAt: 'desc' },
       include: { evaluation: { select: { id: true } } },
     });
-    if (!attended) throw new BadRequestException('A demo must be attended before the candidate can be accepted');
-    if (!attended.evaluation) throw new BadRequestException('Submit the demo evaluation before accepting the candidate');
-    if (attended.attendedByUserId !== userId && !(await this.canReadAll(userId))) {
-      throw new ForbiddenException('Only the staff member who conducted the demo can accept this candidate');
+    if (!booking) {
+      throw new BadRequestException(needsAttended
+        ? 'A demo must be attended before this decision can be recorded'
+        : 'Book a demo before recording a decision; use Lead Status before the demo');
     }
+    if (decision === 'ACCEPTED' && !booking.evaluation) {
+      throw new BadRequestException('Submit the demo evaluation before accepting the candidate');
+    }
+    if (booking.assignedToUserId === userId) return { override: false };
+    if (await this.canOverrideConductor(userId)) return { override: true };
+    throw new ForbiddenException('Only the staff member assigned to conduct the demo can record this decision');
   }
 
   // ── Calls ─────────────────────────────────────────────────────────────────

@@ -209,9 +209,29 @@ export class TutorLeadService {
       throw new BadRequestException('Lead is already at this stage');
     }
 
+    // Keep the Hiring Lead Status in step with the legacy Rejected / Not Interested stages.
+    const exitStatuses: TutorLeadStageCode[] = [TutorLeadStageCode.REJECTED, TutorLeadStageCode.NOT_INTERESTED];
+    const nextLeadStatus = exitStatuses.includes(dto.stage)
+      ? (dto.stage as 'REJECTED' | 'NOT_INTERESTED')
+      : exitStatuses.includes(lead.currentStage) ? 'PROCESSING' as const : null;
+    const remarks = dto.remarks?.trim() || null;
+    if ((nextLeadStatus === 'REJECTED' || nextLeadStatus === 'NOT_INTERESTED') && !remarks) {
+      throw new BadRequestException('Remarks are required when marking a lead Rejected or Not Interested');
+    }
+
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const data: any = { currentStage: dto.stage };
-      
+      if (nextLeadStatus && nextLeadStatus !== lead.leadStatus) {
+        const now = new Date();
+        Object.assign(data, { leadStatus: nextLeadStatus, leadStatusRemarks: remarks, leadStatusChangedAt: now, leadStatusChangedById: actorUserId });
+        await tx.tutorLeadStatusHistory.create({
+          data: {
+            tutorLeadId: id, previousStatus: lead.leadStatus, newStatus: nextLeadStatus, remarks,
+            source: 'LEGACY_STAGE', changedByUserId: actorUserId, changedAt: now,
+          },
+        });
+      }
+
       if (dto.stage === TutorLeadStageCode.TRAINING && lead.trainingStartedAt === null) {
           data.trainingStartedAt = new Date();
       }

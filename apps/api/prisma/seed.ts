@@ -1032,6 +1032,13 @@ const PERMISSIONS: Array<{
       isDelegatable: true,
     },
     {
+      code: 'tutor_hiring.override',
+      resource: 'tutor_hiring',
+      action: 'override',
+      description: 'Act in place of a demo conductor: record attendance, submit the evaluation or record the candidate decision',
+      isDelegatable: false,
+    },
+    {
       code: 'tutor_hiring.settings',
       resource: 'tutor_hiring',
       action: 'settings',
@@ -1767,6 +1774,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hiring.reassign',
     'tutor_hiring.report',
     'tutor_hiring.settings',
+    // Confirmed: only the Head of Tutor Management may override the demo conductor.
+    'tutor_hiring.override',
     'employee.read',
     'department.read',
     'attendance.action.own',

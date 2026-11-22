@@ -17,7 +17,7 @@ import { HiringScheduleService } from './hiring-schedule.service';
  *  - uniqueCandidates:    distinct candidates with at least one matching enquiry.
  *  - contacted:           candidates with at least one call whose status is ATTENDED.
  *  - cvReceived:          candidates with a CV received date/time.
- *  - shortlisted:         candidates that have reached the Live Demo & Interview stage.
+ *  - shortlisted:         candidates that have reached the Live Demo & Interview stage (or moved on to Training).
  *  - demoAttended:        candidates with at least one demo booking marked ATTENDED.
  *  - selected:            current decision is ACCEPTED or HIRED.
  *  - tutorsHired:         current decision is HIRED (a recruitment outcome, not a Tutor record).
@@ -66,7 +66,7 @@ export class HiringReportService {
       this.prisma.tutorLead.count({ where }),
       this.prisma.tutorLead.count({ where: { AND: [where, { calls: { some: { status: 'ATTENDED' } } }] } }),
       this.prisma.tutorLead.count({ where: { AND: [where, { cvReceivedAt: { not: null } }] } }),
-      this.prisma.tutorLead.count({ where: { AND: [where, { hiringStage: 'LIVE_DEMO_INTERVIEW' }] } }),
+      this.prisma.tutorLead.count({ where: { AND: [where, { hiringStage: { in: ['LIVE_DEMO_INTERVIEW', 'TRAINING'] } }] } }),
       this.prisma.tutorLead.count({ where: { AND: [where, { demoBookings: { some: { status: 'ATTENDED' } } }] } }),
       this.prisma.tutorLead.count({ where: { AND: [where, { decision: { in: ['ACCEPTED', 'HIRED'] } }] } }),
       this.prisma.tutorLead.count({ where: { AND: [where, { decision: 'HIRED' }] } }),

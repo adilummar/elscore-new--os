@@ -61,7 +61,7 @@ export class HiringEscalationService {
         escalations: { none: {} },
       },
       select: {
-        id: true, tutorLeadId: true, assignedToUserId: true, attendedByUserId: true, evaluationDueAt: true,
+        id: true, tutorLeadId: true, assignedToUserId: true, evaluationDueAt: true,
         tutorLead: { select: { businessId: true } },
       },
       orderBy: { evaluationDueAt: 'asc' },
@@ -70,19 +70,21 @@ export class HiringEscalationService {
     result.checked = overdue.length;
     if (!overdue.length) return result;
 
+    // Confirmed: overdue evaluations escalate to the Head of Tutor Management only.
     const heads = await this.prisma.user.findMany({
       where: { status: 'ACTIVE', userRoles: { some: { role: { code: 'TUTOR_HEAD' } } } },
       select: { id: true },
     });
+    if (!heads.length) {
+      // Nothing is recorded, so these are picked up again once a Tutor Head exists.
+      this.logger.warn(`${overdue.length} overdue evaluation(s) not escalated: no active Tutor Head`);
+      return result;
+    }
 
     for (const b of overdue) {
-      const recipients = new Map<string, 'TUTOR_HEAD' | 'ASSIGNED_MANAGER'>();
-      for (const h of heads) recipients.set(h.id, 'TUTOR_HEAD');
-      const manager = b.attendedByUserId ?? b.assignedToUserId;
-      if (!recipients.has(manager)) recipients.set(manager, 'ASSIGNED_MANAGER');
       try {
         await this.prisma.$transaction(async (tx: PrismaTxClient) => {
-          for (const [userId, kind] of recipients) {
+          for (const { id: userId } of heads) {
             const exists = await tx.tutorEvaluationEscalation.findUnique({
               where: { bookingId_recipientUserId: { bookingId: b.id, recipientUserId: userId } },
             });
@@ -98,7 +100,7 @@ export class HiringEscalationService {
               },
             });
             await tx.tutorEvaluationEscalation.create({
-              data: { bookingId: b.id, recipientUserId: userId, recipientKind: kind, notificationId: n.id, deliveredAt: n.createdAt },
+              data: { bookingId: b.id, recipientUserId: userId, recipientKind: 'TUTOR_HEAD', notificationId: n.id, deliveredAt: n.createdAt },
             });
             result.notificationsWritten++;
           }
@@ -114,8 +116,8 @@ export class HiringEscalationService {
 
   /**
    * The caller's own overdue-evaluation escalations with the context shown in the inbox.
-   * Tutor Head recipients receive every escalation; the responsible manager receives theirs,
-   * so scoping by recipient is the whole access rule. Read state comes from the Notification
+   * Tutor Head recipients receive every escalation (older ASSIGNED_MANAGER rows stay readable
+   * by their recipient), so scoping by recipient is the whole access rule. Read state comes from the Notification
    * row; deliveredAt is the stored delivery evidence and is never changed by reading.
    */
   async listForUser(userId: string, now: Date = new Date(), limit = 50) {
@@ -128,7 +130,6 @@ export class HiringEscalationService {
           select: {
             id: true, scheduledAt: true, completedAt: true, evaluationDueAt: true,
             assignedTo: { select: { id: true, email: true } },
-            attendedBy: { select: { id: true, email: true } },
             evaluation: { select: { evaluatedAt: true } },
             tutorLead: { select: { id: true, businessId: true, firstName: true, lastName: true } },
           },
@@ -163,7 +164,7 @@ export class HiringEscalationService {
         demoScheduledAt: b.scheduledAt,
         demoCompletedAt: b.completedAt,
         evaluationDueAt: due,
-        assignedManager: b.attendedBy?.email ?? b.assignedTo.email,
+        assignedManager: b.assignedTo.email,
         evaluationStatus: evaluatedAt ? 'EVALUATED' : 'OVERDUE',
         evaluatedAt,
         overdueMinutes,

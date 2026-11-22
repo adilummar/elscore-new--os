@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import {
-  DECISION_VARIANT, DECISIONS, SLA_LABEL, STAGES, labelOf,
+  DECISION_VARIANT, DECISIONS, LEAD_STATUS_VARIANT, LEAD_STATUSES, SLA_LABEL, STAGES, labelOf,
 } from '../constants';
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
@@ -25,6 +25,11 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 
 export function StageBadge({ stage }: { stage?: string | null }) {
   return <Badge variant="info">{labelOf(STAGES, stage)}</Badge>;
+}
+
+export function LeadStatusBadge({ status }: { status?: string | null }) {
+  const s = status ?? 'PROCESSING';
+  return <Badge variant={LEAD_STATUS_VARIANT[s] ?? 'default'}>{labelOf(LEAD_STATUSES, s)}</Badge>;
 }
 
 export function DecisionBadge({ decision }: { decision?: string | null }) {

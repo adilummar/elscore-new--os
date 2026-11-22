@@ -5,7 +5,27 @@ export const STAGES = [
   { value: 'DETAILS_SHARED', label: 'Details Shared' },
   { value: 'CV', label: 'CV' },
   { value: 'LIVE_DEMO_INTERVIEW', label: 'Live Demo & Interview' },
+  { value: 'TRAINING', label: 'Training' },
 ] as const;
+
+/** Stages staff complete by hand. Training follows automatically when a candidate is marked Hired. */
+export const MANUAL_STAGES = STAGES.filter((s) => s.value !== 'TRAINING');
+
+/** Overall pipeline state, separate from the post-demo decision. */
+export const LEAD_STATUSES = [
+  { value: 'PROCESSING', label: 'Processing' },
+  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'NOT_INTERESTED', label: 'Not Interested' },
+] as const;
+
+/** Remarks are mandatory for Rejected and Not Interested, as a decision or a lead status. */
+export const remarksRequired = (v?: string | null) => v === 'REJECTED' || v === 'NOT_INTERESTED';
+
+/** Decisions that show a remarks field (optional for Accepted). */
+export const DECISIONS_WITH_REMARKS = ['ACCEPTED', 'REJECTED', 'NOT_INTERESTED'];
+
+/** Mother tongue preselected for new candidates; staff can change it. */
+export const DEFAULT_MOTHER_TONGUE = 'Malayalam';
 
 export const DECISIONS = [
   { value: 'ACCEPTED', label: 'Accepted' },
@@ -32,6 +52,14 @@ export type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info'
 
 export const labelOf = (list: readonly { value: string; label: string }[], v?: string | null) =>
   list.find((x) => x.value === v)?.label ?? (v ? v : '—');
+
+export const LEAD_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  PROCESSING: 'info',
+  REJECTED: 'danger',
+  NOT_INTERESTED: 'default',
+};
+
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
 export const DECISION_VARIANT: Record<string, BadgeVariant> = {
   ACCEPTED: 'info',

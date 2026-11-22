@@ -9,13 +9,17 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
-import { HIRING_DECISIONS, HIRING_STAGES } from './hiring-rules';
+import { HIRING_DECISIONS, HIRING_STAGES, LEAD_STATUSES } from './hiring-rules';
+
+const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const CALL_STATUSES = ['ATTENDED', 'BUSY_CALL_LATER', 'NOT_ATTENDED'] as const;
 
@@ -38,6 +42,13 @@ export class AddEnquiryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(1000) notes?: string;
 }
 
+/** One weekly availability window, e.g. Monday 17:00-20:00 (0 = Sunday ... 6 = Saturday). */
+export class AvailabilitySlotDto {
+  @ApiProperty({ minimum: 0, maximum: 6 }) @Type(() => Number) @IsInt() @Min(0) @Max(6) dayOfWeek!: number;
+  @ApiProperty({ example: '17:00' }) @IsString() @Matches(HM) startTime!: string;
+  @ApiProperty({ example: '20:00' }) @IsString() @Matches(HM) endTime!: string;
+}
+
 export class UpdateCandidateDetailsDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) name?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() motherTongueId?: string;
@@ -53,6 +64,9 @@ export class UpdateCandidateDetailsDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(5000) detailsDescription?: string;
   /** Candidate response date and time, entered manually by staff (ISO 8601). */
   @ApiPropertyOptional() @IsOptional() @IsDateString() detailsRespondedAt?: string;
+  /** Available teaching time. Replaces the current slots; earlier slots are deactivated, not deleted. */
+  @ApiPropertyOptional({ type: [AvailabilitySlotDto] })
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => AvailabilitySlotDto) availability?: AvailabilitySlotDto[];
 }
 
 export class SetCvReceivedDto {
@@ -67,7 +81,14 @@ export class AdvanceStageDto {
 
 export class ChangeDecisionDto {
   @ApiProperty({ enum: HIRING_DECISIONS }) @IsIn([...HIRING_DECISIONS]) decision!: (typeof HIRING_DECISIONS)[number];
-  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(1000) reason?: string;
+  /** Mandatory for Rejected and Not Interested; optional otherwise. */
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(1000) remarks?: string;
+}
+
+export class SetLeadStatusDto {
+  @ApiProperty({ enum: LEAD_STATUSES }) @IsIn([...LEAD_STATUSES]) status!: (typeof LEAD_STATUSES)[number];
+  /** Mandatory for Rejected and Not Interested; optional when returning to Processing. */
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(1000) remarks?: string;
 }
 
 export class LogCallDto {
@@ -82,6 +103,7 @@ export class ListCandidatesQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() search?: string;
   @ApiPropertyOptional({ enum: HIRING_STAGES }) @IsOptional() @IsIn([...HIRING_STAGES]) stage?: string;
   @ApiPropertyOptional({ enum: HIRING_DECISIONS }) @IsOptional() @IsIn([...HIRING_DECISIONS]) decision?: string;
+  @ApiPropertyOptional({ enum: LEAD_STATUSES }) @IsOptional() @IsIn([...LEAD_STATUSES]) leadStatus?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() sourceId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() managerId?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() from?: string;

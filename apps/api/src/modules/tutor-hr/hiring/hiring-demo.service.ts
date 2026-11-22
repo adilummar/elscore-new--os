@@ -75,7 +75,6 @@ export class HiringDemoService {
     tutorLead: { select: { id: true, businessId: true, firstName: true, lastName: true, phone: true } },
     bookedBy: { select: { id: true, email: true } },
     assignedTo: { select: { id: true, email: true } },
-    attendedBy: { select: { id: true, email: true } },
     assignmentHistory: { orderBy: { changedAt: 'asc' as const }, include: { from: { select: { id: true, email: true } }, to: { select: { id: true, email: true } }, changedBy: { select: { id: true, email: true } } } },
     evaluation: true,
   } satisfies Prisma.TutorDemoBookingInclude;
@@ -108,6 +107,9 @@ export class HiringDemoService {
     await this.candidates.assertCanModifyLead(lead, actorUserId);
     if (lead.hiringStage !== 'LIVE_DEMO_INTERVIEW') {
       throw new BadRequestException('Demos can only be booked at the Live Demo & Interview stage');
+    }
+    if (lead.leadStatus !== 'PROCESSING') {
+      throw new BadRequestException('Set the lead status back to Processing before booking a demo');
     }
     if (lead.decision === 'REJECTED' || lead.decision === 'NOT_INTERESTED') {
       throw new BadRequestException(`Cannot book a demo for a candidate marked ${lead.decision}`);
@@ -198,25 +200,27 @@ export class HiringDemoService {
     return { id, assignedToUserId: dto.toUserId, conflicts };
   }
 
-  /** Marks the demo Attended / Not Attended. Attended starts the evaluation SLA clock. */
+  /**
+   * Marks the demo Attended / Not Attended. Only the Assigned To (the conductor) may record it;
+   * the Head of Tutor Management may override. Attended starts the evaluation SLA clock, and
+   * the booking can no longer be reassigned, so the conductor stays fixed.
+   */
   async recordAttendance(id: string, dto: DemoAttendanceDto, actorUserId: string) {
     const b = await this.prisma.tutorDemoBooking.findUnique({ where: { id }, include: { tutorLead: true } });
     if (!b) throw new NotFoundException('Booking not found');
     if (b.status !== 'BOOKED') throw new BadRequestException('Attendance can only be recorded on an active booking');
-    const isAssignee = b.assignedToUserId === actorUserId;
-    if (!isAssignee && !(await this.canReadAll(actorUserId))) {
-      await this.candidates.assertCanModifyLead(b.tutorLead, actorUserId);
+    const override = b.assignedToUserId !== actorUserId;
+    if (override && !(await this.candidates.canOverrideConductor(actorUserId))) {
+      throw new ForbiddenException('Only the staff member assigned to conduct the demo can record attendance');
     }
 
     if (dto.status === 'NOT_ATTENDED') {
       const res = await this.prisma.tutorDemoBooking.updateMany({ where: { id, status: 'BOOKED' }, data: { status: 'NOT_ATTENDED' } });
       if (res.count !== 1) throw new ConflictException('Booking changed; reload and retry');
-      await this.audit.record({ entityType: 'TutorLead', entityId: b.tutorLeadId, action: 'TUTOR_DEMO_NOT_ATTENDED', actorUserId, metadata: { bookingId: id } });
+      await this.audit.record({ entityType: 'TutorLead', entityId: b.tutorLeadId, action: 'TUTOR_DEMO_NOT_ATTENDED', actorUserId, metadata: { bookingId: id, override } });
       return { id, status: 'NOT_ATTENDED' as const };
     }
 
-    const attendedBy = dto.attendedByUserId ?? actorUserId;
-    if (attendedBy !== actorUserId) await this.assertAssignable(attendedBy);
     const completedAt = dto.completedAt ? new Date(dto.completedAt) : new Date();
     if (completedAt.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('Completion time cannot be in the future');
     if (completedAt < b.scheduledAt) throw new BadRequestException('Completion cannot be before the scheduled time');
@@ -227,15 +231,16 @@ export class HiringDemoService {
     await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const res = await tx.tutorDemoBooking.updateMany({
         where: { id, status: 'BOOKED' },
-        data: { status: 'ATTENDED', attendedByUserId: attendedBy, completedAt, evaluationDueAt },
+        data: { status: 'ATTENDED', completedAt, evaluationDueAt },
       });
       if (res.count !== 1) throw new ConflictException('Booking changed; reload and retry');
       await this.audit.recordInTx(tx, {
         entityType: 'TutorLead', entityId: b.tutorLeadId, action: 'TUTOR_DEMO_ATTENDED', actorUserId,
-        newValue: { bookingId: id, attendedByUserId: attendedBy, completedAt: completedAt.toISOString(), evaluationDueAt: evaluationDueAt?.toISOString() ?? null },
+        newValue: { bookingId: id, conductorUserId: b.assignedToUserId, completedAt: completedAt.toISOString(), evaluationDueAt: evaluationDueAt?.toISOString() ?? null },
+        metadata: { override },
       });
     });
-    return { id, status: 'ATTENDED' as const, attendedByUserId: attendedBy, completedAt, evaluationDueAt, slaConfigured: !!schedule };
+    return { id, status: 'ATTENDED' as const, conductorUserId: b.assignedToUserId, completedAt, evaluationDueAt, slaConfigured: !!schedule };
   }
 
   // ── Reads ─────────────────────────────────────────────────────────────────
@@ -294,7 +299,7 @@ export class HiringDemoService {
   async pendingEvaluations(userId: string) {
     const all = await this.canReadAll(userId);
     const rows = await this.prisma.tutorDemoBooking.findMany({
-      where: { status: 'ATTENDED', evaluation: null, ...(all ? {} : { OR: [{ attendedByUserId: userId }, { assignedToUserId: userId }] }) },
+      where: { status: 'ATTENDED', evaluation: null, ...(all ? {} : { assignedToUserId: userId }) },
       orderBy: { completedAt: 'asc' },
       include: this.bookingInclude,
       take: 200,

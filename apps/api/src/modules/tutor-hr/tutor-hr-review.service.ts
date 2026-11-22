@@ -48,7 +48,7 @@ export class TutorHrReviewService {
 
     const lead = await this.prisma.tutorLead.findUnique({
       where: { id: leadId },
-      include: { subjects: true, grades: true, availability: true },
+      include: { subjects: true, grades: true, availability: { where: { isActive: true } } },
     });
 
     if (!lead) throw new NotFoundException('Tutor lead not found');

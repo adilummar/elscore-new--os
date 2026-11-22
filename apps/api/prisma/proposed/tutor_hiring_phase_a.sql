@@ -1,5 +1,8 @@
 -- CreateEnum
-CREATE TYPE "TutorHiringStage" AS ENUM ('LEAD', 'DETAILS_SHARED', 'CV', 'LIVE_DEMO_INTERVIEW');
+CREATE TYPE "TutorHiringStage" AS ENUM ('LEAD', 'DETAILS_SHARED', 'CV', 'LIVE_DEMO_INTERVIEW', 'TRAINING');
+
+-- CreateEnum
+CREATE TYPE "TutorLeadStatus" AS ENUM ('PROCESSING', 'REJECTED', 'NOT_INTERESTED');
 
 -- CreateEnum
 CREATE TYPE "TutorHiringDecision" AS ENUM ('ACCEPTED', 'HIRED', 'REJECTED', 'NOT_INTERESTED', 'NO_RESPONSE');
@@ -18,6 +21,10 @@ ADD COLUMN     "decision_at" TIMESTAMP(3),
 ADD COLUMN     "details_description" TEXT,
 ADD COLUMN     "details_responded_at" TIMESTAMP(3),
 ADD COLUMN     "hiring_stage" "TutorHiringStage",
+ADD COLUMN     "lead_status" "TutorLeadStatus" NOT NULL DEFAULT 'PROCESSING',
+ADD COLUMN     "lead_status_changed_at" TIMESTAMP(3),
+ADD COLUMN     "lead_status_changed_by_id" TEXT,
+ADD COLUMN     "lead_status_remarks" TEXT,
 ADD COLUMN     "online_teaching_experience" INTEGER,
 ADD COLUMN     "phone_country_code" TEXT,
 ADD COLUMN     "phone_normalized" TEXT;
@@ -64,11 +71,25 @@ CREATE TABLE "tutor_lead_decision_history" (
     "tutor_lead_id" TEXT NOT NULL,
     "previous_decision" "TutorHiringDecision",
     "new_decision" "TutorHiringDecision" NOT NULL,
-    "reason" TEXT,
+    "remarks" TEXT,
     "changed_by_user_id" TEXT NOT NULL,
     "changed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "tutor_lead_decision_history_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "tutor_lead_status_history" (
+    "id" TEXT NOT NULL,
+    "tutor_lead_id" TEXT NOT NULL,
+    "previous_status" "TutorLeadStatus",
+    "new_status" "TutorLeadStatus" NOT NULL,
+    "remarks" TEXT,
+    "source" TEXT NOT NULL,
+    "changed_by_user_id" TEXT NOT NULL,
+    "changed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "tutor_lead_status_history_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -81,7 +102,6 @@ CREATE TABLE "tutor_demo_bookings" (
     "booked_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "assigned_to_user_id" TEXT NOT NULL,
     "assigned_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "attended_by_user_id" TEXT,
     "completed_at" TIMESTAMP(3),
     "evaluation_due_at" TIMESTAMP(3),
     "reschedule_reason" TEXT,
@@ -174,6 +194,12 @@ CREATE INDEX "tutor_lead_enquiries_source_id_enquiry_date_idx" ON "tutor_lead_en
 CREATE INDEX "tutor_lead_decision_history_tutor_lead_id_idx" ON "tutor_lead_decision_history"("tutor_lead_id");
 
 -- CreateIndex
+CREATE INDEX "tutor_lead_status_history_tutor_lead_id_idx" ON "tutor_lead_status_history"("tutor_lead_id");
+
+-- CreateIndex
+CREATE INDEX "tutor_leads_lead_status_idx" ON "tutor_leads"("lead_status");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "tutor_demo_bookings_rescheduled_from_id_key" ON "tutor_demo_bookings"("rescheduled_from_id");
 
 -- CreateIndex
@@ -231,6 +257,12 @@ ALTER TABLE "tutor_lead_decision_history" ADD CONSTRAINT "tutor_lead_decision_hi
 ALTER TABLE "tutor_lead_decision_history" ADD CONSTRAINT "tutor_lead_decision_history_changed_by_user_id_fkey" FOREIGN KEY ("changed_by_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "tutor_lead_status_history" ADD CONSTRAINT "tutor_lead_status_history_tutor_lead_id_fkey" FOREIGN KEY ("tutor_lead_id") REFERENCES "tutor_leads"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "tutor_lead_status_history" ADD CONSTRAINT "tutor_lead_status_history_changed_by_user_id_fkey" FOREIGN KEY ("changed_by_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "tutor_demo_bookings" ADD CONSTRAINT "tutor_demo_bookings_tutor_lead_id_fkey" FOREIGN KEY ("tutor_lead_id") REFERENCES "tutor_leads"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -238,9 +270,6 @@ ALTER TABLE "tutor_demo_bookings" ADD CONSTRAINT "tutor_demo_bookings_booked_by_
 
 -- AddForeignKey
 ALTER TABLE "tutor_demo_bookings" ADD CONSTRAINT "tutor_demo_bookings_assigned_to_user_id_fkey" FOREIGN KEY ("assigned_to_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "tutor_demo_bookings" ADD CONSTRAINT "tutor_demo_bookings_attended_by_user_id_fkey" FOREIGN KEY ("attended_by_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "tutor_demo_bookings" ADD CONSTRAINT "tutor_demo_bookings_rescheduled_from_id_fkey" FOREIGN KEY ("rescheduled_from_id") REFERENCES "tutor_demo_bookings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

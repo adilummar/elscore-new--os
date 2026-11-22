@@ -7,10 +7,11 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
   addEnquiry, advanceStage, bookDemo, changeDecision, getReferenceLists, getSlabs, getSources, getStaff,
-  logCall, reassignDemo, recordAttendance, rescheduleDemo, setCvReceived, submitEvaluation, updateDetails,
+  logCall, reassignDemo, recordAttendance, rescheduleDemo, setCvReceived, setLeadStatus, submitEvaluation, updateDetails,
 } from '../actions';
 import {
-  CALL_STATUSES, DECISIONS, STAGES, fromLocalInput, labelOf, toLocalInput, todayLocal,
+  CALL_STATUSES, DECISIONS, DECISIONS_WITH_REMARKS, DEFAULT_MOTHER_TONGUE, LEAD_STATUSES, MANUAL_STAGES, STAGES, WEEKDAYS,
+  fromLocalInput, labelOf, remarksRequired, toLocalInput, todayLocal,
 } from '../constants';
 import { ActionDialog, ErrorNote, Field, runAction, textareaClass } from './kit';
 
@@ -83,8 +84,8 @@ export function EnquiryDialog({ id, ...c }: Common & { id: string }) {
 
 // ── Stage ──
 export function StageDialog({ id, current, ...c }: Common & { id: string; current: string }) {
-  const idx = STAGES.findIndex((s) => s.value === current);
-  const next = STAGES[idx + 1];
+  const idx = MANUAL_STAGES.findIndex((s) => s.value === current);
+  const next = idx >= 0 ? MANUAL_STAGES[idx + 1] : undefined;
   const [remarks, setRemarks] = useState('');
   const { busy, error, exec } = useAction(c.onDone, c.onClose);
   if (!next) return null;
@@ -98,31 +99,69 @@ export function StageDialog({ id, current, ...c }: Common & { id: string; curren
   );
 }
 
+// ── Lead status ──
+export function LeadStatusDialog({ id, current, ...c }: Common & { id: string; current: string }) {
+  const [status, setStatus] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const { busy, error, exec } = useAction(c.onDone, c.onClose);
+  useEffect(() => { if (c.isOpen) { setStatus(''); setRemarks(''); } }, [c.isOpen]);
+  const needsRemarks = remarksRequired(status);
+  return (
+    <ActionDialog isOpen={c.isOpen} onClose={c.onClose} title="Change lead status"
+      description={`Currently ${labelOf(LEAD_STATUSES, current)}. Every change is kept in history.`}
+      submitLabel="Save status" busy={busy} error={error} danger={status === 'REJECTED'}
+      disabled={!status || (needsRemarks && !remarks.trim())}
+      onSubmit={() => exec(setLeadStatus(id, status, remarks.trim() || undefined), 'Lead status saved')}>
+      <Field label="Lead status" required>
+        <Select required value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">Select status</option>
+          {LEAD_STATUSES.filter((s) => s.value !== current).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </Select>
+      </Field>
+      <Field label="Remarks" required={needsRemarks} hint={needsRemarks ? 'Record the reason for this change.' : undefined}>
+        <textarea rows={2} maxLength={1000} className={textareaClass} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+      </Field>
+    </ActionDialog>
+  );
+}
+
 // ── Decision ──
 export function DecisionDialog({ id, stage, current, ...c }: Common & { id: string; stage: string; current: string | null }) {
   const [decision, setDecision] = useState('');
-  const [reason, setReason] = useState('');
+  const [remarks, setRemarks] = useState('');
   const { busy, error, exec } = useAction(c.onDone, c.onClose);
-  const available = DECISIONS.filter((d) => {
+  useEffect(() => { if (c.isOpen) { setDecision(''); setRemarks(''); } }, [c.isOpen]);
+  const atDemo = stage === 'LIVE_DEMO_INTERVIEW';
+  const available = !atDemo ? [] : DECISIONS.filter((d) => {
     if (d.value === current) return false;
     if (d.value === 'HIRED') return current === 'ACCEPTED';
-    if (d.value === 'ACCEPTED' || d.value === 'NO_RESPONSE') return stage === 'LIVE_DEMO_INTERVIEW';
     return true;
   });
-  const needsReason = decision === 'REJECTED' || decision === 'NOT_INTERESTED';
+  const showRemarks = DECISIONS_WITH_REMARKS.includes(decision);
+  const needsRemarks = remarksRequired(decision);
   return (
     <ActionDialog isOpen={c.isOpen} onClose={c.onClose} title="Set decision"
-      description="Decisions are recorded manually and kept in history." submitLabel="Save decision" busy={busy} error={error}
-      danger={decision === 'REJECTED'} disabled={!decision || (needsReason && !reason.trim())}
-      onSubmit={() => exec(changeDecision(id, decision, reason.trim() || undefined), 'Decision saved')}>
-      <Field label="Decision" required>
-        <Select required value={decision} onChange={(e) => setDecision(e.target.value)}>
-          <option value="">Select decision</option>
-          {available.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-        </Select>
-      </Field>
+      description="Recorded by the staff member assigned to the demo (or the Head of Tutor Management). Kept in history."
+      submitLabel="Save decision" busy={busy} error={error}
+      danger={decision === 'REJECTED'} disabled={!decision || (needsRemarks && !remarks.trim())}
+      onSubmit={() => exec(changeDecision(id, decision, showRemarks ? remarks.trim() || undefined : undefined),
+        decision === 'HIRED' ? 'Marked Hired. The candidate has moved to Training.' : 'Decision saved')}>
+      {!atDemo ? (
+        <p className="text-sm text-slate-600">Decisions are recorded after the Live Demo &amp; Interview. Before that, use Lead Status for Rejected or Not Interested.</p>
+      ) : (
+        <Field label="Decision" required>
+          <Select required value={decision} onChange={(e) => setDecision(e.target.value)}>
+            <option value="">Select decision</option>
+            {available.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </Select>
+        </Field>
+      )}
       {decision === 'ACCEPTED' && <p className="text-xs text-slate-500">Requires an attended demo with a submitted evaluation.</p>}
-      <Field label="Reason" required={needsReason}><textarea rows={2} maxLength={1000} className={textareaClass} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+      {decision === 'HIRED' && <p className="text-xs text-slate-500">The candidate moves to Training automatically. This decision cannot be changed afterwards.</p>}
+      {needsRemarks && <p className="text-xs text-slate-500">This also sets the lead status to {labelOf(LEAD_STATUSES, decision)}.</p>}
+      {showRemarks && (
+        <Field label="Remarks" required={needsRemarks}><textarea rows={2} maxLength={1000} className={textareaClass} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      )}
     </ActionDialog>
   );
 }
@@ -162,6 +201,13 @@ function MultiPick({ label, items, value, onChange, empty }: { label: string; it
   );
 }
 
+type Slot = { dayOfWeek: number; startTime: string; endTime: string };
+/** Active availability as HH:mm windows (the API stores time-of-day as 1970-01-01T..Z). */
+const savedSlots = (lead: any): Slot[] =>
+  (lead.availability ?? []).map((a: any) => ({
+    dayOfWeek: a.dayOfWeek, startTime: String(a.startTime).slice(11, 16), endTime: String(a.endTime).slice(11, 16),
+  }));
+
 export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
   const [refs, setRefs] = useState<Record<string, any[]>>({ subjects: [], grades: [], curricula: [], languages: [], motherTongues: [] });
   const [f, setF] = useState<any>({});
@@ -169,7 +215,15 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
 
   useEffect(() => {
     if (!c.isOpen) return;
-    getReferenceLists().then((r) => r.ok && setRefs(r.data));
+    getReferenceLists().then((r) => {
+      if (!r.ok) return;
+      setRefs(r.data);
+      // Business default: Malayalam, unless the candidate already has a mother tongue.
+      if (!lead.motherTongueId) {
+        const ml = r.data.motherTongues.find((m: any) => m.name?.trim().toLowerCase() === DEFAULT_MOTHER_TONGUE.toLowerCase());
+        if (ml) setF((p: any) => (p.motherTongueId ? p : { ...p, motherTongueId: ml.id }));
+      }
+    });
     setF({
       name: lead.name ?? '',
       motherTongueId: lead.motherTongueId ?? '',
@@ -184,9 +238,12 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
       detailsDescription: lead.detailsDescription ?? '',
       remarks: lead.remarks ?? '',
       respondedAt: lead.detailsRespondedAt ? toLocalInput(lead.detailsRespondedAt) : '',
+      availability: savedSlots(lead),
     });
   }, [c.isOpen, lead]);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  const slots: Slot[] = f.availability ?? [];
+  const setSlot = (i: number, patch: Partial<Slot>) => set('availability', slots.map((s, j) => (j === i ? { ...s, ...patch } : s)));
 
   const submit = () => {
     const body: any = {
@@ -201,6 +258,8 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
     if (f.detailsDescription?.trim()) body.detailsDescription = f.detailsDescription.trim();
     if (f.remarks?.trim()) body.remarks = f.remarks.trim();
     if (f.respondedAt) body.detailsRespondedAt = fromLocalInput(f.respondedAt);
+    // Only send availability when it changed, so unchanged saves do not add history entries.
+    if (JSON.stringify(slots) !== JSON.stringify(savedSlots(lead))) body.availability = slots;
     return exec(updateDetails(lead.id, body), 'Details saved');
   };
 
@@ -228,7 +287,26 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
         <MultiPick label="Grades" items={refs.grades} value={f.gradeIds ?? []} onChange={(v) => set('gradeIds', v)} empty="No grades available." />
         <MultiPick label="Curricula" items={refs.curricula} value={f.curriculumIds ?? []} onChange={(v) => set('curriculumIds', v)} empty="No curricula available." />
         <MultiPick label="Communication languages" items={refs.languages} value={f.languageIds ?? []} onChange={(v) => set('languageIds', v)} empty="Languages are not available to your role." />
-        <Field label="Candidate response received on" hint="Entered manually from the candidate's reply.">
+        <fieldset>
+          <legend className="text-sm font-medium text-slate-700 mb-1.5">Available teaching time</legend>
+          {slots.length === 0 && <p className="text-xs text-slate-500 mb-2">No availability recorded.</p>}
+          <ul className="space-y-2">
+            {slots.map((s, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-2">
+                <Select aria-label="Day" value={String(s.dayOfWeek)} onChange={(e) => setSlot(i, { dayOfWeek: Number(e.target.value) })} className="w-28">
+                  {WEEKDAYS.map((d, n) => <option key={d} value={n}>{d}</option>)}
+                </Select>
+                <Input aria-label="From" type="time" value={s.startTime} onChange={(e) => setSlot(i, { startTime: e.target.value })} className="w-32" />
+                <span className="text-slate-500 text-sm">to</span>
+                <Input aria-label="To" type="time" value={s.endTime} onChange={(e) => setSlot(i, { endTime: e.target.value })} className="w-32" />
+                <Button type="button" size="sm" variant="outline" onClick={() => set('availability', slots.filter((_, j) => j !== i))}>Remove</Button>
+              </li>
+            ))}
+          </ul>
+          <Button type="button" size="sm" variant="outline" className="mt-2"
+            onClick={() => set('availability', [...slots, { dayOfWeek: 1, startTime: '17:00', endTime: '20:00' }])}>Add time slot</Button>
+        </fieldset>
+        <Field label="Candidate response received on" required hint="Entered manually from the candidate's reply. Needed to complete Details Shared.">
           <Input type="datetime-local" max={toLocalInput()} value={f.respondedAt ?? ''} onChange={(e) => set('respondedAt', e.target.value)} />
         </Field>
         <Field label="Description"><textarea rows={3} maxLength={5000} className={textareaClass} value={f.detailsDescription ?? ''} onChange={(e) => set('detailsDescription', e.target.value)} /></Field>
@@ -302,16 +380,16 @@ export function ReassignDialog({ booking, ...c }: Common & { booking: any }) {
 }
 
 export function AttendanceDialog({ booking, currentUserId, ...c }: Common & { booking: any; currentUserId?: string }) {
-  const staff = useStaff(c.isOpen);
   const [status, setStatus] = useState<'ATTENDED' | 'NOT_ATTENDED'>('ATTENDED');
-  const [by, setBy] = useState(currentUserId ?? '');
   const [at, setAt] = useState(toLocalInput());
   const { busy, error, exec } = useAction(c.onDone, c.onClose);
+  const onBehalf = !!currentUserId && currentUserId !== booking.assignedToUserId;
   return (
-    <ActionDialog isOpen={c.isOpen} onClose={c.onClose} title="Record demo outcome" submitLabel="Save outcome" busy={busy} error={error}
-      onSubmit={() => exec(recordAttendance(booking.id, status === 'ATTENDED'
-        ? { status, attendedByUserId: by || undefined, completedAt: fromLocalInput(at) }
-        : { status }), status === 'ATTENDED' ? 'Marked attended. Evaluation is now due.' : 'Marked not attended')}>
+    <ActionDialog isOpen={c.isOpen} onClose={c.onClose} title="Record demo outcome"
+      description={`Conducted by ${booking.assignedTo?.email ?? 'the assigned staff member'}.${onBehalf ? ' You are recording this on their behalf (Head override).' : ''}`}
+      submitLabel="Save outcome" busy={busy} error={error}
+      onSubmit={() => exec(recordAttendance(booking.id, status === 'ATTENDED' ? { status, completedAt: fromLocalInput(at) } : { status }),
+        status === 'ATTENDED' ? 'Marked attended. Evaluation is now due.' : 'Marked not attended')}>
       <Field label="Outcome" required>
         <Select value={status} onChange={(e) => setStatus(e.target.value as any)}>
           <option value="ATTENDED">Attended</option>
@@ -319,17 +397,9 @@ export function AttendanceDialog({ booking, currentUserId, ...c }: Common & { bo
         </Select>
       </Field>
       {status === 'ATTENDED' && (
-        <>
-          <Field label="Conducted by" required hint="Only this person can submit the evaluation.">
-            <Select required value={by} onChange={(e) => setBy(e.target.value)}>
-              <option value="">Select staff member</option>
-              {staff.map((s) => <option key={s.id} value={s.id}>{s.name === s.email ? s.email : `${s.name} (${s.email})`}</option>)}
-            </Select>
-          </Field>
-          <Field label="Completed at" required hint="Starts the two-working-hour evaluation window.">
-            <Input type="datetime-local" required min={toLocalInput(booking.scheduledAt)} max={toLocalInput()} value={at} onChange={(e) => setAt(e.target.value)} />
-          </Field>
-        </>
+        <Field label="Completed at" required hint="Starts the two-working-hour evaluation window.">
+          <Input type="datetime-local" required min={toLocalInput(booking.scheduledAt)} max={toLocalInput()} value={at} onChange={(e) => setAt(e.target.value)} />
+        </Field>
       )}
     </ActionDialog>
   );
