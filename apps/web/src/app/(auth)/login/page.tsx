@@ -10,6 +10,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState('');
 
+  // Set by the middleware when an existing session was ended because the account is not active.
+  React.useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('notice') === 'account-inactive') {
+      setError('Your account is not active. Please contact HR.');
+    }
+  }, []);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);

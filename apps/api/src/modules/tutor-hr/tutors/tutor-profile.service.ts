@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 import { AuditService } from '../../../common/audit/audit.service';
+import { UserStatusCacheService } from '../../../common/auth/services/user-status-cache.service';
 import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
 import { RbacService } from '../../../common/rbac/rbac.service';
 import { InvalidPhoneError, normalizePhone } from '../hiring/phone.util';
@@ -42,6 +43,7 @@ export class TutorProfileService {
     private readonly audit: AuditService,
     private readonly rbac: RbacService,
     private readonly config: ConfigService,
+    private readonly userStatusCache: UserStatusCacheService,
   ) {}
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -62,7 +64,7 @@ export class TutorProfileService {
   private async load(id: string) {
     const p = await this.prisma.tutorProfile.findFirst({
       where: { id, tutorCode: { not: null } },
-      include: { employee: { select: { id: true, firstName: true, lastName: true, phone: true, user: { select: { email: true } } } } },
+      include: { employee: { select: { id: true, userId: true, firstName: true, lastName: true, phone: true, user: { select: { email: true } } } } },
     });
     if (!p) throw new NotFoundException('Tutor not found');
     return p;
@@ -385,7 +387,7 @@ export class TutorProfileService {
     const current = p.tutorOperationalStatus as TutorStatus;
     const reason = dto.reason.trim();
     this.rule(() => assertStatusChange(current, dto.status, reason));
-    return this.prisma.$transaction(async (tx: PrismaTxClient) => {
+    const result = await this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const res = await tx.tutorProfile.updateMany({ where: { id, tutorOperationalStatus: current }, data: { tutorOperationalStatus: dto.status } });
       if (res.count !== 1) throw new ConflictException('Status changed; reload and retry');
       const h = await tx.tutorStatusHistory.create({
@@ -397,6 +399,9 @@ export class TutorProfileService {
       });
       return { id, status: dto.status, historyId: h.id };
     });
+    // Suspended / Discontinued lock the tutor out on the next request; reactivation restores access.
+    await this.userStatusCache.invalidate(p.employee.userId);
+    return result;
   }
 
   // ── HR-only: History & Status and HR Internal Notes ───────────────────────

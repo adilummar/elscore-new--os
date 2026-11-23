@@ -44,7 +44,7 @@ describe('JwtStrategy', () => {
    * A valid JWT for an ACTIVE account must succeed and return RequestUser.
    */
   it('allows an ACTIVE user through', async () => {
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false, tutorBlocked: false });
 
     const result = await strategy.validate(VALID_PAYLOAD);
 
@@ -57,7 +57,7 @@ describe('JwtStrategy', () => {
    * A valid JWT for a deactivated account must be rejected immediately.
    */
   it('rejects an INACTIVE user with 401', async () => {
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.INACTIVE, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.INACTIVE, mustChangePassword: false, tutorBlocked: false });
 
     await expect(strategy.validate(VALID_PAYLOAD)).rejects.toThrow(UnauthorizedException);
   });
@@ -67,7 +67,7 @@ describe('JwtStrategy', () => {
    * A valid JWT for a suspended account must be rejected immediately.
    */
   it('rejects a SUSPENDED user with 401', async () => {
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.SUSPENDED, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.SUSPENDED, mustChangePassword: false, tutorBlocked: false });
 
     await expect(strategy.validate(VALID_PAYLOAD)).rejects.toThrow(UnauthorizedException);
   });
@@ -80,12 +80,12 @@ describe('JwtStrategy', () => {
    */
   it('rejects a user whose DB status changed to SUSPENDED after token issue', async () => {
     // Initially ACTIVE
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false, tutorBlocked: false });
     const firstCall = await strategy.validate(VALID_PAYLOAD);
     expect(firstCall).toEqual({ id: VALID_PAYLOAD.sub, email: VALID_PAYLOAD.email, mustChangePassword: false });
 
     // Status changes server-side (cache invalidated, next check hits DB → SUSPENDED)
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.SUSPENDED, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.SUSPENDED, mustChangePassword: false, tutorBlocked: false });
     await expect(strategy.validate(VALID_PAYLOAD)).rejects.toThrow(UnauthorizedException);
   });
 
@@ -115,7 +115,7 @@ describe('JwtStrategy', () => {
    * Accounts not yet activated must also be allowed to complete setup.
    */
   it('allows a PENDING_SETUP user through', async () => {
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.PENDING_SETUP, mustChangePassword: true });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.PENDING_SETUP, mustChangePassword: true, tutorBlocked: false });
 
     const result = await strategy.validate(VALID_PAYLOAD);
 

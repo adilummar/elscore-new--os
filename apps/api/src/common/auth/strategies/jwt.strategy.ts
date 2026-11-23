@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { UserStatus } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
+import { accountNotActiveBody } from '../account-access';
 import type { RequestUser } from '../decorators/current-user.decorator';
 import { isSystemActorIdentity } from '../../id-generator/seed-identity';
 import { UserStatusCacheService } from '../services/user-status-cache.service';
@@ -75,12 +76,18 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('User account not found');
     }
 
-    const { status, mustChangePassword } = cacheResult;
+    const { status, mustChangePassword, tutorBlocked } = cacheResult;
 
     if (status !== UserStatus.ACTIVE && status !== UserStatus.PENDING_SETUP) {
       throw new UnauthorizedException(
         'Account is not active. Access denied.',
       );
+    }
+
+    // Suspended / Discontinued tutors: already-issued tokens stop working on the next request
+    // (the status cache is invalidated when HR changes the tutor's status).
+    if (tutorBlocked) {
+      throw new UnauthorizedException(accountNotActiveBody());
     }
 
     return { 
