@@ -97,7 +97,10 @@ export function getHrSubItems(
   }
 
   // 7. Tutor HR (Recruitment Pipeline)
-  if (isCeo || hasPermission('tutor_lead.read') || hasPermission('tutor_lead.manage')) {
+  if (
+    isCeo ||
+    ['tutor_lead.read', 'tutor_lead.manage', 'tutor_training.read', 'tutor_hr.tutors.read', 'tutor_coordination.read'].some(hasPermission)
+  ) {
     items.push({
       name: 'Tutor HR',
       href: '/tutor-hr',

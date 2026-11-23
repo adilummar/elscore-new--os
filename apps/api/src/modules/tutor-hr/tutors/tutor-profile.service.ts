@@ -187,6 +187,7 @@ export class TutorProfileService {
       include: {
         employee: { select: { businessId: true, firstName: true, lastName: true, phone: true, joinedAt: true, user: { select: { email: true, status: true, mustChangePassword: true } } } },
         verifiedBy: userSelect,
+        coordinator: userSelect,
         personalDetails: true,
         emergencyContacts: { orderBy: { kind: 'asc' } },
         qualifications: { where: { isActive: true }, orderBy: [{ yearOfCompletion: 'desc' }, { createdAt: 'asc' }] },
@@ -213,8 +214,8 @@ export class TutorProfileService {
       verifiedAt: p.verifiedAt,
       verifiedBy: p.verifiedBy,
       employee: p.employee,
-      // Coordinator assignment arrives with Tutor Coordination (Step 5).
-      coordinator: null as null | { id: string; email: string },
+      coordinator: p.coordinator,
+      coordinatorAssignedAt: p.coordinatorAssignedAt,
       personal,
       emergencyContacts: p.emergencyContacts,
       emergencyContactAlert: EMERGENCY_CONTACT_ALERT,

@@ -35,7 +35,7 @@ export const PROFILE_TABS = [
 export type ProfileTab = (typeof PROFILE_TABS)[number];
 
 /** Sections that depend on Mentoring class records or Pay Slab and are not built yet. */
-export const DEFERRED_TABS: ProfileTab[] = ['Students', 'Availability', 'Exams', 'Salary', 'Class History', 'Feedback & Observations'];
+export const DEFERRED_TABS: ProfileTab[] = ['Students', 'Availability', 'Exams', 'Salary', 'Class History'];
 
 /** HR-only sections; hidden from everyone without HR Internal Notes access (including the Tutor Head). */
 export const HR_ONLY_TABS: ProfileTab[] = ['HR Internal Notes', 'History & Status'];

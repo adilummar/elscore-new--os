@@ -400,6 +400,13 @@ model User {
   tutorTrainingAttemptsRecorded  TutorTrainingAttempt[]           @relation("TutorTrainingAttemptRecordedBy")
   tutorTrainingCorrections       TutorTrainingAttemptCorrection[] @relation("TutorTrainingCorrectedBy")
   tutorsVerified                 TutorProfile[]                   @relation("TutorVerifiedBy")
+  tutorsCoordinated              TutorProfile[]                   @relation("TutorCoordinator")
+  coordinatorAssignmentsFrom     TutorCoordinatorAssignment[]     @relation("CoordinatorAssignFrom")
+  coordinatorAssignmentsTo       TutorCoordinatorAssignment[]     @relation("CoordinatorAssignTo")
+  coordinatorAssignmentsMade     TutorCoordinatorAssignment[]     @relation("CoordinatorAssignChangedBy")
+  tutorObservationsWritten       TutorObservation[]               @relation("ObservationAuthor")
+  tutorObservationsHidden        TutorObservation[]               @relation("ObservationHiddenBy")
+  tutorObservationEdits          TutorObservationRevision[]       @relation("ObservationEditedBy")
   tutorStatusChanges             TutorStatusHistory[]             @relation("TutorStatusChangedBy")
   tutorQualificationsAdded       TutorQualification[]             @relation("TutorQualificationAddedBy")
   tutorHrNotesWritten            TutorHrNote[]                    @relation("TutorHrNoteCreatedBy")
@@ -1014,6 +1021,13 @@ model TutorProfile {
   employee Employee @relation("EmployeeTutorProfile", fields: [employeeId], references: [id], onDelete: Restrict)
   verifiedBy User?  @relation("TutorVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: Restrict)
 
+  /// Current Tutor Coordinator (NULL = Not Assigned Yet). Every change is kept in TutorCoordinatorAssignment.
+  coordinatorUserId     String?   @map("coordinator_user_id")
+  coordinatorAssignedAt DateTime? @map("coordinator_assigned_at")
+  coordinator           User?     @relation("TutorCoordinator", fields: [coordinatorUserId], references: [id], onDelete: Restrict)
+  coordinatorHistory    TutorCoordinatorAssignment[]
+  observations          TutorObservation[]
+
   subjects     TutorSubject[]
   grades       TutorGrade[]
   curricula    TutorCurriculum[]
@@ -1033,6 +1047,7 @@ model TutorProfile {
 
   @@index([verifiedAt])
   @@index([tutorOperationalStatus])
+  @@index([coordinatorUserId])
   @@map("tutor_profiles")
 }
 
@@ -4279,4 +4294,72 @@ model TutorHrNoteRevision {
 
   @@index([noteId])
   @@map("tutor_hr_note_revisions")
+}
+
+// ============================================================================
+// TUTOR MANAGEMENT — TUTOR COORDINATION (assignments and class observations; additive only)
+// ============================================================================
+
+/// Immutable assignment log: first assignment (fromUserId NULL), reassignment, or unassignment
+/// (toUserId NULL, reason required).
+model TutorCoordinatorAssignment {
+  id              String   @id @default(uuid())
+  tutorProfileId  String   @map("tutor_profile_id")
+  fromUserId      String?  @map("from_user_id")
+  toUserId        String?  @map("to_user_id")
+  reason          String?
+  changedByUserId String   @map("changed_by_user_id")
+  changedAt       DateTime @default(now()) @map("changed_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  from         User?        @relation("CoordinatorAssignFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  to           User?        @relation("CoordinatorAssignTo", fields: [toUserId], references: [id], onDelete: Restrict)
+  changedBy    User         @relation("CoordinatorAssignChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorProfileId, changedAt])
+  @@map("tutor_coordinator_assignments")
+}
+
+/// One observed class. Read-only for coordinators once saved; the Head may edit (revisions kept)
+/// or hide it with a reason. Rows are never deleted.
+model TutorObservation {
+  id               String    @id @default(uuid())
+  tutorProfileId   String    @map("tutor_profile_id")
+  authorUserId     String    @map("author_user_id")
+  observedAt       DateTime  @map("observed_at") // observed class date + time
+  positiveFeedback String?   @map("positive_feedback")
+  negativeFeedback String?   @map("negative_feedback")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  editedAt         DateTime? @map("edited_at")
+  hiddenAt         DateTime? @map("hidden_at")
+  hiddenByUserId   String?   @map("hidden_by_user_id")
+  hiddenReason     String?   @map("hidden_reason")
+
+  tutorProfile TutorProfile               @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  author       User                       @relation("ObservationAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  hiddenBy     User?                      @relation("ObservationHiddenBy", fields: [hiddenByUserId], references: [id], onDelete: Restrict)
+  revisions    TutorObservationRevision[]
+
+  @@index([tutorProfileId, observedAt])
+  @@map("tutor_observations")
+}
+
+/// Before/after values for each Head edit of an observation.
+model TutorObservationRevision {
+  id                       String   @id @default(uuid())
+  observationId            String   @map("observation_id")
+  previousObservedAt       DateTime @map("previous_observed_at")
+  previousPositiveFeedback String?  @map("previous_positive_feedback")
+  previousNegativeFeedback String?  @map("previous_negative_feedback")
+  newObservedAt            DateTime @map("new_observed_at")
+  newPositiveFeedback      String?  @map("new_positive_feedback")
+  newNegativeFeedback      String?  @map("new_negative_feedback")
+  editedByUserId           String   @map("edited_by_user_id")
+  editedAt                 DateTime @default(now()) @map("edited_at")
+
+  observation TutorObservation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  editedBy    User             @relation("ObservationEditedBy", fields: [editedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([observationId])
+  @@map("tutor_observation_revisions")
 }
