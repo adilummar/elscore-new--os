@@ -145,11 +145,11 @@ describe('JwtStrategy', () => {
   });
 
   it('allows legitimate CEO and HR users through', async () => {
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false, tutorBlocked: false });
     const ceoResult = await strategy.validate({ sub: 'ceo-user-id', email: 'ceo@elscore.com' });
     expect(ceoResult).toEqual({ id: 'ceo-user-id', email: 'ceo@elscore.com', mustChangePassword: false });
 
-    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false });
+    mockUserStatusCacheService.getStatus.mockResolvedValueOnce({ status: UserStatus.ACTIVE, mustChangePassword: false, tutorBlocked: false });
     const hrResult = await strategy.validate({ sub: 'hr-user-id', email: 'hr.manager@elscore.com' });
     expect(hrResult).toEqual({ id: 'hr-user-id', email: 'hr.manager@elscore.com', mustChangePassword: false });
   });
