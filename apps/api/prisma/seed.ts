@@ -386,6 +386,20 @@ const PERMISSIONS: Array<{
     isDelegatable: false,
   },
   {
+    code: 'demo.reschedule',
+    resource: 'demo',
+    action: 'reschedule',
+    description: 'Reschedule any permitted demo (demo operations)',
+    isDelegatable: false,
+  },
+  {
+    code: 'demo.cancel',
+    resource: 'demo',
+    action: 'cancel',
+    description: 'Cancel any permitted demo (demo operations)',
+    isDelegatable: false,
+  },
+  {
     code: 'demo.manage_all',
     resource: 'demo',
     action: 'manage_all',
