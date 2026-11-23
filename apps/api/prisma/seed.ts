@@ -1013,6 +1013,28 @@ const PERMISSIONS: Array<{
       description: 'View recruitment reports (enquiries, sources, outcomes, ad spend)',
       isDelegatable: true,
     },
+    // Tutor Management — Tutor profile
+    {
+      code: 'tutor_hr.profile.read',
+      resource: 'tutor_hr_profile',
+      action: 'read',
+      description: 'View tutor profiles (bank account number masked unless you can manage profiles)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_hr.profile.manage',
+      resource: 'tutor_hr_profile',
+      action: 'manage',
+      description: 'Edit tutor profiles, qualifications and status (HR Staff and HR Head)',
+      isDelegatable: false,
+    },
+    {
+      code: 'tutor_hr.notes.manage',
+      resource: 'tutor_hr_notes',
+      action: 'manage',
+      description: 'View and write confidential HR Internal Notes and the HR-only History & Status',
+      isDelegatable: false,
+    },
     // Tutor Management — Tutors
     {
       code: 'tutor_hr.ready_for_assignment',
@@ -1495,6 +1517,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // Backup for the Head of Tutor Management on Ready for Assignment (confirmed).
     'tutor_hr.ready_for_assignment',
     'tutor_hr.tutors.read',
+    'tutor_hr.profile.read',
+    'tutor_hr.profile.manage',
+    'tutor_hr.notes.manage',
     'tutor_hr.settings.manage',
     'tutor_hiring.read-all',
     'tutor_hiring.reassign',
@@ -1586,6 +1611,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_training.participants',
     'tutor_training.record',
     'tutor_hr.tutors.read',
+    'tutor_hr.profile.read',
+    'tutor_hr.profile.manage',
+    'tutor_hr.notes.manage',
     'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
@@ -1620,6 +1648,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // Final verification (Ready for Assignment) and the Tutors list.
     'tutor_hr.ready_for_assignment',
     'tutor_hr.tutors.read',
+    'tutor_hr.profile.read', // view only: no HR Internal Notes, no History & Status
     'employee.read',
     'department.read',
     'attendance.action.own',
@@ -2076,6 +2105,13 @@ async function seedRolePermissions() {
   }
 }
 
+/** Hiring defaults the mother tongue to Malayalam (confirmed), so that entry must exist. */
+async function seedMotherTongues() {
+  console.log('  Seeding mother tongue default...');
+  const existing = await prisma.motherTongue.findFirst({ where: { name: { equals: 'Malayalam', mode: 'insensitive' } } });
+  if (!existing) await prisma.motherTongue.create({ data: { name: 'Malayalam' } });
+}
+
 async function seedSequences() {
   console.log('  Seeding ID sequences...');
   for (const seq of SEQUENCE_DEFINITIONS) {
@@ -2188,6 +2224,7 @@ async function main() {
   await seedRolePermissions();
   await seedSequences();
   await seedReferenceData();
+  await seedMotherTongues();
   await seedAdminUser();
   await seedSystemUser();
   console.log('✅ Seed complete.');

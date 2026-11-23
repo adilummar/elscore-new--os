@@ -25,7 +25,7 @@ const label = (v?: string | null) => ATTENDANCE.find((a) => a.value === v)?.labe
 /** Tutor ID once transferred; otherwise the Ready for Assignment action for completed trainees. */
 function ReadyCell({ t, canMarkReady, onClick }: { t: any; canMarkReady: boolean; onClick: () => void }) {
   if (t.tutorId) {
-    return <Link href="/tutor-hr/tutors" className="text-sm font-medium text-brand-700 hover:underline">Tutor {t.tutorId}</Link>;
+    return <Link href={t.tutorProfileId ? `/tutor-hr/tutors/${t.tutorProfileId}` : '/tutor-hr/tutors'} className="text-sm font-medium text-brand-700 hover:underline">Tutor {t.tutorId}</Link>;
   }
   if (t.stage !== 'COMPLETED') return null;
   return canMarkReady

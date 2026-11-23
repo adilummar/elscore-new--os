@@ -119,7 +119,7 @@ export default function CandidateProfilePage() {
       )}
       {training?.tutorLead?.tutorProfile?.tutorCode ? (
         <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">
-          Ready for Assignment. Tutor ID {training.tutorLead.tutorProfile.tutorCode}; this tutor is now in <Link href="/tutor-hr/tutors" className="underline">Tutors</Link>.
+          Ready for Assignment. Tutor ID {training.tutorLead.tutorProfile.tutorCode}; this tutor is now in <Link href={`/tutor-hr/tutors/${training.tutorLead.tutorProfile.id}`} className="underline">Tutors</Link>.
         </div>
       ) : lead.hiringStage === 'TRAINING' && (
         <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">

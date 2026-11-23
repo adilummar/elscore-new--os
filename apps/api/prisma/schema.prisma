@@ -400,6 +400,10 @@ model User {
   tutorTrainingAttemptsRecorded  TutorTrainingAttempt[]           @relation("TutorTrainingAttemptRecordedBy")
   tutorTrainingCorrections       TutorTrainingAttemptCorrection[] @relation("TutorTrainingCorrectedBy")
   tutorsVerified                 TutorProfile[]                   @relation("TutorVerifiedBy")
+  tutorStatusChanges             TutorStatusHistory[]             @relation("TutorStatusChangedBy")
+  tutorQualificationsAdded       TutorQualification[]             @relation("TutorQualificationAddedBy")
+  tutorHrNotesWritten            TutorHrNote[]                    @relation("TutorHrNoteCreatedBy")
+  tutorHrNoteEdits               TutorHrNoteRevision[]            @relation("TutorHrNoteEditedBy")
   tutorDemoReassignedFrom   TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignFrom")
   tutorDemoReassignedTo     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignTo")
   tutorDemoReassignedBy     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignChangedBy")
@@ -938,9 +942,33 @@ model Curriculum {
 ///
 /// Managed by the Academics module (future phase). Phase 1 stores the field
 /// but does not expose write endpoints for it (set on TutorProfile creation only).
+/// Separate statuses (not subcategories of Inactive). HR may move between any of them with a reason.
 enum TutorOperationalStatus {
   ACTIVE
   INACTIVE
+  PAUSED
+  SUSPENDED
+  DISCONTINUED
+}
+
+enum TutorGender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum TutorMaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+  PREFER_NOT_TO_SAY
+}
+
+enum TutorEmergencyContactKind {
+  PRIMARY
+  SECONDARY
 }
 
 /// Tutor-specific profile. Created when a Tutor is hired (TutorRecruitment → RECRUITED).
@@ -995,9 +1023,16 @@ model TutorProfile {
   feedback     TutorFeedback[]
   payableItems TutorPayableItem[]
 
+  statusHistory     TutorStatusHistory[]
+  personalDetails   TutorPersonalDetails?
+  emergencyContacts TutorEmergencyContact[]
+  qualifications    TutorQualification[]
+  hrNotes           TutorHrNote[]
+
   tutorLead TutorLead? @relation("LeadTutorProfile", fields: [sourceTutorLeadId], references: [id], onDelete: SetNull)
 
   @@index([verifiedAt])
+  @@index([tutorOperationalStatus])
   @@map("tutor_profiles")
 }
 
@@ -4116,3 +4151,132 @@ model PipObjective {
 
 
 
+
+// ============================================================================
+// TUTOR MANAGEMENT — TUTOR PROFILE (personal details, statuses, HR notes; additive only)
+// ============================================================================
+
+/// Immutable status log. A reason is mandatory for every change.
+model TutorStatusHistory {
+  id              String                  @id @default(uuid())
+  tutorProfileId  String                  @map("tutor_profile_id")
+  previousStatus  TutorOperationalStatus? @map("previous_status")
+  newStatus       TutorOperationalStatus  @map("new_status")
+  reason          String
+  changedByUserId String                  @map("changed_by_user_id")
+  changedAt       DateTime                @default(now()) @map("changed_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  changedBy    User         @relation("TutorStatusChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorProfileId, changedAt])
+  @@map("tutor_status_history")
+}
+
+/// Personal, address and bank details (one row per tutor). Edits are audited field by field;
+/// the bank account number is masked in every audit row and list.
+/// FOLLOW-UP before go-live: encrypt bank details at rest.
+model TutorPersonalDetails {
+  tutorProfileId String              @id @map("tutor_profile_id")
+  gender         TutorGender?
+  maritalStatus  TutorMaritalStatus? @map("marital_status")
+
+  permHouse    String? @map("perm_house")
+  permVillage  String? @map("perm_village")
+  permDistrict String? @map("perm_district")
+  permPin      String? @map("perm_pin")
+  permState    String? @map("perm_state")
+  permCountry  String? @default("India") @map("perm_country")
+
+  currentSameAsPermanent Boolean @default(false) @map("current_same_as_permanent")
+  curHouse    String? @map("cur_house")
+  curVillage  String? @map("cur_village")
+  curDistrict String? @map("cur_district")
+  curPin      String? @map("cur_pin")
+  curState    String? @map("cur_state")
+  curCountry  String? @default("India") @map("cur_country")
+
+  bankAccountHolder String? @map("bank_account_holder")
+  bankName          String? @map("bank_name")
+  bankBranch        String? @map("bank_branch")
+  bankAccountNumber String? @map("bank_account_number")
+  bankIfsc          String? @map("bank_ifsc")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+
+  @@map("tutor_personal_details")
+}
+
+/// Primary (compulsory) and secondary (optional) emergency contacts.
+model TutorEmergencyContact {
+  id             String                    @id @default(uuid())
+  tutorProfileId String                    @map("tutor_profile_id")
+  kind           TutorEmergencyContactKind
+  name           String
+  /// Stored as "+<country code><number>".
+  phone          String
+  relationship   String
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([tutorProfileId, kind])
+  @@map("tutor_emergency_contacts")
+}
+
+/// Any number of qualifications. Removing hides the entry (isActive false); rows are never deleted.
+model TutorQualification {
+  id               String    @id @default(uuid())
+  tutorProfileId   String    @map("tutor_profile_id")
+  name             String
+  institution      String
+  yearOfCompletion Int?      @map("year_of_completion")
+  /// Reserved for the certificate upload (storage is not built yet).
+  certificateRef   String?   @map("certificate_ref")
+  isActive         Boolean   @default(true) @map("is_active")
+  removedAt        DateTime? @map("removed_at")
+  createdByUserId  String    @map("created_by_user_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tutorProfile TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation("TutorQualificationAddedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorProfileId, isActive])
+  @@map("tutor_qualifications")
+}
+
+/// Confidential HR notes: HR Staff and HR Head only. Edits keep every earlier text.
+model TutorHrNote {
+  id              String    @id @default(uuid())
+  tutorProfileId  String    @map("tutor_profile_id")
+  body            String
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  editedAt        DateTime? @map("edited_at")
+
+  tutorProfile TutorProfile          @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  createdBy    User                  @relation("TutorHrNoteCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revisions    TutorHrNoteRevision[]
+
+  @@index([tutorProfileId, createdAt])
+  @@map("tutor_hr_notes")
+}
+
+model TutorHrNoteRevision {
+  id             String   @id @default(uuid())
+  noteId         String   @map("note_id")
+  previousBody   String   @map("previous_body")
+  editedByUserId String   @map("edited_by_user_id")
+  editedAt       DateTime @default(now()) @map("edited_at")
+
+  note     TutorHrNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  editedBy User        @relation("TutorHrNoteEditedBy", fields: [editedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([noteId])
+  @@map("tutor_hr_note_revisions")
+}
