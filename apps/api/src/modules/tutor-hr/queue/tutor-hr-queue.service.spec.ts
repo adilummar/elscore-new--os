@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
-import { JOBS, QUEUES } from '../../../common/queue/queue.constants';
 import configuration from '../../../common/config/configuration';
+import { JOBS, QUEUES } from '../../../common/queue/queue.constants';
 import { HiringEscalationService } from '../hiring/hiring-escalation.service';
 
 import {
@@ -71,7 +71,8 @@ describe('Tutor HR queue configuration', () => {
 });
 
 describe('TutorHrQueueService', () => {
-  const escalation = { runScan: jest.fn() } as unknown as jest.Mocked<HiringEscalationService>;
+  const runScan = jest.fn();
+  const escalation = { runScan } as unknown as HiringEscalationService;
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -107,13 +108,13 @@ describe('TutorHrQueueService', () => {
     const fake = fakeBullMq();
     const svc = new TutorHrQueueService(configFrom({ APP_ENV: 'staging' }), escalation, fake.classes);
     await svc.onApplicationBootstrap();
-    escalation.runScan.mockResolvedValue({ scanned: 2 } as never);
+    runScan.mockResolvedValue({ scanned: 2 });
 
     await expect(fake.workers[0].processor({ id: '1', name: JOBS.TUTOR_EVALUATION_OVERDUE_SCAN, attemptsMade: 0 })).resolves.toEqual({ scanned: 2 });
-    expect(escalation.runScan).toHaveBeenCalledTimes(1);
+    expect(runScan).toHaveBeenCalledTimes(1);
 
     await expect(fake.workers[0].processor({ id: '2', name: JOBS.TOKEN_CLEANUP, attemptsMade: 0 })).rejects.toThrow('Unknown job');
-    expect(escalation.runScan).toHaveBeenCalledTimes(1);
+    expect(runScan).toHaveBeenCalledTimes(1);
   });
 
   it('does not throw from bootstrap when Redis is unavailable', async () => {
