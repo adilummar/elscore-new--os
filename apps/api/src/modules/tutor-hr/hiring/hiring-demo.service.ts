@@ -22,8 +22,8 @@ import { addWorkingMinutes, evaluationSla, HiringSchedule, SlaState } from './wo
 export const DEMO_CONFLICT_WINDOW_MINUTES = 30;
 export const MAX_WORKLOAD_RANGE_DAYS = 62;
 const SLA_ALLOWED_WORKING_MINUTES = 120;
-/** Staff roles that may be assigned demos. */
-const ASSIGNABLE_ROLE_CODES = ['TUTOR_HEAD', 'HR_MANAGER', 'HR_EXECUTIVE'];
+/** Hiring staff roles: may be assigned demos and, until a Tutor Coordinator role exists, conduct training. */
+export const ASSIGNABLE_ROLE_CODES = ['TUTOR_HEAD', 'HR_MANAGER', 'HR_EXECUTIVE'];
 
 export type EvaluationState = SlaState | 'NOT_APPLICABLE' | 'SLA_NOT_CONFIGURED';
 

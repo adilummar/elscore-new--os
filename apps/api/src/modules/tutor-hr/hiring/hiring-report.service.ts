@@ -21,7 +21,7 @@ import { HiringScheduleService } from './hiring-schedule.service';
  *  - demoAttended:        candidates with at least one demo booking marked ATTENDED.
  *  - selected:            current decision is ACCEPTED or HIRED.
  *  - tutorsHired:         current decision is HIRED (a recruitment outcome, not a Tutor record).
- *  - trainingCompleted:   not available; Training is not implemented yet.
+ *  - trainingCompleted:   candidates whose Session 2 is passed (attended with the task completed).
  */
 @Injectable()
 export class HiringReportService {
@@ -61,7 +61,7 @@ export class HiringReportService {
       tutorLead: { is: { ...where, enquiries: undefined } },
     };
 
-    const [enquiryRecords, uniqueCandidates, contacted, cvReceived, shortlisted, demoAttended, selected, hired] = await Promise.all([
+    const [enquiryRecords, uniqueCandidates, contacted, cvReceived, shortlisted, demoAttended, selected, hired, trainingCompleted] = await Promise.all([
       this.prisma.tutorLeadEnquiry.count({ where: enquiryWhere }),
       this.prisma.tutorLead.count({ where }),
       this.prisma.tutorLead.count({ where: { AND: [where, { calls: { some: { status: 'ATTENDED' } } }] } }),
@@ -70,6 +70,7 @@ export class HiringReportService {
       this.prisma.tutorLead.count({ where: { AND: [where, { demoBookings: { some: { status: 'ATTENDED' } } }] } }),
       this.prisma.tutorLead.count({ where: { AND: [where, { decision: { in: ['ACCEPTED', 'HIRED'] } }] } }),
       this.prisma.tutorLead.count({ where: { AND: [where, { decision: 'HIRED' }] } }),
+      this.prisma.tutorLead.count({ where: { AND: [where, { trainingEnrolment: { is: { session2PassedAt: { not: null } } } }] } }),
     ]);
 
     const sources = await this.prisma.tutorLeadSource.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } });
@@ -109,8 +110,7 @@ export class HiringReportService {
       enquiries: { enquiryRecords, uniqueCandidates },
       outcomes: {
         contacted, cvReceived, shortlisted, demoAttended, selected, tutorsHired: hired,
-        trainingCompleted: null as number | null,
-        trainingCompletedNote: 'Training is not implemented yet',
+        trainingCompleted,
       },
       bySource: sources.map((s) => ({
         sourceId: s.id,

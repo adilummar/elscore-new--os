@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { useAuth, usePermissions } from '@/components/providers/AuthProvider';
 import { getCandidate, getCandidateDemos } from '../../actions';
+import { getTrainee } from '../../../training/actions';
+import { ATTENDANCE, ATTENDANCE_VARIANT, TRAINEE_STAGE } from '../../../training/constants';
 import {
   CALL_STATUSES, DECISIONS, DEMO_STATUS_LABEL, LEAD_STATUSES, MANUAL_STAGES, STAGES, WEEKDAYS, fmtDate, fmtDateTime, labelOf,
 } from '../../constants';
@@ -20,7 +22,7 @@ import { DecisionBadge, Empty, ErrorNote, LeadStatusBadge, SkeletonRows, SlaBadg
 import { cn } from '@/lib/utils';
 
 type Dlg = null | { kind: string; booking?: any };
-const TABS = ['Overview', 'Demos', 'Calls', 'History'] as const;
+const TABS = ['Overview', 'Demos', 'Calls', 'Training', 'History'] as const;
 const actionLabel = (a: string) => a.replace(/^TUTOR_/, '').replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
@@ -38,13 +40,16 @@ export default function CandidateProfilePage() {
   const { hasPermission } = usePermissions();
   const [lead, setLead] = useState<any>(null);
   const [demos, setDemos] = useState<any[]>([]);
+  const [training, setTraining] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>('Overview');
   const [dlg, setDlg] = useState<Dlg>(null);
 
   const load = useCallback(async () => {
-    const [a, b] = await Promise.all([getCandidate(id), getCandidateDemos(id)]);
+    const [a, b, t] = await Promise.all([getCandidate(id), getCandidateDemos(id), getTrainee(id)]);
+    // Training is optional context: staff without tutor_training.read simply see no Training data.
+    setTraining(t.ok ? t.data : null);
     if (a.ok) { setLead(a.data); setError(null); } else setError(a.message);
     if (b.ok) setDemos(b.data);
   }, [id]);
@@ -239,6 +244,49 @@ export default function CandidateProfilePage() {
             );
           })}
         </div>
+      )}
+
+      {tab === 'Training' && (
+        <Card>
+          {!training?.enrolled ? (
+            <Empty title="Not in Training" hint={training ? 'Candidates enter Training when they are marked Hired.' : 'Training details are not available to your role.'} />
+          ) : (
+            <CardContent className="pt-5 space-y-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Badge variant={TRAINEE_STAGE[training.stage]?.variant ?? 'default'}>{TRAINEE_STAGE[training.stage]?.label ?? training.stage}</Badge>
+                <span className="text-slate-600">Session 1 passed: {fmtDate(training.session1PassedAt)} · Session 2 passed: {fmtDate(training.session2PassedAt)}</span>
+                <Link href="/tutor-hr/training" className="text-brand-700 hover:underline">Open Training</Link>
+              </div>
+              {training.attempts.length === 0 ? <p className="text-sm text-slate-500">Not added to a session yet.</p> : (
+                <ol className="divide-y divide-slate-100 rounded-md border border-slate-100">
+                  {training.attempts.map((a: any, i: number) => (
+                    <li key={a.id} className="p-3 text-sm space-y-1">
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <span className="font-medium text-slate-900">Attempt {i + 1} · Session {a.sessionNumber} · {fmtDateTime(a.session.scheduledAt)}</span>
+                        {a.attendance ? (
+                          <span className="flex gap-2">
+                            <Badge variant={ATTENDANCE_VARIANT[a.attendance]}>{ATTENDANCE.find((x) => x.value === a.attendance)?.label}</Badge>
+                            <Badge variant={a.taskCompleted ? 'success' : 'default'}>{a.taskCompleted ? 'Task completed' : 'Task not completed'}</Badge>
+                          </span>
+                        ) : <span className="text-xs text-slate-500">Not recorded</span>}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Conducted by {a.session.conductor.email} · added by {a.addedBy.email}
+                        {a.recordedBy ? ` · recorded by ${a.recordedBy.email} on ${fmtDateTime(a.recordedAt)}` : ''}
+                      </p>
+                      {a.remarks && <p className="text-slate-600">{a.remarks}</p>}
+                      {a.corrections.map((c: any) => (
+                        <p key={c.id} className="text-xs text-amber-800">
+                          Corrected {fmtDateTime(c.correctedAt)} by {c.correctedBy.email}: was {ATTENDANCE.find((x) => x.value === c.previousAttendance)?.label}, task {c.previousTaskCompleted ? 'completed' : 'not completed'} ({c.reason})
+                        </p>
+                      ))}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </CardContent>
+          )}
+        </Card>
       )}
 
       {tab === 'Calls' && (

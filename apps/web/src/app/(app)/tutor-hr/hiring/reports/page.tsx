@@ -70,17 +70,17 @@ function ReportsInner() {
       <ErrorNote message={error} />
       {loading && !data ? <Card><SkeletonRows rows={5} /></Card> : data && (
         <>
-          <section aria-label="Totals" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <section aria-label="Totals" className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
             <StatCard label="Enquiry records" value={data.enquiries.enquiryRecords} hint="A candidate can enquire more than once" />
             <StatCard label="Unique candidates" value={data.enquiries.uniqueCandidates} />
             <StatCard label="Contacted" value={o.contacted} hint="At least one attended call" />
             <StatCard label="CV received" value={o.cvReceived} />
-            <StatCard label="Shortlisted" value={o.shortlisted} hint="Reached Live Demo & Interview" />
+            <StatCard label="Shortlisted" value={o.shortlisted} hint="Reached Live Demo & Interview or later" />
             <StatCard label="Demo attended" value={o.demoAttended} />
             <StatCard label="Selected" value={o.selected} hint="Accepted or Hired" />
             <StatCard label="Tutors hired" value={o.tutorsHired} />
+            <StatCard label="Training completed" value={o.trainingCompleted} hint="Both sessions passed" />
           </section>
-          <p className="text-xs text-slate-500">Training completed: not available. {o.trainingCompletedNote}.</p>
 
           <Card>
             <CardHeader><CardTitle>By source</CardTitle></CardHeader>

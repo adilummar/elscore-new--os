@@ -390,6 +390,15 @@ model User {
   tutorDemosBooked          TutorDemoBooking[]            @relation("TutorDemoBookedBy")
   tutorDemosAssigned        TutorDemoBooking[]            @relation("TutorDemoAssignedTo")
   tutorLeadStatusChanges    TutorLeadStatusHistory[]      @relation("TutorLeadStatusChangedBy")
+
+  // Tutor Management — Training
+  tutorTrainingSessionsConducted TutorTrainingSession[]           @relation("TutorTrainingConductor")
+  tutorTrainingSessionsCreated   TutorTrainingSession[]           @relation("TutorTrainingSessionCreatedBy")
+  tutorTrainingSessionChanges    TutorTrainingSessionHistory[]    @relation("TutorTrainingSessionChangedBy")
+  tutorTrainingEnrolments        TutorTrainingEnrolment[]         @relation("TutorTrainingEnrolledBy")
+  tutorTrainingAttemptsAdded     TutorTrainingAttempt[]           @relation("TutorTrainingAttemptAddedBy")
+  tutorTrainingAttemptsRecorded  TutorTrainingAttempt[]           @relation("TutorTrainingAttemptRecordedBy")
+  tutorTrainingCorrections       TutorTrainingAttemptCorrection[] @relation("TutorTrainingCorrectedBy")
   tutorDemoReassignedFrom   TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignFrom")
   tutorDemoReassignedTo     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignTo")
   tutorDemoReassignedBy     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignChangedBy")
@@ -2657,6 +2666,7 @@ model TutorLead {
 
   enquiries        TutorLeadEnquiry[]
   statusHistory    TutorLeadStatusHistory[]
+  trainingEnrolment TutorTrainingEnrolment?
   curricula        TutorLeadCurriculum[]
   decisionHistory  TutorLeadDecisionHistory[]
   demoBookings     TutorDemoBooking[]
@@ -3055,6 +3065,127 @@ model TutorAdSpend {
 
   @@index([sourceId, periodStart])
   @@map("tutor_ad_spend")
+}
+
+// ============================================================================
+// TUTOR MANAGEMENT — TRAINING (two compulsory onboarding sessions; additive only)
+// ============================================================================
+
+enum TutorTrainingAttendance {
+  ATTENDED
+  NOT_ATTENDED
+  /// Joined but left before the session finished. Remarks are mandatory.
+  ATTENDED_NOT_COMPLETED
+}
+
+/// A scheduled training session (session 1 or 2). Rescheduling keeps every earlier time in history.
+model TutorTrainingSession {
+  id              String   @id @default(uuid())
+  sessionNumber   Int      @map("session_number") // 1 or 2 (validated in the service)
+  scheduledAt     DateTime @map("scheduled_at")
+  conductorUserId String   @map("conductor_user_id")
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  conductor User @relation("TutorTrainingConductor", fields: [conductorUserId], references: [id], onDelete: Restrict)
+  createdBy User @relation("TutorTrainingSessionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  history  TutorTrainingSessionHistory[]
+  attempts TutorTrainingAttempt[]
+
+  @@index([scheduledAt])
+  @@index([conductorUserId, scheduledAt])
+  @@map("tutor_training_sessions")
+}
+
+/// Immutable log of session reschedules / conductor changes.
+model TutorTrainingSessionHistory {
+  id                      String   @id @default(uuid())
+  sessionId               String   @map("session_id")
+  previousScheduledAt     DateTime @map("previous_scheduled_at")
+  newScheduledAt          DateTime @map("new_scheduled_at")
+  previousConductorUserId String   @map("previous_conductor_user_id")
+  newConductorUserId      String   @map("new_conductor_user_id")
+  reason                  String
+  changedByUserId         String   @map("changed_by_user_id")
+  changedAt               DateTime @default(now()) @map("changed_at")
+
+  session   TutorTrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  changedBy User                 @relation("TutorTrainingSessionChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId])
+  @@map("tutor_training_session_history")
+}
+
+/// One per Hired candidate, created when the candidate is marked Hired.
+/// session1PassedAt / session2PassedAt are set when an attempt is Attended with the task completed.
+/// Training is complete when session2PassedAt is set.
+model TutorTrainingEnrolment {
+  id               String    @id @default(uuid())
+  tutorLeadId      String    @unique @map("tutor_lead_id")
+  enrolledAt       DateTime  @default(now()) @map("enrolled_at")
+  enrolledByUserId String    @map("enrolled_by_user_id")
+  session1PassedAt DateTime? @map("session1_passed_at")
+  session2PassedAt DateTime? @map("session2_passed_at")
+
+  tutorLead  TutorLead @relation(fields: [tutorLeadId], references: [id], onDelete: Restrict)
+  enrolledBy User      @relation("TutorTrainingEnrolledBy", fields: [enrolledByUserId], references: [id], onDelete: Restrict)
+
+  attempts TutorTrainingAttempt[]
+
+  @@index([session2PassedAt])
+  @@map("tutor_training_enrolments")
+}
+
+/// One trainee in one session. A repeat is a new row in another session; rows are never deleted.
+/// attendance NULL = not recorded yet. Once recorded it is locked; only the Head can correct it
+/// (each correction keeps the previous values in TutorTrainingAttemptCorrection).
+model TutorTrainingAttempt {
+  id               String                   @id @default(uuid())
+  enrolmentId      String                   @map("enrolment_id")
+  sessionId        String                   @map("session_id")
+  sessionNumber    Int                      @map("session_number") // copied from the session for progress queries
+  attendance       TutorTrainingAttendance?
+  taskCompleted    Boolean?                 @map("task_completed")
+  remarks          String?
+  addedByUserId    String                   @map("added_by_user_id")
+  addedAt          DateTime                 @default(now()) @map("added_at")
+  recordedByUserId String?                  @map("recorded_by_user_id")
+  recordedAt       DateTime?                @map("recorded_at")
+
+  enrolment  TutorTrainingEnrolment @relation(fields: [enrolmentId], references: [id], onDelete: Restrict)
+  session    TutorTrainingSession   @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  addedBy    User                   @relation("TutorTrainingAttemptAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
+  recordedBy User?                  @relation("TutorTrainingAttemptRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  corrections TutorTrainingAttemptCorrection[]
+
+  @@unique([enrolmentId, sessionId])
+  @@index([enrolmentId, sessionNumber])
+  @@index([sessionId])
+  @@map("tutor_training_attempts")
+}
+
+/// Head-only correction of a recorded attempt. Keeps the previous and new values.
+model TutorTrainingAttemptCorrection {
+  id                    String                  @id @default(uuid())
+  attemptId             String                  @map("attempt_id")
+  previousAttendance    TutorTrainingAttendance @map("previous_attendance")
+  previousTaskCompleted Boolean                 @map("previous_task_completed")
+  previousRemarks       String?                 @map("previous_remarks")
+  newAttendance         TutorTrainingAttendance @map("new_attendance")
+  newTaskCompleted      Boolean                 @map("new_task_completed")
+  newRemarks            String?                 @map("new_remarks")
+  reason                String
+  correctedByUserId     String                  @map("corrected_by_user_id")
+  correctedAt           DateTime                @default(now()) @map("corrected_at")
+
+  attempt     TutorTrainingAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  correctedBy User                 @relation("TutorTrainingCorrectedBy", fields: [correctedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([attemptId])
+  @@map("tutor_training_attempt_corrections")
 }
 
 // =============================================================================

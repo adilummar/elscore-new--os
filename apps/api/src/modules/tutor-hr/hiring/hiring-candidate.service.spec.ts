@@ -25,6 +25,7 @@ function build(opts: {
     tutorLeadStageHistory: { create: jest.fn() },
     tutorLeadDecisionHistory: { create: jest.fn() },
     tutorLeadStatusHistory: { create: jest.fn() },
+    tutorTrainingEnrolment: { upsert: jest.fn() },
     tutorLeadCall: { create: jest.fn().mockResolvedValue({ id: 'call-1' }) },
     tutorLeadAvailability: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -194,6 +195,7 @@ describe('HiringCandidateService', () => {
       expect(upd.data).toMatchObject({ decision: 'HIRED', hiringStage: 'TRAINING', currentStage: 'TRAINING' });
       expect(upd.data.trainingStartedAt).toBeInstanceOf(Date);
       expect(tx.tutorLeadStageHistory.create.mock.calls[0][0].data).toMatchObject({ previousStage: 'DEMO', newStage: 'TRAINING' });
+      expect(tx.tutorTrainingEnrolment.upsert.mock.calls[0][0]).toMatchObject({ where: { tutorLeadId: 'lead-1' }, create: { tutorLeadId: 'lead-1', enrolledByUserId: 'conductor' } });
     });
     it('a Hired decision is final', async () => {
       const { svc } = build({ lead: { ...baseLead, hiringStage: 'TRAINING', decision: 'HIRED' } });
