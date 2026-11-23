@@ -1,3 +1,7 @@
+-- Tutor HR migration 20261123100000_tutor_hiring_phase_a (converted from the reviewed prisma/proposed/tutor_hiring_phase_a.sql; statements unchanged).
+-- Hiring: 5 enums, new columns on tutor_leads / tutor_lead_calls, new hiring tables. lead_status is NOT NULL DEFAULT PROCESSING, so every existing lead starts as Processing; see prisma/tutor-hr-backfills/README.md.
+-- Data backfills are NOT part of any migration: they live in prisma/tutor-hr-backfills/ and are run by hand.
+
 -- CreateEnum
 CREATE TYPE "TutorHiringStage" AS ENUM ('LEAD', 'DETAILS_SHARED', 'CV', 'LIVE_DEMO_INTERVIEW', 'TRAINING');
 

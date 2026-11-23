@@ -1,5 +1,9 @@
--- PROPOSED, NOT APPLIED. Tutor Management Step 5: Tutor Coordinator (assignments, observations).
--- Run after tutor_profile_phase_d.sql. Additive only: two nullable tutor_profiles columns and three
+-- Tutor HR migration 20261123140000_tutor_coordination_phase_e (converted from the reviewed prisma/proposed/tutor_coordination_phase_e.sql; statements unchanged).
+-- Coordination: nullable tutor_profiles columns, 3 tables. Roles and permissions come from prisma/seed.ts, not from this migration.
+-- Data backfills are NOT part of any migration: they live in prisma/tutor-hr-backfills/ and are run by hand.
+
+-- Tutor Management Step 5: Tutor Coordinator (assignments, observations).
+-- Run after 20261123130000_tutor_profile_phase_d. Additive only: two nullable tutor_profiles columns and three
 -- new tables. The TUTOR_COORDINATOR role and its permissions come from prisma/seed.ts (re-run the seed).
 -- Generated with `prisma migrate diff` from the Step 4 schema to the Step 5 schema.
 
