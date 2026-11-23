@@ -1031,6 +1031,42 @@ const PERMISSIONS: Array<{
       description: 'View recruitment reports (enquiries, sources, outcomes, ad spend)',
       isDelegatable: true,
     },
+    // Tutor Management — Training (two compulsory onboarding sessions)
+    {
+      code: 'tutor_training.read',
+      resource: 'tutor_training',
+      action: 'read',
+      description: 'View training sessions, participants, attendance and trainee progress',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_training.schedule',
+      resource: 'tutor_training',
+      action: 'schedule',
+      description: 'Schedule and reschedule training sessions (Head of Tutor Management)',
+      isDelegatable: false,
+    },
+    {
+      code: 'tutor_training.participants',
+      resource: 'tutor_training',
+      action: 'participants',
+      description: 'Add Hired trainees to training sessions, including repeat sessions (HR Staff)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_training.record',
+      resource: 'tutor_training',
+      action: 'record',
+      description: 'Record attendance and task completion for sessions you conduct',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_training.override',
+      resource: 'tutor_training',
+      action: 'override',
+      description: 'Record attendance for any session and correct recorded attendance (previous values kept)',
+      isDelegatable: false,
+    },
     {
       code: 'tutor_hiring.override',
       resource: 'tutor_hiring',
@@ -1635,6 +1671,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_lead.approve',
     'tutor_lead.training.read',
     'tutor_lead.training.manage',
+    'tutor_training.read',
+    'tutor_training.participants',
+    'tutor_training.record',
     'tutor_hr.settings.manage',
     'tutor_hiring.read-all',
     'tutor_hiring.reassign',
@@ -1722,6 +1761,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // tutor_lead.approve: NOT granted — approval requires HR Manager
     'tutor_lead.training.read',
     'tutor_lead.training.manage',
+    'tutor_training.read',
+    'tutor_training.participants',
+    'tutor_training.record',
     'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
@@ -1776,6 +1818,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hiring.settings',
     // Confirmed: only the Head of Tutor Management may override the demo conductor.
     'tutor_hiring.override',
+    // Training: the Head schedules sessions and is the only one who corrects recorded attendance.
+    // Adding participants stays with HR Staff (HR Manager / HR Executive).
+    'tutor_training.read',
+    'tutor_training.schedule',
+    'tutor_training.record',
+    'tutor_training.override',
     'employee.read',
     'department.read',
     'attendance.action.own',

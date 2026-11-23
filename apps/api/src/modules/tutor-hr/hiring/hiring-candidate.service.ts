@@ -589,6 +589,12 @@ export class HiringCandidateService {
         });
       }
       if (hired) {
+        // Enrol in Training in the same transaction; upsert keeps this idempotent.
+        await tx.tutorTrainingEnrolment.upsert({
+          where: { tutorLeadId: id },
+          create: { tutorLeadId: id, enrolledByUserId: actorUserId, enrolledAt: now },
+          update: {},
+        });
         await tx.tutorLeadStageHistory.create({
           data: {
             tutorLeadId: id, previousStage: LEGACY_STAGE[stage], newStage: TutorLeadStageCode.TRAINING,
