@@ -78,8 +78,10 @@ export async function middleware(request: NextRequest) {
         
         return response;
       } else {
-        // Failed to refresh, redirect to login
-        const response = NextResponse.redirect(new URL('/login', request.url), 303);
+        // Failed to refresh, redirect to login. A locked-out tutor sees why (without the reason).
+        const body = await res.json().catch(() => ({}));
+        const inactive = body?.code === 'ACCOUNT_NOT_ACTIVE';
+        const response = NextResponse.redirect(new URL(inactive ? '/login?notice=account-inactive' : '/login', request.url), 303);
         response.cookies.delete('accessToken');
         response.cookies.delete('refreshToken');
         return response;

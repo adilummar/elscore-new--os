@@ -13,6 +13,8 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { isSystemActorIdentity } from '../id-generator/seed-identity';
 
+import { accountNotActiveBody, isTutorAccessBlocked, tutorStatusOf, tutorStatusSelect } from './account-access';
+
 export interface ValidatedUser {
   id: string;
   email: string;
@@ -67,7 +69,7 @@ export class AuthService {
       throw new UnauthorizedException('UAT accounts are only available in the staging environment.');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({ where: { email }, include: tutorStatusSelect });
 
     // Always verify to prevent timing-based username enumeration
     const dummyHash =
@@ -88,6 +90,12 @@ export class AuthService {
 
     if (user.status !== UserStatus.ACTIVE && user.status !== UserStatus.PENDING_SETUP) {
       throw new UnauthorizedException('Account is not active. Contact your administrator.');
+    }
+
+    // Checked only after a correct password, so the response reveals nothing to a wrong guess.
+    if (isTutorAccessBlocked(tutorStatusOf(user))) {
+      await this.recordRefusedLogin(user.id, 'LOGIN');
+      throw new UnauthorizedException(accountNotActiveBody());
     }
 
     return { id: user.id, email: user.email, mustChangePassword: user.mustChangePassword };
@@ -169,9 +177,13 @@ export class AuthService {
     }
 
     // Verify user is still active or pending setup
-    const user = await this.prisma.user.findUnique({ where: { id: stored.userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: stored.userId }, include: tutorStatusSelect });
     if (!user || (user.status !== UserStatus.ACTIVE && user.status !== UserStatus.PENDING_SETUP)) {
       throw new UnauthorizedException('User account is not active');
+    }
+    if (isTutorAccessBlocked(tutorStatusOf(user))) {
+      await this.recordRefusedLogin(user.id, 'REFRESH');
+      throw new UnauthorizedException(accountNotActiveBody());
     }
 
     if (isSystemActorIdentity({ id: user.id, email: user.email })) {
@@ -200,6 +212,16 @@ export class AuthService {
     ]);
 
     return newTokens;
+  }
+
+  /**
+   * Audit trail for a refused sign-in by a Suspended / Discontinued tutor. Never includes the
+   * password, token or the tutor status reason; an audit failure never unblocks the user.
+   */
+  private async recordRefusedLogin(userId: string, via: 'LOGIN' | 'REFRESH') {
+    await this.audit
+      .record({ entityType: 'User', entityId: userId, action: 'LOGIN_REFUSED', actorUserId: userId, metadata: { reason: 'TUTOR_ACCOUNT_NOT_ACTIVE', via } })
+      .catch(() => undefined);
   }
 
   /**

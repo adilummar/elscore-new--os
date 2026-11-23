@@ -34,7 +34,8 @@ function build(o: { profile?: any; details?: any; contacts?: any[]; perms?: stri
   const perms = new Set(o.perms ?? []);
   const rbac: any = { hasPermissions: jest.fn((_u: string, p: string[]) => Promise.resolve(p.every((x) => perms.has(x)))) };
   const config: any = { get: jest.fn().mockReturnValue('Asia/Kolkata') };
-  return { svc: new TutorProfileService(prisma, audit, rbac, config), prisma, tx, audit };
+  const statusCache: any = { invalidate: jest.fn().mockResolvedValue(undefined) };
+  return { svc: new TutorProfileService(prisma, audit, rbac, config, statusCache), prisma, tx, audit, statusCache };
 }
 
 const primary = { name: 'Rahim', phone: '9876500000', relationship: 'Father' };
@@ -104,6 +105,11 @@ describe('TutorProfileService', () => {
       await svc.changeStatus('tp-1', { status: 'ACTIVE', reason: 'first class taken' }, 'hr');
       expect(tx.tutorProfile.updateMany.mock.calls[0][0]).toEqual({ where: { id: 'tp-1', tutorOperationalStatus: 'INACTIVE' }, data: { tutorOperationalStatus: 'ACTIVE' } });
       expect(tx.tutorStatusHistory.create.mock.calls[0][0].data).toMatchObject({ previousStatus: 'INACTIVE', newStatus: 'ACTIVE', reason: 'first class taken', changedByUserId: 'hr' });
+    });
+    it('invalidates the login status cache so suspension and reactivation apply on the next request', async () => {
+      const { svc, statusCache } = build({ profile: profile({ employee: { ...profile().employee, userId: 'user-9' } }) });
+      await svc.changeStatus('tp-1', { status: 'SUSPENDED', reason: 'policy breach' }, 'hr');
+      expect(statusCache.invalidate).toHaveBeenCalledWith('user-9');
     });
     it('rejects the same status and reports races', async () => {
       await expect(build().svc.changeStatus('tp-1', { status: 'INACTIVE', reason: 'same thing' }, 'hr')).rejects.toBeInstanceOf(BadRequestException);

@@ -4,6 +4,14 @@ import { UserStatus } from '@prisma/client';
 import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { isTutorAccessBlocked, tutorStatusOf, tutorStatusSelect } from '../account-access';
+
+export interface CachedUserStatus {
+  status: UserStatus;
+  mustChangePassword: boolean;
+  /** True when the user is a Suspended or Discontinued tutor. */
+  tutorBlocked: boolean;
+}
 
 const USER_STATUS_TTL_MS = 30 * 1000; // 30 seconds — short enough to enforce prompt suspension
 const USER_STATUS_KEY = (userId: string) => `user:status:${userId}`;
@@ -38,24 +46,29 @@ export class UserStatusCacheService {
    * Uses Redis cache (30-second TTL) → falls back to DB on miss/error.
    * Returns null if the user does not exist.
    */
-  async getStatus(userId: string): Promise<{ status: UserStatus; mustChangePassword: boolean } | null> {
+  async getStatus(userId: string): Promise<CachedUserStatus | null> {
     const cacheKey = USER_STATUS_KEY(userId);
 
-    const cached = await this.cache.get<{ status: UserStatus; mustChangePassword: boolean }>(cacheKey).catch(() => null);
-    if (cached) {
+    const cached = await this.cache.get<CachedUserStatus>(cacheKey).catch(() => null);
+    // Entries written before tutorBlocked existed are re-read so a lockout is never missed.
+    if (cached && typeof cached.tutorBlocked === 'boolean') {
       return cached;
     }
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { status: true, mustChangePassword: true },
+      select: { status: true, mustChangePassword: true, ...tutorStatusSelect },
     });
 
     if (!user) {
       return null;
     }
 
-    const valueToCache = { status: user.status, mustChangePassword: user.mustChangePassword };
+    const valueToCache: CachedUserStatus = {
+      status: user.status,
+      mustChangePassword: user.mustChangePassword,
+      tutorBlocked: isTutorAccessBlocked(tutorStatusOf(user)),
+    };
 
     await this.cache.set(cacheKey, valueToCache, USER_STATUS_TTL_MS).catch(() => {
       // Cache write failure is non-fatal
