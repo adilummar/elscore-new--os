@@ -29,5 +29,9 @@ export const addParticipants = (id: string, tutorLeadIds: string[]) =>
   run(() => fetchApi<any>(`${T}/sessions/${id}/participants`, post({ tutorLeadIds })));
 export const recordAttempt = (id: string, data: { attendance: string; taskCompleted: boolean; remarks?: string }) =>
   run(() => fetchApi<any>(`${T}/attempts/${id}/attendance`, post(data)));
+/** Final verification. The response carries the one-time temporary password; never cache or store it. */
+export const markReadyForAssignment = (leadId: string) =>
+  run(() => fetchApi<any>(`/tutor-hr/tutors/ready-for-assignment/${leadId}`, { method: 'POST', cache: 'no-store' }));
+export const listTutors = (qs: string) => run(() => fetchApi<any[]>(`/tutor-hr/tutors?${qs}`));
 export const correctAttempt = (id: string, data: { attendance: string; taskCompleted: boolean; remarks?: string; reason: string }) =>
   run(() => fetchApi<any>(`${T}/attempts/${id}/correction`, post(data)));

@@ -14,13 +14,24 @@ import { Empty, ErrorNote, NoAccess, PageHeader, SkeletonRows } from '../hiring/
 import { listSessions, listTrainees } from './actions';
 import { ATTENDANCE, ATTENDANCE_VARIANT, TRAINEE_STAGE, candidateName } from './constants';
 import {
-  AddParticipantsDialog, CorrectAttemptDialog, RecordAttemptDialog, RescheduleSessionDialog, ScheduleSessionDialog,
+  AddParticipantsDialog, CorrectAttemptDialog, ReadyForAssignmentDialog, RecordAttemptDialog, RescheduleSessionDialog, ScheduleSessionDialog,
 } from './_components/TrainingDialogs';
 import { cn } from '@/lib/utils';
 
 const TABS = ['Sessions', 'Trainees'] as const;
-type Dlg = null | { kind: string; session?: any; attempt?: any; trainee?: string };
+type Dlg = null | { kind: string; session?: any; attempt?: any; trainee?: string; row?: any };
 const label = (v?: string | null) => ATTENDANCE.find((a) => a.value === v)?.label ?? 'Not recorded';
+
+/** Tutor ID once transferred; otherwise the Ready for Assignment action for completed trainees. */
+function ReadyCell({ t, canMarkReady, onClick }: { t: any; canMarkReady: boolean; onClick: () => void }) {
+  if (t.tutorId) {
+    return <Link href="/tutor-hr/tutors" className="text-sm font-medium text-brand-700 hover:underline">Tutor {t.tutorId}</Link>;
+  }
+  if (t.stage !== 'COMPLETED') return null;
+  return canMarkReady
+    ? <Button size="sm" onClick={onClick}>Ready for Assignment</Button>
+    : <span className="text-xs text-slate-500">Awaiting final verification</span>;
+}
 
 export default function TrainingPage() {
   const { effectiveUser } = useAuth();
@@ -39,6 +50,7 @@ export default function TrainingPage() {
   const canAdd = hasPermission('tutor_training.participants');
   const canRecord = hasPermission('tutor_training.record');
   const canOverride = hasPermission('tutor_training.override');
+  const canMarkReady = hasPermission('tutor_hr.ready_for_assignment');
   const uid = effectiveUser?.id;
 
   const load = useCallback(async () => {
@@ -172,6 +184,7 @@ export default function TrainingPage() {
                         <TableHead>Session 2 passed</TableHead>
                         <TableHead>Repeats</TableHead>
                         <TableHead>Hired</TableHead>
+                        <TableHead><span className="sr-only">Actions</span></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -186,6 +199,7 @@ export default function TrainingPage() {
                           <TableCell className="whitespace-nowrap">{fmtDate(t.session2PassedAt)}</TableCell>
                           <TableCell className="tabular-nums">{t.repeats.session1 + t.repeats.session2 || '—'}</TableCell>
                           <TableCell className="whitespace-nowrap text-slate-600">{fmtDate(t.enrolledAt)}</TableCell>
+                          <TableCell className="text-right"><ReadyCell t={t} canMarkReady={canMarkReady} onClick={() => setDlg({ kind: 'ready', row: t })} /></TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -199,6 +213,7 @@ export default function TrainingPage() {
                         <Badge variant={TRAINEE_STAGE[t.stage]?.variant ?? 'default'}>{TRAINEE_STAGE[t.stage]?.label ?? t.stage}</Badge>
                         <span>{t.candidate.phone}</span>
                       </div>
+                      <div className="mt-2"><ReadyCell t={t} canMarkReady={canMarkReady} onClick={() => setDlg({ kind: 'ready', row: t })} /></div>
                     </li>
                   ))}
                 </ul>
@@ -214,6 +229,7 @@ export default function TrainingPage() {
       {dlg?.attempt && dlg.kind === 'record' && (
         <RecordAttemptDialog attempt={dlg.attempt} trainee={dlg.trainee ?? ''} onBehalf={dlg.session?.conductorUserId !== uid} isOpen {...dialog} />
       )}
+      {dlg?.row && dlg.kind === 'ready' && <ReadyForAssignmentDialog trainee={dlg.row} isOpen {...dialog} />}
       {dlg?.attempt && dlg.kind === 'correct' && <CorrectAttemptDialog attempt={dlg.attempt} trainee={dlg.trainee ?? ''} isOpen {...dialog} />}
     </div>
   );

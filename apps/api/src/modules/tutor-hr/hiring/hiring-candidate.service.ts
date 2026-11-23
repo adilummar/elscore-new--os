@@ -54,7 +54,7 @@ export const CONDUCTOR_OVERRIDE_PERMISSION = 'tutor_hiring.override';
 
 const DETAIL_SCALARS = [
   'firstName', 'lastName', 'motherTongueId', 'onlineTeachingExperience', 'offlineTeachingExperience',
-  'expectedHourlyRate', 'additionalPhone', 'remarks', 'detailsDescription', 'detailsRespondedAt',
+  'expectedHourlyRate', 'additionalPhone', 'email', 'remarks', 'detailsDescription', 'detailsRespondedAt',
 ] as const;
 
 export const DUPLICATE_CANDIDATE = 'DUPLICATE_CANDIDATE';
@@ -371,6 +371,10 @@ export class HiringCandidateService {
     }
     if (dto.expectedHourlyRate !== undefined) data.expectedHourlyRate = dto.expectedHourlyRate;
     if (dto.additionalPhone !== undefined) data.additionalPhone = dto.additionalPhone;
+    if (dto.email !== undefined) {
+      if (lead.convertedTutorProfileId) throw new BadRequestException('The email is the tutor login ID now; change it from the tutor account instead');
+      data.email = dto.email.trim().toLowerCase();
+    }
     if (dto.remarks !== undefined) data.remarks = dto.remarks;
     if (dto.detailsDescription !== undefined) data.detailsDescription = dto.detailsDescription;
     if (dto.detailsRespondedAt !== undefined) {

@@ -400,6 +400,7 @@ model User {
   tutorTrainingAttemptsAdded     TutorTrainingAttempt[]           @relation("TutorTrainingAttemptAddedBy")
   tutorTrainingAttemptsRecorded  TutorTrainingAttempt[]           @relation("TutorTrainingAttemptRecordedBy")
   tutorTrainingCorrections       TutorTrainingAttemptCorrection[] @relation("TutorTrainingCorrectedBy")
+  tutorsVerified                 TutorProfile[]                   @relation("TutorVerifiedBy")
   tutorDemoReassignedFrom   TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignFrom")
   tutorDemoReassignedTo     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignTo")
   tutorDemoReassignedBy     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignChangedBy")
@@ -963,6 +964,13 @@ model TutorProfile {
   employeeId        String  @unique @map("employee_id")
   sourceTutorLeadId String? @unique @map("source_tutor_lead_id")
 
+  /// OS-generated Tutor ID (TUT-0001), issued when staff click Ready for Assignment.
+  /// NULL for profiles created before Tutor Management (legacy approval / user creation).
+  tutorCode         String?   @unique @map("tutor_code")
+  /// Final verification = the Ready for Assignment click. New Tutors are counted by this date.
+  verifiedAt        DateTime? @map("verified_at")
+  verifiedByUserId  String?   @map("verified_by_user_id")
+
   // HR-managed fields
   teachingExperience Int? @map("teaching_experience_years")
 
@@ -977,6 +985,7 @@ model TutorProfile {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   employee Employee @relation("EmployeeTutorProfile", fields: [employeeId], references: [id], onDelete: Restrict)
+  verifiedBy User?  @relation("TutorVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: Restrict)
 
   subjects     TutorSubject[]
   grades       TutorGrade[]
@@ -989,6 +998,7 @@ model TutorProfile {
 
   tutorLead TutorLead? @relation("LeadTutorProfile", fields: [sourceTutorLeadId], references: [id], onDelete: SetNull)
 
+  @@index([verifiedAt])
   @@map("tutor_profiles")
 }
 

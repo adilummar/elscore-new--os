@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsEmail,
   IsIn,
   IsInt,
   IsNumber,
@@ -60,6 +61,8 @@ export class UpdateCandidateDetailsDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(80) offlineTeachingExperience?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) expectedHourlyRate?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30) additionalPhone?: string;
+  /** Becomes the tutor's login ID at Ready for Assignment. */
+  @ApiPropertyOptional() @IsOptional() @IsEmail() @MaxLength(254) email?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000) remarks?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(5000) detailsDescription?: string;
   /** Candidate response date and time, entered manually by staff (ISO 8601). */

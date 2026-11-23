@@ -52,6 +52,10 @@ export class TutorHrReviewService {
     });
 
     if (!lead) throw new NotFoundException('Tutor lead not found');
+    if (lead.hiringStage !== null) {
+      // Candidates in the Hiring workflow move to Tutors only through Training > Ready for Assignment.
+      throw new BadRequestException('This candidate is managed in Hiring; use Training > Ready for Assignment instead');
+    }
     if (lead.currentStage !== TutorLeadStageCode.READY_FOR_ASSIGNMENT) {
       throw new BadRequestException('Lead is not in READY_FOR_ASSIGNMENT stage. Move them there first.');
     }

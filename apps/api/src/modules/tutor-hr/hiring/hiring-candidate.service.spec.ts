@@ -233,6 +233,13 @@ describe('HiringCandidateService', () => {
       expect(tx.tutorLeadAvailability.createMany.mock.calls[0][0].data[0].startTime.toISOString()).toBe('1970-01-01T17:00:00.000Z');
       expect(audit.recordInTx.mock.calls[0][1].newValue.availability).toHaveLength(1);
     });
+    it('stores the email (future login ID) in lower case, and locks it once the tutor exists', async () => {
+      const { svc, tx } = build();
+      await svc.updateDetails('lead-1', { email: ' Asha@Example.COM ' }, 'owner');
+      expect(tx.tutorLead.update.mock.calls[0][0].data.email).toBe('asha@example.com');
+      const moved = build({ lead: { ...baseLead, convertedTutorProfileId: 'tp-1' } });
+      await expect(moved.svc.updateDetails('lead-1', { email: 'new@example.com' }, 'owner')).rejects.toThrow(/login ID/);
+    });
     it('rejects inverted and overlapping windows', async () => {
       await expect(build().svc.updateDetails('lead-1', { availability: [{ dayOfWeek: 1, startTime: '20:00', endTime: '17:00' }] }, 'owner')).rejects.toThrow(/end after/);
       await expect(build().svc.updateDetails('lead-1', {

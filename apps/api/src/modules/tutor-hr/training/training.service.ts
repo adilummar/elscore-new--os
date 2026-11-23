@@ -31,7 +31,12 @@ const CLOCK_SKEW_MS = 5 * 60_000;
 const DEFAULT_LOOKBACK_DAYS = 30;
 
 const userSelect = { select: { id: true, email: true } } as const;
-const leadSelect = { select: { id: true, businessId: true, firstName: true, lastName: true, phone: true } } as const;
+const leadSelect = {
+  select: {
+    id: true, businessId: true, firstName: true, lastName: true, phone: true, email: true,
+    tutorProfile: { select: { id: true, tutorCode: true } },
+  },
+} as const;
 
 @Injectable()
 export class TrainingService {
@@ -334,6 +339,7 @@ export class TrainingService {
         session1PassedAt: e.session1PassedAt,
         session2PassedAt: e.session2PassedAt,
         stage: traineeStage(progress),
+        tutorId: e.tutorLead.tutorProfile?.tutorCode ?? null,
         attempts: e.attempts.length,
         repeats: { session1: failed(1), session2: failed(2) },
         eligibleFor: [1, 2].filter((n) => participantBlocker(progress, n) === null),
@@ -347,6 +353,7 @@ export class TrainingService {
     const e = await this.prisma.tutorTrainingEnrolment.findUnique({
       where: { tutorLeadId },
       include: {
+        tutorLead: leadSelect,
         enrolledBy: userSelect,
         attempts: {
           orderBy: { addedAt: 'asc' },
