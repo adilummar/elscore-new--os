@@ -18,6 +18,8 @@ import { TutorLeadController } from './tutor-lead.controller';
 import { TutorLeadService } from './tutor-lead.service';
 import { TrainingController } from './training/training.controller';
 import { TrainingService } from './training/training.service';
+import { TutorTransferService } from './tutors/tutor-transfer.service';
+import { TutorsController } from './tutors/tutors.controller';
 import { TutorTrainingController } from './tutor-training.controller';
 import { TutorTrainingService } from './tutor-training.service';
 
@@ -27,6 +29,7 @@ import { TutorTrainingService } from './tutor-training.service';
     HiringCandidateController,
     HiringDemoController,
     TrainingController,
+    TutorsController,
     TutorLeadController,
     TutorTrainingController,
     TutorHrReviewController,
@@ -40,6 +43,7 @@ import { TutorTrainingService } from './tutor-training.service';
     HiringReportService,
     HiringScheduleService,
     TrainingService,
+    TutorTransferService,
     TutorLeadService,
     TutorTrainingService,
     TutorHrReviewService,

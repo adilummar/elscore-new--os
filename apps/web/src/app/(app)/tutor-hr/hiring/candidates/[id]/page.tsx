@@ -117,7 +117,11 @@ export default function CandidateProfilePage() {
           Lead status is {labelOf(LEAD_STATUSES, lead.leadStatus)}{lead.leadStatusRemarks ? `: ${lead.leadStatusRemarks}` : ''}. Set it back to Processing to continue this candidate.
         </div>
       )}
-      {lead.hiringStage === 'TRAINING' && (
+      {training?.tutorLead?.tutorProfile?.tutorCode ? (
+        <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">
+          Ready for Assignment. Tutor ID {training.tutorLead.tutorProfile.tutorCode}; this tutor is now in <Link href="/tutor-hr/tutors" className="underline">Tutors</Link>.
+        </div>
+      ) : lead.hiringStage === 'TRAINING' && (
         <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">
           Hired{lead.trainingStartedAt ? ` on ${fmtDate(lead.trainingStartedAt)}` : ''}. The candidate has moved to Training.
         </div>
@@ -150,6 +154,7 @@ export default function CandidateProfilePage() {
                 <Row k="Offline experience" v={lead.offlineTeachingExperience != null ? `${lead.offlineTeachingExperience} yrs` : ''} />
                 <Row k="Expected hourly rate" v={lead.expectedHourlyRate != null ? String(lead.expectedHourlyRate) : ''} />
                 <Row k="Available teaching time" v={(lead.availability ?? []).map((a: any) => `${WEEKDAYS[a.dayOfWeek]} ${hhmm(a.startTime)}-${hhmm(a.endTime)}`).join(', ')} />
+                <Row k="Email" v={lead.email} />
                 <Row k="Additional phone" v={lead.additionalPhone} />
                 <Row k="Response received" v={lead.detailsRespondedAt ? fmtDateTime(lead.detailsRespondedAt) : ''} />
                 <Row k="Description" v={lead.detailsDescription} />

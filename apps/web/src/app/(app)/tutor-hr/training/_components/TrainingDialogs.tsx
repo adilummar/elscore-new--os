@@ -6,7 +6,13 @@ import { Select } from '@/components/ui/Select';
 import { getStaff } from '../../hiring/actions';
 import { fmtDateTime, fromLocalInput, toLocalInput } from '../../hiring/constants';
 import { ActionDialog, Field, runAction, textareaClass } from '../../hiring/_components/kit';
-import { addParticipants, correctAttempt, createSession, listTrainees, recordAttempt, rescheduleSession } from '../actions';
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { ErrorNote } from '../../hiring/_components/kit';
+import {
+  addParticipants, correctAttempt, createSession, listTrainees, markReadyForAssignment, recordAttempt, rescheduleSession,
+} from '../actions';
 import { ATTENDANCE, isPass, remarksRequired } from '../constants';
 
 type Common = { isOpen: boolean; onClose: () => void; onDone: (msg?: string) => void };
@@ -186,5 +192,90 @@ export function CorrectAttemptDialog({ attempt, trainee, ...c }: Common & { atte
       <ResultFields f={f} set={set} />
       <Field label="Reason for correction" required><textarea rows={2} maxLength={1000} className={textareaClass} value={f.reason} onChange={(e) => set('reason', e.target.value)} /></Field>
     </ActionDialog>
+  );
+}
+
+// ── Ready for Assignment (Head of Tutor Management; HR Manager as backup) ──
+/**
+ * Final verification. On success the temporary password is shown here once, for handover,
+ * and is held only in this dialog's state: closing the dialog discards it.
+ */
+export function ReadyForAssignmentDialog({ trainee, ...c }: Common & { trainee: any }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (c.isOpen) { setError(null); setCreated(null); setCopied(false); } }, [c.isOpen]);
+  const email = trainee.candidate.email as string | null;
+
+  const close = () => {
+    const done = created;
+    setCreated(null); // drop the password from memory before anything else
+    c.onClose();
+    if (done) c.onDone(`${trainee.candidate.name} is now tutor ${done.tutorId}.`);
+  };
+  const confirm = async () => {
+    setBusy(true);
+    const r = await runAction<any>(markReadyForAssignment(trainee.candidate.id), setError);
+    setBusy(false);
+    if (r) setCreated(r);
+  };
+  const copy = async () => {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(`Login: ${created.loginEmail}\nTemporary password: ${created.temporaryPassword}`);
+      setCopied(true);
+    } catch { setError('Copy failed; select the text instead.'); }
+  };
+
+  return (
+    <Modal isOpen={c.isOpen} onClose={close} size="md">
+      <div className="space-y-4 pr-2">
+        {!created ? (
+          <>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Ready for Assignment</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                This is the final verification. The OS creates the tutor account and a new Tutor ID, and moves {trainee.candidate.name} into Tutors. It cannot be undone here.
+              </p>
+            </div>
+            <dl className="text-sm grid grid-cols-3 gap-2">
+              <dt className="text-slate-500">Trainee</dt><dd className="col-span-2 text-slate-900">{trainee.candidate.name} · {trainee.candidate.businessId}</dd>
+              <dt className="text-slate-500">Login ID</dt>
+              <dd className="col-span-2 text-slate-900 break-all">
+                {email || <span className="text-red-700">No email yet. <Link className="underline" href={`/tutor-hr/hiring/candidates/${trainee.candidate.id}`}>Add it in the candidate details</Link>.</span>}
+              </dd>
+              <dt className="text-slate-500">Training</dt><dd className="col-span-2 text-slate-900">Session 2 passed {fmtDateTime(trainee.session2PassedAt)}</dd>
+            </dl>
+            <ErrorNote message={error} />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={close}>Cancel</Button>
+              <Button type="button" onClick={confirm} isLoading={busy} disabled={!email}>Mark Ready for Assignment</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Tutor {created.tutorId} created</h2>
+              <p className="text-sm text-slate-500 mt-1">Give these login details to the tutor. They must change the password at first login.</p>
+            </div>
+            <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              The temporary password is shown only now. It is not stored and cannot be shown again; if it is lost, reset the password from the user account.
+            </div>
+            <dl className="text-sm grid grid-cols-3 gap-2">
+              <dt className="text-slate-500">Tutor ID</dt><dd className="col-span-2 font-semibold text-slate-900">{created.tutorId}</dd>
+              <dt className="text-slate-500">Login ID</dt><dd className="col-span-2 text-slate-900 break-all">{created.loginEmail}</dd>
+              <dt className="text-slate-500">Temporary password</dt>
+              <dd className="col-span-2"><code className="select-all rounded bg-slate-100 px-2 py-1 font-mono text-base text-slate-900">{created.temporaryPassword}</code></dd>
+            </dl>
+            <ErrorNote message={error} />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={copy}>{copied ? 'Copied' : 'Copy login details'}</Button>
+              <Button type="button" onClick={close}>I have handed it over</Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }

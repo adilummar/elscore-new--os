@@ -235,6 +235,7 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
       offline: lead.offlineTeachingExperience ?? '',
       rate: lead.expectedHourlyRate != null ? String(lead.expectedHourlyRate) : '',
       additionalPhone: lead.additionalPhone ?? '',
+      email: lead.email ?? '',
       detailsDescription: lead.detailsDescription ?? '',
       remarks: lead.remarks ?? '',
       respondedAt: lead.detailsRespondedAt ? toLocalInput(lead.detailsRespondedAt) : '',
@@ -255,6 +256,7 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
     if (f.offline !== '') body.offlineTeachingExperience = Number(f.offline);
     if (f.rate !== '') body.expectedHourlyRate = Number(f.rate);
     if (f.additionalPhone?.trim()) body.additionalPhone = f.additionalPhone.trim();
+    if (!lead.convertedTutorProfileId && f.email?.trim() && f.email.trim().toLowerCase() !== (lead.email ?? '').toLowerCase()) body.email = f.email.trim();
     if (f.detailsDescription?.trim()) body.detailsDescription = f.detailsDescription.trim();
     if (f.remarks?.trim()) body.remarks = f.remarks.trim();
     if (f.respondedAt) body.detailsRespondedAt = fromLocalInput(f.respondedAt);
@@ -281,6 +283,9 @@ export function DetailsDialog({ lead, ...c }: Common & { lead: any }) {
           <Field label="Online teaching experience (years)" htmlFor="d-on"><Input id="d-on" type="number" min={0} max={80} value={f.online ?? ''} onChange={(e) => set('online', e.target.value)} /></Field>
           <Field label="Offline teaching experience (years)" htmlFor="d-off"><Input id="d-off" type="number" min={0} max={80} value={f.offline ?? ''} onChange={(e) => set('offline', e.target.value)} /></Field>
           <Field label="Expected hourly rate" htmlFor="d-rate"><Input id="d-rate" type="number" min={0} step="0.01" value={f.rate ?? ''} onChange={(e) => set('rate', e.target.value)} /></Field>
+          <Field label="Email" htmlFor="d-em" hint={lead.convertedTutorProfileId ? 'This is now the tutor login ID.' : 'Required before Ready for Assignment; it becomes the login ID.'}>
+            <Input id="d-em" type="email" maxLength={254} disabled={!!lead.convertedTutorProfileId} value={f.email ?? ''} onChange={(e) => set('email', e.target.value)} />
+          </Field>
           <Field label="Additional phone" htmlFor="d-ph"><Input id="d-ph" maxLength={30} value={f.additionalPhone ?? ''} onChange={(e) => set('additionalPhone', e.target.value)} /></Field>
         </div>
         <MultiPick label="Subjects" items={refs.subjects} value={f.subjectIds ?? []} onChange={(v) => set('subjectIds', v)} empty="No subjects available." />

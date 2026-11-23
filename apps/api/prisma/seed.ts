@@ -1013,6 +1013,21 @@ const PERMISSIONS: Array<{
       description: 'View recruitment reports (enquiries, sources, outcomes, ad spend)',
       isDelegatable: true,
     },
+    // Tutor Management — Tutors
+    {
+      code: 'tutor_hr.ready_for_assignment',
+      resource: 'tutor_hr',
+      action: 'ready_for_assignment',
+      description: 'Final verification: mark a trainee Ready for Assignment, creating the tutor account and Tutor ID',
+      isDelegatable: false,
+    },
+    {
+      code: 'tutor_hr.tutors.read',
+      resource: 'tutor_hr_tutors',
+      action: 'read',
+      description: 'View the Tutors list (Tutor ID, contact, status, verification date)',
+      isDelegatable: true,
+    },
     // Tutor Management — Training (two compulsory onboarding sessions)
     {
       code: 'tutor_training.read',
@@ -1477,6 +1492,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_training.read',
     'tutor_training.participants',
     'tutor_training.record',
+    // Backup for the Head of Tutor Management on Ready for Assignment (confirmed).
+    'tutor_hr.ready_for_assignment',
+    'tutor_hr.tutors.read',
     'tutor_hr.settings.manage',
     'tutor_hiring.read-all',
     'tutor_hiring.reassign',
@@ -1567,6 +1585,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_training.read',
     'tutor_training.participants',
     'tutor_training.record',
+    'tutor_hr.tutors.read',
     'tutor_hr.settings.manage',
     'tutor.profile.read',
     'tutor.profile.manage',
@@ -1598,6 +1617,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_training.schedule',
     'tutor_training.record',
     'tutor_training.override',
+    // Final verification (Ready for Assignment) and the Tutors list.
+    'tutor_hr.ready_for_assignment',
+    'tutor_hr.tutors.read',
     'employee.read',
     'department.read',
     'attendance.action.own',
