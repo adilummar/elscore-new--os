@@ -340,6 +340,7 @@ export class TrainingService {
         session2PassedAt: e.session2PassedAt,
         stage: traineeStage(progress),
         tutorId: e.tutorLead.tutorProfile?.tutorCode ?? null,
+        tutorProfileId: e.tutorLead.tutorProfile?.id ?? null,
         attempts: e.attempts.length,
         repeats: { session1: failed(1), session2: failed(2) },
         eligibleFor: [1, 2].filter((n) => participantBlocker(progress, n) === null),
