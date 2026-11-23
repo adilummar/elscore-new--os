@@ -47,4 +47,22 @@ export default () => ({
      */
     businessTimezone: process.env.SYSTEM_TIMEZONE ?? 'Asia/Kolkata',
   },
+
+  /**
+   * Tutor HR background jobs. They run on their own BullMQ queue (not the shared
+   * housekeeping queue), created at runtime by TutorHrQueueService.
+   * Redis keys: `<prefix>:<name>:*`, e.g. `elscore-staging:tutor-hr:*`.
+   */
+  tutorHr: {
+    queue: {
+      /** Set TUTOR_HR_QUEUE_ENABLED=false to start neither the worker nor the schedule. */
+      enabled: (process.env.TUTOR_HR_QUEUE_ENABLED ?? 'true').toLowerCase() !== 'false',
+      /** Queue name. Default `tutor-hr` (QUEUES.TUTOR_HR). */
+      name: process.env.TUTOR_HR_QUEUE_NAME ?? 'tutor-hr',
+      /** Key prefix. Default: the prefix every other queue uses, `elscore-${APP_ENV ?? NODE_ENV}`. */
+      prefix: process.env.TUTOR_HR_QUEUE_PREFIX ?? `elscore-${process.env.APP_ENV ?? process.env.NODE_ENV ?? 'development'}`,
+      /** Cron (UTC) for the overdue demo-evaluation scan. Default every 5 minutes. */
+      overdueScanCron: process.env.TUTOR_HR_OVERDUE_SCAN_CRON ?? '*/5 * * * *',
+    },
+  },
 });

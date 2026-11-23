@@ -36,6 +36,14 @@ export const QUEUES = {
    * notices later). Jobs are idempotent: a reminder is keyed by what it is for, so running twice sends once.
    */
   MENTORING: 'mentoring',
+
+  /**
+   * Tutor HR queue — Tutor HR scheduled jobs (overdue demo-evaluation scan).
+   * Default name only: overridable with TUTOR_HR_QUEUE_NAME. This queue is NOT registered
+   * with BullModule; TutorHrQueueService creates its queue and worker at runtime so the
+   * name and prefix come from configuration (see config `tutorHr.queue`).
+   */
+  TUTOR_HR: 'tutor-hr',
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
@@ -74,6 +82,10 @@ export const JOBS = {
   // ── ATTENDANCE queue (uses HOUSEKEEPING) ──────────────────────────────────
   /** Daily job to automatically check out open sessions at the end of the calendar day. */
   ATTENDANCE_AUTO_CHECKOUT: 'attendance-auto-checkout',
+
+  // ── TUTOR_HR queue (dedicated; see QUEUES.TUTOR_HR) ──────────────────────
+  /** Periodic scan escalating overdue Tutor Hiring demo evaluations. Idempotent. */
+  TUTOR_EVALUATION_OVERDUE_SCAN: 'tutor-evaluation-overdue-scan',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

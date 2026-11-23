@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { Queue, Worker } from 'bullmq';
 import { AuthModule } from '../../common/auth/auth.module';
 import { IdGeneratorModule } from '../../common/id-generator/id-generator.module';
 
@@ -25,6 +26,7 @@ import { TutorTransferService } from './tutors/tutor-transfer.service';
 import { TutorsController } from './tutors/tutors.controller';
 import { TutorTrainingController } from './tutor-training.controller';
 import { TutorTrainingService } from './tutor-training.service';
+import { TUTOR_HR_BULLMQ, TutorHrQueueService } from './queue/tutor-hr-queue.service';
 
 @Module({
   imports: [AuthModule, IdGeneratorModule],
@@ -54,6 +56,9 @@ import { TutorTrainingService } from './tutor-training.service';
     TutorTrainingService,
     TutorHrReviewService,
     TutorHrSettingsService,
+    // Dedicated queue for the overdue demo-evaluation scan (not the shared housekeeping queue).
+    { provide: TUTOR_HR_BULLMQ, useValue: { Queue, Worker } },
+    TutorHrQueueService,
   ],
   exports: [
     HiringEscalationService,
