@@ -17,6 +17,8 @@ const T = '/tutor-hr/training';
 const post = (body: unknown) => ({ method: 'POST', body: JSON.stringify(body) });
 const patch = (body: unknown) => ({ method: 'PATCH', body: JSON.stringify(body) });
 
+/** Session 1: Tutor Coordinators and the Tutor Head. Session 2: HR Manager / HR Executive. */
+export const listConductors = (sessionNumber: number) => run(() => fetchApi<any[]>(`${T}/conductors?sessionNumber=${sessionNumber}`));
 export const listSessions = (qs: string) => run(() => fetchApi<any[]>(`${T}/sessions?${qs}`));
 export const listTrainees = (qs: string) => run(() => fetchApi<any[]>(`${T}/trainees?${qs}`));
 export const getTrainee = (leadId: string) => run(() => fetchApi<any>(`${T}/trainees/${leadId}`));

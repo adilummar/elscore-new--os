@@ -54,7 +54,16 @@ describe('TrainingService', () => {
     });
     it('rejects past times and non-staff conductors', async () => {
       await expect(build().svc.createSession({ sessionNumber: 1, scheduledAt: past.toISOString(), conductorUserId: 'coach' }, 'head')).rejects.toThrow(/past/);
-      await expect(build({ conductorOk: false }).svc.createSession({ sessionNumber: 2, scheduledAt: future(), conductorUserId: 'x' }, 'head')).rejects.toThrow(/cannot conduct/);
+      await expect(build({ conductorOk: false }).svc.createSession({ sessionNumber: 2, scheduledAt: future(), conductorUserId: 'x' }, 'head')).rejects.toThrow(/Session 2 is conducted by the HR Department/);
+    });
+    it('limits Session 1 to coordinators / Tutor Head and Session 2 to HR', async () => {
+      const one = build();
+      await one.svc.createSession({ sessionNumber: 1, scheduledAt: future(), conductorUserId: 'coach' }, 'head');
+      expect(one.prisma.user.findFirst.mock.calls[0][0].where.userRoles.some.role.code.in).toEqual(['TUTOR_COORDINATOR', 'TUTOR_HEAD']);
+      const two = build();
+      await two.svc.createSession({ sessionNumber: 2, scheduledAt: future(), conductorUserId: 'hr' }, 'head');
+      expect(two.prisma.user.findFirst.mock.calls[0][0].where.userRoles.some.role.code.in).toEqual(['HR_MANAGER', 'HR_EXECUTIVE']);
+      await expect(build({ conductorOk: false }).svc.createSession({ sessionNumber: 1, scheduledAt: future(), conductorUserId: 'hr' }, 'head')).rejects.toThrow(/Tutor Coordinator or the Tutor Head/);
     });
     it('reschedule keeps the earlier time and conductor in history', async () => {
       const { svc, tx } = build({ session: session({ scheduledAt: new Date(Date.now() + 3_600_000) }) });

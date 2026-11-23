@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser, RequestUser } from '../../../common/auth/decorators/current-user.decorator';
@@ -29,6 +29,13 @@ import { TRAINING_OVERRIDE_PERMISSION, TrainingService } from './training.servic
 @Controller('tutor-hr/training')
 export class TrainingController {
   constructor(private readonly service: TrainingService) {}
+
+  @Get('conductors')
+  @RequirePermissions('tutor_training.schedule')
+  @ApiOperation({ summary: 'Who may conduct a session: Session 1 coordinators / Tutor Head, Session 2 HR' })
+  conductors(@Query('sessionNumber', ParseIntPipe) sessionNumber: number) {
+    return this.service.conductors(sessionNumber);
+  }
 
   @Get('sessions')
   @RequirePermissions('tutor_training.read')

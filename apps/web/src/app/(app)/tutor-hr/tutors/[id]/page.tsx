@@ -11,6 +11,8 @@ import { usePermissions } from '@/components/providers/AuthProvider';
 import { fmtDate, fmtDateTime } from '../../hiring/constants';
 import { Empty, ErrorNote, NoAccess, SkeletonRows } from '../../hiring/_components/kit';
 import { getTutorHistory, getTutorProfile, listHrNotes, removeQualification } from '../actions';
+import { getProfileObservations } from '../../coordination/actions';
+import { assignmentText } from '../../coordination/constants';
 import { DEFERRED_TABS, GENDERS, MARITAL_STATUSES, STATUS_VARIANT, TUTOR_STATUSES, formatAddress, visibleTabs, type ProfileTab } from '../constants';
 import { EditProfileDialog, NoteDialog, QualificationDialog, StatusDialog } from '../_components/TutorDialogs';
 import { cn } from '@/lib/utils';
@@ -35,6 +37,7 @@ export default function TutorProfilePage() {
   const [tab, setTab] = useState<ProfileTab>('Profile');
   const [notes, setNotes] = useState<any[] | null>(null);
   const [history, setHistory] = useState<any[] | null>(null);
+  const [coord, setCoord] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dlg, setDlg] = useState<Dlg>(null);
@@ -48,6 +51,10 @@ export default function TutorProfilePage() {
   useEffect(() => { load(); }, [load]);
 
   // HR-only data is fetched only when that tab is opened, and only for viewers allowed to see it.
+  useEffect(() => {
+    if (tab === 'Feedback & Observations' && t) getProfileObservations(id).then((r) => (r.ok ? setCoord(r.data) : setError(r.message)));
+  }, [tab, id, t]);
+
   useEffect(() => {
     if (!t?.access.canSeeNotes) return;
     if (tab === 'HR Internal Notes') listHrNotes(id).then((r) => (r.ok ? setNotes(r.data) : setError(r.message)));
@@ -213,6 +220,46 @@ export default function TutorProfilePage() {
                 <Link className="text-sm text-brand-700 hover:underline" href={`/tutor-hr/hiring/candidates/${t.hiring.candidateId}`}>Open hiring record {t.hiring.candidateBusinessId}</Link>
               </CardContent>
             </Card>
+          )}
+        </div>
+      )}
+
+      {tab === 'Feedback & Observations' && (
+        <div className="space-y-6">
+          {coord === null ? <Card><SkeletonRows rows={3} /></Card> : (
+            <>
+              <Card>
+                <CardHeader><CardTitle>Class observations</CardTitle><p className="text-xs text-slate-500">Recorded by the Tutor Coordinator. Read-only here; only the Head of Tutor Management corrects them.</p></CardHeader>
+                {coord.observations.length === 0 ? <Empty title="No observations yet" /> : (
+                  <ul className="divide-y divide-slate-100">
+                    {coord.observations.map((o: any) => (
+                      <li key={o.id} className="p-4 text-sm space-y-1">
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <span className="font-medium text-slate-900">Observed {fmtDateTime(o.observedAt)}</span>
+                          <span className="text-slate-500">by {o.author.email}</span>
+                        </div>
+                        {o.positiveFeedback && <p><span className="text-emerald-700 font-medium">Positive:</span> <span className="whitespace-pre-wrap">{o.positiveFeedback}</span></p>}
+                        {o.negativeFeedback && <p><span className="text-red-700 font-medium">Negative:</span> <span className="whitespace-pre-wrap">{o.negativeFeedback}</span></p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Coordinator assignment history</CardTitle><p className="text-xs text-slate-500">Current coordinator: {coord.coordinator?.email ?? 'Not Assigned Yet'}</p></CardHeader>
+                {coord.assignmentHistory.length === 0 ? <Empty title="Never assigned" /> : (
+                  <ul className="divide-y divide-slate-100">
+                    {coord.assignmentHistory.map((h: any) => (
+                      <li key={h.id} className="p-4 text-sm flex flex-wrap justify-between gap-2">
+                        <span><span className="font-medium text-slate-900">{assignmentText(h)}</span>{h.reason ? <span className="text-slate-600"> · {h.reason}</span> : null}</span>
+                        <span className="text-slate-500">{fmtDateTime(h.changedAt)} · {h.changedBy.email}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+              <Card><Empty title="Demo and Mentor department feedback: not available yet" hint="These records come from the Mentoring and Demo modules and will be connected later." /></Card>
+            </>
           )}
         </div>
       )}

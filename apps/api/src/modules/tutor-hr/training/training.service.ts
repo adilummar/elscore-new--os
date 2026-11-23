@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { AuditService } from '../../../common/audit/audit.service';
 import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
 import { RbacService } from '../../../common/rbac/rbac.service';
-import { ASSIGNABLE_ROLE_CODES } from '../hiring/hiring-demo.service';
+import { SESSION_CONDUCTOR_ROLES } from '../coordination/coordination-rules';
 
 import {
   AddParticipantsDto,
@@ -61,13 +61,30 @@ export class TrainingService {
     return `${l.firstName} ${l.lastName}`.trim() || l.businessId;
   }
 
-  /** Until a Tutor Coordinator role exists, any Hiring staff member may conduct a session. */
-  private async assertConductor(userId: string) {
+  /** Session 1: a Tutor Coordinator or the Tutor Head. Session 2: HR Manager or HR Executive. */
+  private async assertConductor(userId: string, sessionNumber: number) {
+    const roles = SESSION_CONDUCTOR_ROLES[sessionNumber] ?? [];
     const u = await this.prisma.user.findFirst({
-      where: { id: userId, status: 'ACTIVE', userRoles: { some: { role: { code: { in: ASSIGNABLE_ROLE_CODES } } } } },
+      where: { id: userId, status: 'ACTIVE', userRoles: { some: { role: { code: { in: roles } } } } },
       select: { id: true },
     });
-    if (!u) throw new BadRequestException('Selected staff member cannot conduct training sessions');
+    if (!u) {
+      throw new BadRequestException(sessionNumber === 1
+        ? 'Session 1 is conducted by a Tutor Coordinator or the Tutor Head'
+        : 'Session 2 is conducted by the HR Department (HR Manager or HR Executive)');
+    }
+  }
+
+  /** Staff who may conduct a session with this number, for the scheduling form. */
+  async conductors(sessionNumber: number) {
+    const roles = SESSION_CONDUCTOR_ROLES[sessionNumber];
+    if (!roles) throw new BadRequestException('Unknown session number');
+    const users = await this.prisma.user.findMany({
+      where: { status: 'ACTIVE', userRoles: { some: { role: { code: { in: roles } } } } },
+      orderBy: { email: 'asc' },
+      select: { id: true, email: true, employee: { select: { firstName: true, lastName: true } } },
+    });
+    return users.map((u) => ({ id: u.id, email: u.email, name: u.employee ? `${u.employee.firstName} ${u.employee.lastName}`.trim() : u.email }));
   }
 
   private progressOf(e: {
@@ -113,7 +130,7 @@ export class TrainingService {
   async createSession(dto: CreateTrainingSessionDto, actorUserId: string) {
     const scheduledAt = new Date(dto.scheduledAt);
     if (scheduledAt.getTime() < Date.now() - CLOCK_SKEW_MS) throw new BadRequestException('A session cannot be scheduled in the past');
-    await this.assertConductor(dto.conductorUserId);
+    await this.assertConductor(dto.conductorUserId, dto.sessionNumber);
     return this.prisma.$transaction(async (tx: PrismaTxClient) => {
       const s = await tx.tutorTrainingSession.create({
         data: { sessionNumber: dto.sessionNumber, scheduledAt, conductorUserId: dto.conductorUserId, createdByUserId: actorUserId },
@@ -132,7 +149,7 @@ export class TrainingService {
     const scheduledAt = new Date(dto.scheduledAt);
     if (scheduledAt.getTime() < Date.now() - CLOCK_SKEW_MS) throw new BadRequestException('A session cannot be moved to the past');
     const conductorUserId = dto.conductorUserId ?? s.conductorUserId;
-    if (conductorUserId !== s.conductorUserId) await this.assertConductor(conductorUserId);
+    if (conductorUserId !== s.conductorUserId) await this.assertConductor(conductorUserId, s.sessionNumber);
     if (scheduledAt.getTime() === s.scheduledAt.getTime() && conductorUserId === s.conductorUserId) {
       throw new BadRequestException('Nothing changed');
     }

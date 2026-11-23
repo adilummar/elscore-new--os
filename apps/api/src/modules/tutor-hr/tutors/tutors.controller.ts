@@ -11,6 +11,7 @@ import {
 } from './tutor-profile.dto';
 import { NOTES_MANAGE, PROFILE_MANAGE, TutorProfileService } from './tutor-profile.service';
 import { TutorTransferService } from './tutor-transfer.service';
+import { CoordinationService } from '../coordination/coordination.service';
 
 /**
  * Tutor Management — Tutors (HR side). Tutor Coordinators and tutors have none of these
@@ -25,6 +26,7 @@ export class TutorsController {
   constructor(
     private readonly transfer: TutorTransferService,
     private readonly profiles: TutorProfileService,
+    private readonly coordination: CoordinationService,
   ) {}
 
   @Post('ready-for-assignment/:leadId')
@@ -87,6 +89,13 @@ export class TutorsController {
   @ApiOperation({ summary: 'Change status (any to any); a reason is mandatory and history is kept' })
   status(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeTutorStatusDto, @CurrentUser() user: RequestUser) {
     return this.profiles.changeStatus(id, dto, user.id);
+  }
+
+  @Get(':id/observations')
+  @RequirePermissions('tutor_hr.profile.read')
+  @ApiOperation({ summary: 'Feedback & Observations: coordinator, assignment history and observations (read-only)' })
+  observations(@Param('id', ParseUUIDPipe) id: string) {
+    return this.coordination.profileView(id);
   }
 
   @Get(':id/history')

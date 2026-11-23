@@ -262,6 +262,16 @@ const ROLES: Array<{
     isProtected: false,
     isCustom: false,
   },
+  {
+    code: 'TUTOR_COORDINATOR',
+    name: 'Tutor Coordinator',
+    description:
+      'Monitors the active tutors assigned to them, records class observations and conducts ' +
+      'training Session 1. Sees only assigned tutors; no HR notes, bank details or exports.',
+    isSystem: true,
+    isProtected: false,
+    isCustom: false,
+  },
 ];
 
 // =============================================================================
@@ -1030,6 +1040,28 @@ const PERMISSIONS: Array<{
       action: 'report',
       description: 'View recruitment reports (enquiries, sources, outcomes, ad spend)',
       isDelegatable: true,
+    },
+    // Tutor Management — Tutor Coordination
+    {
+      code: 'tutor_coordination.read',
+      resource: 'tutor_coordination',
+      action: 'read',
+      description: 'View your assigned tutors, their observations and assignment history',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_coordination.observe',
+      resource: 'tutor_coordination',
+      action: 'observe',
+      description: 'Record class observations for your assigned tutors (read-only once saved)',
+      isDelegatable: true,
+    },
+    {
+      code: 'tutor_coordination.manage',
+      resource: 'tutor_coordination',
+      action: 'manage',
+      description: 'Head of Tutor Management: all coordinators and tutors, assign/reassign/unassign, edit and hide observations',
+      isDelegatable: false,
     },
     // Tutor Management — Tutor profile
     {
@@ -1875,8 +1907,22 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hr.ready_for_assignment',
     'tutor_hr.tutors.read',
     'tutor_hr.profile.read', // view only: no HR Internal Notes, no History & Status
+    'tutor_coordination.read',
+    'tutor_coordination.observe',
+    'tutor_coordination.manage',
     'employee.read',
     'department.read',
+    'attendance.action.own',
+    'attendance.read.own',
+  ],
+
+  // Assigned tutors only (enforced in the service). Training: read-only sessions, and records
+  // attendance only for sessions they conduct. No profile, HR notes, bank details or exports.
+  TUTOR_COORDINATOR: [
+    'tutor_coordination.read',
+    'tutor_coordination.observe',
+    'tutor_training.read',
+    'tutor_training.record',
     'attendance.action.own',
     'attendance.read.own',
   ],

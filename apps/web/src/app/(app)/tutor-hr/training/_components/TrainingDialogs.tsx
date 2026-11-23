@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { getStaff } from '../../hiring/actions';
 import { fmtDateTime, fromLocalInput, toLocalInput } from '../../hiring/constants';
 import { ActionDialog, Field, runAction, textareaClass } from '../../hiring/_components/kit';
 import Link from 'next/link';
@@ -11,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { ErrorNote } from '../../hiring/_components/kit';
 import {
-  addParticipants, correctAttempt, createSession, listTrainees, markReadyForAssignment, recordAttempt, rescheduleSession,
+  addParticipants, correctAttempt, createSession, listConductors, listTrainees, markReadyForAssignment, recordAttempt, rescheduleSession,
 } from '../actions';
 import { ATTENDANCE, isPass, remarksRequired } from '../constants';
 
@@ -29,17 +28,18 @@ function useAction(onDone: Common['onDone'], onClose: Common['onClose']) {
   return { busy, error, setError, exec };
 }
 
-function useStaff(open: boolean) {
+/** Session 1 conductors are Tutor Coordinators / the Tutor Head; Session 2 conductors are HR. */
+function useConductors(open: boolean, sessionNumber: number) {
   const [staff, setStaff] = useState<any[]>([]);
-  useEffect(() => { if (open) getStaff().then((r) => r.ok && setStaff(r.data)); }, [open]);
+  useEffect(() => { if (open) listConductors(sessionNumber).then((r) => setStaff(r.ok ? r.data : [])); }, [open, sessionNumber]);
   return staff;
 }
 const staffLabel = (s: any) => (s.name === s.email ? s.email : `${s.name} (${s.email})`);
 
 // ── Schedule (Head) ──
 export function ScheduleSessionDialog(c: Common) {
-  const staff = useStaff(c.isOpen);
   const [num, setNum] = useState('1');
+  const staff = useConductors(c.isOpen, Number(num));
   const [when, setWhen] = useState('');
   const [who, setWho] = useState('');
   const { busy, error, exec } = useAction(c.onDone, c.onClose);
@@ -48,13 +48,13 @@ export function ScheduleSessionDialog(c: Common) {
       disabled={!when || !who}
       onSubmit={() => exec(createSession({ sessionNumber: Number(num), scheduledAt: fromLocalInput(when), conductorUserId: who }), `Session ${num} scheduled`)}>
       <Field label="Session" required>
-        <Select value={num} onChange={(e) => setNum(e.target.value)}>
+        <Select value={num} onChange={(e) => { setNum(e.target.value); setWho(''); }}>
           <option value="1">Session 1</option>
           <option value="2">Session 2</option>
         </Select>
       </Field>
       <Field label="Date and time" required><Input type="datetime-local" required min={toLocalInput()} value={when} onChange={(e) => setWhen(e.target.value)} /></Field>
-      <Field label="Conducted by" required hint="Only this person (or the Head) can record attendance.">
+      <Field label="Conducted by" required hint={num === '1' ? 'Session 1: a Tutor Coordinator or the Tutor Head.' : 'Session 2: the HR Department.'}>
         <Select required value={who} onChange={(e) => setWho(e.target.value)}>
           <option value="">Select staff member</option>
           {staff.map((s) => <option key={s.id} value={s.id}>{staffLabel(s)}</option>)}
@@ -66,7 +66,7 @@ export function ScheduleSessionDialog(c: Common) {
 
 // ── Reschedule (Head) ──
 export function RescheduleSessionDialog({ session, ...c }: Common & { session: any }) {
-  const staff = useStaff(c.isOpen);
+  const staff = useConductors(c.isOpen, session.sessionNumber);
   const [when, setWhen] = useState(toLocalInput(session.scheduledAt));
   const [who, setWho] = useState(session.conductorUserId);
   const [reason, setReason] = useState('');

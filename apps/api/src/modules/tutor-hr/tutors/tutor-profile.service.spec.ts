@@ -79,7 +79,7 @@ describe('TutorProfileService', () => {
 
   describe('viewing', () => {
     const full = {
-      id: 'tp-1', tutorCode: 'TUT-0001', tutorOperationalStatus: 'INACTIVE', verifiedAt: new Date(), verifiedBy: null,
+      id: 'tp-1', tutorCode: 'TUT-0001', tutorOperationalStatus: 'INACTIVE', verifiedAt: new Date(), verifiedBy: null, coordinator: { id: 'coord-1', email: 'c1@x.test' }, coordinatorAssignedAt: null,
       employee: {}, personalDetails: { bankAccountNumber: '123456789012', gender: 'FEMALE', permDistrict: 'M' },
       emergencyContacts: [], qualifications: [], subjects: [], grades: [], curricula: [],
       tutorLead: { id: 'lead-1', businessId: 'TL-1', remarks: 'good', detailsDescription: null, motherTongue: { name: 'Malayalam' }, languages: [], demoEvaluations: [{ id: 'e1', englishRating: 4, evaluatedBy: { email: 'x' } }] },
@@ -89,7 +89,7 @@ describe('TutorProfileService', () => {
       expect(r.personal?.bankAccountNumber).toBe('••••9012');
       expect(r.access).toEqual({ canManage: false, canSeeNotes: false, canSeeHistory: false, bankFullyVisible: false });
       expect(r.hiring?.englishRating).toBe(4);
-      expect(r.coordinator).toBeNull();
+      expect(r.coordinator).toEqual({ id: 'coord-1', email: 'c1@x.test' });
       expect(r.gaps).toContain('Primary emergency contact');
     });
     it('shows the full number to HR Staff / HR Head', async () => {

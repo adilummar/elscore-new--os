@@ -11,6 +11,7 @@ describe('tutor constants', () => {
     expect(visibleTabs(false)).not.toContain('History & Status');
     expect(visibleTabs(true)).toEqual([...PROFILE_TABS]);
     expect(DEFERRED_TABS).toContain('Salary');
+    expect(DEFERRED_TABS).not.toContain('Feedback & Observations');
   });
   it('formats addresses without empty parts', () => {
     expect(formatAddress({ permHouse: 'Rose Villa', permDistrict: 'Malappuram', permPin: null }, 'perm')).toBe('Rose Villa, Malappuram');
