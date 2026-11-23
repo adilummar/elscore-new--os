@@ -1,4 +1,8 @@
--- PROPOSED, NOT APPLIED. Tutor Management Training (Step 2). Run only after tutor_hiring_phase_a.sql.
+-- Tutor HR migration 20261123110000_tutor_training_phase_b (converted from the reviewed prisma/proposed/tutor_training_phase_b.sql; statements unchanged).
+-- Training: 1 enum, 5 new tables. Hired candidates from before this migration have no enrolment; see prisma/tutor-hr-backfills/README.md.
+-- Data backfills are NOT part of any migration: they live in prisma/tutor-hr-backfills/ and are run by hand.
+
+-- Tutor Management Training (Step 2). Run only after 20261123100000_tutor_hiring_phase_a.
 -- Additive only: five new tables and one enum; no existing table or column is changed.
 -- Generated with `prisma migrate diff` from the Step 1 schema to the Step 2 schema.
 

@@ -1,4 +1,4 @@
--- PROPOSED, NOT APPLIED. Run only after tutor_hiring_phase_a.sql, and only after the counts from
+-- MANUAL SCRIPT, NOT A MIGRATION (see README.md). Run only after migration 20261123100000_tutor_hiring_phase_a, and only after the counts from
 -- tutor_hiring_backfill_dryrun.sql (query 1, column proposed_lead_status) have been reviewed and approved.
 --
 -- Phase A adds tutor_leads.lead_status with DEFAULT 'PROCESSING', so every existing lead starts as

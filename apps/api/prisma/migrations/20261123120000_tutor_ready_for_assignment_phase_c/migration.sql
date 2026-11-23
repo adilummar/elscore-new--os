@@ -1,5 +1,9 @@
--- PROPOSED, NOT APPLIED. Tutor Management Step 3: Ready for Assignment and Tutor ID.
--- Run after tutor_training_phase_b.sql. Additive only: three nullable columns on tutor_profiles.
+-- Tutor HR migration 20261123120000_tutor_ready_for_assignment_phase_c (converted from the reviewed prisma/proposed/tutor_ready_for_assignment_phase_c.sql; statements unchanged).
+-- Ready for Assignment: nullable tutor_profiles columns; ensures the TUT sequence row exists (insert-only, ON CONFLICT DO NOTHING).
+-- Data backfills are NOT part of any migration: they live in prisma/tutor-hr-backfills/ and are run by hand.
+
+-- Tutor Management Step 3: Ready for Assignment and Tutor ID.
+-- Run after 20261123110000_tutor_training_phase_b. Additive only: three nullable columns on tutor_profiles.
 -- Generated with `prisma migrate diff` from the Step 2 schema to the Step 3 schema.
 
 -- AlterTable

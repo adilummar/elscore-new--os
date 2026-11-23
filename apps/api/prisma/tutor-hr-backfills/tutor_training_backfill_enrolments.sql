@@ -1,4 +1,4 @@
--- PROPOSED, NOT APPLIED. Run after tutor_training_phase_b.sql.
+-- MANUAL SCRIPT, NOT A MIGRATION (see README.md). Run after migration 20261123110000_tutor_training_phase_b.
 -- Candidates marked Hired before Training existed have no enrolment. New Hired decisions create one
 -- automatically. This creates the missing rows, attributed to whoever recorded the Hired decision.
 

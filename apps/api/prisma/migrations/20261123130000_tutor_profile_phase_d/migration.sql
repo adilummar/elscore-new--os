@@ -1,5 +1,9 @@
--- PROPOSED, NOT APPLIED. Tutor Management Step 4: tutor profile, statuses, HR internal notes.
--- Run after tutor_ready_for_assignment_phase_c.sql. Additive only: three new status values,
+-- Tutor HR migration 20261123130000_tutor_profile_phase_d (converted from the reviewed prisma/proposed/tutor_profile_phase_d.sql; statements unchanged).
+-- Tutor profile: 3 values added to TutorOperationalStatus (IRREVERSIBLE: ALTER TYPE ... ADD VALUE), 3 enums, 5 tables; inserts the Malayalam mother tongue if no entry exists (insert-only).
+-- Data backfills are NOT part of any migration: they live in prisma/tutor-hr-backfills/ and are run by hand.
+
+-- Tutor Management Step 4: tutor profile, statuses, HR internal notes.
+-- Run after 20261123120000_tutor_ready_for_assignment_phase_c. Additive only: three new status values,
 -- three enums and five new tables. No existing row or column is changed.
 -- Generated with `prisma migrate diff` from the Step 3 schema to the Step 4 schema.
 -- Note: ALTER TYPE ... ADD VALUE cannot be undone without recreating the type.
