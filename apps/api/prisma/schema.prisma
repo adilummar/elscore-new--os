@@ -890,6 +890,7 @@ model Grade {
   demoSessions         DemoSession[]
   Student              Student[]
   TutorSalarySlabGrade TutorSalarySlabGrade[]
+  TutorSalarySlabRate  TutorSalarySlabRate[]
   TutorLeadGrade       TutorLeadGrade[]
 
   @@map("grades")
@@ -2635,17 +2636,35 @@ model TutorSalarySlab {
   id         String   @id @default(uuid())
   name       String   @unique
   hourlyRate Decimal  @map("hourly_rate") @db.Decimal(10, 2)
-  currency   String   @default("AED")
+  currency   String   @default("INR")
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
+  /// One rate per grade KG..Grade 12, inserted with the slab in one transaction.
+  rates      TutorSalarySlabRate[]
   subjects   TutorSalarySlabSubject[]
   grades     TutorSalarySlabGrade[]
   tutorLeads TutorLead[]
   demoEvaluations TutorDemoEvaluation[]
 
   @@map("tutor_salary_slabs")
+}
+
+/// Hourly rate of one slab for one grade. Slabs and rates are immutable: database triggers refuse UPDATE,
+/// DELETE and TRUNCATE (migration 20261124100000_pay_slab_grade_rates).
+model TutorSalarySlabRate {
+  slabId    String   @map("slab_id")
+  gradeId   String   @map("grade_id")
+  rate      Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  slab  TutorSalarySlab @relation(fields: [slabId], references: [id], onDelete: Restrict)
+  grade Grade           @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+
+  @@id([slabId, gradeId])
+  @@index([gradeId])
+  @@map("tutor_salary_slab_rates")
 }
 
 model TutorSalarySlabSubject {
