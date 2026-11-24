@@ -416,6 +416,8 @@ model User {
   tutorDemoReassignedTo     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignTo")
   tutorDemoReassignedBy     TutorDemoAssignmentHistory[]  @relation("TutorDemoAssignChangedBy")
   tutorEvaluationsMade      TutorDemoEvaluation[]         @relation("TutorEvaluationBy")
+  slabAssignmentsChanged    TutorSlabAssignment[]         @relation("SlabAssignmentChangedBy")
+  slabAssignmentsCancelled  TutorSlabAssignment[]         @relation("SlabAssignmentCancelledBy")
   tutorEscalationsReceived  TutorEvaluationEscalation[]   @relation("TutorEscalationRecipient")
   tutorAdSpendEntered       TutorAdSpend[]                @relation("TutorAdSpendEnteredBy")
   Quotation              Quotation[]
@@ -1038,6 +1040,7 @@ model TutorProfile {
   rateRequests TutorRateChangeRequest[]
   feedback     TutorFeedback[]
   payableItems TutorPayableItem[]
+  slabAssignments TutorSlabAssignment[]
 
   statusHistory     TutorStatusHistory[]
   personalDetails   TutorPersonalDetails?
@@ -2643,6 +2646,7 @@ model TutorSalarySlab {
 
   /// One rate per grade KG..Grade 12, inserted with the slab in one transaction.
   rates      TutorSalarySlabRate[]
+  assignments TutorSlabAssignment[]
   subjects   TutorSalarySlabSubject[]
   grades     TutorSalarySlabGrade[]
   tutorLeads TutorLead[]
@@ -2665,6 +2669,39 @@ model TutorSalarySlabRate {
   @@id([slabId, gradeId])
   @@index([gradeId])
   @@map("tutor_salary_slab_rates")
+}
+
+/// Which slab a tutor is on, per month range (migration 20261124110000_tutor_slab_assignments). History: rows are
+/// never deleted and never edited except to close, cancel or re-open (triggers). fromMonth/toMonth are first-of-month
+/// dates in Asia/Kolkata; toMonth NULL = Present.
+/// NOT visible to Prisma, so `prisma migrate diff` reports them as drift (known, expected): the partial unique index
+/// "tutor_slab_assignments_one_open_per_tutor", the exclusion constraint "tutor_slab_assignments_no_overlap", and the
+/// triggers/constraint triggers on this table (insert check, update check, no delete/truncate, continuity check).
+model TutorSlabAssignment {
+  id                String    @id @default(uuid())
+  tutorProfileId    String    @map("tutor_profile_id")
+  slabId            String    @map("slab_id")
+  fromMonth         DateTime  @map("from_month") @db.Date
+  toMonth           DateTime? @map("to_month") @db.Date
+  /// DEMO_EVALUATION | HR_INITIAL | HR_CHANGE
+  source            String
+  evaluationId      String?   @map("evaluation_id")
+  changedByUserId   String    @map("changed_by_user_id")
+  reason            String
+  createdAt         DateTime  @default(now()) @map("created_at")
+  cancelledAt       DateTime? @map("cancelled_at")
+  cancelledByUserId String?   @map("cancelled_by_user_id")
+  cancelReason      String?   @map("cancel_reason")
+
+  tutorProfile TutorProfile         @relation(fields: [tutorProfileId], references: [id], onDelete: Restrict)
+  slab         TutorSalarySlab      @relation(fields: [slabId], references: [id], onDelete: Restrict)
+  evaluation   TutorDemoEvaluation? @relation(fields: [evaluationId], references: [id], onDelete: Restrict)
+  changedBy    User                 @relation("SlabAssignmentChangedBy", fields: [changedByUserId], references: [id], onDelete: Restrict)
+  cancelledBy  User?                @relation("SlabAssignmentCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tutorProfileId, fromMonth])
+  @@index([slabId])
+  @@map("tutor_slab_assignments")
 }
 
 model TutorSalarySlabSubject {
@@ -3094,6 +3131,7 @@ model TutorDemoEvaluation {
   tutorLead   TutorLead        @relation(fields: [tutorLeadId], references: [id], onDelete: Restrict)
   evaluatedBy User             @relation("TutorEvaluationBy", fields: [evaluatedByUserId], references: [id], onDelete: Restrict)
   salarySlab  TutorSalarySlab? @relation(fields: [salarySlabId], references: [id], onDelete: Restrict)
+  slabAssignments TutorSlabAssignment[]
 
   @@index([tutorLeadId])
   @@map("tutor_demo_evaluations")
