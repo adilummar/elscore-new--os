@@ -32,6 +32,14 @@ describe('Create User form: roles offered per department', () => {
     expect(holders).toEqual(['ACADEMICS']);
   });
 
+  it('TUTOR_HEAD and TUTOR_COORDINATOR can be created through the form, under Human Resources only', () => {
+    for (const role of ['TUTOR_HEAD', 'TUTOR_COORDINATOR']) {
+      const holders = Object.entries(DEPARTMENT_ROLE_CODES).filter(([, roles]) => roles.includes(role)).map(([dept]) => dept);
+      expect(holders).toEqual(['HR']);
+      expect(optionsFor('HR')).toContain(role);
+    }
+  });
+
   it('MENTORING_HEAD is offered only under Mentoring', () => {
     const holders = Object.entries(DEPARTMENT_ROLE_CODES).filter(([, roles]) => roles.includes('MENTORING_HEAD')).map(([dept]) => dept);
     expect(holders).toEqual(['MENTORING']);
@@ -49,7 +57,7 @@ describe('Create User form: roles offered per department', () => {
     expect(optionsFor('MARKETING')).toEqual(['DESIGNER', 'MARKETING_HEAD', 'PERFORMANCE_MARKETER']);
     expect(optionsFor('SALES')).toEqual(['SALES_COUNSELLOR', 'SALES_HEAD']);
     expect(optionsFor('FINANCE')).toEqual(['ACCOUNTANT', 'FINANCE_EXECUTIVE', 'FINANCE_HEAD', 'FINANCE_MANAGER']);
-    expect(optionsFor('HR')).toEqual(['HR_ASSISTANT', 'HR_EXECUTIVE', 'HR_MANAGER']);
+    expect(optionsFor('HR')).toEqual(['HR_ASSISTANT', 'HR_EXECUTIVE', 'HR_MANAGER', 'TUTOR_COORDINATOR', 'TUTOR_HEAD']);
     expect(optionsFor('ACADEMICS')).toEqual(
       ['ACADEMIC_HEAD', 'DEMO_ADMIN', 'DEMO_COORDINATOR', 'DEMO_COUNSELOR', 'DEMO_HEAD', 'MENTOR', 'TUTOR'],
     );

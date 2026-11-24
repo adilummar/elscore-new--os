@@ -18,7 +18,10 @@ export const DEPARTMENT_ROLE_CODES: Readonly<Record<string, readonly string[]>> 
   SALES: ['SALES_HEAD', 'SALES_COUNSELLOR'],
   ACADEMICS: ['ACADEMIC_HEAD', 'DEMO_HEAD', 'DEMO_ADMIN', 'MENTOR', 'DEMO_COORDINATOR', 'DEMO_COUNSELOR', 'TUTOR'],
   FINANCE: ['FINANCE_HEAD', 'FINANCE_MANAGER', 'FINANCE_EXECUTIVE', 'ACCOUNTANT'],
-  HR: ['HR_MANAGER', 'HR_EXECUTIVE', 'HR_ASSISTANT'],
+  // Tutor Management (Hiring, Training, Tutors, Coordination) sits in the HR menu, and there is no separate
+  // department for it, so its two roles are offered here. They were offered nowhere before, so they could not
+  // be assigned through this form.
+  HR: ['HR_MANAGER', 'HR_EXECUTIVE', 'HR_ASSISTANT', 'TUTOR_HEAD', 'TUTOR_COORDINATOR'],
   MENTORING: ['MENTORING_HEAD', 'MENTOR'],
 };
 
