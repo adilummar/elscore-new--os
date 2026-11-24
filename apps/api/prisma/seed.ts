@@ -2555,3 +2555,6 @@ async function seedSystemUser() {
   );
 }
 
+
+// Exported (read-only data) so specs can check the manual grant script against the seed mapping.
+export { ROLES, PERMISSIONS, ROLE_PERMISSIONS };
