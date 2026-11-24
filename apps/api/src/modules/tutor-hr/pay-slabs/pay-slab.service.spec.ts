@@ -48,6 +48,7 @@ function make(
   };
   const prisma = {
     $transaction: jest.fn((fn: (t: unknown) => unknown) => Promise.resolve(fn(tx))),
+    $queryRaw: jest.fn().mockResolvedValue([{ slab_id: 'slab-1', n: 3 }]),
     tutorSalarySlab: {
       findUnique: jest.fn().mockResolvedValue({
         id: 'slab-1',
@@ -89,6 +90,19 @@ describe('PaySlabService', () => {
       ] as Array<Record<string, unknown>>) {
         expect(Object.keys(model).filter((k) => forbidden.test(k))).toEqual([]);
       }
+    });
+  });
+
+  describe('listing slabs', () => {
+    it('adds how many tutors are on each slab this month, and 0 for a slab nobody is on', async () => {
+      const { svc, prisma } = make();
+      const row = (id: string) => ({
+        id, name: id, currency: 'INR', createdAt: new Date('2026-11-24'),
+        rates: [{ rate: '130', grade: { code: 'KG', name: 'KG', sortOrder: 1 } }],
+      });
+      prisma.tutorSalarySlab.findMany.mockResolvedValue([row('slab-1'), row('slab-2')]);
+      const out = await svc.list();
+      expect(out.map((s) => [s.id, s.currentTutors])).toEqual([['slab-1', 3], ['slab-2', 0]]);
     });
   });
 

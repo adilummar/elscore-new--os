@@ -24,12 +24,21 @@ export class PaySlabService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(): Promise<PaySlabView[]> {
+  /** Every slab with the number of tutors on it this month (cancelled and future rows are not counted). */
+  async list(): Promise<Array<PaySlabView & { currentTutors: number }>> {
     const rows = await this.prisma.tutorSalarySlab.findMany({
       orderBy: { name: 'asc' },
       select: SLAB_WITH_RATES,
     });
-    return rows.map(toPaySlabView);
+    const counts = await this.prisma.$queryRaw<Array<{ slab_id: string; n: number }>>`
+      SELECT slab_id, COUNT(*)::int AS n
+      FROM tutor_slab_assignments
+      WHERE cancelled_at IS NULL
+        AND from_month <= tutor_slab_current_month()
+        AND (to_month IS NULL OR to_month >= tutor_slab_current_month())
+      GROUP BY slab_id`;
+    const byId = new Map(counts.map((c) => [c.slab_id, c.n]));
+    return rows.map((r) => ({ ...toPaySlabView(r), currentTutors: byId.get(r.id) ?? 0 }));
   }
 
   async get(id: string): Promise<PaySlabView> {
