@@ -9,8 +9,8 @@ describe('tutor constants', () => {
   it('hides HR-only sections from viewers without HR notes access', () => {
     expect(visibleTabs(false)).not.toContain('HR Internal Notes');
     expect(visibleTabs(false)).not.toContain('History & Status');
-    expect(visibleTabs(true)).toEqual([...PROFILE_TABS]);
-    expect(DEFERRED_TABS).toContain('Salary');
+    expect(visibleTabs(true, true)).toEqual([...PROFILE_TABS]);
+    expect(DEFERRED_TABS).not.toContain('Salary');
     expect(DEFERRED_TABS).not.toContain('Feedback & Observations');
   });
   it('formats addresses without empty parts', () => {

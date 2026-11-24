@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 const SECTIONS = [
   { name: 'Hiring', href: '/tutor-hr/hiring', any: ['tutor_lead.read'] },
   { name: 'Training', href: '/tutor-hr/training', any: ['tutor_training.read'] },
-  { name: 'Pay Slabs', href: '/tutor-hr/pay-slabs', any: ['tutor_lead.read'] },
+  { name: 'Pay Slabs', href: '/tutor-hr/pay-slabs', any: ['tutor_hr.pay_slab.read'] },
   { name: 'Tutors', href: '/tutor-hr/tutors', any: ['tutor_hr.tutors.read'] },
   { name: 'Coordination', href: '/tutor-hr/coordination', any: ['tutor_coordination.read'] },
 ];

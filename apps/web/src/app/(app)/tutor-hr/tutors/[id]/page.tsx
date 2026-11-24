@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -16,6 +16,8 @@ import { assignmentText } from '../../coordination/constants';
 import { DEFERRED_TABS, GENDERS, MARITAL_STATUSES, STATUS_VARIANT, TUTOR_STATUSES, formatAddress, visibleTabs, type ProfileTab } from '../constants';
 import { EditProfileDialog, NoteDialog, QualificationDialog, StatusDialog } from '../_components/TutorDialogs';
 import { cn } from '@/lib/utils';
+import { slabAccess } from '../../pay-slabs/constants';
+import { SalaryTab } from '../_components/SalaryTab';
 
 const labelOf = (list: readonly { value: string; label: string }[], v?: string | null) => list.find((x) => x.value === v)?.label ?? '';
 
@@ -34,7 +36,13 @@ export default function TutorProfilePage() {
   const { id } = useParams<{ id: string }>();
   const { hasPermission } = usePermissions();
   const [t, setT] = useState<any>(null);
+  const wanted = useSearchParams().get('tab');
   const [tab, setTab] = useState<ProfileTab>('Profile');
+  const { canViewSalary, canAssign } = slabAccess(hasPermission);
+  // Links such as /tutors/:id?tab=Salary open that tab, but only one this viewer is allowed to see.
+  useEffect(() => {
+    if (wanted && (visibleTabs(true, canViewSalary) as string[]).includes(wanted)) setTab(wanted as ProfileTab);
+  }, [wanted, canViewSalary]);
   const [notes, setNotes] = useState<any[] | null>(null);
   const [history, setHistory] = useState<any[] | null>(null);
   const [coord, setCoord] = useState<any>(null);
@@ -110,7 +118,7 @@ export default function TutorProfilePage() {
       )}
 
       <div role="tablist" aria-label="Tutor profile sections" className="flex gap-1 border-b border-slate-200 overflow-x-auto">
-        {visibleTabs(t.access.canSeeNotes).map((x) => (
+        {visibleTabs(t.access.canSeeNotes, canViewSalary).map((x) => (
           <button key={x} role="tab" aria-selected={tab === x} onClick={() => setTab(x)}
             className={cn('px-4 h-10 text-sm font-medium border-b-2 -mb-px whitespace-nowrap',
               tab === x ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-600 hover:text-slate-900',
@@ -264,8 +272,10 @@ export default function TutorProfilePage() {
         </div>
       )}
 
+      {tab === 'Salary' && canViewSalary && <SalaryTab tutorId={t.id} canAssign={canAssign} />}
+
       {DEFERRED_TABS.includes(tab) && (
-        <Card><Empty title={`${tab}: not available yet`} hint={tab === 'Salary' ? 'Salary is built together with the Pay Slab module.' : 'This section needs class records from Mentoring and will be added in a later phase.'} /></Card>
+        <Card><Empty title={`${tab}: not available yet`} hint='This section needs class records from Mentoring and will be added in a later phase.' /></Card>
       )}
 
       {tab === 'HR Internal Notes' && t.access.canSeeNotes && (

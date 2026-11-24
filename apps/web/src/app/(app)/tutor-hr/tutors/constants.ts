@@ -35,13 +35,16 @@ export const PROFILE_TABS = [
 export type ProfileTab = (typeof PROFILE_TABS)[number];
 
 /** Sections that depend on Mentoring class records or Pay Slab and are not built yet. */
-export const DEFERRED_TABS: ProfileTab[] = ['Students', 'Availability', 'Exams', 'Salary', 'Class History'];
+export const DEFERRED_TABS: ProfileTab[] = ['Students', 'Availability', 'Exams', 'Class History'];
 
 /** HR-only sections; hidden from everyone without HR Internal Notes access (including the Tutor Head). */
 export const HR_ONLY_TABS: ProfileTab[] = ['HR Internal Notes', 'History & Status'];
 
-export function visibleTabs(canSeeHrOnly: boolean): ProfileTab[] {
-  return PROFILE_TABS.filter((t) => canSeeHrOnly || !HR_ONLY_TABS.includes(t));
+/** Pay is shown only to people holding tutor_hr.tutor_salary.view (HR Head and HR Staff). */
+export const SALARY_TAB: ProfileTab = 'Salary';
+
+export function visibleTabs(canSeeHrOnly: boolean, canSeeSalary = false): ProfileTab[] {
+  return PROFILE_TABS.filter((t) => (t === SALARY_TAB ? canSeeSalary : canSeeHrOnly || !HR_ONLY_TABS.includes(t)));
 }
 
 export const ADDRESS_PARTS = [
