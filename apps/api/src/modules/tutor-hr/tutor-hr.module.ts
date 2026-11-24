@@ -13,6 +13,8 @@ import { HiringReportService } from './hiring/hiring-report.service';
 import { HiringScheduleService } from './hiring/hiring-schedule.service';
 import { PaySlabController } from './pay-slabs/pay-slab.controller';
 import { PaySlabService } from './pay-slabs/pay-slab.service';
+import { TutorSalaryController } from './pay-slabs/tutor-salary.controller';
+import { TutorSlabAssignmentService } from './pay-slabs/tutor-slab-assignment.service';
 import { TutorHrReviewController } from './tutor-hr-review.controller';
 import { TutorHrReviewService } from './tutor-hr-review.service';
 import { TutorHrSettingsController } from './tutor-hr-settings.controller';
@@ -43,6 +45,7 @@ import { TUTOR_HR_BULLMQ, TutorHrQueueService } from './queue/tutor-hr-queue.ser
     TutorHrReviewController,
     TutorHrSettingsController,
     PaySlabController,
+    TutorSalaryController,
   ],
   providers: [
     HiringCandidateService,
@@ -60,6 +63,7 @@ import { TUTOR_HR_BULLMQ, TutorHrQueueService } from './queue/tutor-hr-queue.ser
     TutorHrReviewService,
     TutorHrSettingsService,
     PaySlabService,
+    TutorSlabAssignmentService,
     // Dedicated queue for the overdue demo-evaluation scan (not the shared housekeeping queue).
     { provide: TUTOR_HR_BULLMQ, useValue: { Queue, Worker } },
     TutorHrQueueService,

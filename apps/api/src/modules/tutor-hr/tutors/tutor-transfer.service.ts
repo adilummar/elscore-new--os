@@ -6,6 +6,7 @@ import { AuditService } from '../../../common/audit/audit.service';
 import { IdGeneratorService } from '../../../common/id-generator/id-generator.service';
 import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
 import { RbacService } from '../../../common/rbac/rbac.service';
+import { TutorSlabAssignmentService } from '../pay-slabs/tutor-slab-assignment.service';
 
 import { generateTemporaryPassword } from './temp-password.util';
 
@@ -41,6 +42,7 @@ export class TutorTransferService {
     private readonly audit: AuditService,
     private readonly idGenerator: IdGeneratorService,
     private readonly rbac: RbacService,
+    private readonly slabs: TutorSlabAssignmentService,
   ) {}
 
   private assertReady(lead: {
@@ -89,7 +91,8 @@ export class TutorTransferService {
           },
         });
         this.assertReady(fresh);
-        const now = new Date();
+        // The database clock, so verifiedAt and the first slab's month always agree (Asia/Kolkata month).
+        const [{ now }] = await tx.$queryRaw<Array<{ now: Date }>>`SELECT now() AS now`;
 
         const employeeBusinessId = await this.idGenerator.nextIdInTx(tx, 'EMP');
         const tutorId = await this.idGenerator.nextIdInTx(tx, 'TUT');
@@ -111,6 +114,12 @@ export class TutorTransferService {
             employeeId: employee.id, sourceTutorLeadId: fresh.id, tutorCode: tutorId,
             teachingExperience: fresh.totalTeachingExperience, verifiedAt: now, verifiedByUserId: actorUserId,
           },
+        });
+
+        // The slab chosen at the demo evaluation becomes the tutor's first slab, from this month. Same transaction:
+        // if it fails, no tutor is created. No slab on the evaluation means the tutor simply has none yet.
+        await this.slabs.assignFirstFromEvaluation(tx, {
+          tutorProfileId: profile.id, tutorLeadId: fresh.id, actorUserId,
         });
 
         // Hiring data carried into the tutor profile; the candidate record and its history stay as they are.

@@ -46,3 +46,12 @@ copy the file to `/var/tmp`, replace only the final `-- COMMIT;` with `COMMIT;`,
 
 Undo: there is no undo script. Restore the pre-deployment backup. The links are insert-only and are removed by
 deleting exactly the rows the preview listed, if the owner prefers that to a restore.
+
+## Pay Slab scripts
+
+- `pay_slab_permission_grant.sql`: 4 links, `tutor_hr.pay_slab.read` and `.create` to HR_MANAGER and HR_EXECUTIVE.
+- `pay_slab_assignment_permission_grant.sql`: 4 links, `tutor_hr.pay_slab.assign` and `tutor_hr.tutor_salary.view`
+  to HR_MANAGER and HR_EXECUTIVE only. Same rules as above: insert-only, previews and rolls back, second run adds 0.
+  Run it after the migration `20261124110000_tutor_slab_assignments` and the seed (the seed adds the two permission rows).
+- `test-pay-slab-grant-local.sh` and `test-pay-slab-assignment-grant-local.sh` test them on
+  `127.0.0.1:5433/elscore_slab_empty` only (a throwaway database).

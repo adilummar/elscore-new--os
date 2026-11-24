@@ -9,6 +9,7 @@ import { RequirePermissions } from '../../../common/rbac/require-permissions.dec
 import { PAY_SLAB_CREATE, PAY_SLAB_READ } from './pay-slab.constants';
 import { CreatePaySlabDto } from './pay-slab.dto';
 import { PaySlabService } from './pay-slab.service';
+import { TutorSlabAssignmentService } from './tutor-slab-assignment.service';
 
 /**
  * Pay Slabs (Payroll PDF, section 2). Create and read only: there is no PATCH, PUT or DELETE,
@@ -19,7 +20,10 @@ import { PaySlabService } from './pay-slab.service';
 @UseGuards(JwtAuthGuard, RbacGuard)
 @Controller('tutor-hr/pay-slabs')
 export class PaySlabController {
-  constructor(private readonly service: PaySlabService) {}
+  constructor(
+    private readonly service: PaySlabService,
+    private readonly assignments: TutorSlabAssignmentService,
+  ) {}
 
   @Get()
   @RequirePermissions(PAY_SLAB_READ)
@@ -31,6 +35,13 @@ export class PaySlabController {
   @RequirePermissions(PAY_SLAB_READ)
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.get(id);
+  }
+
+  @Get(':id/tutors')
+  @RequirePermissions(PAY_SLAB_READ)
+  @ApiOperation({ summary: 'Tutors that are, were or will be on this slab (read only)' })
+  tutors(@Param('id', ParseUUIDPipe) id: string) {
+    return this.assignments.tutorsOnSlab(id);
   }
 
   @Post()

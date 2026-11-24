@@ -1173,6 +1173,20 @@ const PERMISSIONS: Array<{
       isDelegatable: false,
     },
     {
+      code: 'tutor_hr.pay_slab.assign',
+      resource: 'tutor_hr_pay_slab',
+      action: 'assign',
+      description: 'Assign a salary slab to a tutor, change it from next month, or cancel a waiting change',
+      isDelegatable: false,
+    },
+    {
+      code: 'tutor_hr.tutor_salary.view',
+      resource: 'tutor_hr_tutor_salary',
+      action: 'view',
+      description: 'View the Salary tab on a tutor profile (slab, rates and slab history)',
+      isDelegatable: false,
+    },
+    {
       code: 'tutor_hiring.settings',
       resource: 'tutor_hiring',
       action: 'settings',
@@ -1677,7 +1691,12 @@ const PERMISSIONS: Array<{
 
 // Pay Slab codes are granted to HR_MANAGER and HR_EXECUTIVE only (owner decision 2026-11-24): not to the CEO
 // or Co-Founder through the automatic "all" and "read-only" rules below.
-const HR_ONLY_PAY_SLAB_CODES: ReadonlySet<string> = new Set(['tutor_hr.pay_slab.read', 'tutor_hr.pay_slab.create']);
+const HR_ONLY_PAY_SLAB_CODES: ReadonlySet<string> = new Set([
+  'tutor_hr.pay_slab.read',
+  'tutor_hr.pay_slab.create',
+  'tutor_hr.pay_slab.assign',
+  'tutor_hr.tutor_salary.view',
+]);
 
 const ALL_PERMISSION_CODES = PERMISSIONS.filter((p) => !HR_ONLY_PAY_SLAB_CODES.has(p.code)).map((p) => p.code);
 
@@ -1786,6 +1805,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hr.settings.manage',
     'tutor_hr.pay_slab.read',
     'tutor_hr.pay_slab.create',
+    'tutor_hr.pay_slab.assign',
+    'tutor_hr.tutor_salary.view',
     'tutor_hiring.read-all',
     'tutor_hiring.reassign',
     'tutor_hiring.report',
@@ -1882,6 +1903,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hr.settings.manage',
     'tutor_hr.pay_slab.read',
     'tutor_hr.pay_slab.create',
+    'tutor_hr.pay_slab.assign',
+    'tutor_hr.tutor_salary.view',
     'tutor.profile.read',
     'tutor.profile.manage',
     // tutor.rate.read: NOT granted to HR Executive per Revision 3.1
