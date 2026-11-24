@@ -44,7 +44,7 @@ export class TutorLeadService {
       orderBy: { createdAt: 'desc' },
       include: {
         motherTongue: true,
-        salarySlab: true,
+        salarySlab: { select: { id: true, name: true, currency: true } },
         subjects: { include: { subject: true } },
         grades: { include: { grade: true } },
         languages: { include: { language: true } },
@@ -57,7 +57,7 @@ export class TutorLeadService {
       where: { id },
       include: {
         motherTongue: true,
-        salarySlab: true,
+        salarySlab: { select: { id: true, name: true, currency: true } },
         subjects: { include: { subject: true } },
         grades: { include: { grade: true } },
         languages: { include: { language: true } },

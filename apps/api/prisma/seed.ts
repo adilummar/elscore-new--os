@@ -1000,7 +1000,7 @@ const PERMISSIONS: Array<{
       code: 'tutor_hr.settings.manage',
       resource: 'tutor_hr_settings',
       action: 'manage',
-      description: 'Manage mother tongues, communication languages, and salary slabs',
+      description: 'Manage mother tongues and communication languages',
       isDelegatable: false,
     },
     // Granular tutor lead permissions (P2 — more precise than tutor_lead.manage)
@@ -1155,6 +1155,21 @@ const PERMISSIONS: Array<{
       resource: 'tutor_hiring',
       action: 'override',
       description: 'Act in place of a demo conductor: record attendance, submit the evaluation or record the candidate decision',
+      isDelegatable: false,
+    },
+    // Tutor Management — Pay Slabs (Payroll PDF). Granted to HR_MANAGER and HR_EXECUTIVE only.
+    {
+      code: 'tutor_hr.pay_slab.read',
+      resource: 'tutor_hr_pay_slab',
+      action: 'read',
+      description: 'View salary slabs and their grade-wise rates',
+      isDelegatable: false,
+    },
+    {
+      code: 'tutor_hr.pay_slab.create',
+      resource: 'tutor_hr_pay_slab',
+      action: 'create',
+      description: 'Create salary slabs (a slab can never be edited or deleted afterwards)',
       isDelegatable: false,
     },
     {
@@ -1660,7 +1675,11 @@ const PERMISSIONS: Array<{
 // at runtime by HR Manager via the UserPermission mechanism.
 // =============================================================================
 
-const ALL_PERMISSION_CODES = PERMISSIONS.map((p) => p.code);
+// Pay Slab codes are granted to HR_MANAGER and HR_EXECUTIVE only (owner decision 2026-11-24): not to the CEO
+// or Co-Founder through the automatic "all" and "read-only" rules below.
+const HR_ONLY_PAY_SLAB_CODES: ReadonlySet<string> = new Set(['tutor_hr.pay_slab.read', 'tutor_hr.pay_slab.create']);
+
+const ALL_PERMISSION_CODES = PERMISSIONS.filter((p) => !HR_ONLY_PAY_SLAB_CODES.has(p.code)).map((p) => p.code);
 
 // Mentoring operations the CEO must NOT receive automatically (CEO has company-wide visibility, not operational
 // rights). mentoring.handover.retry is deliberately here: it creates handovers, so it stays with the Sales Head only.
@@ -1688,9 +1707,10 @@ const MENTORING_OPERATIONAL_CODES = new Set([
 // Read-only permissions for Co-Founder — all *.read and *.view, no writes
 const CO_FOUNDER_PERMISSIONS = PERMISSIONS.filter(
   (p) =>
-    ['read', 'read-all', 'view'].includes(p.action) ||
-    p.code === 'audit.view' ||
-    p.code === 'report.view',
+    !HR_ONLY_PAY_SLAB_CODES.has(p.code) &&
+    (['read', 'read-all', 'view'].includes(p.action) ||
+      p.code === 'audit.view' ||
+      p.code === 'report.view'),
 ).map((p) => p.code);
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -1764,6 +1784,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hr.profile.manage',
     'tutor_hr.notes.manage',
     'tutor_hr.settings.manage',
+    'tutor_hr.pay_slab.read',
+    'tutor_hr.pay_slab.create',
     'tutor_hiring.read-all',
     'tutor_hiring.reassign',
     'tutor_hiring.report',
@@ -1858,6 +1880,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_hr.profile.manage',
     'tutor_hr.notes.manage',
     'tutor_hr.settings.manage',
+    'tutor_hr.pay_slab.read',
+    'tutor_hr.pay_slab.create',
     'tutor.profile.read',
     'tutor.profile.manage',
     // tutor.rate.read: NOT granted to HR Executive per Revision 3.1

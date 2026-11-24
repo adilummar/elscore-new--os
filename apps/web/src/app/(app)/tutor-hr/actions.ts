@@ -143,10 +143,6 @@ export async function getCommunicationLanguagesAction() {
   return fetchApi<any>('/tutor-hr/settings/communication-languages');
 }
 
-export async function getSalarySlabsAction() {
-  return fetchApi<any>('/tutor-hr/settings/salary-slabs');
-}
-
 export async function getSubjectsAction() {
   return fetchApi<any>('/reference/subjects?limit=100');
 }

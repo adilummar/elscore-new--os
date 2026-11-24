@@ -27,7 +27,7 @@ export class TutorHrReviewService {
       orderBy: { updatedAt: 'desc' },
       include: {
         motherTongue: true,
-        salarySlab: true,
+        salarySlab: { select: { id: true, name: true, currency: true } },
         subjects: { include: { subject: true } },
         grades: { include: { grade: true } },
       },

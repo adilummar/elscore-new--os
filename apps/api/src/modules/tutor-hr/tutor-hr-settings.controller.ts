@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/auth/guards/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
-import { CreateMasterDataDto, CreateTutorSalarySlabDto, UpdateMasterDataDto, UpdateTutorSalarySlabDto } from './dto/tutor-hr-settings.dto';
+import { CreateMasterDataDto, UpdateMasterDataDto } from './dto/tutor-hr-settings.dto';
 import { TutorHrSettingsService } from './tutor-hr-settings.service';
 
 @ApiTags('Tutor HR Settings')
@@ -47,23 +47,5 @@ export class TutorHrSettingsController {
   @RequirePermissions('tutor_hr.settings.manage')
   updateCommunicationLanguage(@Param('id') id: string, @Body() dto: UpdateMasterDataDto) {
     return this.settingsService.updateCommunicationLanguage(id, dto);
-  }
-
-  @Get('salary-slabs')
-  @RequirePermissions('tutor_lead.manage', 'tutor_hr.settings.manage')
-  getSalarySlabs() {
-    return this.settingsService.getSalarySlabs();
-  }
-
-  @Post('salary-slabs')
-  @RequirePermissions('tutor_hr.settings.manage')
-  createSalarySlab(@Body() dto: CreateTutorSalarySlabDto) {
-    return this.settingsService.createSalarySlab(dto);
-  }
-
-  @Patch('salary-slabs/:id')
-  @RequirePermissions('tutor_hr.settings.manage')
-  updateSalarySlab(@Param('id') id: string, @Body() dto: UpdateTutorSalarySlabDto) {
-    return this.settingsService.updateSalarySlab(id, dto);
   }
 }

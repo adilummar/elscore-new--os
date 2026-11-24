@@ -382,7 +382,7 @@ export default function TutorLeadDetailPage() {
               <CardContent>
                 <div className="flex justify-between items-center">
                   <span className="font-semibold text-slate-800">{lead.salarySlab.name}</span>
-                  <span className="text-brand-700 font-bold">{lead.salarySlab.hourlyRate} / hr</span>
+                  <span className="text-slate-500 text-sm">{lead.salarySlab.currency}</span>
                 </div>
               </CardContent>
             </Card>

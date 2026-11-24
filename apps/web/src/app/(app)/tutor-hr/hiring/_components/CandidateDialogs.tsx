@@ -14,6 +14,7 @@ import {
   fromLocalInput, labelOf, remarksRequired, toLocalInput, todayLocal,
 } from '../constants';
 import { ActionDialog, ErrorNote, Field, runAction, textareaClass } from './kit';
+import { SlabRates, slabLabel } from './slab-display';
 
 type Common = { isOpen: boolean; onClose: () => void; onDone: (msg?: string) => void };
 
@@ -438,11 +439,12 @@ export function EvaluationDialog({ booking, ...c }: Common & { booking: any }) {
               {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
             </Select>
           </Field>
-          <Field label="Recommended pay slab" hint={slabs.length ? undefined : 'No active pay slabs exist yet.'}>
+          <Field label="Recommended pay slab" hint={slabs.length ? undefined : 'No pay slabs exist yet.'}>
             <Select value={slab} onChange={(e) => setSlab(e.target.value)}>
               <option value="">Not selected</option>
-              {slabs.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.currency} {String(s.hourlyRate)}/hr)</option>)}
+              {slabs.map((s) => <option key={s.id} value={s.id}>{slabLabel(s)}</option>)}
             </Select>
+            <SlabRates slab={slabs.find((s) => s.id === slab)} />
           </Field>
         </div>
         <Field label="Remarks"><textarea rows={2} maxLength={2000} className={textareaClass} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>

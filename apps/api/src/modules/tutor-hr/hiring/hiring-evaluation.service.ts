@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { AuditService } from '../../../common/audit/audit.service';
 import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
+import { SLAB_WITH_RATES, toPaySlabView } from '../pay-slabs/pay-slab.mapper';
 
 import { HiringCandidateService } from './hiring-candidate.service';
 import { SubmitEvaluationDto } from './hiring-demo.dto';
@@ -32,8 +33,8 @@ export class HiringEvaluationService {
     }
     if (b.evaluation) throw new ConflictException('This demo has already been evaluated');
     if (dto.salarySlabId) {
-      const slab = await this.prisma.tutorSalarySlab.findFirst({ where: { id: dto.salarySlabId, isActive: true } });
-      if (!slab) throw new BadRequestException('Salary slab not found or inactive');
+      const slab = await this.prisma.tutorSalarySlab.findFirst({ where: { id: dto.salarySlabId } });
+      if (!slab) throw new BadRequestException('Salary slab not found');
     }
     try {
       return await this.prisma.$transaction(async (tx: PrismaTxClient) => {
@@ -66,10 +67,12 @@ export class HiringEvaluationService {
     }
   }
 
-  /** Active slabs offered in the evaluation form (existing Pay Slab records, read-only here). */
-  listSlabs() {
-    return this.prisma.tutorSalarySlab.findMany({
-      where: { isActive: true }, orderBy: { hourlyRate: 'asc' }, select: { id: true, name: true, hourlyRate: true, currency: true },
-    });
+  /**
+   * Every slab, with its per-grade rates, for the evaluation form (Pay Slab records, read-only here).
+   * Slabs cannot be edited or deleted, so there is no active flag to filter on.
+   */
+  async listSlabs() {
+    const rows = await this.prisma.tutorSalarySlab.findMany({ orderBy: { name: 'asc' }, select: SLAB_WITH_RATES });
+    return rows.map(toPaySlabView);
   }
 }
