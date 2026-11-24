@@ -7,6 +7,7 @@ import { TutorTransferService } from './tutor-transfer.service';
 jest.mock('argon2', () => ({ argon2id: 2, hash: jest.fn().mockResolvedValue('$argon2id$hash') }));
 
 const passed = new Date('2026-11-20T10:00:00Z');
+const dbNow = new Date('2026-11-24T14:11:13.000Z');
 const readyLead = (o: any = {}) => ({
   id: 'lead-1', firstName: 'Asha', lastName: 'Rao', phone: '+919876543210', email: ' Asha.Rao@Example.com ',
   deletedAt: null, decision: 'HIRED', convertedTutorProfileId: null, currentStage: 'TRAINING', totalTeachingExperience: 3,
@@ -20,6 +21,7 @@ function build(o: { lead?: any; fresh?: any; taken?: boolean; dept?: any; role?:
   const lead = o.lead ?? readyLead();
   const tx: any = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([{ now: dbNow }]),
     tutorLead: {
       findUniqueOrThrow: jest.fn().mockResolvedValue(o.fresh ?? lead),
       updateMany: jest.fn().mockResolvedValue({ count: o.cas ?? 1 }),
@@ -44,7 +46,8 @@ function build(o: { lead?: any; fresh?: any; taken?: boolean; dept?: any; role?:
   const audit: any = { recordInTx: jest.fn() };
   const ids: any = { nextIdInTx: jest.fn((_tx: any, type: string) => Promise.resolve(type === 'TUT' ? 'TUT-0001' : 'EMP-0042')) };
   const rbac: any = { invalidateCache: jest.fn().mockResolvedValue(undefined) };
-  return { svc: new TutorTransferService(prisma, audit, ids, rbac), prisma, tx, audit, ids, rbac };
+  const slabs: any = { assignFirstFromEvaluation: jest.fn().mockResolvedValue({ assignmentId: 'sa-1', slabId: 'slab-1' }) };
+  return { svc: new TutorTransferService(prisma, audit, ids, rbac, slabs), prisma, tx, audit, ids, rbac, slabs };
 }
 
 describe('TutorTransferService.readyForAssignment', () => {
@@ -89,6 +92,29 @@ describe('TutorTransferService.readyForAssignment', () => {
     });
     expect(tx.tutorLeadStageHistory.create.mock.calls[0][0].data).toMatchObject({ previousStage: 'TRAINING', newStage: 'READY_FOR_ASSIGNMENT' });
     expect(tx.$executeRaw).toHaveBeenCalled(); // advisory lock against double clicks
+  });
+
+  it('takes verifiedAt from the database clock, not the server clock', async () => {
+    const { svc, tx } = build();
+    await svc.readyForAssignment('lead-1', 'head');
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(tx.tutorProfile.create.mock.calls[0][0].data.verifiedAt).toBe(dbNow);
+    expect(tx.tutorLeadStageHistory.create.mock.calls[0][0].data.changedAt).toBe(dbNow);
+  });
+
+  it("gives the tutor the demo evaluation's slab as the first slab, inside the same transaction", async () => {
+    const { svc, tx, slabs, prisma } = build();
+    await svc.readyForAssignment('lead-1', 'head');
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(slabs.assignFirstFromEvaluation).toHaveBeenCalledWith(tx, {
+      tutorProfileId: 'tp-1', tutorLeadId: 'lead-1', actorUserId: 'head',
+    });
+  });
+
+  it('creates no tutor when the first-slab insert fails (nothing is committed)', async () => {
+    const { svc, slabs } = build();
+    slabs.assignFirstFromEvaluation.mockRejectedValue(new Error('slab rejected'));
+    await expect(svc.readyForAssignment('lead-1', 'head')).rejects.toThrow('slab rejected');
   });
 
   it('requires both sessions passed, a Hired decision, and no earlier transfer', async () => {

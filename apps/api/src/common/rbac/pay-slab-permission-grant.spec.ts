@@ -16,6 +16,9 @@ const sql = fs
   )
   .replace(/\r\n/g, '\n');
 
+// Only the first two Pay Slab codes; the assignment codes have their own script and spec.
+const PAY_SLAB_GRANT_CODES = ['tutor_hr.pay_slab.read', 'tutor_hr.pay_slab.create'];
+
 const section = sql.slice(
   sql.indexOf('INSERT INTO wanted_links VALUES'),
   sql.indexOf(';\n', sql.indexOf('INSERT INTO wanted_links VALUES')),
@@ -26,7 +29,7 @@ describe('pay_slab_permission_grant.sql', () => {
   it('lists exactly the Pay Slab links the seed gives, and nothing else', () => {
     const fromSeed = Object.entries(seed.ROLE_PERMISSIONS)
       .flatMap(([role, codes]) =>
-        codes.filter((c) => c.startsWith('tutor_hr.pay_slab.')).map((c) => `${role}|${c}`),
+        codes.filter((c) => PAY_SLAB_GRANT_CODES.includes(c)).map((c) => `${role}|${c}`),
       )
       .sort();
     expect([...links].sort()).toEqual(fromSeed);

@@ -10,6 +10,7 @@ import { TutorHrSettingsService } from '../tutor-hr-settings.service';
 import { PAY_SLAB_GRADE_CODES } from './pay-slab.constants';
 import { PaySlabController } from './pay-slab.controller';
 import { PaySlabService } from './pay-slab.service';
+import { TutorSlabAssignmentService } from './tutor-slab-assignment.service';
 
 /** Real HTTP routing and validation; guards are replaced because authorisation is covered by the permission specs. */
 describe('Pay Slab HTTP surface', () => {
@@ -41,6 +42,7 @@ describe('Pay Slab HTTP surface', () => {
       controllers: [PaySlabController, TutorHrSettingsController],
       providers: [
         { provide: PaySlabService, useValue: service },
+        { provide: TutorSlabAssignmentService, useValue: {} },
         { provide: TutorHrSettingsService, useValue: settings },
       ],
     })
@@ -93,7 +95,7 @@ describe('Pay Slab HTTP surface', () => {
         .filter((m) => m !== 'constructor')
         .map((m) => Reflect.getMetadata('method', proto[m] as object));
       // Nest RequestMethod: GET = 0, POST = 1
-      expect(verbs.sort()).toEqual([0, 0, 1]);
+      expect(verbs.sort()).toEqual([0, 0, 0, 1]); // list, get, tutors-on-slab, create
     });
   });
 
