@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { AuditService } from '../../../common/audit/audit.service';
 import { PrismaService, PrismaTxClient } from '../../../common/prisma/prisma.service';
+import { RbacService } from '../../../common/rbac/rbac.service';
 import { SLAB_WITH_RATES, toPaySlabView } from '../pay-slabs/pay-slab.mapper';
 
 import { HiringCandidateService } from './hiring-candidate.service';
@@ -14,6 +15,7 @@ export class HiringEvaluationService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly candidates: HiringCandidateService,
+    private readonly rbac: RbacService,
   ) {}
 
   /**
@@ -68,11 +70,25 @@ export class HiringEvaluationService {
   }
 
   /**
-   * Every slab, with its per-grade rates, for the evaluation form (Pay Slab records, read-only here).
-   * Slabs cannot be edited or deleted, so there is no active flag to filter on.
+   * Every slab for the evaluation form (Pay Slab records, read-only here). Slabs cannot be edited or deleted, so
+   * there is no active flag to filter on.
+   *
+   * Rates are pay information. They are shown only to HR (tutor_hr.pay_slab.read) and to the staff member who has
+   * an attended demo waiting for their evaluation, who needs them to choose a slab. Everyone else, including the
+   * Head of Tutor Management and the leadership roles, gets the slab names and currency without rates.
    */
-  async listSlabs() {
+  async listSlabs(userId: string) {
     const rows = await this.prisma.tutorSalarySlab.findMany({ orderBy: { name: 'asc' }, select: SLAB_WITH_RATES });
-    return rows.map(toPaySlabView);
+    const views = rows.map(toPaySlabView);
+    if (await this.canSeeRates(userId)) return views;
+    return views.map((v) => ({ ...v, minRate: null, maxRate: null, rates: [] }));
+  }
+
+  private async canSeeRates(userId: string): Promise<boolean> {
+    if (await this.rbac.hasPermissions(userId, ['tutor_hr.pay_slab.read'])) return true;
+    const waiting = await this.prisma.tutorDemoBooking.count({
+      where: { assignedToUserId: userId, status: 'ATTENDED', evaluation: { is: null } },
+    });
+    return waiting > 0;
   }
 }

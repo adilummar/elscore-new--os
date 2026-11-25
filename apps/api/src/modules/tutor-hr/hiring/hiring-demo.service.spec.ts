@@ -9,10 +9,10 @@ const future = () => new Date(Date.now() + 86_400_000).toISOString();
 const lead = { id: 'lead-1', businessId: 'TL-1', createdByUserId: 'u1', assignedToUserId: 'u1', hiringStage: 'LIVE_DEMO_INTERVIEW', decision: null, leadStatus: 'PROCESSING' };
 const booked = {
   id: 'b1', tutorLeadId: 'lead-1', status: 'BOOKED', scheduledAt: new Date(Date.now() - 3_600_000),
-  assignedToUserId: 'u1', tutorLead: lead, evaluationDueAt: null, completedAt: null, evaluation: null,
+  assignedToUserId: 'u1', bookedByUserId: 'booker', tutorLead: lead, evaluationDueAt: null, completedAt: null, evaluation: null,
 };
 
-function build(o: { lead?: any; booking?: any; schedule?: any; readAll?: boolean; override?: boolean; active?: any; assignable?: boolean; cas?: number; nearby?: any[] } = {}) {
+function build(o: { lead?: any; booking?: any; schedule?: any; readAll?: boolean; canReassign?: boolean; override?: boolean; active?: any; assignable?: boolean; cas?: number; nearby?: any[] } = {}) {
   const tx: any = {
     tutorDemoBooking: {
       findFirst: jest.fn().mockResolvedValue(o.active ?? null),
@@ -32,7 +32,10 @@ function build(o: { lead?: any; booking?: any; schedule?: any; readAll?: boolean
     $transaction: jest.fn((fn: any) => Promise.resolve(fn(tx))),
   };
   const audit: any = { record: jest.fn(), recordInTx: jest.fn() };
-  const rbac: any = { hasPermissions: jest.fn().mockResolvedValue(!!o.readAll) };
+  const rbac: any = {
+    hasPermissions: jest.fn((_userId: string, codes: string[]) =>
+      Promise.resolve(codes.includes('tutor_hiring.reassign') ? !!o.canReassign : !!o.readAll)),
+  };
   const candidates: any = {
     assertCanModifyLead: jest.fn().mockResolvedValue(undefined),
     canOverrideConductor: jest.fn().mockResolvedValue(!!o.override),
@@ -84,15 +87,27 @@ describe('HiringDemoService', () => {
 
   describe('reassign', () => {
     it('preserves the previous assignment and records who/when/why', async () => {
-      const { svc, tx } = build();
+      const { svc, tx } = build({ canReassign: true });
       await svc.reassign('b1', { toUserId: 'u2', reason: 'workload balance' }, 'head');
       expect(tx.tutorDemoAssignmentHistory.create.mock.calls[0][0].data).toMatchObject({
         bookingId: 'b1', fromUserId: 'u1', toUserId: 'u2', reason: 'workload balance', changedByUserId: 'head',
       });
     });
     it('rejects reassigning to the same person and detects concurrent changes', async () => {
-      await expect(build().svc.reassign('b1', { toUserId: 'u1', reason: 'same' }, 'head')).rejects.toBeInstanceOf(BadRequestException);
-      await expect(build({ cas: 0 }).svc.reassign('b1', { toUserId: 'u2', reason: 'race' }, 'head')).rejects.toBeInstanceOf(ConflictException);
+      await expect(build({ canReassign: true }).svc.reassign('b1', { toUserId: 'u1', reason: 'same' }, 'head')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(build({ canReassign: true, cas: 0 }).svc.reassign('b1', { toUserId: 'u2', reason: 'race' }, 'head')).rejects.toBeInstanceOf(ConflictException);
+    });
+    it('lets the person who booked the demo reassign it without the reassign permission', async () => {
+      const { svc, tx } = build({ canReassign: false });
+      await svc.reassign('b1', { toUserId: 'u2', reason: 'conductor unavailable' }, 'booker');
+      expect(tx.tutorDemoAssignmentHistory.create.mock.calls[0][0].data).toMatchObject({ changedByUserId: 'booker', toUserId: 'u2' });
+    });
+    it('refuses anyone else who lacks the reassign permission, and changes nothing', async () => {
+      const { svc, tx, audit } = build({ canReassign: false });
+      await expect(svc.reassign('b1', { toUserId: 'u2', reason: 'not mine' }, 'someone-else')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tx.tutorDemoBooking.updateMany).not.toHaveBeenCalled();
+      expect(tx.tutorDemoAssignmentHistory.create).not.toHaveBeenCalled();
+      expect(audit.recordInTx).not.toHaveBeenCalled();
     });
   });
 
@@ -162,19 +177,31 @@ describe('HiringDemoService', () => {
 
 describe('HiringEvaluationService', () => {
   const attended = { id: 'b1', tutorLeadId: 'lead-1', status: 'ATTENDED', completedAt: new Date(), assignedToUserId: 'conductor', evaluationDueAt: new Date(Date.now() + 3_600_000), evaluation: null };
-  function ev(o: { booking?: any; slab?: any; override?: boolean } = {}) {
+  function ev(o: { booking?: any; slab?: any; override?: boolean; hrRead?: boolean; waiting?: number } = {}) {
     const tx: any = {
       tutorDemoEvaluation: { create: jest.fn().mockResolvedValue({ id: 'e1', evaluatedAt: new Date() }) },
       tutorLead: { update: jest.fn() },
     };
     const prisma: any = {
-      tutorDemoBooking: { findUnique: jest.fn().mockResolvedValue(o.booking === undefined ? attended : o.booking) },
-      tutorSalarySlab: { findFirst: jest.fn().mockResolvedValue(o.slab === undefined ? { id: 's1' } : o.slab) },
+      tutorDemoBooking: {
+        findUnique: jest.fn().mockResolvedValue(o.booking === undefined ? attended : o.booking),
+        count: jest.fn().mockResolvedValue(o.waiting ?? 0),
+      },
+      tutorSalarySlab: {
+        findFirst: jest.fn().mockResolvedValue(o.slab === undefined ? { id: 's1' } : o.slab),
+        findMany: jest.fn().mockResolvedValue([
+          { id: 's1', name: 'French', currency: 'INR', createdAt: new Date(), rates: [
+            { rate: '130', grade: { code: 'KG', name: 'Kindergarten', sortOrder: 0 } },
+            { rate: '170', grade: { code: 'GRADE_12', name: 'Grade 12', sortOrder: 13 } },
+          ] },
+        ]),
+      },
       $transaction: jest.fn((fn: any) => Promise.resolve(fn(tx))),
     };
     const audit: any = { recordInTx: jest.fn() };
     const candidates: any = { canOverrideConductor: jest.fn().mockResolvedValue(!!o.override) };
-    return { svc: new HiringEvaluationService(prisma, audit, candidates), tx, audit };
+    const rbac: any = { hasPermissions: jest.fn().mockResolvedValue(!!o.hrRead) };
+    return { svc: new HiringEvaluationService(prisma, audit, candidates, rbac), tx, audit, prisma, rbac };
   }
   const dto = { teachingMethods: 'clear', technicalSkills: 'good', englishRating: 4, salarySlabId: 's1' };
 
@@ -190,6 +217,29 @@ describe('HiringEvaluationService', () => {
     await head.svc.submit('b1', dto, 'head');
     expect(head.tx.tutorDemoEvaluation.create.mock.calls[0][0].data.evaluatedByUserId).toBe('head');
     expect(head.audit.recordInTx.mock.calls[0][1].metadata.override).toBe(true);
+  });
+  describe('slab list for the evaluation form: rates are pay information', () => {
+    it('shows rates to HR (tutor_hr.pay_slab.read)', async () => {
+      const { svc, rbac } = ev({ hrRead: true });
+      const slabs = await svc.listSlabs('hr');
+      expect(rbac.hasPermissions).toHaveBeenCalledWith('hr', ['tutor_hr.pay_slab.read']);
+      expect(slabs[0]).toMatchObject({ name: 'French', minRate: '130.00', maxRate: '170.00' });
+      expect(slabs[0].rates).toHaveLength(2);
+    });
+    it('shows rates to the conductor who has an attended demo waiting for an evaluation', async () => {
+      const { svc, prisma } = ev({ waiting: 1 });
+      const slabs = await svc.listSlabs('conductor');
+      expect(prisma.tutorDemoBooking.count.mock.calls[0][0].where).toMatchObject({ assignedToUserId: 'conductor', status: 'ATTENDED', evaluation: { is: null } });
+      expect(slabs[0].rates).toHaveLength(2);
+      expect(slabs[0].minRate).toBe('130.00');
+    });
+    it('gives everyone else the slab names and currency without any rate (Tutor Head, CEO, Co-Founder, others)', async () => {
+      const { svc } = ev({ hrRead: false, waiting: 0 });
+      const slabs = await svc.listSlabs('tutor-head');
+      expect(slabs).toHaveLength(1);
+      expect(slabs[0]).toMatchObject({ id: 's1', name: 'French', currency: 'INR', minRate: null, maxRate: null, rates: [] });
+      expect(JSON.stringify(slabs)).not.toMatch(/130|170/);
+    });
   });
   it('requires an attended demo, no prior evaluation, and an active slab', async () => {
     await expect(ev({ booking: { ...attended, status: 'BOOKED' } }).svc.submit('b1', dto, 'conductor')).rejects.toBeInstanceOf(BadRequestException);

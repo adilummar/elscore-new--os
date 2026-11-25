@@ -177,6 +177,14 @@ export class HiringDemoService {
   async reassign(id: string, dto: ReassignDemoDto, actorUserId: string) {
     const b = await this.prisma.tutorDemoBooking.findUnique({ where: { id } });
     if (!b) throw new NotFoundException('Booking not found');
+    // The person who booked the demo may reassign it, as may anyone holding tutor_hiring.reassign (Requirements
+    // Final, section 3.7: "including the person who booked the demo").
+    if (
+      b.bookedByUserId !== actorUserId &&
+      !(await this.rbac.hasPermissions(actorUserId, ['tutor_hiring.reassign']))
+    ) {
+      throw new ForbiddenException('Only the person who booked this demo, or the Head of Tutor Management or HR Head, can reassign it');
+    }
     if (b.status !== 'BOOKED') throw new BadRequestException('Only an active booking can be reassigned');
     if (b.assignedToUserId === dto.toUserId) throw new BadRequestException('Demo is already assigned to this staff member');
     await this.assertAssignable(dto.toUserId);

@@ -87,7 +87,10 @@ export class HiringDemoController {
   }
 
   @Post('demos/:id/reassign')
-  @RequirePermissions('tutor_hiring.reassign')
+  // tutor_lead.update lets the person who booked the demo reach the service; the service then allows only that
+  // person or a holder of tutor_hiring.reassign.
+  @RequirePermissions('tutor_lead.update')
+  @ApiOperation({ summary: 'Reassign a booked demo. Only its booker or a holder of tutor_hiring.reassign.' })
   reassign(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReassignDemoDto, @CurrentUser() user: RequestUser) {
     return this.demos.reassign(id, dto, user.id);
   }
@@ -101,8 +104,9 @@ export class HiringDemoController {
   // ── Evaluation ──
   @Get('salary-slabs')
   @RequirePermissions('tutor_lead.read')
-  slabs() {
-    return this.evaluations.listSlabs();
+  @ApiOperation({ summary: 'Slabs for the evaluation form. Rates only for HR and for a conductor with an evaluation waiting.' })
+  slabs(@CurrentUser() user: RequestUser) {
+    return this.evaluations.listSlabs(user.id);
   }
 
   @Post('demos/:id/evaluation')
