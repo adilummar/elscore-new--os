@@ -55,3 +55,12 @@ deleting exactly the rows the preview listed, if the owner prefers that to a res
   Run it after the migration `20261124110000_tutor_slab_assignments` and the seed (the seed adds the two permission rows).
 - `test-pay-slab-grant-local.sh` and `test-pay-slab-assignment-grant-local.sh` test them on
   `127.0.0.1:5433/elscore_slab_empty` only (a throwaway database).
+
+## Training schedule script (HR reschedules repeat sessions)
+
+`tutor_training_schedule_hr_grant.sql` inserts exactly 2 links, `HR_MANAGER` and `HR_EXECUTIVE` to
+`tutor_training.schedule` (Tutor Coordinator requirements, section 2: the HR Department manages rescheduling of repeat
+sessions). The seed grants them to fresh databases; this script is how they reach a database that already has users.
+Same procedure as the others: preview (rolls back), then commit from a `/var/tmp` copy with only the final
+`-- COMMIT;` enabled. Run it after `tutor_hr_permission_grant.sql`, which already covers `TUTOR_HEAD` and the CEO.
+Drift against `seed.ts` is checked by `src/common/rbac/tutor-training-schedule-grant.spec.ts`.

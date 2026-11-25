@@ -1796,6 +1796,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_training.read',
     'tutor_training.participants',
     'tutor_training.record',
+    // HR reschedules repeat training sessions (Tutor Coordinator requirements, section 2).
+    'tutor_training.schedule',
     // Backup for the Head of Tutor Management on Ready for Assignment (confirmed).
     'tutor_hr.ready_for_assignment',
     'tutor_hr.tutors.read',
@@ -1896,6 +1898,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tutor_training.read',
     'tutor_training.participants',
     'tutor_training.record',
+    // HR reschedules repeat training sessions (Tutor Coordinator requirements, section 2).
+    'tutor_training.schedule',
     'tutor_hr.tutors.read',
     'tutor_hr.profile.read',
     'tutor_hr.profile.manage',

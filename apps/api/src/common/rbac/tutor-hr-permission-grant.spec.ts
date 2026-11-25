@@ -51,6 +51,8 @@ const RELEASE_CODES = [
   'tutor_hiring.settings',
 ];
 const NEW_ROLES = ['TUTOR_HEAD', 'TUTOR_COORDINATOR'];
+/** Links to release codes that were added to the seed later and reach a populated database by their own script. */
+const LATER_LINKS = new Set(['HR_MANAGER|tutor_training.schedule', 'HR_EXECUTIVE|tutor_training.schedule']);
 
 function section(name: string): string {
   const start = sql.indexOf(`INSERT INTO ${name} VALUES`);
@@ -83,10 +85,13 @@ describe('tutor_hr_permission_grant.sql', () => {
     }
   });
 
-  it('contains every seed link for a release code, for every role', () => {
+  it('contains every seed link for a release code, for every role (except those a later script grants)', () => {
     const inSql = new Set(links);
     for (const [role, codes] of Object.entries(ROLE_PERMISSIONS)) {
       for (const code of codes) {
+        // Added after this script had already run on staging; granted by tutor_training_schedule_hr_grant.sql
+        // and checked by tutor-training-schedule-grant.spec.ts.
+        if (LATER_LINKS.has(`${role}|${code}`)) continue;
         if (RELEASE_CODES.includes(code)) expect(inSql.has(`${role}|${code}`)).toBe(true);
       }
     }
